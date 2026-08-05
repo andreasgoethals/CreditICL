@@ -35,7 +35,7 @@ import torch.nn.functional as F
 
 from ..models.nanotabiclv2 import NanoTabICLv2
 from ..prior.dataset import build_loader
-from ..utils.logging_setup import log_environment, log_section, setup_logging
+from ..utils.logging_setup import close_logging, log_environment, log_section, setup_logging
 from .adapt import STRATEGIES, apply_freezing, load_pretrained, set_training_mode
 from .checkpoint import latest_checkpoint, load_checkpoint, prune_checkpoints, save_checkpoint
 from .optim import build_optimizer, build_scheduler
@@ -97,6 +97,21 @@ class Trainer:
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         torch.manual_seed(self.seed)
 
+        # The header goes first, before anything that can log or fail. Otherwise a
+        # crash during model construction leaves a log with no indication of which
+        # run or machine produced it.
+        log_section(self.log, f"CreditICL — {self.task.upper()} — {cfg.get('_run_name', '?')}")
+        log_environment(self.log, {"device": self.device, "task": self.task, "seed": self.seed})
+        self.log.info("levers: %s", json.dumps(cfg.get("_grid", {}).get("assignments", {}), default=str))
+        self.log.info(
+            "credit_fraction: %s  (share of datasets from OUR prior; the rest are the original)",
+            cfg["prior"].get("credit_fraction"),
+        )
+        self.log.info("outputs     -> %s", self.out_dir)
+        self.log.info("checkpoints -> %s", self.ckpt_dir)
+        self.log.info("log file    -> %s", self.log_path)
+        self.log.info("metrics     -> %s", self.metrics.path)
+
         self.model = self._build_model()
 
         # --- adaptation strategy: scratch / full / icl_only / head_only --------
@@ -136,18 +151,13 @@ class Trainer:
         self.datasets_seen = 0
         self.resumed_at: int | None = None
 
-        log_section(self.log, f"CreditICL — {self.task.upper()} — {cfg.get('_run_name', '?')}")
-        log_environment(self.log, {"device": self.device, "amp": self.amp, "task": self.task})
-        self.log.info("levers: %s", json.dumps(cfg.get("_grid", {}).get("assignments", {}), default=str))
-        self.log.info("credit_fraction: %s", cfg["prior"].get("credit_fraction"))
-        self.log.info("outputs     -> %s", self.out_dir)
-        self.log.info("checkpoints -> %s", self.ckpt_dir)
-        self.log.info("log file    -> %s", self.log_path)
         self.log.info(
-            "budget: %d steps x %d datasets/step = %d datasets",
+            "budget: %d steps x %d datasets/step = %d datasets  |  amp=%s  workers=%d",
             self.max_steps,
             self.batch_size,
             self.max_steps * self.batch_size,
+            self.amp,
+            self.num_workers,
         )
 
     # -- setup ---------------------------------------------------------------
@@ -195,6 +205,32 @@ class Trainer:
             path.name, self.step,
         )
 
+        # Guard against silently changing the experiment on resume. `LambdaLR`
+        # does not persist its lambda, so it is rebuilt from the CURRENT config:
+        # resuming with a different max_steps therefore reshapes the whole LR
+        # schedule mid-run, and resuming with a different prior would mean the
+        # checkpoint and the data no longer match. Both are invisible in the loss
+        # curve, so shout about them.
+        old_cfg = payload.get("config") or {}
+        old_steps = old_cfg.get("train", {}).get("max_steps")
+        if old_steps is not None and int(old_steps) != self.max_steps:
+            self.log.warning(
+                "max_steps CHANGED on resume: checkpoint had %s, this run has %d. The LR "
+                "schedule is rebuilt from the current value, so its shape differs from an "
+                "uninterrupted run. Fine when deliberately extending a run; a mistake if you "
+                "meant to continue the same one.",
+                old_steps, self.max_steps,
+            )
+        old_prior = old_cfg.get("prior", {})
+        for key in ("credit_fraction",):
+            if key in old_prior and old_prior[key] != self.cfg["prior"].get(key):
+                self.log.error(
+                    "prior.%s CHANGED on resume: checkpoint was trained with %s, this run says "
+                    "%s. These weights and this data do not belong together — the arm is no "
+                    "longer the arm. Use a fresh checkpoint directory.",
+                    key, old_prior[key], self.cfg["prior"].get(key),
+                )
+
     # -- one optimisation step ----------------------------------------------
     def _loss_for(self, X: torch.Tensor, y: torch.Tensor, train_size: int) -> tuple[torch.Tensor, dict[str, float]]:
         y_train, y_test = y[:, :train_size], y[:, train_size:]
@@ -231,7 +267,10 @@ class Trainer:
             try:
                 loss, extra = self._loss_for(Xi, yi, train_size)
                 self.scaler.scale(loss / n_micro).backward()
-                totals["loss"] += float(loss) / n_micro
+                # detach() before float(): torch warns that converting a tensor
+                # still attached to the graph can behave unexpectedly, and we only
+                # want the number for logging.
+                totals["loss"] += float(loss.detach()) / n_micro
                 for k, v in extra.items():
                     totals[k] = totals.get(k, 0.0) + v / n_micro
             except torch.cuda.OutOfMemoryError:
@@ -314,7 +353,7 @@ class Trainer:
             if is_temp or is_perm or self.step == self.max_steps:
                 self._save()
 
-        return {
+        summary = {
             "steps": self.step,
             "datasets_seen": self.datasets_seen,
             "elapsed_s": round(time.time() - started, 1),
@@ -322,6 +361,23 @@ class Trainer:
             "freeze": self.freeze_report,
             "pretrained_load": self.load_report,
         }
+        self.log.info("finished: %s", json.dumps({k: v for k, v in summary.items() if k != "freeze"}))
+        self.close()
+        return summary
+
+    def close(self) -> None:
+        """Release the log file handle. Idempotent."""
+        close_logging()
+
+    # Usable as a context manager, so an exception mid-run still releases the
+    # log file rather than leaving it locked.
+    def __enter__(self) -> Trainer:
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if exc is not None:
+            self.log.exception("run failed: %s", exc)
+        self.close()
 
     def _log_prior_report(self) -> None:
         """Log what the prior is actually producing, mid-run.
@@ -333,6 +389,7 @@ class Trainer:
         try:
             from ..prior.generator import TaskGenerator
             from ..prior.rng import PriorRNG
+            from ..utils.target_stats import target_stats
 
             gen = TaskGenerator(self.cfg["prior"], self.task, PriorRNG(self.seed + 999_983))
             vals: list[float] = []
@@ -341,7 +398,10 @@ class Trainer:
                 t = gen.sample()
                 sources[t.source] = sources.get(t.source, 0) + 1
                 if self.regression:
-                    vals.append(float(((t.y <= 0.0) | (t.y >= 1.0)).float().mean()))
+                    # Scale-invariant: mass on the target's extreme values. The
+                    # naive (y<=0)|(y>=1) version reports ~0.5 on a standard-scaled
+                    # target, which is meaningless. See src/utils/target_stats.py.
+                    vals.append(target_stats(t.y)["boundary_mass"])
                 else:
                     vals.append(float(t.y.mean()))
             label = "boundary_mass" if self.regression else "base_rate"

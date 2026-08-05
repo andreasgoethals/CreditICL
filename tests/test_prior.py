@@ -21,7 +21,6 @@ from src.prior.noise_features import add_noise_features
 from src.prior.preprocess import standard_scaling, to_ranks
 from src.prior.rng import PriorRNG
 
-
 # --- the mixture lever -------------------------------------------------------
 
 
@@ -251,7 +250,7 @@ def test_to_ranks_is_uniform_and_monotone():
     g = torch.Generator().manual_seed(0)
     x = torch.randn(1000, generator=g)
     u = to_ranks(x)
-    assert 0.0 < float(u.min()) and float(u.max()) < 1.0
+    assert float(u.min()) > 0.0 and float(u.max()) < 1.0
     assert float(u.mean()) == pytest.approx(0.5, abs=0.02)
     order = torch.argsort(x)
     assert float((u[order][1:] - u[order][:-1]).min()) > 0

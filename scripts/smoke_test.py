@@ -83,32 +83,26 @@ def report_prior(cfg: dict, task: str, n: int = 24) -> dict:
     """Sample a few tasks and report what the target distribution looks like."""
     from src.prior.generator import TaskGenerator
     from src.prior.rng import PriorRNG
+    from src.utils.target_stats import summarise, target_stats
 
     gen = TaskGenerator(cfg["prior"], task, PriorRNG(0))
-    p0s, p1s, rates, widths, rows = [], [], [], [], []
+    stats, rates, widths, rows = [], [], [], []
     for _ in range(n):
         t = gen.sample()
         widths.append(t.n_features)
         rows.append(t.n_rows)
-        if task == "lgd":
-            p0s.append(float((t.y <= 0.0).float().mean()))
-            p1s.append(float((t.y >= 1.0).float().mean()))
-        else:
+        stats.append(target_stats(t.y))
+        if task == "pd":
             rates.append(float(t.y.mean()))
 
     out: dict = {
         "sampled": n,
         "rows_min_max": [min(rows), max(rows)],
         "features_min_max": [min(widths), max(widths)],
+        "target": summarise(stats),
         "filter": gen.filter_summary(),
     }
-    if task == "lgd":
-        out["mass_at_0_mean"] = round(sum(p0s) / len(p0s), 4)
-        out["mass_at_1_mean"] = round(sum(p1s) / len(p1s), 4)
-        out["mass_at_0_max"] = round(max(p0s), 4)
-        out["mass_at_1_max"] = round(max(p1s), 4)
-        out["frac_with_any_atom"] = round(sum(1 for a, b in zip(p0s, p1s) if a + b > 0) / n, 3)
-    else:
+    if task == "pd":
         out["base_rate_mean"] = round(sum(rates) / len(rates), 4)
         out["base_rate_min"] = round(min(rates), 4)
         out["base_rate_max"] = round(max(rates), 4)
@@ -138,14 +132,15 @@ def main() -> int:
         f"source={task.source} y_range=({float(task.y.min()):.3f}, {float(task.y.max()):.3f})",
         flush=True,
     )
-    if args.task == "lgd" and (float(task.y.min()) < -1e-6 or float(task.y.max()) > 1 + 1e-6):
-        if cfg["prior"]["credit"]["target"].get("target_scaling", "none") == "none":
-            print("  FAIL: LGD target left [0,1] with target_scaling='none'.", file=sys.stderr)
-            return 1
+    left_unit = float(task.y.min()) < -1e-6 or float(task.y.max()) > 1 + 1e-6
+    unscaled = cfg["prior"]["credit"]["target"].get("target_scaling", "none") == "none"
+    if args.task == "lgd" and left_unit and unscaled:
+        print("  FAIL: LGD target left [0,1] with target_scaling='none'.", file=sys.stderr)
+        return 1
 
     from src.train.loop import Trainer
 
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         trainer = Trainer(cfg, tmp, device="cpu")
         print(
             f"[3/4] model OK: {trainer.freeze_report['trainable_params']:,} trainable / "

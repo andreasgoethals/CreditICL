@@ -159,12 +159,12 @@ class PredictabilityFilter:
     def accept(self, X: torch.Tensor, y: torch.Tensor, *, is_classif: bool) -> bool:
         self.stats.attempts += 1
 
-        if self.mode == "off" and not self.remove_trivial:
-            self.stats.accepted += 1
-            return True
-
-        # Degenerate targets are rejected under every mode: a constant target
-        # carries no gradient signal and would just waste steps.
+        # Degenerate targets are rejected under EVERY mode, including `off`.
+        # A constant target produces zero gradient, so training on it burns a
+        # step for nothing. This check has to come before the `off` short-circuit
+        # below — it used to sit after it, which meant `off` silently accepted
+        # constant targets despite the comment claiming otherwise. Caught by
+        # test_filter_rejects_a_constant_target_in_every_mode.
         if is_classif:
             if len(torch.unique(y)) < 2:
                 self.stats.rejected_unpredictable += 1
@@ -172,6 +172,11 @@ class PredictabilityFilter:
         elif float(y.std()) < 1e-8:
             self.stats.rejected_unpredictable += 1
             return False
+
+        # `off` skips only the *statistical* test, not the degeneracy guard.
+        if self.mode == "off" and not self.remove_trivial:
+            self.stats.accepted += 1
+            return True
 
         pval, r2 = predictability(X, y, is_classif=is_classif, n_boot=self.n_boot)
         self.stats.pvalues.append(pval)

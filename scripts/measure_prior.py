@@ -37,6 +37,7 @@ if str(ROOT) not in sys.path:
 import numpy as np  # noqa: E402
 
 from src.utils.config import expand_with_seeds, load_yaml  # noqa: E402
+from src.utils.target_stats import summarise, target_stats  # noqa: E402
 
 
 def pct(values: list[float], q: float) -> float:
@@ -62,28 +63,18 @@ def main() -> int:
 
     gen = TaskGenerator(cfg["prior"], task, PriorRNG(cfg.get("seed", 0)))
 
-    p0s: list[float] = []
-    p1s: list[float] = []
+    stats: list[dict] = []
     rates: list[float] = []
     n_features: list[int] = []
-    n_distinct: list[int] = []
-    y_min, y_max = float("inf"), float("-inf")
     sources = {"base": 0, "credit": 0}
 
     for i in range(args.n):
         t = gen.sample()
         sources[t.source] = sources.get(t.source, 0) + 1
         n_features.append(t.n_features)
-        y = t.y
-        y_min = min(y_min, float(y.min()))
-        y_max = max(y_max, float(y.max()))
-        n_distinct.append(int(len(y.unique())))
-
-        if task == "lgd":
-            p0s.append(float((y <= 0.0).float().mean()))
-            p1s.append(float((y >= 1.0).float().mean()))
-        else:
-            rates.append(float(y.mean()))
+        stats.append(target_stats(t.y))
+        if task == "pd":
+            rates.append(float(t.y.mean()))
 
         if (i + 1) % 100 == 0:
             print(f"  sampled {i + 1}/{args.n}", flush=True, file=sys.stderr)
@@ -95,25 +86,13 @@ def main() -> int:
         "n_sampled": args.n,
         "sources": sources,
         "features": {"mean": round(float(np.mean(n_features)), 1), "min": min(n_features), "max": max(n_features)},
-        "target_range": [round(y_min, 4), round(y_max, 4)],
-        "distinct_target_values": {
-            "median": int(np.median(n_distinct)),
-            "p10": int(pct(n_distinct, 10)),
-            "p90": int(pct(n_distinct, 90)),
-        },
+        # Scale-invariant target shape. See src/utils/target_stats.py for why the
+        # naive `(y <= 0).mean()` version is wrong on a standard-scaled target.
+        "target": summarise(stats),
         "filter": gen.filter_summary(),
     }
 
     if task == "lgd":
-        both = [a + b for a, b in zip(p0s, p1s)]
-        report["boundary_mass"] = {
-            "at_0_mean": round(float(np.mean(p0s)), 4),
-            "at_1_mean": round(float(np.mean(p1s)), 4),
-            "at_0_p90": round(pct(p0s, 90), 4),
-            "at_1_p90": round(pct(p1s, 90), 4),
-            "any_atom_fraction": round(float(np.mean([b > 0 for b in both])), 4),
-            "total_mass_mean": round(float(np.mean(both)), 4),
-        }
         # The comparison that matters: real LGD, measured 2026-08-05.
         report["real_data_reference"] = {
             "0006.lgd_freddie": {"at_0": 0.114, "at_1": 0.081, "shape": "U-shaped"},

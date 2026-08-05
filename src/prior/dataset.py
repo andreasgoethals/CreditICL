@@ -19,7 +19,8 @@ resume does and does not guarantee.
 
 from __future__ import annotations
 
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 import torch
 from torch.utils.data import DataLoader, IterableDataset, get_worker_info

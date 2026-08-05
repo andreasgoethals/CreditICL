@@ -202,7 +202,6 @@ def test_standard_scaling_preserves_shape_but_not_range():
     """standard_scaling is a straight line, so it keeps the two humps and only
     destroys the [0,1] range. This is the whole basis for the project claiming a
     'frequency and range' gap rather than a structural absence."""
-    rng = PriorRNG(10)
     z = latent(1000)
     y_raw, _ = apply_lgd_target(PriorRNG(10), z, {**BASE, "target_scaling": "none"})
     y_std, meta = apply_lgd_target(PriorRNG(10), z, {**BASE, "target_scaling": "standard"})

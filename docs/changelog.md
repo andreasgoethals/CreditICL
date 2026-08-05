@@ -8,6 +8,121 @@ pin it was written against.
 
 ---
 
+## 2026-08-05 (night) — the code actually runs, and the first real measurements
+
+torch installed locally, so everything below was **executed**, not just
+syntax-checked. **166 tests pass, ruff clean.**
+
+### It trains
+
+A 250-step LGD run on CPU: pinball loss falls monotonically **0.130 → 0.072
+(−44.5%)**. Gradients flow, the loss is well-formed, and the model learns from the
+prior. That is the end-to-end check that could not be done before.
+
+PD over the same budget: cross-entropy **0.458 → 0.308 (−32.8%)**, accuracy
+0.796 → 0.881. **Read that accuracy sceptically** — at a ~10% mean base rate the
+majority-class baseline is already about 0.90, so 0.881 accuracy is not evidence of
+anything. The cross-entropy is the informative number: the base-rate entropy at
+p=0.10 is 0.325, and we finish at 0.308, so the model is only just beating
+"predict the base rate". For a 3-block model at 250 steps on a deliberately
+low-signal prior that is the expected result, but it is a reminder that PD
+evaluation must lead with calibration and ranking metrics, never accuracy.
+
+Also verified:
+
+- **Resume works exactly.** Trained to step 10, restarted: step counter, datasets
+  seen, model weights (bit-identical), optimizer state and LR all restored, and
+  checkpoint pruning kept the permanent one and the two newest temporary ones.
+- **Reproducible across processes.** Same seed in two separate interpreter runs
+  gives a bit-identical loss (0.27188427) and weight sum. Different seed differs.
+- Full model is **28.5M parameters**; 6 CPU steps took 62 s, so 10,000 steps is
+  roughly 29 CPU-hours — GPU is not optional for the real runs.
+
+### THE MEASUREMENT BUG — and what it was hiding
+
+The boundary-mass metric was computed as `(y <= 0).mean()`. On a **standard-scaled**
+target that just means "below the mean", so it returned about 0.5. Measured that
+way, the unmodified TabICL prior appeared to put **54% of its mass at zero** — which
+would have looked like the original prior already solves the LGD problem, and would
+have quietly destroyed the project's motivation.
+
+Fixed with a scale-invariant definition in new `src/utils/target_stats.py`: mass on
+the target's actual extreme values, `(y == y.min()).mean()` and
+`(y == y.max()).mean()`. That is unchanged by rescaling, which matters because
+`target_scaling` is one of the levers we sweep. The `[0,1]`-specific numbers are
+still reported but return `None` off `[0,1]` rather than a misleading value.
+`tests/test_target_stats.py` has the regression test — do not delete it.
+
+### First real comparison of the two priors
+
+**LGD** (50 tasks each, full 512–1024 rows):
+
+| | original prior | our prior | real LGD |
+|---|---|---|---|
+| target inside [0,1] | **0%** | **100%** | 100% by definition |
+| mass at min (mean) | 0.068 | 0.111 | Freddie 0.114 |
+| mass at max (mean) | 0.063 | 0.100 | Freddie 0.081 |
+| tasks with any atom | **26%** | **94%** | — |
+| tasks with both atoms | **22%** | **70%** | — |
+
+This **settles the framing question empirically**, and in the direction the earlier
+code reading suggested. The original prior *does* produce boundary atoms — 26% of
+tasks have one, and their p90 mass is 0.34/0.40, which is large. So "structurally
+absent" was wrong. But its target is **never** in [0,1], because standard-scaling is
+unconditional. The honest claim is therefore exactly the one already written in the
+design doc: a gap in **frequency and support alignment**, not a structural absence.
+Our prior's boundary mass (0.111 / 0.100) lands very close to Freddie's
+(0.114 / 0.081).
+
+**PD** (60 tasks each, full size):
+
+| | original prior | our prior | real credit |
+|---|---|---|---|
+| base rate mean | **0.500** | **0.100** | 0.067–0.221 |
+| median | 0.497 | 0.073 | — |
+| p10 – p90 | 0.17 – 0.79 | 0.03 – 0.23 | — |
+| tasks under 10% positives | **5%** | **63%** | most |
+
+This answers the question flagged as open in `PD.yaml` and `PROJECT_SPECIFIC.md`.
+The v2/graph_scm path's base rate is centred on **0.50** — essentially balanced
+classification — and only 5% of its tasks reach the credit regime. Our prior's
+p10–p90 brackets the real data almost exactly. **Do not repeat the earlier guess
+that the v2 path's base rate is roughly Uniform(0,1); it is not.**
+
+Filter rejection at full size: **27% (LGD), 38–43% (PD)**, close to TabICLv2's
+reported ~25% / ~35%. The 85% seen in the smoke test was an artefact of its tiny
+96–128-row tables, where the bootstrap test has little power.
+
+### Other bugs found by running things
+
+- **`filter mode="off"` accepted constant targets.** The short-circuit returned
+  before the degeneracy check, contradicting the comment directly beneath it. A
+  constant target gives zero gradient, so those steps were pure waste.
+- **The log file handle was never closed**, so on Windows the run directory could
+  not be deleted; on Linux the same leak is silent but real. Added
+  `close_logging()`, `Trainer.close()`, and context-manager support so an exception
+  mid-run still releases the file.
+- **`float(loss)` on a graph-attached tensor** — torch warns this can misbehave.
+  Now `loss.detach()`.
+- **My own test was wrong, not the code**: it asserted the mean pinball loss is
+  asymmetric. It is not — the quantile grid is symmetric about 0.5, so a constant
+  offset costs the same either way. Replaced with a proper per-quantile check plus
+  a test asserting the symmetry deliberately, so nobody "fixes" correct code.
+
+### Added
+
+- **Resume guards.** Resuming with a different `max_steps` now logs a warning
+  (`LambdaLR` does not persist its lambda, so the schedule is rebuilt and its shape
+  changes), and resuming with a different `credit_fraction` logs an error — that
+  would mean continuing one arm's weights on another arm's data, which nothing in
+  the loss curve would reveal.
+- `src/utils/target_stats.py` and `tests/test_target_stats.py`.
+- Ruff now excludes `src/models/nanotabiclv2.py` (generated from the pinned dump;
+  formatting it would be undone) and `scripts/example_script.py` (the template's
+  own sample, left as shipped).
+
+---
+
 ## 2026-08-05 (evening) — one config per experiment, logging, tests
 
 ### Config layout flattened, by request

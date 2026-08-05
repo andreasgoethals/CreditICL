@@ -26,7 +26,7 @@ import os
 import platform
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -51,7 +51,7 @@ class MetricsWriter:
 
     def write(self, record: dict[str, Any]) -> None:
         record = {
-            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "ts": datetime.now(UTC).isoformat(timespec="seconds"),
             "elapsed_s": round(time.time() - self._t0, 2),
             **record,
         }
@@ -105,6 +105,25 @@ def setup_logging(
 def get_logger() -> logging.Logger:
     """The run logger. Safe to call before `setup_logging` — it just goes nowhere."""
     return logging.getLogger(LOGGER_NAME)
+
+
+def close_logging() -> None:
+    """Close and detach the file handler.
+
+    Not optional housekeeping. An open `FileHandler` keeps the log file locked,
+    which on Windows makes the containing directory undeletable — that is how this
+    was found, when a temp directory in the smoke test refused to clean up. On
+    Linux the same leak is silent but still real: repeated `setup_logging` calls in
+    one process would accumulate open file descriptors.
+    """
+    logger = logging.getLogger(LOGGER_NAME)
+    for handler in list(logger.handlers):
+        try:
+            handler.flush()
+            handler.close()
+        except Exception:
+            pass
+        logger.removeHandler(handler)
 
 
 def log_environment(logger: logging.Logger, extra: dict[str, Any] | None = None) -> dict[str, Any]:

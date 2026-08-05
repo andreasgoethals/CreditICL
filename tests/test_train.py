@@ -26,7 +26,6 @@ from src.train.checkpoint import latest_checkpoint, prune_checkpoints, save_chec
 from src.train.loop import Trainer, pinball_loss, quantile_levels
 from src.train.optim import build_optimizer, build_scheduler
 
-
 # --- the quantile grid and pinball loss --------------------------------------
 
 
@@ -54,12 +53,39 @@ def test_pinball_is_positive_and_grows_with_error():
 
 
 def test_pinball_is_asymmetric_per_quantile():
-    """A low quantile should be punished more for over-predicting than under-."""
+    """A LOW quantile is punished more for over-predicting than under-predicting.
+
+    Note this must be checked per quantile, not on the mean over all of them. The
+    quantile grid is symmetric about 0.5, so the mean loss for a constant offset
+    comes out identical in both directions — an earlier version of this test
+    compared the means and "failed" against perfectly correct code.
+    """
+    q = 99
+    alphas = quantile_levels(q)
+
+    def loss_at(level_idx: int, pred_value: float) -> float:
+        a = float(alphas[level_idx])
+        err = 0.0 - pred_value
+        return max(a * err, (a - 1) * err)
+
+    low = 4  # alpha well below 0.5
+    assert loss_at(low, 1.0) > loss_at(low, -1.0), "low quantile should penalise over-prediction more"
+
+    high = q - 5  # alpha well above 0.5
+    assert loss_at(high, -1.0) > loss_at(high, 1.0), "high quantile should penalise under-prediction more"
+
+
+def test_pinball_mean_is_symmetric_for_a_constant_offset():
+    """The flip side of the above, asserted deliberately so nobody "fixes" it.
+
+    Because the grid is symmetric about 0.5, over- and under-predicting by the
+    same amount give the same MEAN pinball loss. That is correct behaviour.
+    """
     target = torch.zeros(1, 1)
     q = 4
     over = pinball_loss(torch.full((1, 1, q), 1.0), target, q)
     under = pinball_loss(torch.full((1, 1, q), -1.0), target, q)
-    assert float(over) != pytest.approx(float(under))
+    assert float(over) == pytest.approx(float(under))
 
 
 def test_pinball_is_minimised_at_the_true_quantiles():
@@ -344,3 +370,64 @@ def test_prior_report_is_written_when_enabled(tmp_path, lgd_cfg):
     trainer.train()
     text = next(iter(logs.glob("*.log"))).read_text(encoding="utf-8")
     assert "prior check" in text, "the mid-run prior report should appear in the log"
+
+
+def _log_text(log_dir) -> str:
+    """Read the run's log file. Used instead of pytest's `caplog` because our
+    logger sets propagate=False (to avoid duplicate console output), so caplog's
+    root handler never sees the records. Reading the file also tests the path that
+    actually matters — what lands on disk on the cluster."""
+    files = sorted(log_dir.glob("*.log"))
+    assert files, f"no log file written into {log_dir}"
+    return "\n".join(f.read_text(encoding="utf-8") for f in files)
+
+
+def test_resume_warns_when_max_steps_changed(tmp_path, lgd_cfg):
+    """Resuming with a different max_steps reshapes the LR schedule, because
+    LambdaLR does not persist its lambda. Invisible in the loss curve, so it must
+    be logged loudly."""
+    ck = tmp_path / "ck"
+    lgd_cfg["train"]["max_steps"] = 2
+    lgd_cfg["train"]["save_temp_every"] = 2
+    Trainer(lgd_cfg, tmp_path / "o1", device="cpu", ckpt_dir=ck, log_dir=tmp_path / "l1").train()
+
+    lgd_cfg["train"]["max_steps"] = 9
+    l2 = tmp_path / "l2"
+    t2 = Trainer(lgd_cfg, tmp_path / "o2", device="cpu", ckpt_dir=ck, log_dir=l2)
+    t2.maybe_resume()
+    t2.close()
+    assert "max_steps CHANGED" in _log_text(l2)
+
+
+def test_resume_errors_when_the_prior_changed(tmp_path, lgd_cfg):
+    """The worst silent failure: continuing one arm's weights on another arm's
+    data. Nothing about the loss curve would reveal it."""
+    ck = tmp_path / "ck"
+    lgd_cfg["train"]["max_steps"] = 2
+    lgd_cfg["train"]["save_temp_every"] = 2
+    lgd_cfg["prior"]["credit_fraction"] = 0.0
+    Trainer(lgd_cfg, tmp_path / "o1", device="cpu", ckpt_dir=ck, log_dir=tmp_path / "l1").train()
+
+    lgd_cfg["prior"]["credit_fraction"] = 1.0  # a different arm!
+    l2 = tmp_path / "l2"
+    t2 = Trainer(lgd_cfg, tmp_path / "o2", device="cpu", ckpt_dir=ck, log_dir=l2)
+    t2.maybe_resume()
+    t2.close()
+    assert "credit_fraction CHANGED" in _log_text(l2)
+
+
+def test_resume_is_quiet_when_nothing_changed(tmp_path, lgd_cfg):
+    """The normal walltime-kill case must NOT produce scary warnings, or the real
+    ones get ignored."""
+    ck = tmp_path / "ck"
+    lgd_cfg["train"]["max_steps"] = 2
+    lgd_cfg["train"]["save_temp_every"] = 2
+    Trainer(lgd_cfg, tmp_path / "o1", device="cpu", ckpt_dir=ck, log_dir=tmp_path / "l1").train()
+
+    l2 = tmp_path / "l2"
+    t2 = Trainer(lgd_cfg, tmp_path / "o2", device="cpu", ckpt_dir=ck, log_dir=l2)
+    t2.maybe_resume()
+    t2.close()
+    text = _log_text(l2)
+    assert "RESUMED from" in text
+    assert "CHANGED" not in text

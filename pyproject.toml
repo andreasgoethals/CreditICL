@@ -114,9 +114,23 @@ exclude = ["tfm-library*", "lib*", "notebooks*", "data*", "checkpoints*", "res*"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-# tfm-library/ is a read-only submodule — never lint, never format, never
-# touch. lib/ is third-party code used unmodified.
-extend-exclude = ["tfm-library", "lib", "notebooks", ".venv", "venv-*"]
+extend-exclude = [
+    # Read-only submodule. Never lint, never format, never touch.
+    "tfm-library",
+    # Third-party code used unmodified.
+    "lib",
+    "notebooks",
+    ".venv",
+    "venv-*",
+    # GENERATED, not written: scripts/vendor_model.py extracts this verbatim from
+    # the pinned library dump. Formatting it would be undone on the next
+    # extraction, and any real change would make our arms incomparable to the
+    # reference architecture.
+    "src/models/nanotabiclv2.py",
+    # The faculty template's own sample script. Left exactly as shipped so the
+    # template stays a usable reference; its ASCII-art docstring trips W605.
+    "scripts/example_script.py",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "NPY"]
