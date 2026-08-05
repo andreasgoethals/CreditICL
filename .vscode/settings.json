@@ -1,0 +1,82 @@
+{
+  // ---------------------------------------------------------------------
+  // Interpreter: the project-local venv created per README §Setup.
+  // ${workspaceFolder} keeps this portable, so the file is safe to commit.
+  // ---------------------------------------------------------------------
+  "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+
+  // Auto-activate .venv in every new integrated terminal, so opening the
+  // project is all that is needed. PowerShell 5.1 is the default shell here.
+  "python.terminal.activateEnvironment": true,
+  "python.terminal.activateEnvInCurrentTerminal": true,
+
+  "terminal.integrated.defaultProfile.windows": "PowerShell",
+
+  // Run from the repo root so the template's `from src.data...` imports and
+  // relative paths like "config/priors/arm_a.yaml" resolve.
+  "python.terminal.executeInFileDir": false,
+  "jupyter.notebookFileRoot": "${workspaceFolder}",
+  "python.analysis.extraPaths": ["${workspaceFolder}"],
+
+  // ---------------------------------------------------------------------
+  // Testing
+  // ---------------------------------------------------------------------
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": ["tests"],
+
+  // ---------------------------------------------------------------------
+  // Lint / format via ruff (see [tool.ruff] in pyproject.toml)
+  // ---------------------------------------------------------------------
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+
+  // ---------------------------------------------------------------------
+  // tfm-library/ is a READ-ONLY pinned submodule (see AGENTS.md).
+  // Hidden from search and excluded from file-watching so it is never
+  // edited by accident and never slows down indexing (43 papers + 22
+  // multi-MB code dumps). Still browsable in the Explorer on purpose:
+  // reading it is the whole point.
+  // ---------------------------------------------------------------------
+  "search.exclude": {
+    "**/tfm-library/papers/**": true,
+    "**/tfm-library/repositories/**": true,
+    "**/.venv/**": true,
+    "**/venv-*/**": true,
+    "**/data/**": true,
+    "**/checkpoints/**": true
+  },
+  "files.watcherExclude": {
+    "**/tfm-library/**": true,
+    "**/.venv/**": true,
+    "**/data/**": true,
+    "**/checkpoints/**": true,
+    "**/res/**": true
+  },
+  "files.readonlyInclude": {
+    "tfm-library/**": true
+  },
+  "files.readonlyExclude": {
+    "tfm-library/PROJECT_SPECIFIC.md": true
+  },
+
+  // ---------------------------------------------------------------------
+  // SLURM scripts are bash-on-Linux even though we edit them on Windows.
+  // LF endings are required or sbatch fails on the shebang.
+  // ---------------------------------------------------------------------
+  "[shellscript]": {
+    "files.eol": "\n"
+  },
+
+  "files.associations": {
+    "*.slurm": "shellscript"
+  },
+
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true
+}

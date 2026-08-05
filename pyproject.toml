@@ -1,0 +1,142 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crediticl"
+version = "0.1.0"
+description = "Encoding credit-risk domain knowledge into a tabular foundation model's synthetic pretraining prior"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Andreas Goethals", email = "andreas.goethals@kuleuven.be" }]
+requires-python = ">=3.11,<3.13"
+
+# ---------------------------------------------------------------------------
+# Why 3.11-3.12 and not open-ended, and not 3.11 alone.
+#
+# The goal is that the local dev environment and the VSC environment run the
+# SAME minor version, because a prior generator that samples differently on
+# two interpreters is a reproducibility hazard we would not notice.
+#
+# VSC documents exactly three Python modules (verified 2026-08-05):
+#     Python/3.11.3-GCCcore-12.3.0   (2023a toolchain)
+#     Python/3.12.3-GCCcore-13.3.0   (2024a toolchain)
+#     Python/3.13.1-GCCcore-14.2.0   (2025a toolchain)
+#
+# 3.11 is the intended floor (the brief specified it, and 2023a is the
+# best-established toolchain). The ceiling is opened to 3.12 because 3.11 is
+# NOT installed on the Windows dev machine while 3.12 IS, and 3.12.3 exists
+# on VSC — so 3.12 gives local/cluster parity today without installing a new
+# interpreter. 3.13 is excluded: torch wheel coverage there is still newer
+# than we want under a load-bearing prior generator.
+#
+# TabICL's own pyproject targets the 3.10-3.12 range, so we sit inside it.
+# ---------------------------------------------------------------------------
+
+dependencies = [
+    # --- Core numerics -----------------------------------------------------
+    # torch is deliberately loosely pinned: the correct build is
+    # platform-specific (CPU wheel locally, CUDA wheel on VSC matched to the
+    # driver), so it must be installed from the right index BEFORE this
+    # package. See README §Setup and docs/vsc.md. 2.4 is the floor because
+    # TabICLv2's architecture uses scaled_dot_product_attention paths and
+    # torch.compile behaviour that stabilised there.
+    "torch>=2.4,<3.0",
+    "numpy>=1.26,<3.0",
+    "scipy>=1.11,<2.0",
+
+    # scikit-learn is NOT optional and NOT only for baselines: TabICL's prior
+    # uses ExtraTreesRegressor for its predictability filter (see
+    # `should_filter` in TabICL's prior/_genload.py) and tree-based structural
+    # equations. Reproducing arm A requires it.
+    "scikit-learn>=1.3,<2.0",
+
+    "pandas>=2.1,<3.0",
+    "pyarrow>=15.0",          # data/raw/pd/0014.algorithmwatch.parquet
+
+    # --- Config, CLI, bookkeeping -----------------------------------------
+    "pyyaml>=6.0",            # config/**/*.yaml, per the template idiom
+    "tqdm>=4.66",
+
+    # --- Plots (results figures live in res/ and assets/) -----------------
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+# ---------------------------------------------------------------------------
+# TabICL from source, not from PyPI.
+#
+# We MODIFY the prior generator, which is the entire point of the project.
+# A pinned PyPI wheel would give us a read-only copy of exactly the code we
+# need to change, and would silently diverge from the checkpoints in
+# checkpoints/ (tabicl-{classifier,regressor}-v2-20260212.ckpt).
+#
+# Two ways to get it, deliberately kept OUT of the default dependencies so a
+# plain `pip install -e .` never reaches the network for a git repo:
+#
+#   1. `pip install -e ".[tabicl]"` — editable clone of upstream, for
+#      reading/diffing the reference prior and for the full-scale runs.
+#   2. Vendor NanoTabICL's `model.py` into src/models/ — this is the
+#      prototyping path we actually chose (see docs/experimental_design.md
+#      §Venue). NanoTabICL ships NO pretraining code, so src/train/ is ours.
+#
+# Pin by commit, never by branch, so a prior ablation stays reproducible.
+tabicl = [
+    "tabicl @ git+https://github.com/soda-inria/tabicl.git@main",
+]
+
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "ipykernel>=6.29",        # notebooks/
+]
+
+# Experiment tracking, opt-in: VSC compute nodes have no outbound internet by
+# default, so wandb must be able to run in offline mode or not at all.
+track = [
+    "wandb>=0.17",
+]
+
+[project.urls]
+Repository = "https://github.com/andreasgoethals/CreditICL"
+
+# ---------------------------------------------------------------------------
+# Packaging: src/ is a flat package root matching the faculty template
+# (src/prior, src/train, src/eval, ...) rather than a src/crediticl/ layout,
+# because the template's scripts import `from src.data...`.
+# ---------------------------------------------------------------------------
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+exclude = ["tfm-library*", "lib*", "notebooks*", "data*", "checkpoints*", "res*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# tfm-library/ is a read-only submodule — never lint, never format, never
+# touch. lib/ is third-party code used unmodified.
+extend-exclude = ["tfm-library", "lib", "notebooks", ".venv", "venv-*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "NPY"]
+ignore = [
+    "E501",    # line length is handled by the formatter
+    "B905",    # zip(strict=) noise in numeric code
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Prior code mirrors TabICL's upstream naming (trailing-underscore fitted
+# attributes, single-letter tensors X/y/T/d). Matching upstream is more
+# valuable than our own style here, since we diff against it.
+"src/prior/*" = ["N803", "N806"]
+"scripts/*" = ["E402"]      # template idiom: sys.path fixup before imports
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "slow: takes more than a few seconds (prior generation, training steps)",
+    "gpu: requires CUDA; skipped on the local Windows dev machine",
+]

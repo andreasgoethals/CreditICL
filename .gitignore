@@ -1,0 +1,91 @@
+# ---------------------------------------------------------------------------
+# Data and weights — never committed.
+#
+# data/       credit-risk datasets under varying and sometimes restrictive
+#             licences; several are not ours to redistribute.
+# checkpoints/ pretrained weights, hundreds of MB each, regenerable from
+#             the pretraining scripts.
+#
+# The .gitkeep exceptions preserve the template's folder structure so a
+# fresh clone still has somewhere to put things.
+# ---------------------------------------------------------------------------
+data/*
+!data/.gitkeep
+!data/raw/
+data/raw/*
+!data/raw/.gitkeep
+!data/processed/
+data/processed/*
+!data/processed/.gitkeep
+
+checkpoints/*
+!checkpoints/.gitkeep
+
+# Generated synthetic prior caches (can be tens of GB)
+prior_cache/
+*.npz
+*.pt
+*.ckpt
+*.safetensors
+
+# Results — keep the folder, ignore the contents except committed summaries
+res/*
+!res/.gitkeep
+!res/**/*.md
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Virtual environments (local and VSC per-architecture)
+.venv/
+venv/
+venv-*/
+env/
+ENV/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# ---------------------------------------------------------------------------
+# Experiment bookkeeping produced by the tracker pattern in scripts/
+# ---------------------------------------------------------------------------
+tracker.csv
+results.csv
+core.log
+wandb/
+slurm-*.out
+slurm-*.err
+logs/*
+!logs/.gitkeep
+
+# ---------------------------------------------------------------------------
+# Editor / OS
+# ---------------------------------------------------------------------------
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------------------------------------------------------------------------
+# NOTE: tfm-library/ is a submodule and is tracked as a commit pointer only.
+# Never add files inside it. See AGENTS.md.
+# ---------------------------------------------------------------------------
