@@ -12,8 +12,10 @@ base rate for PD, plus the filter's rejection statistics. That is the quickest
 way to see whether the credit path is doing what it claims. It is a smaller
 version of scripts/measure_prior.py.
 
-Everything here runs on CPU with tiny tables, so it is safe on a login node and
-free on the `interactive` partition.
+Tables are tiny, so this is safe on a login node and free on the `interactive`
+partition. It DOES use the GPU, AMP and a multi-worker DataLoader when a GPU is
+present, because those paths are used by the real runs and are covered nowhere
+else — otherwise the first GPU step ever taken would be inside the paid array.
 """
 
 from __future__ import annotations
@@ -68,13 +70,23 @@ def shrink(cfg: dict, steps: int) -> dict:
             "batch_size": 2,
             "micro_batch_size": 2,
             "num_quantiles": 32,
-            "amp": False,
-            "num_workers": 0,
             "log_every": 1,
             "save_temp_every": 0,
             "save_perm_every": 0,
         }
     )
+    # Exercise the SAME code paths the real runs use, where the hardware allows.
+    # AMP (bfloat16 autocast + GradScaler) and a multi-worker DataLoader are both
+    # used by the real configs and are NOT covered anywhere else, so forcing them
+    # off here would mean the first GPU step ever taken is inside the paid array.
+    import torch
+
+    has_cuda = torch.cuda.is_available()
+    train["amp"] = has_cuda
+    # Two workers, not the config's 12: enough to exercise the multiprocess
+    # DataLoader path (worker seeding, pickling, persistent_workers) without
+    # spawning a dozen processes for a three-step check.
+    train["num_workers"] = 2
     cfg["seeds"] = [0]
     return cfg
 
@@ -138,12 +150,16 @@ def main() -> int:
         print("  FAIL: LGD target left [0,1] with target_scaling='none'.", file=sys.stderr)
         return 1
 
+    import torch
+
     from src.train.loop import Trainer
 
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"[3/4] device={device}  amp={cfg['train']['amp']}  workers={cfg['train']['num_workers']}", flush=True)
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
-        trainer = Trainer(cfg, tmp, device="cpu")
+        trainer = Trainer(cfg, tmp, device=device)
         print(
-            f"[3/4] model OK: {trainer.freeze_report['trainable_params']:,} trainable / "
+            f"      model OK: {trainer.freeze_report['trainable_params']:,} trainable / "
             f"{trainer.freeze_report['total_params']:,} total "
             f"(strategy={trainer.freeze_report['strategy']})",
             flush=True,

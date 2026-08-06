@@ -12,7 +12,11 @@
 #
 #  Limits on `interactive` at KU Leuven: 1 node, 8 cores, 16 h, and 1 GPU
 #  (a 1/7-A100 MIG slice on wICE, or a full RTX 5000 Ada on Mindwell).
-#  This test is CPU-only and takes about a minute, so it fits easily.
+#  We DO request a GPU here, even though it is still free. Without one the smoke
+#  test would never exercise AMP (bfloat16 autocast + GradScaler) or a
+#  multi-worker DataLoader, which the real configs both use — so the first GPU
+#  step ever taken would be inside the paid 48-task array. On wICE `interactive`
+#  the GPU is a 1/7-A100 MIG slice, which is plenty for a 3-step check.
 # =============================================================================
 
 #SBATCH --job-name=crediticl-smoke
@@ -22,6 +26,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
+#SBATCH --gpus-per-node=1
 #SBATCH --time=00:30:00
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
@@ -50,6 +55,8 @@ python scripts/pretrain.py --config config/LGD.yaml --list | tail -3
 python scripts/pretrain.py --config config/PD.yaml  --list | tail -3
 
 echo ""
+nvidia-smi || echo '(no GPU visible — AMP path will NOT be tested)'
+
 echo "=== LGD smoke test ==="
 python scripts/smoke_test.py --task lgd --steps 3 --report
 
