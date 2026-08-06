@@ -78,7 +78,10 @@ def _shrink(cfg: dict) -> dict:
             "save_perm_every": 0,
         }
     )
-    cfg["logging"] = {"level": "WARNING", "console": False, "log_prior_every": 0}
+    # to_file=True because several tests assert on the log file's CONTENT — that
+    # is the artefact the cluster actually produces. Locally, real runs default to
+    # no file at all (see src/utils/logging_setup.setup_logging).
+    cfg["logging"] = {"level": "INFO", "console": False, "log_prior_every": 0, "to_file": True}
     return cfg
 
 

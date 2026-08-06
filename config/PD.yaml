@@ -1,27 +1,17 @@
 # =============================================================================
-# PD EXPERIMENT — everything about it is in this one file.
+# PD EXPERIMENT — Probability of Default. Rare positives, high-cardinality
+# categoricals, hard business rules, weak signal. Head: cross-entropy.
 #
-# Probability of Default: binary classification where positives are rare, some
-# categorical columns have very many levels, hard business rules shape the data,
-# and the signal is weak. Head: cross-entropy.
+# HOW TO READ THIS FILE
+#   * any setting may be a single value OR a list; a list means "one run per
+#     value", and all lists are crossed
+#   * `# S:` marks a setting left at one value, showing how to open it up
+#   * names ending in `_range` are literal [low, high] intervals, never swept
 #
-# -----------------------------------------------------------------------------
-# HOW THE SWEEP WORKS
-# -----------------------------------------------------------------------------
-# Any setting below can be a single value or a list.
-#   single value -> used as is
-#   list         -> one run per value, and all lists are combined
+#   python scripts/pretrain.py --config config/PD.yaml --list   # check the count
 #
-# ALWAYS check the count before submitting:
-#
-#     python scripts/pretrain.py --config config/PD.yaml --list
-#
-# Settings whose name ends in `_range` are a literal [low, high] interval that
-# gets sampled from. They are NOT swept. To sweep one, nest it.
-#
-# Combining is multiplicative and runs away fast: turning every setting below
-# into a 2-value list at once gives thousands of runs. Open ONE GROUP AT A TIME,
-# or you will not be able to tell which change caused which effect.
+# WHY each setting exists, and what the evidence for it is:
+#   -> docs/config_reference.md
 # =============================================================================
 
 experiment: pd
@@ -29,137 +19,97 @@ task: pd
 seeds: [0, 1, 2]
 
 # -----------------------------------------------------------------------------
-# 1. THE PRIOR — which synthetic datasets the model pretrains on
+# PRIOR
 # -----------------------------------------------------------------------------
 prior:
-  # ===========================================================================
-  # THE MAIN SWITCH: how much of the pretraining data is OURS. The rest comes
-  # from the original TabICL prior, completely unchanged.
-  #   0.0 -> 100% original (the control run)     0.2 -> 80% original
-  #   0.1 ->  90% original                       0.3 -> 70% original
-  # ===========================================================================
+  # THE MAIN SWITCH — share of pretraining datasets from OUR path.
+  # 0.0 = 100% original prior (control) | 0.3 = 70% original
   credit_fraction: [0.0, 0.1, 0.2, 0.3]
 
   n_rows_range: [512, 1024]
   n_features_range: [3, 50]
-  max_features: 64 # headroom for missing-value flags and noise columns
+  max_features: 64 # headroom for missingness flags and noise columns
   n_nodes_range: [2, 33]
   train_frac_range: [0.3, 0.9]
-  n_classes: 2 # PD is binary and our credit path assumes it
+  n_classes: 2
   max_filter_attempts: 40
 
-  # --- the ORIGINAL TabICL prior --------------------------------------------
+  # Where the training datasets come from.
+  #   generate = build them live (simple; the GPU waits on CPU generation)
+  #   pool     = read pre-generated shards (PREFERRED for the real experiment:
+  #              every arm draws its original share from the SAME files, so a
+  #              difference between arms cannot be luck of the draw)
+  # Build the pools first with scripts/generate_prior.py.
+  pool:
+    source: generate # S: [generate, pool]
+    original_variant: original
+    credit_variant: credit_v1
+
+  # TabICL's correlated sampling: datasets in a group share shape and difficulty.
+  grouping:
+    group_size: 4 # S: [1, 4]   — 1 disables grouping
+    subgroup_size: 2
+
+  # The ORIGINAL TabICL prior. Changing these changes the control arm.
   base:
     max_cat_size: 100
     category_frequency: balanced
 
-  # --- OUR new datasets ------------------------------------------------------
+  # OUR credit-targeted path.
   credit:
-    # Credit files carry columns with very many levels: US state, MSA,
-    # seller/servicer name, occupation code. Purucker 2026 found the gap where
-    # boosted trees beat these models GROWS with such columns, so this is a known
-    # weak spot worth targeting.
-    max_cat_size: 500 # sweep: [100, 500]
-
-    # balanced  -> the original's roughly even assignment
-    # power_law -> a few levels hold most of the rows and there is a long tail,
-    #              which is what real credit categoricals look like. Still
-    #              carries signal, because it is monotone in a random projection.
-    category_frequency: [balanced, power_law]
+    max_cat_size: 500 # S: [100, 500]   — credit has state, MSA, servicer, ...
+    category_frequency: [balanced, power_law] # power_law = a few levels dominate
 
     target:
-      # --- how rare the positives are ----------------------------------------
-      # Drawn log-uniformly from this range. Measured in our own files: GMSC
-      # 6.7%, Home Credit 8.1%, HMEQ 20.0%, Taiwan 22.1% — so roughly 6-22%, not
-      # the 1-5% often assumed. This range brackets that with a tail either side.
-      #
-      # WORTH KNOWING about the control arm: TabICL's v2 path (the one we use)
-      # takes the class label from the categorical converter, NOT from cutting at
-      # a random row. So the original prior's own base-rate spread is an open
-      # question. Measure it with scripts/measure_prior.py instead of guessing.
-      base_rate_range: [0.01, 0.30]
+      base_rate_range: [0.01, 0.30] # positives; real data is 6.7%-40%
+      signal_strength: [1.0, 0.6] # 1.0 = undiluted, unrealistically easy
+      flip_pos_to_neg: 0.10 # S: [0.0, 0.10]   — cures, the common direction
+      flip_neg_to_pos: 0.01 # unobserved defaults, rarer
 
-      # --- how hard the task is ---------------------------------------------
-      # Noise is mixed into the score that ASSIGNS the labels, not into what the
-      # model sees, so the features keep their distribution and only difficulty
-      # changes. Real credit PD sits around AUC 0.70-0.85, so 1.0 is the
-      # unrealistically easy end.
-      signal_strength: [1.0, 0.6]
-
-      # --- wrong labels ------------------------------------------------------
-      # Defaults that later cure get recorded as non-default far more often than
-      # the reverse. Flipping both ways equally would miss exactly the lopsided
-      # part that biases a PD model.
-      flip_pos_to_neg: 0.10 # sweep: [0.0, 0.10]
-      flip_neg_to_pos: 0.01
-
-      # --- hard business rules ----------------------------------------------
-      # Credit data is shaped by underwriting cut-offs and Basel/IFRS9
-      # thresholds — sharp `if amount >= 5000` rules that a smooth statistical
-      # prior can only blur. Caveat: this idea comes from a position paper with
-      # no experiments (Klein & Hoffart 2026), so it is the most speculative
-      # thing in this file and should be flagged as such in any write-up.
+      # Hard underwriting cut-offs (Klein & Hoffart 2026 — a position paper with
+      # no experiments, so the most speculative component here).
       rules:
-        n_rules: 3 # sweep: [0, 3]
+        n_rules: 3 # S: [0, 3]
         rule_weight_range: [0.5, 2.5]
         rule_quantile_range: [0.1, 0.9]
         conjunction_prob: 0.3
 
-      # --- you only see approved applicants ---------------------------------
-      # The book you observe has already been filtered by a score that correlates
-      # with the outcome. No general-purpose prior produces this.
+      # You only observe approved applicants (through-the-door / reject inference).
       selection:
-        selection_drop: 0.2 # sweep: [0.0, 0.2]
+        selection_drop: 0.2 # S: [0.0, 0.2]
         selection_sharpness: 0.7
 
-      # --- missing values that mean something -------------------------------
-      # A thin file is itself a risk signal, so the FACT that a value is missing
-      # carries information. The original prior has no missing values at all, and
-      # TabICLv2 fills them with the column mean at prediction time, throwing
-      # away exactly this signal.
+      # A thin file is itself a risk signal, so missingness is target-linked.
       missingness:
-        missing_col_fraction: 0.3 # sweep: [0.0, 0.3]
+        missing_col_fraction: 0.3 # S: [0.0, 0.3]
         missing_rate_range: [0.05, 0.35]
         missing_target_coupling: 1.0
         missing_indicators: true
 
-    # --- columns that carry no information ----------------------------------
-    # `shuffled` is the interesting one: same distribution as a real column, no
-    # relationship to the target, so only the relationship to y gives it away.
+    # Columns carrying no information. `shuffled` is the interesting kind.
     noise_features:
-      fraction: 0.3 # sweep: [0.0, 0.3, 0.6]
-      kind_weights:
-        pure_noise: 1.0
-        duplicate: 1.0
-        shuffled: 1.0
-        constant: 0.5
+      fraction: 0.3 # S: [0.0, 0.3, 0.6]
+      kind_weights: { pure_noise: 1.0, duplicate: 1.0, shuffled: 1.0, constant: 0.5 }
 
-  # --- which datasets get thrown away ---------------------------------------
-  # `tabicl` drops about 35% of stage-1 classification datasets.
-  # `banded` deliberately aims at credit's low-signal range.
+  # Which generated datasets get discarded.
+  # tabicl = as shipped | off = keep all | banded = target credit's signal range
   filter:
-    mode: tabicl # sweep: [tabicl, off, banded]
+    mode: tabicl # S: [tabicl, off, banded]
     quantile_band: [0.02, 0.30] # PD is lower-signal than LGD
     remove_trivial: false
     trivial_threshold: 0.1
 
 # -----------------------------------------------------------------------------
-# 2. HOW TO START — from nothing, or from existing weights
+# HOW TO START
+# scratch = random init | full = pretrained, train all | icl_only = freeze col+row
+# head_only = freeze all blocks.  Details: docs/finetuning.md
 # -----------------------------------------------------------------------------
-#   scratch   random init. DEFAULT and cleanest comparison. Use this first.
-#   full      pretrained + train everything, lr 2e-5   (TabICL v2's final stage)
-#   icl_only  pretrained + freeze column/row blocks, lr 2e-6 (v1's final stage)
-#   head_only pretrained + freeze all blocks (a floor, not a candidate)
-#
-# No LoRA: TabICL has none, and Tanna 2025 found it unstable on TabPFN.
-# Whether the released TabICLv2 checkpoints load into NanoTabICL is UNTESTED.
-# Full reasoning in docs/finetuning.md.
 init:
-  strategy: scratch # sweep: [scratch, full, icl_only]
+  strategy: scratch # S: [scratch, full, icl_only]
   pretrained_path: null
 
 # -----------------------------------------------------------------------------
-# 3. THE MODEL — identical to LGD.yaml and held FIXED across every run
+# MODEL — identical to LGD.yaml and held FIXED across every run. Do not sweep.
 # -----------------------------------------------------------------------------
 model:
   embed_dim: 128
@@ -174,10 +124,10 @@ model:
   n_cls_rows: 128
 
 # -----------------------------------------------------------------------------
-# 4. TRAINING
+# TRAINING — 10,000 steps x 4 datasets = 40,000, matching O'Prior's budget.
 # -----------------------------------------------------------------------------
 train:
-  max_steps: 10000 # 40,000 datasets at 4 per step — O'Prior's budget
+  max_steps: 10000
   batch_size: 4
   micro_batch_size: 4
   num_quantiles: 999 # unused for classification; kept so the configs match
@@ -202,26 +152,25 @@ train:
   max_temp_checkpoints: 2
 
 # -----------------------------------------------------------------------------
-# 5. LOGGING
+# LOGGING — files are written on the cluster only, never locally.
 # -----------------------------------------------------------------------------
 logging:
   level: INFO
   console: true
+  to_file: null # null = write files on the cluster only; true/false to force
   log_prior_every: 500
   log_prior_samples: 16
 
 # -----------------------------------------------------------------------------
-# 6. EVALUATION — which real datasets this experiment is scored on
+# EVALUATION — NOT YET WIRED UP. The dev/holdout split must be frozen BEFORE any
+# prior tuning; see docs/experimental_design.md §5.6.
 # -----------------------------------------------------------------------------
-# NOT YET WIRED UP. The dev/holdout split must be FROZEN before any prior tuning,
-# or we meta-overfit the way Mitra warns about. Needs Andreas's sign-off.
 eval:
   data_dir: data/raw/pd
-  dev_datasets: [] # TODO: decide and freeze
-  holdout_datasets: [] # TODO: never look at these until the end
+  dev_datasets: [] # TODO decide and freeze
+  holdout_datasets: [] # TODO never inspect until the end
   metrics: [roc_auc, pr_auc, brier, ece, log_loss, recall_at_topk]
-  # Tanna 2026 found context construction matters MORE than model choice on
-  # imbalanced credit data, so this must be identical across runs or it confounds
-  # the prior effect we are trying to measure.
+  # Tanna 2026: context construction matters MORE than model choice on imbalanced
+  # credit data, so this must be identical across runs or it confounds the result.
   context_strategy: uniform
   context_size: 5000

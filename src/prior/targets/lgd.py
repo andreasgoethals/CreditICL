@@ -1,16 +1,26 @@
 """LGD target family: bounded on [0,1] with a controlled mass at the boundaries.
 
-WHAT REAL LGD LOOKS LIKE (measured from data/raw/lgd/, 2026-08-05 — mass at
-*exactly* 0 / exactly 1):
+WHAT REAL LGD LOOKS LIKE (measured from all 7 processed LGD datasets,
+2026-08-06 — total mass at *exactly* the min or max; see
+`notebooks/data_exploration.ipynb`, which regenerates these numbers):
 
-    0006.lgd_freddie      n=16,002   11.4% / 8.1%   genuinely U-shaped
-    0007.lgd_lendingclub  n= 5,627    1.5% / 0.3%   unimodal, left-skewed, peak .80-.85
-    0003.axa (recovery)   n= 2,545    0.0% / 0.0%   fully interior
+    0001.heloc              n=58,862   73.0%   dominated by the boundaries
+    0003.axa                n= 2,545   34.2%
+    0005.base_modelisation  n=   594   27.6%
+    0004.base_model         n=   762   22.4%
+    0006.lgd_freddie        n=16,002   19.5%   genuinely U-shaped
+    0002.loss2              n= 4,637    7.3%
+    0007.lgd_lendingclub    n= 5,627    1.8%   effectively interior
 
-So the premise "bimodal with point masses at 0 and 1" holds for **one of three**
-datasets. A prior that hard-codes the Freddie shape would overfit to it and lose
-on the others. This module therefore samples a **family over boundary mass and
-interior shape**, spanning all three regimes continuously.
+So boundary mass spans **1.8% to 73%** — a factor of forty. The premise "bimodal
+with point masses at 0 and 1" is strong for about four of the seven and weak for
+the rest. A prior that hard-codes any single one of these shapes would overfit to
+it and lose on the others. This module therefore samples a **family over boundary
+mass and interior shape**, spanning the whole observed range continuously.
+
+(An earlier version of this docstring reported only three datasets and concluded
+the premise held for "one of three". That was measured before the other four were
+preprocessed, and understated the case.)
 
 THE DESIGN, and why each choice.
 

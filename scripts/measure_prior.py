@@ -86,11 +86,14 @@ def main() -> int:
         "n_sampled": args.n,
         "sources": sources,
         "features": {"mean": round(float(np.mean(n_features)), 1), "min": min(n_features), "max": max(n_features)},
-        # Scale-invariant target shape. See src/utils/target_stats.py for why the
-        # naive `(y <= 0).mean()` version is wrong on a standard-scaled target.
-        "target": summarise(stats),
         "filter": gen.filter_summary(),
     }
+    if task == "lgd":
+        # Scale-invariant target shape. See src/utils/target_stats.py for why the
+        # naive `(y <= 0).mean()` version is wrong on a standard-scaled target.
+        # Omitted for PD: on a binary target every value is a "boundary", so the
+        # numbers are trivially 1.0 and invite misreading.
+        report["target"] = summarise(stats)
 
     if task == "lgd":
         # The comparison that matters: real LGD, measured 2026-08-05.

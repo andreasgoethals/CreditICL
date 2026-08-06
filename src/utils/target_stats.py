@@ -32,8 +32,15 @@ import torch
 ATOM_MULTIPLE = 5.0
 
 
-def target_stats(y: torch.Tensor) -> dict[str, Any]:
-    """Describe a target's shape in a way that survives rescaling."""
+def target_stats(y: Any) -> dict[str, Any]:
+    """Describe a target's shape in a way that survives rescaling.
+
+    Accepts a torch tensor, a numpy array, or anything else torch can wrap. The
+    prior path hands us tensors; the data and visualisation paths hand us numpy,
+    and requiring the caller to remember which would just move the bug around.
+    """
+    if not isinstance(y, torch.Tensor):
+        y = torch.as_tensor(y)
     y = y.reshape(-1).float()
     n = int(y.numel())
     if n == 0:

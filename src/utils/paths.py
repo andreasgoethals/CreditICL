@@ -48,6 +48,22 @@ def on_vsc() -> bool:
     return bool(os.environ.get("VSC_DATA"))
 
 
+def staging_override() -> Path | None:
+    """An explicitly requested staging root, or None.
+
+    Checked separately from `staging_root` because the big-file directories below
+    otherwise short-circuit to the repo whenever we are off-VSC — which would make
+    the override silently do nothing on a laptop. It has to work off-VSC: the tests
+    point it at a temp dir, and it is the supported way to put pools on an external
+    drive instead of inside the repo.
+    """
+    for var in ("CREDITICL_STAGING_ROOT", "CREDITPFN_STAGING_ROOT", "TABPFN_STAGING_ROOT"):
+        p = _env_path(var)
+        if p:
+            return p
+    return None
+
+
 def staging_root() -> Path:
     """Project staging root — the big-file tier.
 
@@ -55,16 +71,23 @@ def staging_root() -> Path:
     and the tier distinction becomes a no-op. That keeps the same code path
     working locally without pretending `/lustre1/...` exists.
     """
-    for var in ("CREDITICL_STAGING_ROOT", "CREDITPFN_STAGING_ROOT", "TABPFN_STAGING_ROOT"):
-        p = _env_path(var)
-        if p:
-            return p
+    override = staging_override()
+    if override:
+        return override
     lustre = _env_path("VSC_PROJECT_LUSTRE1")
     if lustre:
         return lustre / "stg_00211"
     if on_vsc():
         return Path(STAGING_FALLBACK)
     return REPO_ROOT
+
+
+def _use_staging() -> bool:
+    """Should big files go to the staging tier rather than into the repo?
+
+    True on VSC, and true anywhere the override is set.
+    """
+    return on_vsc() or staging_override() is not None
 
 
 def data_root() -> Path:
@@ -115,6 +138,153 @@ def logs_dir() -> Path:
 def repo_dir() -> Path:
     """Where the code is cloned on VSC: $VSC_DATA/CreditICL (so it is backed up)."""
     return _under(data_root())
+
+
+# ---------------------------------------------------------------------------
+# Raw and processed datasets
+#
+# Search order is always REPO FIRST, then project storage. That way a laptop with
+# the datasets checked out locally works with no configuration, and on the
+# cluster the same code finds them on staging. Writing goes the other way round:
+# on the cluster, freshly processed data is written to staging so it never fills
+# $VSC_DATA's 75 GiB.
+# ---------------------------------------------------------------------------
+
+TASKS = ("pd", "lgd")
+
+
+def _check_task(task: str) -> str:
+    task = task.lower()
+    if task not in TASKS:
+        raise ValueError(f"task must be one of {TASKS}, got {task!r}")
+    return task
+
+
+def data_roots() -> list[Path]:
+    """Every root that may hold a `raw/` or `processed/` tree, repo first."""
+    roots = [REPO_ROOT / "data"]
+    if _use_staging():
+        staged = _under(staging_root(), "data")
+        if staged not in roots:
+            roots.append(staged)
+    return roots
+
+
+def raw_task_dirs(task: str) -> list[Path]:
+    """All candidate `raw/<task>` directories, in search order."""
+    task = _check_task(task)
+    return [r / "raw" / task for r in data_roots()]
+
+
+def processed_task_dirs(task: str) -> list[Path]:
+    task = _check_task(task)
+    return [r / "processed" / task for r in data_roots()]
+
+
+RAW_EXTENSIONS = (".csv", ".parquet")
+
+
+def raw_file_for(stem: Path, ext: str) -> Path:
+    """`stem` + `ext`, APPENDED — never `Path.with_suffix`.
+
+    Every dataset slug looks like `NNNN.name` ("0001.gmsc"), so pathlib reads
+    `.gmsc` as the suffix and `with_suffix(".csv")` would REPLACE it, giving
+    "0001.csv". In TabPFNCredit that silently made every lookup fail. Appending is
+    the only correct operation here.
+    """
+    return stem.parent / (stem.name + ext)
+
+
+def find_raw_path(task: str, dataset: str) -> Path | None:
+    """Return the raw dataset path **stem** (no extension), or None.
+
+    Returning a stem rather than the file is TabPFNCredit's contract, and
+    `dataset_preprocessing.py` — copied from there — depends on it: it appends
+    `.csv` / `.parquet` itself. Changing this to return the full filename gives
+    `0006.lgd_freddie.csv.csv`. Use `find_raw_file` when you want the real file.
+    """
+    task = _check_task(task)
+    for d in raw_task_dirs(task):
+        stem = d / dataset
+        if any(raw_file_for(stem, ext).is_file() for ext in RAW_EXTENSIONS):
+            return stem
+    return None
+
+
+def find_raw_file(task: str, dataset: str) -> Path | None:
+    """The actual raw file on disk, extension included. For our own code."""
+    stem = find_raw_path(task, dataset)
+    if stem is None:
+        return None
+    for ext in RAW_EXTENSIONS:
+        candidate = raw_file_for(stem, ext)
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def find_processed_dir(task: str, dataset: str) -> Path | None:
+    """Return an existing processed directory for this dataset, or None.
+
+    A directory only counts as processed once its `meta.json` exists. That file is
+    written LAST, so a run interrupted halfway through leaves an incomplete
+    directory that is correctly treated as absent rather than silently reused.
+    """
+    task = _check_task(task)
+    for d in processed_task_dirs(task):
+        candidate = d / dataset
+        if (candidate / "meta.json").is_file():
+            return candidate
+    return None
+
+
+def processed_write_dir(task: str, dataset: str) -> Path:
+    """Where to WRITE freshly processed data.
+
+    On the cluster this is project storage, so processed datasets never eat into
+    the backed-up 75 GiB of `$VSC_DATA`. Locally it is the repo's own
+    `data/processed/`.
+    """
+    task = _check_task(task)
+    if _use_staging():
+        return _under(staging_root(), "data", "processed", task, dataset)
+    return REPO_ROOT / "data" / "processed" / task / dataset
+
+
+def prior_cache_dir(name: str) -> Path:
+    """Where a pre-generated pool of synthetic datasets lives. BIG -> staging.
+
+    Pools are the largest thing this project writes (40,000 datasets per variant),
+    so `$CREDITICL_STAGING_ROOT` is honoured off-VSC too — otherwise they land
+    inside the repo, which is exactly where they must not be.
+    """
+    if _use_staging():
+        return _under(staging_root(), "prior_cache", name)
+    return REPO_ROOT / "prior_cache" / name
+
+
+# ---------------------------------------------------------------------------
+# Results
+#
+# Layout: results/<task>/<pipeline>/ — task first, then pipeline.
+# `logs/` is for information only and never holds results; that separation is
+# deliberate so a results file is always something you meant to keep.
+# ---------------------------------------------------------------------------
+
+PIPELINES = ("data", "prior", "training", "eval")
+
+
+def results_dir(task: str | None = None, pipeline: str | None = None) -> Path:
+    """results/ , results/<task>/ or results/<task>/<pipeline>/."""
+    root = REPO_ROOT / "results"
+    if task is None:
+        return root
+    task = _check_task(task)
+    if pipeline is None:
+        return root / task
+    if pipeline not in PIPELINES:
+        raise ValueError(f"pipeline must be one of {PIPELINES}, got {pipeline!r}")
+    return root / task / pipeline
 
 
 def resolve_writable(preferred: Path, fallback: Path | None = None) -> Path:

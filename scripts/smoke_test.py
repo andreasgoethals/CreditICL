@@ -111,13 +111,18 @@ def report_prior(cfg: dict, task: str, n: int = 24) -> dict:
         "sampled": n,
         "rows_min_max": [min(rows), max(rows)],
         "features_min_max": [min(widths), max(widths)],
-        "target": summarise(stats),
         "filter": gen.filter_summary(),
     }
     if task == "pd":
+        # NOT target_stats here. For a binary target every value sits on a
+        # "boundary", so boundary_mass_mean is always exactly 1.0 and
+        # distinct_fraction is 2/n — numbers that look meaningful and are not.
+        # The base rate is the quantity that actually matters for PD.
         out["base_rate_mean"] = round(sum(rates) / len(rates), 4)
         out["base_rate_min"] = round(min(rates), 4)
         out["base_rate_max"] = round(max(rates), 4)
+    else:
+        out["target"] = summarise(stats)
     return out
 
 

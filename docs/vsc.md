@@ -382,6 +382,44 @@ python -m scripts.pretrain --config "config/priors/${PRIOR_ARM}.yaml" \
                            --resume auto
 ```
 
+### The whole pipeline as one dependency chain
+
+One command submits everything and you can log out:
+
+```bash
+bash scripts/submit_pipeline.sh both
+```
+
+Five stages, each on the hardware it actually needs:
+
+| # | stage | where | shape | why |
+|---|---|---|---|---|
+| 1 | preprocess | 1 CPU node | single job | 21 datasets in pandas; minutes, no GPU |
+| 2 | prior pools | CPU nodes | **2 arrays × 20 tasks** | generation is CPU-bound (ExtraTrees fits); a GPU here would idle |
+| 3 | verify | 1 CPU task | single job | the gate: equal, complete pools or the chain stops |
+| 4 | pretrain | GPU | array over the config grid | the only stage that needs a GPU |
+| 5 | evaluate | 1 GPU node | single job | baselines + our checkpoints on real data |
+
+Three scheduling choices worth knowing about:
+
+* **The two variants are separate array jobs.** `original` and `credit_v1` do not
+  depend on each other, so submitting them separately makes 40 tasks eligible at
+  once instead of 20-then-20. Slurm backfills small CPU tasks readily, so this is
+  close to free parallelism.
+* **`afterok` on an array job waits for every task.** That is what makes stage 3
+  meaningful: if one of 40 shards dies, training never starts, instead of training
+  on a pool that is quietly 2,000 datasets short.
+* **Stage 5 uses `afterany`, not `afterok`.** If 2 of 48 training runs fail we still
+  want the numbers for the 46 that finished.
+
+Prior generation pins `OMP_NUM_THREADS=1`. The parallelism is the array, not the
+maths; without the pin, 8 concurrent shards each spawning 8 BLAS threads
+oversubscribe the node and every task slows down together.
+
+Each array task also sleeps a random 1–20 s before starting. Twenty tasks opening
+the same repo simultaneously is a metadata storm, and Lustre punishes many small
+concurrent opens far harder than it punishes reads.
+
 ### Fanning the prior arms out in parallel (array job)
 
 Since credits are not the binding constraint and parallelism is, one array

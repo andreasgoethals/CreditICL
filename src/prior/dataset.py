@@ -39,6 +39,30 @@ class PriorBatchDataset(IterableDataset):
         self.batch_size = batch_size
         self.seed = seed
         self.train_frac_range = tuple(prior_cfg.get("train_frac_range", [0.3, 0.9]))
+        # source: "generate" (live) or "pool" (read pre-generated shards)
+        self.pool_cfg = prior_cfg.get("pool", {}) or {}
+        self.source = str(self.pool_cfg.get("source", "generate"))
+        if self.source not in ("generate", "pool"):
+            raise ValueError(f"prior.pool.source must be 'generate' or 'pool', got {self.source!r}")
+
+    def _make_pool_sampler(self):
+        """Read pre-generated pools instead of generating live.
+
+        Preferred for the real experiment: every arm then draws its original-prior
+        share from the SAME files, so an arm-to-arm difference cannot come from the
+        luck of the draw. See src/prior/pool.py.
+        """
+        from src.prior.pool import MixedPoolSampler
+
+        info = get_worker_info()
+        worker_id = 0 if info is None else info.id
+        return MixedPoolSampler(
+            self.task,
+            float(self.prior_cfg.get("credit_fraction", 0.0)),
+            PriorRNG(self.seed, worker_id=worker_id),
+            original_variant=self.pool_cfg.get("original_variant", "original"),
+            credit_variant=self.pool_cfg.get("credit_variant", "credit_v1"),
+        )
 
     def _make_generator(self) -> TaskGenerator:
         info = get_worker_info()
@@ -47,9 +71,37 @@ class PriorBatchDataset(IterableDataset):
         return TaskGenerator(self.prior_cfg, self.task, rng)
 
     def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor, int]]:
-        gen = self._make_generator()
-        while True:
-            yield self._sample_batch(gen)
+        if self.source == "pool":
+            sampler = self._make_pool_sampler()
+            while True:
+                yield self._sample_batch_from_pool(sampler)
+        else:
+            gen = self._make_generator()
+            while True:
+                yield self._sample_batch(gen)
+
+    def _sample_batch_from_pool(self, sampler) -> tuple[torch.Tensor, torch.Tensor, int]:
+        """Assemble a batch from pooled episodes.
+
+        Pooled episodes have whatever shape they were generated with, so a batch is
+        built by taking the SMALLEST row count and narrowest width in the draw and
+        trimming to it. Trimming rather than padding keeps every value real; the
+        alternative would feed the model zero-padded rows that never existed.
+        """
+        drawn = [sampler.sample() for _ in range(self.batch_size)]
+        n_rows = min(int(x.shape[0]) for x, _, _ in drawn)
+        width = min(int(x.shape[1]) for x, _, _ in drawn)
+
+        lo, hi = self.train_frac_range
+        train_size = int(round(n_rows * sampler.rng.uniform(lo, hi)))
+        train_size = max(8, min(n_rows - 4, train_size))
+
+        X = torch.zeros(self.batch_size, n_rows, width)
+        y = torch.zeros(self.batch_size, n_rows)
+        for i, (xi, yi, _) in enumerate(drawn):
+            X[i] = xi[:n_rows, :width]
+            y[i] = yi[:n_rows]
+        return X, y, train_size
 
     def _sample_batch(self, gen: TaskGenerator) -> tuple[torch.Tensor, torch.Tensor, int]:
         n_rows, n_features = gen.sample_shape()

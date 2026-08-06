@@ -21,17 +21,37 @@ data/processed/*
 checkpoints/*
 !checkpoints/.gitkeep
 
-# Generated synthetic prior caches (can be tens of GB)
+# Generated synthetic prior caches (tens of GB; live on project storage on VSC)
 prior_cache/
 *.npz
 *.pt
 *.ckpt
 *.safetensors
 
-# Results — keep the folder, ignore the contents except committed summaries
-res/*
-!res/.gitkeep
-!res/**/*.md
+# Processed datasets. Regenerable from data/raw via scripts/preprocess.py, and on
+# the cluster they live on project storage rather than here.
+data/processed/**/*.npy
+data/processed/**/*.json
+
+# ---------------------------------------------------------------------------
+# Results.
+#
+# results/<task>/<pipeline>/ holds the OFFICIAL outputs and small summaries ARE
+# committed — they are the record of what was run, and a few hundred KB of CSV is
+# worth having in git history. Large arrays go to project storage instead.
+#
+# logs/ is purely informational and never holds results, so it is fully ignored.
+# res/ is the old scratch output dir, kept ignored for local runs.
+# ---------------------------------------------------------------------------
+results/**/*.npy
+results/**/*.npz
+results/**/*.parquet
+results/**/*.pkl
+
+# res/ — local scratch output (checkpoints, figures from the notebooks). The comment
+# above claimed this was ignored but no pattern actually matched it, so notebook
+# figures showed up as untracked files. Regenerate rather than commit.
+res/
 
 # ---------------------------------------------------------------------------
 # Python

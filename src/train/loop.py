@@ -77,6 +77,8 @@ class Trainer:
             log_dir or (self.out_dir / "logs"),
             level=str(lcfg.get("level", "INFO")),
             console=bool(lcfg.get("console", True)),
+            # None => write files on the cluster, not locally.
+            to_file=lcfg.get("to_file"),
         )
         self.log_prior_every = int(lcfg.get("log_prior_every", 0))
         self.log_prior_samples = int(lcfg.get("log_prior_samples", 16))
@@ -102,11 +104,37 @@ class Trainer:
         # run or machine produced it.
         log_section(self.log, f"CreditICL — {self.task.upper()} — {cfg.get('_run_name', '?')}")
         log_environment(self.log, {"device": self.device, "task": self.task, "seed": self.seed})
-        self.log.info("levers: %s", json.dumps(cfg.get("_grid", {}).get("assignments", {}), default=str))
+        grid_levers = cfg.get("_grid", {}).get("assignments", {})
+        self.log.info("grid levers: %s", json.dumps(grid_levers, default=str))
+        actual_cf = cfg["prior"].get("credit_fraction")
+        grid_cf = grid_levers.get("prior.credit_fraction")
+        note = ""
+        if grid_cf is not None and grid_cf != actual_cf:
+            # The smoke test overrides this after the grid is expanded. Say so,
+            # rather than printing two different numbers and looking broken.
+            note = f"  (OVERRIDDEN after grid expansion; grid said {grid_cf})"
         self.log.info(
-            "credit_fraction: %s  (share of datasets from OUR prior; the rest are the original)",
-            cfg["prior"].get("credit_fraction"),
+            "credit_fraction IN USE: %s%s  — share of datasets from OUR prior, rest are original",
+            actual_cf, note,
         )
+        # Which prior source is in use is the first thing you want from a log when a
+        # run looks wrong: "pool" and "generate" produce different task streams.
+        pool_cfg = cfg["prior"].get("pool", {}) or {}
+        source = pool_cfg.get("source", "generate")
+        if source == "pool":
+            from ..prior.pool import pool_status
+
+            for label, variant in (
+                ("original", pool_cfg.get("original_variant", "original")),
+                ("credit", pool_cfg.get("credit_variant", "credit_v1")),
+            ):
+                st = pool_status(self.task, variant)
+                self.log.info(
+                    "prior source: POOL  %-8s %-12s %s datasets, %s shards, complete=%s",
+                    label, variant, st["n_datasets"], st["shards"], st.get("complete"),
+                )
+        else:
+            self.log.info("prior source: GENERATE (datasets built live on the fly)")
         self.log.info("outputs     -> %s", self.out_dir)
         self.log.info("checkpoints -> %s", self.ckpt_dir)
         self.log.info("log file    -> %s", self.log_path)

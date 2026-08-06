@@ -1,0 +1,34 @@
+{
+  "variant": "original",
+  "task": "lgd",
+  "shard_index": 1,
+  "n_shards": 2,
+  "n_datasets": 30,
+  "seed": 0,
+  "pool_version": 1,
+  "credit_fraction": 0.0,
+  "sources": {
+    "base": 30,
+    "credit": 0
+  },
+  "filter_stats": {
+    "attempts": 53.0,
+    "accepted": 29.0,
+    "rejection_rate": 0.4528301886792453,
+    "rejected_unpredictable": 24.0,
+    "rejected_trivial": 0.0,
+    "rejected_band": 0.0,
+    "pseudo_r2_mean": 0.38019450398239313,
+    "pseudo_r2_p10": -0.17527037190332864,
+    "pseudo_r2_p50": 0.4150190236133543,
+    "pseudo_r2_p90": 0.9774518739357632
+  },
+  "group_stats": {
+    "grouping_enabled": true,
+    "group_size": 4,
+    "subgroup_size": 2,
+    "groups_drawn": 14,
+    "subgroups_drawn": 27
+  },
+  "seconds": 1.2
+}

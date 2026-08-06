@@ -42,11 +42,18 @@ class _FlushingFileHandler(logging.FileHandler):
 
 
 class MetricsWriter:
-    """Append-only JSON-lines sink for numbers."""
+    """Append-only JSON-lines sink for numbers.
 
-    def __init__(self, path: Path):
+    `enabled=False` writes nothing but still keeps the records in memory, so a
+    local run can inspect `.records` without leaving files behind.
+    """
+
+    def __init__(self, path: Path, *, enabled: bool = True):
         self.path = path
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.enabled = enabled
+        self.records: list[dict[str, Any]] = []
+        if enabled:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
         self._t0 = time.time()
 
     def write(self, record: dict[str, Any]) -> None:
@@ -55,6 +62,9 @@ class MetricsWriter:
             "elapsed_s": round(time.time() - self._t0, 2),
             **record,
         }
+        self.records.append(record)
+        if not self.enabled:
+            return
         with open(self.path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, default=str) + "\n")
 
@@ -65,13 +75,26 @@ def setup_logging(
     *,
     level: str = "INFO",
     console: bool = True,
+    to_file: bool | None = None,
 ) -> tuple[logging.Logger, MetricsWriter, Path]:
     """Create the logger and metrics writer for one run.
 
-    Returns (logger, metrics writer, log file path).
+    `to_file` defaults to **True on the cluster and False locally**. The log files
+    exist so a run on VSC can be debugged from its output alone; running something
+    on a laptop should not litter `logs/` with files nobody will read. Set it
+    explicitly to override either way.
+
+    Returns (logger, metrics writer, log file path — which may not exist when
+    `to_file` is False).
     """
+    from src.utils.paths import on_vsc
+
+    if to_file is None:
+        to_file = on_vsc()
+
     log_dir = Path(log_dir)
-    log_dir.mkdir(parents=True, exist_ok=True)
+    if to_file:
+        log_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Keep the filename usable: a long grid tag would otherwise blow past
@@ -90,16 +113,17 @@ def setup_logging(
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    fh = _FlushingFileHandler(log_path, encoding="utf-8")
-    fh.setFormatter(fmt)
-    logger.addHandler(fh)
+    if to_file:
+        fh = _FlushingFileHandler(log_path, encoding="utf-8")
+        fh.setFormatter(fmt)
+        logger.addHandler(fh)
 
     if console:
         sh = logging.StreamHandler(sys.stdout)
         sh.setFormatter(fmt)
         logger.addHandler(sh)
 
-    return logger, MetricsWriter(metrics_path), log_path
+    return logger, MetricsWriter(metrics_path, enabled=to_file), log_path
 
 
 def get_logger() -> logging.Logger:

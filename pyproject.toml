@@ -92,6 +92,24 @@ dev = [
     "ipykernel>=6.29",        # notebooks/
 ]
 
+# ---------------------------------------------------------------------------
+# Baselines for the evaluation pipeline.
+#
+# These are ONLY used to score our pretrained models against established
+# alternatives on the real credit datasets. None of them is modified, and in
+# particular TabPFN's prior is never touched — the whole point of this project is
+# that we alter TabICL's prior, and TabPFN-3 is here purely as a reference point.
+#
+# `tabicl` appears here as well as in the [tabicl] extra: eval needs the released
+# v2 checkpoints (inference only), while the [tabicl] extra is for reading and
+# diffing the upstream prior generator.
+# ---------------------------------------------------------------------------
+eval = [
+    "catboost>=1.2",          # the GBDT baseline every credit paper reports
+    "tabpfn>=2.0",            # TabPFN v2 / v3 inference (open weights)
+    "tabicl>=2.0",            # released TabICLv2 checkpoints, inference only
+]
+
 # Experiment tracking, opt-in: VSC compute nodes have no outbound internet by
 # default, so wandb must be able to run in offline mode or not at all.
 track = [
@@ -130,6 +148,12 @@ extend-exclude = [
     # The faculty template's own sample script. Left exactly as shipped so the
     # template stays a usable reference; its ASCII-art docstring trips W605.
     "scripts/example_script.py",
+    # COPIED VERBATIM from the sibling TabPFNCredit project, where these
+    # per-dataset recipes were developed and validated. Reformatting them would
+    # make the two copies diff-noisy for no benefit, and the whole point is that
+    # they stay comparable. Fix bugs in BOTH projects, not just here.
+    "src/data/dataset_preprocessing.py",
+    "src/data/dataset_registry.py",
 ]
 
 [tool.ruff.lint]

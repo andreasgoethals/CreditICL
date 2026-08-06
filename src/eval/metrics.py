@@ -1,0 +1,214 @@
+"""Metrics for LGD (bounded regression) and PD (imbalanced classification).
+
+The choice of metric is not neutral here, and two traps are worth naming.
+
+**LGD: never lead with a single number from a point prediction.** The target is
+often two-humped, with mass at 0 and at 1 and little in between. The mean and the
+median of such a distribution both land in the empty middle, so a point prediction
+is a value the data almost never takes. R^2 and RMSE are still reported, because
+the LGD literature reports them and we need comparability (published R^2 is about
+0.04-0.15 for linear models, 0.10-0.25 for beta models, 0.20-0.43 for tree
+ensembles), but they are reported *alongside* distributional metrics, and the
+decoding rule that produced the point prediction is always recorded.
+
+`boundary_mass_error` is the metric that most directly tests this project's
+hypothesis, and no paper in the library reports it: does the model predict the
+right *amount* of mass at 0 and at 1?
+
+**PD: never lead with accuracy.** At a 7% base rate, predicting "no default" for
+everyone scores 93%. Accuracy is computed and reported only so that a reader who
+looks for it sees it next to the base rate and understands why it is useless here.
+Ranking (ROC-AUC, PR-AUC) and calibration (Brier, ECE, log-loss) are what matter,
+and PR-AUC is the more honest of the two ranking metrics under heavy imbalance.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+
+EPS = 1e-12
+
+
+# ---------------------------------------------------------------------------
+# LGD
+# ---------------------------------------------------------------------------
+
+
+def pinball_loss(y_true: np.ndarray, q_pred: np.ndarray, levels: np.ndarray) -> float:
+    """Mean pinball loss. `q_pred` is (n, n_levels) aligned with `levels`."""
+    y_true = np.asarray(y_true, dtype=float).reshape(-1, 1)
+    q_pred = np.asarray(q_pred, dtype=float)
+    levels = np.asarray(levels, dtype=float).reshape(1, -1)
+    err = y_true - q_pred
+    return float(np.maximum(levels * err, (levels - 1.0) * err).mean())
+
+
+def crps_from_quantiles(y_true: np.ndarray, q_pred: np.ndarray, levels: np.ndarray) -> float:
+    """CRPS approximated from a quantile grid.
+
+    The mean pinball loss over a uniform grid of levels converges to CRPS/2 as the
+    grid gets finer, so this is 2 x mean pinball. With 999 levels the
+    approximation is tight; the factor is applied so the number is comparable to
+    CRPS values reported elsewhere.
+    """
+    return 2.0 * pinball_loss(y_true, q_pred, levels)
+
+
+def interval_coverage(y_true: np.ndarray, lo: np.ndarray, hi: np.ndarray) -> float:
+    """Fraction of observations inside [lo, hi]. Compare to the nominal level."""
+    y_true = np.asarray(y_true, dtype=float)
+    return float(np.mean((y_true >= np.asarray(lo)) & (y_true <= np.asarray(hi))))
+
+
+def boundary_mass_error(y_true: np.ndarray, y_pred: np.ndarray, tol: float = 1e-6) -> dict[str, float]:
+    """Does the model predict the right amount of mass at 0 and at 1?
+
+    The metric this project exists to move, and one nothing in the library
+    reports. Positive error means the model predicts too much boundary mass.
+    """
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    true_0 = float(np.mean(y_true <= tol))
+    true_1 = float(np.mean(y_true >= 1.0 - tol))
+    pred_0 = float(np.mean(y_pred <= tol))
+    pred_1 = float(np.mean(y_pred >= 1.0 - tol))
+    return {
+        "true_mass_at_0": true_0,
+        "true_mass_at_1": true_1,
+        "pred_mass_at_0": pred_0,
+        "pred_mass_at_1": pred_1,
+        "boundary_mass_err_0": pred_0 - true_0,
+        "boundary_mass_err_1": pred_1 - true_1,
+        "boundary_mass_abs_err": abs(pred_0 - true_0) + abs(pred_1 - true_1),
+    }
+
+
+def lgd_metrics(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    *,
+    quantiles: np.ndarray | None = None,
+    levels: np.ndarray | None = None,
+    decoding: str = "unknown",
+) -> dict[str, float | str]:
+    """Everything we report for an LGD prediction."""
+    y_true = np.asarray(y_true, dtype=float).ravel()
+    y_pred = np.asarray(y_pred, dtype=float).ravel()
+
+    resid = y_true - y_pred
+    ss_res = float(np.sum(resid**2))
+    ss_tot = float(np.sum((y_true - y_true.mean()) ** 2))
+
+    out: dict[str, float | str] = {
+        "n_test": int(y_true.size),
+        "decoding": decoding,
+        "rmse": float(np.sqrt(np.mean(resid**2))),
+        "mae": float(np.mean(np.abs(resid))),
+        # Can be negative when the model is worse than predicting the mean. That is
+        # informative on low-signal credit data, not an error — do not clip it.
+        "r2": float(1.0 - ss_res / (ss_tot + EPS)),
+        "pred_min": float(y_pred.min()),
+        "pred_max": float(y_pred.max()),
+        "pred_out_of_unit": float(np.mean((y_pred < -1e-6) | (y_pred > 1 + 1e-6))),
+    }
+    out.update(boundary_mass_error(y_true, y_pred))
+
+    if quantiles is not None and levels is not None:
+        q = np.asarray(quantiles, dtype=float)
+        lv = np.asarray(levels, dtype=float)
+        out["pinball"] = pinball_loss(y_true, q, lv)
+        out["crps"] = crps_from_quantiles(y_true, q, lv)
+        for nominal in (0.5, 0.8, 0.9):
+            lo_l, hi_l = (1 - nominal) / 2, 1 - (1 - nominal) / 2
+            lo = q[:, int(np.argmin(np.abs(lv - lo_l)))]
+            hi = q[:, int(np.argmin(np.abs(lv - hi_l)))]
+            out[f"coverage_{int(nominal * 100)}"] = interval_coverage(y_true, lo, hi)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# PD
+# ---------------------------------------------------------------------------
+
+
+def expected_calibration_error(y_true: np.ndarray, p: np.ndarray, n_bins: int = 15) -> float:
+    """ECE with equal-width bins.
+
+    Reported because calibration is, per the library synthesis, "claimed
+    everywhere and measured almost nowhere" — and for a PD model the probability
+    is the product, not the ranking.
+    """
+    y_true = np.asarray(y_true, dtype=float).ravel()
+    p = np.clip(np.asarray(p, dtype=float).ravel(), 0.0, 1.0)
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    idx = np.clip(np.digitize(p, edges[1:-1], right=True), 0, n_bins - 1)
+    ece = 0.0
+    for b in range(n_bins):
+        m = idx == b
+        if not m.any():
+            continue
+        ece += (m.mean()) * abs(y_true[m].mean() - p[m].mean())
+    return float(ece)
+
+
+def recall_at_top_k(y_true: np.ndarray, p: np.ndarray, k_frac: float) -> float:
+    """Of all true defaults, how many are in the riskiest `k_frac` of the book?
+
+    The metric a credit team actually acts on: if you can only review 5% of
+    applications, what share of the bad ones do you catch?
+    """
+    y_true = np.asarray(y_true, dtype=float).ravel()
+    p = np.asarray(p, dtype=float).ravel()
+    n_pos = float(y_true.sum())
+    if n_pos == 0:
+        return float("nan")
+    k = max(1, int(round(k_frac * y_true.size)))
+    top = np.argsort(-p)[:k]
+    return float(y_true[top].sum() / n_pos)
+
+
+def pd_metrics(y_true: np.ndarray, p: np.ndarray) -> dict[str, float]:
+    """Everything we report for a PD prediction."""
+    from sklearn.metrics import (
+        average_precision_score,
+        brier_score_loss,
+        log_loss,
+        roc_auc_score,
+    )
+
+    y_true = np.asarray(y_true, dtype=float).ravel()
+    p = np.clip(np.asarray(p, dtype=float).ravel(), EPS, 1 - EPS)
+    base_rate = float(y_true.mean())
+
+    out: dict[str, float] = {
+        "n_test": int(y_true.size),
+        "base_rate": base_rate,
+        # Reported next to the base rate ON PURPOSE. At a 7% base rate, 0.93
+        # accuracy is what you get for predicting "never defaults", so seeing the
+        # two side by side is the only honest way to show this number.
+        "accuracy_at_0.5": float(np.mean((p >= 0.5) == (y_true >= 0.5))),
+        "majority_class_accuracy": max(base_rate, 1 - base_rate),
+        "brier": float(brier_score_loss(y_true, p)),
+        "log_loss": float(log_loss(y_true, p, labels=[0, 1])),
+        "ece": expected_calibration_error(y_true, p),
+        # A model that just predicts the base rate for everyone. Any log-loss
+        # above this is worse than knowing nothing but the average.
+        "log_loss_base_rate": float(
+            -(base_rate * np.log(max(base_rate, EPS)) + (1 - base_rate) * np.log(max(1 - base_rate, EPS)))
+        ),
+        "mean_predicted": float(p.mean()),
+        "calibration_bias": float(p.mean() - base_rate),
+    }
+
+    if 0.0 < base_rate < 1.0:
+        out["roc_auc"] = float(roc_auc_score(y_true, p))
+        out["pr_auc"] = float(average_precision_score(y_true, p))
+        # PR-AUC of a random model equals the base rate, so the lift over it is
+        # the interpretable version under heavy imbalance.
+        out["pr_auc_lift"] = out["pr_auc"] / max(base_rate, EPS)
+        for k in (0.01, 0.05, 0.10, 0.20):
+            out[f"recall_at_top_{int(k * 100)}pct"] = recall_at_top_k(y_true, p, k)
+    else:
+        out["roc_auc"] = float("nan")
+        out["pr_auc"] = float("nan")
+    return out

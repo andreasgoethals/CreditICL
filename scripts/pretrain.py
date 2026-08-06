@@ -38,6 +38,13 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true", help="resolve the config and exit without training")
     ap.add_argument("--max-steps", type=int, default=None, help="override train.max_steps (for smoke tests)")
     ap.add_argument("--device", default=None, help="cuda | cpu (default: cuda if available)")
+    ap.add_argument(
+        "--prior-source",
+        choices=["generate", "pool"],
+        default=None,
+        help="override prior.pool.source. 'pool' reads pre-generated shards and is "
+        "what the SLURM chain uses; 'generate' builds datasets live.",
+    )
     args = ap.parse_args()
 
     cfg = load_yaml(args.config)
@@ -65,6 +72,8 @@ def main() -> int:
     run = runs[index]
     if args.max_steps is not None:
         run.setdefault("train", {})["max_steps"] = args.max_steps
+    if args.prior_source is not None:
+        run.setdefault("prior", {}).setdefault("pool", {})["source"] = args.prior_source
 
     # Two storage tiers, same split CreditPFN uses (see src/utils/paths.py):
     #   metrics / logs / resolved config -> $VSC_DATA  (small, backed up)
@@ -95,6 +104,8 @@ def main() -> int:
     print(f"outputs     : {out_dir}", flush=True)
     print(f"checkpoints : {ckpt_dir}", flush=True)
     print(f"logs        : {log_dir}", flush=True)
+    _pool = run.get("prior", {}).get("pool", {}) or {}
+    print(f"prior source: {_pool.get('source', 'generate')}", flush=True)
 
     if args.dry_run:
         print("dry run: config resolved, nothing trained.", flush=True)

@@ -78,9 +78,13 @@ python scripts/smoke_test.py --task pd --steps 2 || {
     exit 1
 }
 
+# --prior-source pool: read the shards built by stage 2 of the chain. Every arm
+# then draws its original-prior share from the SAME files, so a difference between
+# arms cannot be luck of the draw. Set PRIOR_SOURCE=generate to build them live.
 python -u scripts/pretrain.py \
     --config config/PD.yaml \
-    --index "${SLURM_ARRAY_TASK_ID}"
+    --index "${SLURM_ARRAY_TASK_ID}" \
+    --prior-source "${PRIOR_SOURCE:-pool}"
 
 mkdir -p "${CREDITICL_OUTPUT_ROOT}/.sentinels"
 touch "${CREDITICL_OUTPUT_ROOT}/.sentinels/pretrain_ok_pd_${SLURM_ARRAY_TASK_ID}"

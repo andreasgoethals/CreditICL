@@ -81,20 +81,87 @@ them to pre-empt the reviewer question.
 
 ---
 
-## Experimental design in one page
+## The four pipelines
 
-Full version: [`docs/experimental_design.md`](docs/experimental_design.md).
+Each one lives in `src/`, is driven by a thin runnable in `scripts/`, logs to
+`logs/`, and writes its official output to `results/<task>/<pipeline>/`.
 
-**Three phases.**
+| # | pipeline | code | run it with | what it produces |
+|---|---|---|---|---|
+| 1 | **data** | `src/data/` | `scripts/preprocess.py` | processed datasets in the cache |
+| 2 | **prior** | `src/prior/` | `scripts/measure_prior.py` | the synthetic task stream, and reports on it |
+| 3 | **training** | `src/train/` | `scripts/pretrain.py` | one checkpoint per prior arm |
+| 4 | **eval** | `src/eval/` | `scripts/evaluate.py` | scores on the 21 real credit datasets |
 
-1. **Prior** — a configurable synthetic-task generator (`src/prior/`) that
-   reproduces the TabICLv2 prior *exactly* as one named variant, then adds
-   independently-gated components on top.
-2. **Pretrain** — the same TabICLv2 transformer architecture trained on each
-   prior variant under a matched budget (`src/train/`), one checkpoint per
-   variant.
-3. **Evaluate** — compare the resulting checkpoints against each other, and
-   against classical baselines, on our LGD and PD datasets (`src/eval/`).
+Pipeline 2 is the biggest and the actual research contribution. Pipeline 1 exists
+only to feed pipeline 4.
+
+**`logs/` is for information, never for results.** If a file matters, it goes in
+`results/`. That split is deliberate: it means anything in `results/` is something
+you meant to keep.
+
+### 1. Data
+
+Per-dataset recipes (which columns are IDs, which leak the target, which need log
+or clip transforms) are **copied from the sibling TabPFNCredit project**, where
+they were developed and validated. Fix bugs in both or they will silently diverge.
+
+The cache is **one parquet file per dataset** plus `meta.json`. Parquet rather than
+`.npy` because it keeps column names and which columns are categorical — CatBoost and
+TabPFN both need the categorical indices, and an array format cannot carry them. It is
+also far smaller (17 MB vs 149 MB on Home Credit) in fewer files, which matters because
+project storage has a low inode budget.
+
+`meta.json` is written **last** and is the completeness marker, so an interrupted run
+leaves a directory that correctly reads as absent rather than as done. Writes are
+atomic, because on the cluster several array tasks can preprocess the same dataset at
+once.
+
+The eval pipeline preprocesses whatever is missing on demand, so one command works
+from a fresh clone.
+
+### 2. Prior
+
+See [`docs/experimental_design.md`](docs/experimental_design.md). The mixture lever
+`credit_fraction` sets the share of datasets from our credit-targeted path; the
+rest come from the unmodified TabICL prior. Defaults sweep `0.0 / 0.1 / 0.2 / 0.3`,
+i.e. 70–90% original plus a control arm.
+
+Datasets are **generated once into one folder per variant** and training samples
+from them (`src/prior/pool.py`): `lgd__original/` holds the unmodified TabICL prior
+and is shared by every arm, `lgd__credit_v1/` holds ours. So a difference between
+arms cannot come from the luck of the draw, and generation runs on cheap CPU nodes
+instead of making a GPU wait.
+
+Two notebooks, both with all logic in `src/visualize/`:
+`prior_visualisation.ipynb` draws 100 tasks the way training does;
+`data_exploration.ipynb` measures the real datasets the prior is aimed at.
+
+### 3. Training
+
+The same TabICLv2 architecture on each prior variant under a matched budget. One
+checkpoint per (arm × seed). Adaptation strategy — train from scratch, or
+fine-tune with parts frozen — is `init.strategy`; see
+[`docs/finetuning.md`](docs/finetuning.md).
+
+### 4. Eval
+
+Five baselines on all 21 datasets: **ridge/logistic regression** (the floor),
+**CatBoost** (the GBDT every credit paper reports), **TabPFN-3**, and
+**TabICLv2**. None of them is modified — in particular TabPFN's prior is never
+touched; it is a yardstick.
+
+LGD reports pinball/CRPS, interval coverage, **boundary-mass calibration**, and R²
+and RMSE alongside. (A rough literature range of R² ≈ 0.04–0.43 across linear, beta
+and tree models circulates in this project's notes, but it comes from the project
+brief rather than a source I have verified — do not cite it without checking.) PD reports ROC-AUC, PR-AUC, Brier, ECE, log-loss and
+recall-at-top-k — **never accuracy alone**, since at a 7% base rate predicting
+"never defaults" already scores 0.93.
+
+Row and feature caps are applied to the in-context models (they are built for
+about 10k rows, and `algorithmwatch` has 2,986 features) and **always recorded in
+the results row**. A silent subsample makes a model look worse for a reason
+nothing in the output explains.
 
 **Prior arms.**
 
@@ -155,21 +222,32 @@ CreditICL/
 │   └── processed/
 ├── docs/
 │   ├── experimental_design.md   the full design
+│   ├── finetuning.md            what fine-tuning TabICL allows, and why
 │   ├── vsc.md                   KU Leuven VSC deployment facts
 │   └── changelog.md             dated log of what changed and why
-├── lib/               third-party code used unmodified
-├── notebooks/         exploration only, never the pipeline
-├── res/               results                                [gitignored]
-├── scripts/           thin runnables
-│   └── slurm/           SLURM job scripts sent to VSC
+├── logs/              timestamped run logs — INFORMATION ONLY, no results
+├── notebooks/
+│   ├── prior_visualisation.ipynb   plots 100 sampled priors; logic in src/visualize
+│   └── data_exploration.ipynb      the real datasets: boundary mass, base rates, leakage
+├── results/           OFFICIAL outputs
+│   ├── lgd/{data,prior,training,eval}/
+│   └── pd/{data,prior,training,eval}/
+├── scripts/           every runnable lives here and calls into src/
+│   ├── preprocess.py        pipeline 1
+│   ├── measure_prior.py     pipeline 2
+│   ├── pretrain.py          pipeline 3
+│   ├── evaluate.py          pipeline 4
+│   ├── smoke_test.py        fast end-to-end check
+│   ├── vendor_model.py      extracts the architecture from the pinned library
+│   └── slurm/               SLURM jobs sent to VSC
 ├── src/               all importable project code
-│   ├── prior/           PHASE 1 — synthetic prior generation
-│   ├── train/           PHASE 2 — pretraining loop, checkpointing
-│   ├── eval/            PHASE 3 — evaluation, metrics, calibration
-│   ├── data/            dataset loaders / registry
-│   ├── methods/         classical LGD & PD baselines
-│   ├── models/          TabICLv2 architecture (from NanoTabICL)
-│   └── utils/           config loading, tracker, plotting
+│   ├── data/            PIPELINE 1 — recipes, registry, processed cache
+│   ├── prior/           PIPELINE 2 — synthetic task generation
+│   ├── train/           PIPELINE 3 — pretraining, checkpointing, adaptation
+│   ├── eval/            PIPELINE 4 — baselines, metrics, runner
+│   ├── models/          TabICLv2 architecture (generated from NanoTabICL)
+│   ├── visualize/       plotting for the notebook
+│   └── utils/           config, paths, logging, target statistics
 └── tfm-library/       PINNED SUBMODULE — READ-ONLY (one exception)
 ```
 
@@ -274,7 +352,71 @@ For a plain (non-VS Code) PowerShell session, activation is one line:
 .\.venv\Scripts\Activate.ps1
 ```
 
-### 6. Running on VSC
+### 6. Where files go, locally and on the cluster
+
+The code detects which it is on by checking for `$VSC_DATA`, so there is nothing
+to configure. Two tiers on the cluster:
+
+| | project storage `/lustre1/project/stg_00211/CreditICL/` | `$VSC_DATA/CreditICL/` |
+|---|---|---|
+| size | ≥1 TB, **not** backed up, low inode budget | 75 GiB, **backed up** |
+| holds | processed datasets, generated prior pools, checkpoints, large arrays | the repo, logs, metrics, result CSVs |
+
+Big and regenerable goes to project storage; small and durable goes to `$VSC_DATA`.
+Locally, both collapse into the repo. Override the staging root with
+`$CREDITICL_STAGING_ROOT`. See [`src/utils/paths.py`](src/utils/paths.py).
+
+### 7. Running the pipelines
+
+```powershell
+python scripts/preprocess.py --task both
+```
+
+```powershell
+python scripts/evaluate.py --task lgd --models linear,catboost
+```
+
+`evaluate.py` preprocesses anything missing itself, so the first command is
+optional locally. On the cluster run it first, so 48 array tasks do not each
+preprocess Home Credit's 307k rows.
+
+**Prior pools.** Training reads pre-generated datasets rather than building them
+live. Build them once per variant:
+
+```powershell
+python scripts/generate_prior.py --config config/LGD.yaml --variant original --all
+```
+
+```powershell
+python scripts/generate_prior.py --config config/LGD.yaml --status
+```
+
+The first writes `prior_cache/lgd__original/`; `--variant credit_v1` writes ours.
+`--status` checks both are complete and hold the **same** count — that equality is
+what makes the comparison fair, so it is checked rather than assumed. On the cluster
+this is a 20-task CPU array, not `--all`. Training then uses
+`--prior-source pool`; `generate` still works and needs no pools.
+
+**TabPFN-3 reads a local checkpoint file, so no token is needed.** Put the weights in
+`checkpoints/` (or point `CREDITICL_TABPFN_DIR` at them). Letting the `tabpfn` package
+fetch its own weights triggers a licence flow that wants an API key, which on a
+compute node with no terminal fails as `OSError: WinError 10038 ... not a socket`.
+Passing `model_path` avoids the token, the download, and the need for internet.
+Without the file the baseline skips with an explanatory line rather than failing.
+
+### 8. Running on VSC
+
+**The whole pipeline is one command.** It chains all five stages with
+`--dependency=afterok`, so you can submit and log out:
+
+```bash
+bash scripts/submit_pipeline.sh both
+```
+
+preprocess → prior pools (2 arrays × 20 CPU tasks) → verify gate → GPU training
+array → evaluation. Each stage gets the hardware it needs; see
+[`docs/vsc.md`](docs/vsc.md) for why the pools are 40 parallel CPU tasks and why the
+gate exists.
 
 The local venv is for development and analysis only. Pretraining runs on
 KU Leuven VSC via SLURM scripts in `scripts/slurm/`. The cluster needs its

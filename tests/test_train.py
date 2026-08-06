@@ -333,7 +333,7 @@ def test_no_partial_checkpoint_left_behind(tmp_path):
 
 
 def test_run_writes_a_log_file_and_a_metrics_file(tmp_path, lgd_cfg):
-    lgd_cfg["logging"] = {"level": "INFO", "console": False, "log_prior_every": 0}
+    lgd_cfg["logging"] = {"level": "INFO", "console": False, "log_prior_every": 0, "to_file": True}
     logs = tmp_path / "logs"
     trainer = Trainer(lgd_cfg, tmp_path / "out", device="cpu", ckpt_dir=tmp_path / "ck", log_dir=logs)
     trainer.train()
@@ -356,7 +356,7 @@ def test_log_lines_are_timestamped(tmp_path, lgd_cfg):
     import re
 
     logs = tmp_path / "logs"
-    lgd_cfg["logging"] = {"level": "INFO", "console": False, "log_prior_every": 0}
+    lgd_cfg["logging"] = {"level": "INFO", "console": False, "log_prior_every": 0, "to_file": True}
     Trainer(lgd_cfg, tmp_path / "out", device="cpu", ckpt_dir=tmp_path / "ck", log_dir=logs).train()
     text = next(iter(logs.glob("*.log"))).read_text(encoding="utf-8")
     assert re.search(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \w+", text, re.M)
@@ -364,7 +364,7 @@ def test_log_lines_are_timestamped(tmp_path, lgd_cfg):
 
 def test_prior_report_is_written_when_enabled(tmp_path, lgd_cfg):
     lgd_cfg["train"]["max_steps"] = 2
-    lgd_cfg["logging"] = {"level": "INFO", "console": False, "log_prior_every": 1, "log_prior_samples": 3}
+    lgd_cfg["logging"] = {"level": "INFO", "console": False, "log_prior_every": 1, "log_prior_samples": 3, "to_file": True}
     logs = tmp_path / "logs"
     trainer = Trainer(lgd_cfg, tmp_path / "out", device="cpu", ckpt_dir=tmp_path / "ck", log_dir=logs)
     trainer.train()

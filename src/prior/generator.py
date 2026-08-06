@@ -32,6 +32,7 @@ import torch
 
 from .base import SyntheticTask, assemble_xy, rand_cat_sizes, rand_dataset_plain
 from .filters import PredictabilityFilter
+from .grouping import GroupedSampler
 from .noise_features import add_noise_features
 from .preprocess import process_features, standard_scaling
 from .rng import PriorRNG
@@ -72,6 +73,11 @@ class TaskGenerator:
         self.credit_target_cfg = credit.get("target", {})
         self.credit_noise_cfg = credit.get("noise_features", {})
 
+        # TabICL's correlated hyperparameter sampling: datasets inside a group
+        # share a shape and a difficulty, so a batch contains relatives rather
+        # than strangers. ON by default — see src/prior/grouping.py for why.
+        self.groups = GroupedSampler(cfg, rng)
+
         fcfg = cfg.get("filter", {})
         self.filter = PredictabilityFilter(
             mode=fcfg.get("mode", "tabicl"),
@@ -82,6 +88,9 @@ class TaskGenerator:
         self.max_attempts = int(cfg.get("max_filter_attempts", 40))
 
     # -- sizes ---------------------------------------------------------------
+    def group_summary(self) -> dict:
+        return self.groups.describe()
+
     def sample_shape(self) -> tuple[int, int]:
         """Draw (n_rows, n_features) for one dataset — or for a whole batch.
 
@@ -89,6 +98,9 @@ class TaskGenerator:
         (batch, rows, cols) tensor. TabICL solves this the same way, via
         `batch_size_per_gp`: datasets within a group share characteristics.
         """
+        shared = self.groups.next_dataset()
+        if shared:
+            return int(shared["n_rows"]), int(shared["n_features"])
         n_rows = self.rng.randint(self.n_rows_range[0], self.n_rows_range[1] + 1)
         n_features = self.rng.randint(self.n_features_range[0], min(self.n_features_range[1], self.max_features) + 1)
         return n_rows, n_features
