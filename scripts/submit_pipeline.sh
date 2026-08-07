@@ -2,6 +2,7 @@
 # =============================================================================
 #  CreditICL — submit the WHOLE pipeline as one dependency chain.
 #
+#      DRY_RUN=1 bash scripts/submit_pipeline.sh lgd   # validate, queue nothing
 #      bash scripts/submit_pipeline.sh lgd
 #      bash scripts/submit_pipeline.sh pd
 #      bash scripts/submit_pipeline.sh both
@@ -12,31 +13,56 @@
 #
 #  THE CHAIN, and why each stage gets the hardware it does:
 #
-#    1  preprocess    1 CPU node        21 datasets, pandas — minutes, no GPU
-#    2  prior pools   2 x 20 CPU tasks  CPU-bound generation; the two variants are
-#                                       independent, so they run side by side
-#    3  verify        1 CPU task        the gate: equal, complete pools or stop
-#    4  pretrain      GPU array         the only stage that needs a GPU
-#    5  evaluate      1 GPU node        baselines + our checkpoints on real data
+#    1  preprocess    1 CPU node         21 datasets, pandas — minutes, no GPU
+#    2  prior pools   2 x 100 CPU tasks  CPU-bound generation; the two variants are
+#                                        independent, so they run side by side
+#    3  verify        1 CPU task         the gate: equal, complete pools or stop
+#    4  pretrain      GPU array (48)     the only stage that needs a GPU
+#    5  evaluate      1 GPU node         baselines + our checkpoints on real data
 #
-#  Stages 2's two variants are submitted as separate array jobs so 40 tasks are
-#  eligible at once; stage 3 waits on BOTH via `afterok:jobA:jobB`.
+#  EVERYTHING RUNS ON wICE. Slurm dependencies do not cross clusters, so a chain that
+#  hopped wice -> genius -> mindwell could never have run.
 #
-#  WALL-CLOCK, roughly: stage 2 dominates if run serially (40,000 datasets), which
-#  is exactly why it is 40 parallel tasks instead of one loop.
+#  The two variants go in as separate array jobs so 200 tasks are eligible at once;
+#  stage 3 waits on BOTH via `afterok:jobA:jobB`.
+#
+#  Array tasks count against your concurrent-job limit. Check it before submitting:
+#      sacctmgr show qos normal format=Name%20,MaxSubmitJobsPerUser%15
 # =============================================================================
 
 set -euo pipefail
 
 WHICH="${1:-lgd}"
-N_SHARDS="${N_SHARDS:-20}"
-N_DATASETS="${N_DATASETS:-40000}"
+N_SHARDS="${N_SHARDS:-100}"
+N_DATASETS="${N_DATASETS:-400000}"
 REPO="${CREDITICL_REPO:-$VSC_DATA/CreditICL}"
 
 cd "$REPO"
 
-# `sbatch --parsable` prints just the job id, which is what a chain needs.
-submit() { sbatch --parsable "$@"; }
+# DRY_RUN=1 validates every sbatch WITHOUT queueing anything. `--test-only` makes
+# Slurm parse the script, check the partition/account/resources and report when the job
+# would start — then exit. Worth running first: a bad partition or a malformed
+# dependency otherwise only shows up after some stages are already queued, leaving a
+# half-submitted chain to clean up.
+DRY_RUN="${DRY_RUN:-0}"
+
+# `sbatch --parsable` prints the job id — but on a MULTI-CLUSTER site it prints
+# "jobid;cluster" (we saw "61683451;wice"). Feeding that straight into
+# --dependency=afterok: produces a malformed dependency, so strip the suffix.
+submit() {
+    if [[ "$DRY_RUN" == "1" ]]; then
+        # --test-only rejects a dependency on a job that does not exist, so drop it:
+        # we are checking partitions and resources, not the chain wiring.
+        local args=()
+        for a in "$@"; do
+            [[ "$a" == --dependency=* ]] || args+=("$a")
+        done
+        sbatch --test-only "${args[@]}" >&2 || echo "  ^^ WOULD FAIL" >&2
+        echo "DRYRUN"
+        return 0
+    fi
+    sbatch --parsable "$@" | cut -d';' -f1
+}
 
 submit_one_task() {
     local task="$1"
@@ -95,7 +121,9 @@ esac
 
 cat <<'EOF'
 
-Submitted. Nothing to do now but wait. Useful commands:
+Done. If you ran with DRY_RUN=1 nothing was queued — re-run without it to submit.
+
+Useful commands:
 
   squeue --clusters=all -u $USER            # what is queued or running
   squeue --clusters=all -u $USER --start    # when Slurm thinks each will start

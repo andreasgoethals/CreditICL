@@ -15,16 +15,22 @@
 #    metrics/logs -> $VSC_DATA/CreditICL, small + backed up
 # =============================================================================
 
+# SINGLE CLUSTER, ON PURPOSE. Slurm job dependencies do not work ACROSS clusters,
+# and the pipeline is chained with --dependency=afterok. An earlier version put
+# preprocess on wice, the prior arrays on genius and training on mindwell; the chain
+# could never have run. Everything in Phase 1 therefore stays on wice, which has both
+# `batch` (CPU) and `gpu_a100` (GPU). Mindwell's B200s are for the Phase 2
+# multi-GPU confirmation runs, submitted on their own (see pretrain_multigpu.slurm).
 #SBATCH --job-name=crediticl-lgd
-#SBATCH --clusters=mindwell
+#SBATCH --clusters=wice
 #SBATCH --account=lp_verbekelab
-#SBATCH --partition=gpu_b200
+#SBATCH --partition=gpu_a100
 #SBATCH --gpus-per-node=1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=24
-#SBATCH --mem=120G
-#SBATCH --time=24:00:00
+#SBATCH --cpus-per-task=18
+#SBATCH --mem=100G
+#SBATCH --time=72:00:00
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
 # Propagate the submission env, or a cross-cluster sbatch can hit Slurm's

@@ -5,6 +5,43 @@ Newest first. Library pin recorded when a claim depends on the literature.
 
 ---
 
+## 2026-08-07
+
+- **Fixed: the SLURM chain could never have run.** It spanned three clusters (wice →
+  genius → mindwell → wice) and Slurm job dependencies do not work across clusters. On
+  top of that the genius stages had **no `--partition`**, which is the
+  `"No partition specified or system default partition"` error seen on the first real
+  submit. All of Phase 1 now runs on **wice**: `batch` for CPU, `gpu_a100` for training
+  (18 cores/GPU, 72h). Mindwell's B200s stay for the Phase 2 multi-GPU runs, submitted
+  separately rather than chained.
+- **Fixed: `sbatch --parsable` returns `jobid;cluster` on a multi-cluster site**
+  (`61683451;wice`), so every `--dependency=afterok:$jid` was malformed. Now stripped.
+- **`DRY_RUN=1 bash scripts/submit_pipeline.sh lgd`** validates the whole chain with
+  `sbatch --test-only` and queues nothing. A bad partition otherwise only surfaces after
+  some stages are already queued, leaving a half-submitted chain to clean up.
+- **Pipeline defaults caught up with the 400,000-dataset budget**: 100 shards per
+  variant, not 20.
+- **Added the missing piece that made the project unmeasurable**
+  (`src/eval/crediticl_baseline.py`): nothing could load a checkpoint *we* trained, so
+  the pipeline would have produced 48 sets of weights and zero results. In-context
+  inference matching the training episode exactly; the model is rebuilt from the config
+  stored inside the checkpoint, and a `load_state_dict` mismatch is fatal rather than a
+  warning. LGD point predictions use the **median**, not the mean: on a bimodal
+  predictive the mean lands in the empty middle where no loan sits.
+- **`atom_prob` is honoured by the mechanism path** and set to `[0.6, 0.8]`, never 1.0 —
+  `lgd_lendingclub` has 1.8% boundary mass, so a prior where every dataset has atoms
+  cannot represent it. It was previously read only by the marginal path, making it an
+  inert entry in the experiment grid. KNOWN LIMITATION: the interior branch still leaks,
+  so 0.6/0.8 yields 87%/93% of datasets with atoms rather than 60%/80%.
+- **Out-of-domain evaluation** (`src/eval/ood.py`, `ood_runner.py`, `scripts/fetch_ood.py`,
+  `scripts/evaluate_ood.py`): OpenML-CC18 + CTR23, credit-like datasets filtered out,
+  suite ids resolved from the API and pinned rather than hard-coded. Fetch runs on a
+  login node; scoring never touches the network.
+- **Fixed: OOD regression scores were crushed by a credit assumption.** The LGD
+  baselines clip predictions to [0,1] because LGD is a loss fraction; a standard-normal
+  OOD target then scored R²=0.34 on a perfectly linear relationship. Targets are now
+  min-maxed using train-only statistics.
+
 ## 2026-08-06
 
 - **Muon optimizer, matching TabICLv2** (`src/train/optim.py`). `torch.optim.Muon`
