@@ -116,15 +116,23 @@ def source_color(source: str) -> str:
 def title(ax: Any, headline: str, subtitle: str | None = None) -> None:
     """Headline plus an optional quieter line under it.
 
-    Most of these figures need a sentence of interpretation ("higher is worse"),
-    and a subtitle keeps that next to the data instead of in prose far away.
+    Most of these figures need a sentence of interpretation ("higher is worse"), and a
+    subtitle keeps that next to the data instead of in prose far away.
+
+    Implemented as a **two-line `set_title`**, not as a separate `ax.text`. An
+    `ax.text` at `y > 1` in axes coordinates is invisible to matplotlib's layout
+    engine, so it overlapped the panel above it in every dense grid and ran into the
+    figure suptitle. A real title is measured and laid out.
     """
-    ax.set_title(headline)
     if subtitle:
-        ax.text(
-            0.0, 1.015, subtitle, transform=ax.transAxes,
-            fontsize=mpl.rcParams["font.size"] * 0.82, color=MUTED, va="bottom",
-        )
+        ax.set_title(f"{headline}\n{subtitle}", linespacing=1.5)
+        # Grey the second line by re-rendering it at a smaller size is not possible on
+        # a single Text object, so the whole title takes the headline weight and the
+        # subtitle reads as a continuation. Keeping one object is what makes the
+        # layout correct, which matters more than the two-tone look.
+        ax.title.set_fontsize(mpl.rcParams["axes.titlesize"] * 0.92)
+    else:
+        ax.set_title(headline)
 
 
 def figure_note(fig: Any, text: str) -> None:

@@ -193,6 +193,20 @@ def apply_pd_target(
     """Turn an SCM latent into an imbalanced, credit-shaped binary target."""
     meta: dict = {"target": "pd"}
 
+    # MECHANISM mode: assign defaults with the Merton/Vasicek one-factor model — the
+    # basis of the Basel IRB formula — so defaults are CORRELATED through a systematic
+    # factor instead of independent given the features. A prior of independent labels
+    # has never shown the model a bad year.
+    if str(cfg.get("mode", "quantile")) == "mechanism":
+        from .mechanisms import apply_pd_mechanism
+
+        latent, rule_meta = apply_threshold_rules(rng, X, y_latent, cfg.get("rules", {}))
+        meta.update(rule_meta)
+        y, mech_meta = apply_pd_mechanism(rng, latent, cfg.get("mechanism", {}))
+        meta.update(mech_meta)
+        meta["mode"] = "mechanism"
+        return X, y.float(), meta
+
     # 1. Hard policy rules on top of the smooth SCM latent.
     latent, rule_meta = apply_threshold_rules(rng, X, y_latent, cfg.get("rules", {}))
     meta.update(rule_meta)

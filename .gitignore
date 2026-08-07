@@ -21,8 +21,11 @@ data/processed/*
 checkpoints/*
 !checkpoints/.gitkeep
 
-# Generated synthetic prior caches (tens of GB; live on project storage on VSC)
-prior_cache/
+# Generated synthetic datasets. Huge (4.0 GB per LGD variant, 5.4 GB per PD variant)
+# and always reproducible from a seed, so never committed. The glob also catches
+# `prior_cache_bak/` and friends — a bare `prior_cache/` did not, and a set of stray
+# backup manifests ended up in commit 82919b1 as a result.
+prior_cache*/
 *.npz
 *.pt
 *.ckpt
@@ -73,13 +76,24 @@ venv/
 venv-*/
 env/
 ENV/
+# The project venv. `.CreditICL/` is the name we use: dotted, so it is hidden and
+# sorts with the other tool directories. `CreditICL/` (undotted) is kept ignored too
+# so the older layout can never be committed by accident during the switch.
+.CreditICL/
+CreditICL/
 
-# Tooling caches
+# Tooling caches. Regenerated on demand, never useful in a diff.
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
 .coverage
 htmlcov/
+
+# Local scratch output. Real results are produced on the cluster and live in
+# `results/`; anything a laptop writes is a smoke test. The old top-level `res/`
+# directory is gone — kept here so it cannot come back.
+res/
+results/_local/
 .ipynb_checkpoints/
 
 # ---------------------------------------------------------------------------

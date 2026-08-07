@@ -86,7 +86,7 @@ def describe_pools(task: str, variants: list[str] | None = None) -> pd.DataFrame
     for variant in variants:
         d = variant_dir(task, variant)
         shards = sorted(d.glob("shard_*.pt"))
-        expected, counted, cfrac = None, 0, None
+        expected, counted, cfrac, valid = None, 0, None, 0
         for shard in shards:
             manifest = shard.with_suffix(".json")
             if not manifest.is_file():
@@ -97,11 +97,17 @@ def describe_pools(task: str, variants: list[str] | None = None) -> pd.DataFrame
                 continue
             if m.get("pool_version") != POOL_VERSION:
                 continue
+            valid += 1
             counted += int(m.get("n_datasets", 0))
             expected = int(m.get("n_shards", 0)) or expected
             cfrac = m.get("credit_fraction", cfrac)
 
-        complete = expected is not None and len(shards) == expected
+        # COMPLETE requires every shard to have a readable, current-version manifest —
+        # not merely the right number of `.pt` files. Counting payloads alone let a
+        # pool with one stale-layout shard report COMPLETE while silently
+        # under-counting its datasets, which is the one thing this table exists to
+        # prevent.
+        complete = expected is not None and valid == expected == len(shards)
         rows.append(
             {
                 "variant": variant,

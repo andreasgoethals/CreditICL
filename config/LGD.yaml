@@ -61,10 +61,28 @@ prior:
     category_frequency: balanced
 
     target:
-      mode: quantile # S: [quantile, censor]  — how the boundary atoms are made
+      # How the target is produced.
+      #   quantile  — exact boundary masses from a Kumaraswamy mixture (best for
+      #               clean ablation: you dial the atoms in and get them exactly)
+      #   censor    — clip a wider latent; atoms emerge from the clipping
+      #   mechanism — derive LGD from credit ECONOMICS: collateral coverage,
+      #               workout cashflows, portfolio segments. Atoms emerge from
+      #               over-collateralisation and total loss. This is the arm
+      #               O'Prior's "mechanism diversity" finding points at, and it
+      #               spans all 7 real datasets' boundary mass (1.8%–73%).
+      mode: mechanism # S: [mechanism, quantile, censor]
+
+      # Only read when mode: mechanism. See src/prior/targets/mechanisms.py.
+      mechanism:
+        mechanism_weights: { collateral: 0.4, workout: 0.35, segment_mixture: 0.25 }
+        cohort: { min_cohorts: 1, max_cohorts: 12 } # vintage-level systematic shocks
       shape_ab_range: [0.3, 4.0] # Kumaraswamy shape; spans U / humped / skewed
       boundary_mass_range: [0.02, 0.25] # mass per atom when present
-      atom_prob: [0.75, 1.0] # chance each atom exists; 1.0 forces both
+      # Share of datasets that carry boundary atoms AT ALL. Never 1.0:
+      # lgd_lendingclub has only 1.8% boundary mass — effectively interior —
+      # so a prior where EVERY dataset has atoms cannot represent it.
+      # Read by BOTH the mechanism and quantile paths.
+      atom_prob: [0.6, 0.8]
       max_total_boundary_mass: 0.60 # keep real mass in the middle
       signal_strength: 1.0 # S: [1.0, 0.5]   — 1.0 = undiluted
       round_to: 0 # recording granularity; 0 = off
@@ -109,18 +127,35 @@ model:
   n_cls_rows: 128
 
 # -----------------------------------------------------------------------------
-# TRAINING — 10,000 steps x 4 datasets = 40,000, matching O'Prior's budget.
+# TRAINING — 100,000 steps x 4 datasets = 400,000 datasets, ONE pass each.
+#
+# O'PRIOR (arXiv 2605.18971) used 40,000 datasets at batch 4 over 10,000 steps. Note
+# 10,000 x 4 = 40,000 exactly: each of their datasets is seen ONCE, and their
+# "10 epochs of 1,000 steps" is step bookkeeping, not ten passes.
+#
+# We use 10x that, still one pass each. More UNIQUE datasets beats re-showing the same
+# ones: it lowers the sampling noise in what the prior actually is, and removes any
+# chance of the model memorising individual synthetic tables. Generation is CPU-bound
+# and we parallelise it 20 ways on cheap nodes, so the extra data is nearly free — the
+# cost is GPU steps, which is why this is a deliberate budget decision and not a
+# default. Every arm gets exactly this budget; that is what "matched compute" means.
 # "Matched compute" means steps and datasets, never wall-clock.
 # -----------------------------------------------------------------------------
 train:
-  max_steps: 10000
+  max_steps: 100000
   batch_size: 4
   micro_batch_size: 4
   num_quantiles: 999
 
-  optimizer: adamw # not Muon; see src/train/optim.py
+  # Muon is what TabICLv2 uses, and it credits part of its gain to it.
+  # torch >= 2.9 ships torch.optim.Muon, so this needs no extra dependency.
+  # Muon handles only the 2-D weight matrices; biases/LayerNorm/embeddings get AdamW
+  # alongside it (see src/train/optim.py) — that pairing is part of the method.
+  # Held FIXED across arms either way, so it is not the experimental variable.
+  optimizer: muon # S: [muon, adamw]
   scheduler: cosine_with_restarts # or `constant` for a frozen fine-tune
-  lr: 3.0e-4
+  lr: 3.0e-4 # AdamW rate, and the rate for Muon's auxiliary AdamW half
+  muon_lr: 8.0e-4 # TabICLv2's stage-1 rate; Muon prefers ~8x AdamW's
   beta1: 0.9
   beta2: 0.95
   weight_decay: 0.01
@@ -132,9 +167,9 @@ train:
 
   amp: true
   num_workers: 12 # dataset generation is CPU-bound
-  log_every: 50
-  save_temp_every: 500
-  save_perm_every: 5000
+  log_every: 250
+  save_temp_every: 2000
+  save_perm_every: 25000
   max_temp_checkpoints: 2
 
 # -----------------------------------------------------------------------------

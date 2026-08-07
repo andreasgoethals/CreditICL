@@ -7,6 +7,65 @@ Newest first. Library pin recorded when a claim depends on the literature.
 
 ## 2026-08-06
 
+- **Muon optimizer, matching TabICLv2** (`src/train/optim.py`). `torch.optim.Muon`
+  ships in torch >= 2.9 (verified on 2.13), so no new dependency and no
+  reimplementation. Muon only accepts 2-D parameters — it raises on anything else — so
+  `_MuonWithAux` pairs it with AdamW for biases/LayerNorm/embeddings and presents one
+  `Optimizer` to the loop, scheduler and checkpointer. `muon_lr: 8e-4` is TabICLv2's
+  stage-1 rate; Muon wants roughly 8x AdamW's. Now the config default for both tasks.
+- **Multi-GPU training** (`src/train/distributed.py`, `scripts/slurm/pretrain_multigpu.slurm`).
+  A full-budget checkpoint is 24.5 GPU-days against VSC's 72-hour job ceiling; 4 GPUs
+  turns that into 3 chained jobs, 8 into 2. The batch is *split* across ranks so the
+  effective batch — and hence the compute budget — is unchanged, and each rank gets a
+  distinct prior seed. Without that seed offset every GPU would generate identical
+  datasets and an N-GPU run would see 1/N the data diversity while every log line still
+  looked right. Launched with `torchrun`, not `srun`, per the VSC docs.
+- **Credit mechanisms are now live** (`prior.credit.target.mode: mechanism`, the default
+  for both tasks). LGD boundary mass emerges from collateral coverage, workout cashflows
+  and portfolio segments; PD defaults come from the Merton/Vasicek one-factor model with
+  Basel's 0.03–0.24 asset correlations. Measured span p1=0.013 to p99=0.896, which
+  covers all 7 real LGD datasets (1.8% – 73%); the old marginal-shaping path bottomed
+  out near 11% and could not reach `lgd_lendingclub`.
+- **Training logs now carry progress and a wall-clock ETA**: percent complete, steps/s,
+  elapsed, ETA, projected finish time, datasets seen — and a loud warning when the
+  projected finish exceeds the *remaining* SLURM walltime, read from `squeue` rather
+  than guessed. The rate is measured from the current run only; dividing total steps by
+  elapsed time after a resume would over-report it several-fold.
+- **Repo cleanup.** `res/` deleted for good — local outputs go to `results/_local/`, so
+  there is exactly one place results live. `.ruff_cache/`, `.pytest_cache/` and
+  `crediticl.egg-info/` deleted and gitignored. The venv is `.CreditICL/` (dotted);
+  `.vscode/settings.json` points at it and hides the caches. `scripts/` now holds only
+  runnables — the template's `example_script.py` moved to `docs/templates/`.
+- **Fixed: my collateral economics were inverted.** Recovery was capped at the exposure
+  *before* costs were subtracted, so an over-collateralised loan still lost the legal
+  fees and LGD could never reach exactly 0 — the atom the whole mechanism exists to
+  produce was absent in all 60 test draws. Costs now come out of the collateral
+  proceeds, then the result is capped.
+- **One prior notebook for any number of variants** (`src/visualize/pool_plots.py`).
+  `prior_visualisation.ipynb` now *discovers* whichever pools are on the machine and
+  compares them all on shared axes; adding `credit_v2` needs no notebook edit. Why not
+  one notebook per prior: the useful question is never "what does `credit_v1` look
+  like" but "how does it differ from `original` and `credit_v2`", and copies of a
+  notebook drift and make the comparison manual. Plots split into **comparison** (all
+  variants at once) and **detail** (one `FOCUS` variant, e.g. the 100-histogram grid,
+  which cannot be stacked). Pooled episodes are rebuilt into `SyntheticTask`, so every
+  existing `prior_plots` function works on them unchanged.
+- **Downloading a pool is now cheap** (`scripts/fetch_prior_sample.sh`,
+  `scripts/inspect_pools.py`). A full pool measures **4.0 GB (LGD) / 5.4 GB (PD) per
+  variant** — ~19 GB for four. The notebooks use a few hundred datasets, so the default
+  fetch takes **one shard** (~200–270 MB) per pool. `PoolReader` globs whatever shards
+  exist, so a partial copy just works, and `describe_pools` labels it **SAMPLE** so it
+  can never be quoted as the pool the model trained on.
+- **Fixed: generated notebooks dropped their line endings.** nbformat keeps the
+  trailing `\n` on every source line; without it, anything that rejoins the list
+  (nbconvert, papermill, jupytext) gets one mashed line and a `SyntaxError`.
+- **Fixed: no pools meant a cryptic crash.** An empty variant dict reached matplotlib
+  as `subplots(0, n)` → "Number of rows must be a positive integer, not 0".
+  `load_variants_or_generate` now falls back to live generation, labelled `(live)`, and
+  the plot functions raise with the fix in the message.
+- **Fixed: `CreditICL/` (a venv named after the project) was not gitignored** and not
+  excluded from ruff — 340 MB would have been committed, and a bare `ruff check` walked
+  its site-packages. Neither `.venv/` nor `venv-*/` catches a name like this.
 - **Pre-generated prior pools** (`src/prior/pool.py`, `scripts/generate_prior.py`).
   Datasets are now generated once into one folder per variant — `lgd__original/`,
   `lgd__credit_v1/` — and training samples from them (`prior.pool.source: pool`).

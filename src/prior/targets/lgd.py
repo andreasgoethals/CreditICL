@@ -71,6 +71,7 @@ from __future__ import annotations
 
 import torch
 
+from ...utils.target_stats import target_stats
 from ..preprocess import outlier_removing, standard_scaling, to_ranks
 from ..rng import PriorRNG
 
@@ -129,6 +130,29 @@ def apply_lgd_target(
         noise = rng.randn_like(z)
         y_latent = (rho**0.5) * z + ((1.0 - rho) ** 0.5) * noise
 
+    # MECHANISM mode: derive the target from credit economics (collateral coverage,
+    # workout cashflows, portfolio segments) instead of shaping its marginal. The
+    # boundary atoms then EMERGE from over-collateralisation and total loss rather
+    # than being dialled in via atom_prob. See src/prior/targets/mechanisms.py; this
+    # is the arm O'Prior's "mechanism diversity beats observational realism" finding
+    # points at.
+    if mode == "mechanism":
+        from .mechanisms import apply_lgd_mechanism
+
+        y, mech_meta = apply_lgd_mechanism(rng, y_latent, cfg.get("mechanism", {}))
+        stats = target_stats(y)
+        meta = {
+            "target": "lgd",
+            "mode": mode,
+            "frac_at_0": stats["frac_at_min"],
+            "frac_at_1": stats["frac_at_max"],
+            **mech_meta,
+        }
+        if cfg.get("target_scaling", "none") == "standard":
+            y = standard_scaling(y.unsqueeze(1)).squeeze(1)
+            meta["target_scaling"] = "standard"
+        return y.float(), meta
+
     u = to_ranks(y_latent)
 
     if mode == "quantile":
@@ -149,7 +173,9 @@ def apply_lgd_target(
         y = (-m0 + (1.0 + m0 + m1) * v).clamp(0.0, 1.0)
 
     else:
-        raise ValueError(f"unknown LGD target mode {mode!r}; expected 'quantile' or 'censor'")
+        raise ValueError(
+            f"unknown LGD target mode {mode!r}; expected 'quantile', 'censor' or 'mechanism'"
+        )
 
     # Optional recording granularity: real LGD is derived from currency amounts
     # and is often stored rounded, which clusters mass on a lattice.

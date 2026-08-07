@@ -24,7 +24,11 @@ def paths(monkeypatch):
 def test_off_vsc_everything_is_local(paths):
     p = paths()
     assert p.on_vsc() is False
-    assert p.outputs_dir().name == "res"
+    # Local outputs live under results/_local, not a separate top-level `res/`.
+    # `res/` was deleted for good: there is now exactly one place results can live,
+    # and locally there should not really be any — real runs happen on the cluster.
+    assert p.outputs_dir().name == "_local"
+    assert p.outputs_dir().parent.name == "results"
     # No doubled project name when the root already IS the project. Compare the
     # tail only — the repo's own parent folder is legitimately called
     # "4. CreditICL", so a substring check on the whole path gives a false alarm.

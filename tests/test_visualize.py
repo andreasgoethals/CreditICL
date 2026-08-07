@@ -225,20 +225,7 @@ def test_real_data_figures_build():
 # -- notebooks themselves ----------------------------------------------------
 
 
-@pytest.mark.parametrize("name", ["prior_visualisation", "data_exploration"])
-def test_notebook_is_valid_and_holds_no_logic(name):
-    """Both notebooks must parse, and must not grow their own implementations —
-    the rule is that everything lives in src/visualize/ so it can be tested.
-    """
-    import json
-    import pathlib
-
-    path = pathlib.Path("notebooks") / f"{name}.ipynb"
-    nb = json.loads(path.read_text(encoding="utf-8"))
-    assert nb["nbformat"] == 4
-    code_cells = [c for c in nb["cells"] if c["cell_type"] == "code"]
-    assert code_cells, "a notebook with no code is not a notebook"
-    for c in code_cells:
-        assert "outputs" in c and "execution_count" in c
-        body = "".join(c["source"])
-        assert "def " not in body, f"{name}: logic belongs in src/visualize/, not the notebook"
+# Notebook structure is covered by tests/test_summaries.py, which knows about the
+# per-task split (prior_visualisation_lgd / _pd) and additionally checks that each one
+# ENDS with a printed text summary. The old test here hard-coded the single combined
+# notebook name and broke when it was split.

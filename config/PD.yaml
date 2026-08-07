@@ -61,6 +61,22 @@ prior:
     category_frequency: [balanced, power_law] # power_law = a few levels dominate
 
     target:
+      # How default labels are assigned.
+      #   quantile  — cut the latent at its (1-pi) quantile; exact base rate
+      #   mechanism — Merton/Vasicek one-factor model, the basis of the Basel IRB
+      #               formula. Defaults become CORRELATED through a systematic
+      #               factor, so the model sees good years and bad years instead of
+      #               the same year 40,000 times. rho is sampled over Basel's
+      #               prescribed 0.03-0.24 asset correlations.
+      mode: mechanism # S: [mechanism, quantile]
+
+      # Only read when mode: mechanism. See src/prior/targets/mechanisms.py.
+      mechanism:
+        rho_range: [0.03, 0.24] # Basel IRB: QRRE 0.04, mortgage 0.15, corporate 0.12-0.24
+        base_rate_range: [0.02, 0.30]
+        woe_prob: 0.3 # chance of a scorecard-style monotone binning first
+        cohort: { min_cohorts: 1, max_cohorts: 12 }
+
       base_rate_range: [0.01, 0.30] # positives; real data is 6.7%-40%
       signal_strength: [1.0, 0.6] # 1.0 = undiluted, unrealistically easy
       flip_pos_to_neg: 0.10 # S: [0.0, 0.10]   — cures, the common direction
@@ -124,15 +140,32 @@ model:
   n_cls_rows: 128
 
 # -----------------------------------------------------------------------------
-# TRAINING — 10,000 steps x 4 datasets = 40,000, matching O'Prior's budget.
+# TRAINING — 100,000 steps x 4 datasets = 400,000 datasets, ONE pass each.
+#
+# O'PRIOR (arXiv 2605.18971) used 40,000 datasets at batch 4 over 10,000 steps. Note
+# 10,000 x 4 = 40,000 exactly: each of their datasets is seen ONCE, and their
+# "10 epochs of 1,000 steps" is step bookkeeping, not ten passes.
+#
+# We use 10x that, still one pass each. More UNIQUE datasets beats re-showing the same
+# ones: it lowers the sampling noise in what the prior actually is, and removes any
+# chance of the model memorising individual synthetic tables. Generation is CPU-bound
+# and we parallelise it 20 ways on cheap nodes, so the extra data is nearly free — the
+# cost is GPU steps, which is why this is a deliberate budget decision and not a
+# default. Every arm gets exactly this budget; that is what "matched compute" means.
 # -----------------------------------------------------------------------------
 train:
-  max_steps: 10000
+  max_steps: 100000
   batch_size: 4
   micro_batch_size: 4
   num_quantiles: 999 # unused for classification; kept so the configs match
 
-  optimizer: adamw
+  # Muon is what TabICLv2 uses, and it credits part of its gain to it.
+  # torch >= 2.9 ships torch.optim.Muon, so this needs no extra dependency.
+  # Muon handles only the 2-D weight matrices; biases/LayerNorm/embeddings get AdamW
+  # alongside it (see src/train/optim.py) — that pairing is part of the method.
+  # Held FIXED across arms either way, so it is not the experimental variable.
+  optimizer: muon # S: [muon, adamw]
+  muon_lr: 8.0e-4 # TabICLv2's stage-1 rate; Muon prefers ~8x AdamW's
   scheduler: cosine_with_restarts
   lr: 3.0e-4
   beta1: 0.9
@@ -146,9 +179,9 @@ train:
 
   amp: true
   num_workers: 12
-  log_every: 50
-  save_temp_every: 500
-  save_perm_every: 5000
+  log_every: 250
+  save_temp_every: 2000
+  save_perm_every: 25000
   max_temp_checkpoints: 2
 
 # -----------------------------------------------------------------------------

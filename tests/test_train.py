@@ -148,9 +148,19 @@ def test_unknown_scheduler_is_rejected():
 
 
 def test_unknown_optimizer_is_rejected():
+    """`muon` used to be the example of an unimplemented optimizer here. It is now
+    supported (torch >= 2.9 ships torch.optim.Muon and TabICLv2 uses it), so this
+    needs a name that really is unknown — see tests/test_optim_distributed.py for
+    the Muon coverage."""
     model = torch.nn.Linear(2, 2)
     with pytest.raises(ValueError, match="not implemented"):
-        build_optimizer(model, {"optimizer": "muon"})
+        build_optimizer(model, {"optimizer": "lion"})
+
+
+def test_muon_is_available_and_builds():
+    model = torch.nn.Sequential(torch.nn.Linear(4, 4), torch.nn.LayerNorm(4))
+    opt = build_optimizer(model, {"optimizer": "muon"})
+    assert len(opt.param_groups) == 2, "matrices under Muon, the rest under AdamW"
 
 
 # --- freezing ----------------------------------------------------------------

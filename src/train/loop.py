@@ -36,9 +36,61 @@ import torch.nn.functional as F
 from ..models.nanotabiclv2 import NanoTabICLv2
 from ..prior.dataset import build_loader
 from ..utils.logging_setup import close_logging, log_environment, log_section, setup_logging
+from . import distributed as dist
 from .adapt import STRATEGIES, apply_freezing, load_pretrained, set_training_mode
 from .checkpoint import latest_checkpoint, load_checkpoint, prune_checkpoints, save_checkpoint
 from .optim import build_optimizer, build_scheduler
+
+
+def _slurm_seconds_left() -> float:
+    """Remaining job walltime in seconds, or 0.0 when not under SLURM.
+
+    Uses `squeue` rather than parsing `$SBATCH_TIMELIMIT`, because the time *left* is
+    what matters for the overrun warning and only the scheduler knows it. Any failure
+    returns 0.0 and simply disables the warning — a diagnostic must never be able to
+    kill a training run.
+    """
+    import os
+    import subprocess
+
+    job_id = os.environ.get("SLURM_JOB_ID")
+    if not job_id:
+        return 0.0
+    try:
+        out = subprocess.run(
+            ["squeue", "-h", "-j", job_id, "-o", "%L"],
+            capture_output=True, text=True, timeout=10, check=False,
+        ).stdout.strip()
+    except Exception:  # noqa: BLE001 — no diagnostic is worth a crash
+        return 0.0
+    if not out or "-" in out and out.count(":") == 0:
+        return 0.0
+    days, _, clock = out.partition("-")
+    if not clock:
+        clock, days = days, "0"
+    parts = [int(x) for x in clock.split(":") if x.isdigit()]
+    if not parts:
+        return 0.0
+    while len(parts) < 3:
+        parts.insert(0, 0)
+    h, m, sec = parts[-3:]
+    try:
+        d = int(days)
+    except ValueError:
+        d = 0
+    return float(((d * 24 + h) * 60 + m) * 60 + sec)
+
+
+def _hms(seconds: float) -> str:
+    """Human duration. `3h 04m` beats `11072.4 s` when you are watching a log."""
+    seconds = max(0.0, float(seconds))
+    h, rem = divmod(int(seconds), 3600)
+    m, sec = divmod(rem, 60)
+    if h:
+        return f"{h}h {m:02d}m"
+    if m:
+        return f"{m}m {sec:02d}s"
+    return f"{sec}s"
 
 
 def quantile_levels(num_quantiles: int, device=None, dtype=None) -> torch.Tensor:
@@ -95,15 +147,28 @@ class Trainer:
         self.max_temp_checkpoints = int(tcfg.get("max_temp_checkpoints", 2))
         self.num_workers = int(tcfg.get("num_workers", 0))
         self.seed = int(cfg.get("seed", 0))
+        # Seconds of job walltime left to warn against. Read from SLURM when present so
+        # the number is real rather than a guess; 0 disables the warning.
+        self._walltime_warning_s = _slurm_seconds_left()
 
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        # Multi-GPU: torchrun sets RANK/WORLD_SIZE. Absent, this is a no-op and the
+        # single-GPU path is byte-for-byte what it was.
+        self.dist = dist.detect()
+        self.device = device or dist.setup(self.dist)
+        # Each rank must draw DIFFERENT datasets, or an N-GPU run silently sees the
+        # same batch N times at 1/N the real diversity.
+        self.prior_seed = dist.rank_seed(self.seed, self.dist)
+        # The batch is SPLIT across ranks so the effective batch — and therefore the
+        # compute budget — matches the config regardless of GPU count.
+        self.local_batch_size = dist.local_batch_size(self.batch_size, self.dist)
         torch.manual_seed(self.seed)
 
         # The header goes first, before anything that can log or fail. Otherwise a
         # crash during model construction leaves a log with no indication of which
         # run or machine produced it.
         log_section(self.log, f"CreditICL — {self.task.upper()} — {cfg.get('_run_name', '?')}")
-        log_environment(self.log, {"device": self.device, "task": self.task, "seed": self.seed})
+        log_environment(self.log, {"device": self.device, "task": self.task, "seed": self.seed,
+                                   **self.dist.describe()})
         grid_levers = cfg.get("_grid", {}).get("assignments", {})
         self.log.info("grid levers: %s", json.dumps(grid_levers, default=str))
         actual_cf = cfg["prior"].get("credit_fraction")
@@ -166,7 +231,16 @@ class Trainer:
         )
 
         self.model = self.model.to(self.device)
+        # build_optimizer BEFORE wrapping: it splits parameters by shape for Muon, and
+        # DDP's `module.` prefix would not change shapes but the unwrapped model is the
+        # clearer thing to hand it.
         self.optimizer = build_optimizer(self.model, tcfg)
+        self.model = dist.wrap_model(self.model, self.dist)
+        if self.dist.enabled:
+            self.log.info(
+                "DISTRIBUTED: world_size=%d  batch %d -> %d per rank  (effective batch unchanged)",
+                self.dist.world_size, self.batch_size, self.local_batch_size,
+            )
         self.scheduler = build_scheduler(self.optimizer, tcfg, self.max_steps)
 
         self.amp = bool(tcfg.get("amp", True)) and self.device.startswith("cuda")
@@ -334,8 +408,10 @@ class Trainer:
         loader = build_loader(
             self.cfg["prior"],
             self.task,
-            batch_size=self.batch_size,
-            seed=self.seed,
+            # Per-rank batch and per-rank seed: the batch is split so the effective
+            # budget is unchanged, and the seeds differ so ranks draw distinct data.
+            batch_size=self.local_batch_size,
+            seed=self.prior_seed,
             num_workers=self.num_workers,
         )
         it = iter(loader)
@@ -360,17 +436,39 @@ class Trainer:
                     **avg,
                 }
                 self.metrics.write(record)
-                steps_per_s = self.step / max(time.time() - started, 1e-9)
-                eta_min = (self.max_steps - self.step) / max(steps_per_s, 1e-9) / 60
+                # Rate from the CURRENT run only. Dividing total steps by elapsed time
+                # after a resume would count steps this process never ran and report a
+                # rate several times too high, making the ETA useless exactly when a
+                # long chained job most needs it.
+                done_here = self.step - (self.resumed_at or 0)
+                elapsed = time.time() - started
+                steps_per_s = done_here / max(elapsed, 1e-9)
+                remaining = self.max_steps - self.step
+                eta_s = remaining / max(steps_per_s, 1e-9)
+                pct = 100.0 * self.step / max(self.max_steps, 1)
                 self.log.info(
-                    "step %d/%d  %s  lr=%.3e  %.2f steps/s  eta %.0f min",
+                    "step %6d/%d [%5.1f%%]  %s  lr=%.3e  %.2f steps/s  "
+                    "elapsed %s  eta %s  finishes ~%s  datasets %s",
                     self.step,
                     self.max_steps,
+                    pct,
                     "  ".join(f"{k}={v:.5f}" for k, v in avg.items()),
                     record["lr"],
                     steps_per_s,
-                    eta_min,
+                    _hms(elapsed),
+                    _hms(eta_s),
+                    time.strftime("%a %H:%M", time.localtime(time.time() + eta_s)),
+                    f"{self.datasets_seen:,}",
                 )
+                # A 72h VSC job that will not finish should say so while there is still
+                # time to react, rather than being discovered dead at the wall.
+                if self._walltime_warning_s and eta_s > self._walltime_warning_s:
+                    self.log.warning(
+                        "PROJECTED OVERRUN: eta %s exceeds the remaining job walltime. "
+                        "This run will be cut off and must be resumed (--resume auto), "
+                        "or restarted with more GPUs (torchrun --nproc_per_node=N).",
+                        _hms(eta_s),
+                    )
                 window, window_n = {}, 0
 
             if self.log_prior_every and self.step % self.log_prior_every == 0:
@@ -449,10 +547,15 @@ class Trainer:
             self.log.warning("prior report failed (continuing): %s", exc)
 
     def _save(self) -> None:
+        # Only rank 0 writes, and it saves the UNWRAPPED model: a DDP state_dict has
+        # every key prefixed with `module.` and would not load into a plain model at
+        # evaluation time.
+        if not self.dist.is_main:
+            return
         save_checkpoint(
             self.ckpt_dir,
             step=self.step,
-            model=self.model,
+            model=dist.unwrap(self.model),
             optimizer=self.optimizer,
             scheduler=self.scheduler,
             scaler=self.scaler,

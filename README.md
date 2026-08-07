@@ -134,8 +134,28 @@ arms cannot come from the luck of the draw, and generation runs on cheap CPU nod
 instead of making a GPU wait.
 
 Two notebooks, both with all logic in `src/visualize/`:
-`prior_visualisation.ipynb` draws 100 tasks the way training does;
-`data_exploration.ipynb` measures the real datasets the prior is aimed at.
+
+* **`prior_visualisation.ipynb`** — set `TASK`, run it, and it **discovers whichever
+  pools are on the machine** and compares them on shared axes. One notebook for any
+  number of variants: adding `credit_v2` needs no edit here, because the useful
+  question is never "what does `credit_v1` look like" but "how does it differ from
+  `original` and `credit_v2`". With no pools it falls back to generating live.
+* **`data_exploration.ipynb`** — the real datasets the prior is aimed at.
+
+To look at cluster-generated pools locally, copy a **sample** rather than the lot — a
+full pool is 4.0 GB (LGD) / 5.4 GB (PD) *per variant*, and one shard (~200–270 MB) is
+twenty times what the plots use:
+
+```bash
+bash scripts/fetch_prior_sample.sh
+```
+
+```bash
+python scripts/inspect_pools.py
+```
+
+A partial copy is labelled **SAMPLE**, so it can never be mistaken for the pool the
+model actually trained on.
 
 ### 3. Training
 
@@ -227,7 +247,7 @@ CreditICL/
 │   └── changelog.md             dated log of what changed and why
 ├── logs/              timestamped run logs — INFORMATION ONLY, no results
 ├── notebooks/
-│   ├── prior_visualisation.ipynb   plots 100 sampled priors; logic in src/visualize
+│   ├── prior_visualisation.ipynb   compares ALL prior variants found on disk
 │   └── data_exploration.ipynb      the real datasets: boundary mass, base rates, leakage
 ├── results/           OFFICIAL outputs
 │   ├── lgd/{data,prior,training,eval}/
@@ -252,7 +272,7 @@ CreditICL/
 ```
 
 `src/` holds reusable code; `scripts/` only wires config + data + method
-together. Following the template's `scripts/example_script.py`, runnables
+together. Following the template's `docs/templates/example_script.py`, runnables
 use a **CSV tracker** so a sweep can be resumed and run in parallel across
 machines — which maps directly onto SLURM array jobs.
 
@@ -288,12 +308,28 @@ py --list
 > you would rather match VSC's best-established 2023a toolchain exactly,
 > install Python 3.11 and use `py -3.11` throughout — both are supported.
 
+The environment is named `CreditICL`, not `.venv`, so the VS Code prompt reads
+`(CreditICL)` and you can tell it apart from the sibling projects' environments.
+
 ```powershell
-py -3.12 -m venv .venv
+py -3.12 -m venv CreditICL
 ```
 
 ```powershell
-.\.venv\Scripts\Activate.ps1
+.\CreditICL\Scripts\Activate.ps1
+```
+
+⚠️ **If you are replacing an existing `.venv`, close every terminal and editor tab
+using it first.** Windows will not delete a DLL that a running process has open, so
+`Remove-Item -Recurse -Force .venv` silently leaves a half-deleted skeleton behind —
+missing `pyvenv.cfg`, a stub `Scripts\python.exe`, and a `torch/` with two files in
+it. That skeleton then fails with `No pyvenv.cfg file` or
+`ModuleNotFoundError: No module named 'torch.nn'`, which looks like a broken install
+rather than an incomplete delete. If it happens, just delete the leftovers again once
+nothing is holding them:
+
+```powershell
+Remove-Item -Recurse -Force .venv -ErrorAction SilentlyContinue
 ```
 
 If activation is blocked by execution policy, allow signed local scripts
@@ -335,21 +371,22 @@ pytest -q
 ### 5. Auto-activation when you open the project
 
 `.vscode/settings.json` is committed and already points VS Code at
-`.venv`. Opening the folder in VS Code will:
+`CreditICL`. Opening the folder in VS Code will:
 
-- select `.\.venv\Scripts\python.exe` as the interpreter, and
+- select `.\CreditICL\Scripts\python.exe` as the interpreter,
 - activate it automatically in every new integrated terminal
-  (`python.terminal.activateEnvironment: true`).
+  (`python.terminal.activateEnvironment: true`), and
+- run the test suite from the Testing panel (`pytest`, rooted at `tests/`).
 
 VS Code may need one reload to pick up a newly created venv:
 **Ctrl+Shift+P → "Developer: Reload Window"**. If the interpreter still
 looks wrong, **Ctrl+Shift+P → "Python: Select Interpreter"** → *Enter
-interpreter path* → `.\.venv\Scripts\python.exe`.
+interpreter path* → `.\CreditICL\Scripts\python.exe`.
 
 For a plain (non-VS Code) PowerShell session, activation is one line:
 
 ```powershell
-.\.venv\Scripts\Activate.ps1
+.\CreditICL\Scripts\Activate.ps1
 ```
 
 ### 6. Where files go, locally and on the cluster
@@ -420,7 +457,7 @@ gate exists.
 
 The local venv is for development and analysis only. Pretraining runs on
 KU Leuven VSC via SLURM scripts in `scripts/slurm/`. The cluster needs its
-own per-architecture environment — **do not copy `.venv` to VSC**. See
+own per-architecture environment — **do not copy the local `CreditICL/` venv to VSC**. See
 [`docs/vsc.md`](docs/vsc.md) for the environment recipe, GPU/partition
 choice, credit costs, the Lustre-vs-GPFS rule, and the checkpoint/resume
 gap.

@@ -127,8 +127,17 @@ def checkpoints_dir() -> Path:
 
 
 def outputs_dir() -> Path:
-    """Metrics, logs, manifests, resolved configs. SMALL -> $VSC_DATA."""
-    return _under(data_root(), "output") if on_vsc() else REPO_ROOT / "res"
+    """Metrics, manifests, resolved configs. SMALL -> $VSC_DATA on the cluster.
+
+    Locally this is `results/_local/`, NOT a separate `res/` directory. Real results
+    are produced on the cluster; anything a laptop writes is a smoke test. Keeping it
+    inside `results/` means there is exactly one place results can live, and `res/`
+    (which existed only as a local scratch dir, and which nothing else referenced)
+    is gone for good.
+    """
+    if on_vsc():
+        return _under(data_root(), "output")
+    return REPO_ROOT / "results" / "_local"
 
 
 def logs_dir() -> Path:
@@ -274,12 +283,24 @@ def prior_cache_dir(name: str) -> Path:
 PIPELINES = ("data", "prior", "training", "eval")
 
 
+#: Extra results namespaces that are not modelling tasks. `ood` holds the
+#: out-of-domain (non-credit) scores, which must never be mixed into the credit results
+#: — the two answer different questions and a mean across both is meaningless.
+RESULT_NAMESPACES = TASKS + ("ood",)
+
+
 def results_dir(task: str | None = None, pipeline: str | None = None) -> Path:
-    """results/ , results/<task>/ or results/<task>/<pipeline>/."""
+    """results/ , results/<task>/ or results/<task>/<pipeline>/.
+
+    Accepts `ood` alongside the real tasks, so out-of-domain scores get their own tree
+    rather than being written next to the credit numbers.
+    """
     root = REPO_ROOT / "results"
     if task is None:
         return root
-    task = _check_task(task)
+    task = task.lower()
+    if task not in RESULT_NAMESPACES:
+        raise ValueError(f"results namespace must be one of {RESULT_NAMESPACES}, got {task!r}")
     if pipeline is None:
         return root / task
     if pipeline not in PIPELINES:

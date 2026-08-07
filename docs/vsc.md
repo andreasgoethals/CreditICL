@@ -474,3 +474,47 @@ The documentation does not settle these; check before the first big run.
   This is why `wandb` is an opt-in extra and must run offline.
 - Current charge rates via `scontrol show partitions --clusters=wice`, since
   the table in §1 is a snapshot.
+
+---
+
+## 10. Compute budget: what is actually affordable
+
+Verified numbers, not estimates:
+
+| | source |
+|---|---|
+| TabICLv2 full pretraining | **24.5 GPU-days per model** (20 + 2.5 + 2 across three stages), H100 80GB — the paper's own figure |
+| TabICL v1 | 60 A100-days |
+| O'Prior's controlled study | **40,000 datasets per prior**, batch 4, 1,000 steps × 10 epochs |
+
+Our `config/*.yaml` replicates **O'Prior's** budget exactly, not TabICLv2's, and that is
+deliberate. O'Prior states the reason: *"at reduced scale, pretraining requires only tens
+of thousands of synthetic datasets rather than millions, making controlled prior ablations
+computationally feasible without sacrificing the qualitative conclusions."*
+
+### Why the full budget cannot be the grid
+
+| checkpoints | GPU-days |
+|---|---|
+| 2 | 49 |
+| 6 | 147 |
+| 48 (the current grid) | **1,176 = 3.2 GPU-years** |
+
+Unlimited credits do not help: wall-clock is the constraint. Hence two phases.
+
+**Phase 1 — the science.** 40K datasets, all 48 arms, 1 GPU each, pools on. Answers
+*which* prior mix wins. ~2 hours per arm; the whole grid fits in a day of queueing.
+
+**Phase 2 — the headline.** Full TabICLv2 budget on **2 checkpoints only** (winning arm +
+unmodified control), on-the-fly generation, 4–8 GPU DDP, 2–3 chained 72h jobs each.
+Answers *is it actually good*.
+
+### Storage rules out pooling at full scale
+
+At the measured 97 KB (LGD) / 131 KB (PD) per dataset, 35M datasets is **3.5–4.7 TB per
+variant**, ~16 TB for four pools, against a ~1 TB staging quota. TabICLv2 never stored
+its datasets either — 550K steps × batch 64 ≈ 35M means **each dataset is seen once**,
+so there are no epochs and no corpus. Phase 2 therefore uses `--prior-source generate`.
+
+At 35M draws the pooling benefit is also negligible: the point of pools is removing
+draw-luck between arms, and that noise is ~1/√35M. Pools are for Phase 1.

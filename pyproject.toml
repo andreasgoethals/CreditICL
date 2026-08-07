@@ -58,11 +58,27 @@ dependencies = [
     "pyyaml>=6.0",            # config/**/*.yaml, per the template idiom
     "tqdm>=4.66",
 
-    # --- Plots (results figures live in res/ and assets/) -----------------
+    # --- Plots (figures go to results/, which is gitignored locally) ------
     "matplotlib>=3.8",
 ]
 
 [project.optional-dependencies]
+# ---------------------------------------------------------------------------
+# Muon — the optimizer TabICLv2 uses, and credits part of its gain to.
+#
+# NOT NEEDED on torch >= 2.9, which ships `torch.optim.Muon` in core (verified
+# present on torch 2.13). `src/train/optim.py` prefers the built-in and only falls
+# back to these. Install with `pip install -e ".[muon]"` on an older torch.
+#
+# Deliberately not reimplemented by us: Muon's correctness turns on details
+# (Newton-Schulz iteration count, the 0.2*sqrt(max(n,m)) Moonlight scaling, cautious
+# weight decay) that are easy to get subtly wrong, and a subtly wrong optimizer would
+# degrade every arm equally and invisibly — the worst failure mode for a controlled
+# comparison.
+muon = [
+    "pytorch-optimizer>=3.1",
+]
+
 # ---------------------------------------------------------------------------
 # TabICL from source, not from PyPI.
 #
@@ -108,6 +124,12 @@ eval = [
     "catboost>=1.2",          # the GBDT baseline every credit paper reports
     "tabpfn>=2.0",            # TabPFN v2 / v3 inference (open weights)
     "tabicl>=2.0",            # released TabICLv2 checkpoints, inference only
+
+    # OUT-OF-DOMAIN benchmarks: OpenML-CC18 (classification, the suite O'Prior used)
+    # and OpenML-CTR23 (regression). Needed ONLY to fetch the datasets, and only on a
+    # login node — compute nodes have no internet. `src/eval/ood.py` reads a local
+    # cache and never imports openml, so scoring works without this installed.
+    "openml>=0.14",
 ]
 
 # Experiment tracking, opt-in: VSC compute nodes have no outbound internet by
@@ -127,7 +149,7 @@ Repository = "https://github.com/andreasgoethals/CreditICL"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src*"]
-exclude = ["tfm-library*", "lib*", "notebooks*", "data*", "checkpoints*", "res*"]
+exclude = ["tfm-library*", "lib*", "notebooks*", "data*", "checkpoints*", "results*"]
 
 [tool.ruff]
 line-length = 100
@@ -140,6 +162,11 @@ extend-exclude = [
     "notebooks",
     ".venv",
     "venv-*",
+    # The project venv. Ruff's default excludes cover `.venv` and `venv` but not a
+    # name like this, so a bare `ruff check` would try to lint 340 MB of
+    # site-packages. Both spellings listed to cover the rename.
+    ".CreditICL",
+    "CreditICL",
     # GENERATED, not written: scripts/vendor_model.py extracts this verbatim from
     # the pinned library dump. Formatting it would be undone on the next
     # extraction, and any real change would make our arms incomparable to the
@@ -147,7 +174,7 @@ extend-exclude = [
     "src/models/nanotabiclv2.py",
     # The faculty template's own sample script. Left exactly as shipped so the
     # template stays a usable reference; its ASCII-art docstring trips W605.
-    "scripts/example_script.py",
+    "docs/templates/example_script.py",
     # COPIED VERBATIM from the sibling TabPFNCredit project, where these
     # per-dataset recipes were developed and validated. Reformatting them would
     # make the two copies diff-noisy for no benefit, and the whole point is that
