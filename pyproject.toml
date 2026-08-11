@@ -38,7 +38,7 @@ dependencies = [
     # torch is deliberately loosely pinned: the correct build is
     # platform-specific (CPU wheel locally, CUDA wheel on VSC matched to the
     # driver), so it must be installed from the right index BEFORE this
-    # package. See README §Setup and docs/vsc.md. 2.4 is the floor because
+    # package. See README §Setup and docs/VSC.md. 2.4 is the floor because
     # TabICLv2's architecture uses scaled_dot_product_attention paths and
     # torch.compile behaviour that stabilised there.
     "torch>=2.4,<3.0",
@@ -93,7 +93,7 @@ muon = [
 #   1. `pip install -e ".[tabicl]"` — editable clone of upstream, for
 #      reading/diffing the reference prior and for the full-scale runs.
 #   2. Vendor NanoTabICL's `model.py` into src/models/ — this is the
-#      prototyping path we actually chose (see docs/experimental_design.md
+#      prototyping path we actually chose (see docs/EXPERIMENTAL_DESIGN.md
 #      §Venue). NanoTabICL ships NO pretraining code, so src/train/ is ours.
 #
 # Pin by commit, never by branch, so a prior ablation stays reproducible.
@@ -196,6 +196,10 @@ ignore = [
 # valuable than our own style here, since we diff against it.
 "src/prior/*" = ["N803", "N806"]
 "scripts/*" = ["E402"]      # template idiom: sys.path fixup before imports
+# Tests do `pytest.importorskip("torch")` before importing torch, so that a bare
+# environment skips rather than erroring at collection. That inherently puts imports
+# after a statement, which is exactly what E402 flags.
+"tests/*" = ["E402"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"

@@ -51,7 +51,10 @@ def _shrink(cfg: dict) -> dict:
     p["max_features"] = 16
     p["n_nodes_range"] = [2, 5]
     p["max_filter_attempts"] = 6
-    m = cfg["model"]
+    # `model:` is absent from the real configs — the architecture is TabICLv2's and is
+    # fixed in NanoTabICLv2's defaults. Tests override it to a tiny model purely for
+    # speed, which is the only legitimate reason to set it.
+    m = cfg.setdefault("model", {})
     m.update(
         {
             "embed_dim": 32,

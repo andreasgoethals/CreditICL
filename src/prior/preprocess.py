@@ -10,7 +10,7 @@
   target with two atoms survives it as a U-shaped target with two atoms on a
   rescaled axis. Only the [0,1] *support* is destroyed. This is why the project
   claims a **frequency and support-alignment** gap rather than a structural
-  absence — see docs/experimental_design.md §1.2.
+  absence — see docs/EXPERIMENTAL_DESIGN.md §1.2.
 * `outlier_removing` **clamps**, which literally creates point masses at the
   clamp bounds. Upstream therefore already manufactures atoms, just tiny ones
   far out in the tails.

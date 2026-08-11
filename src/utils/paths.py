@@ -127,21 +127,48 @@ def checkpoints_dir() -> Path:
 
 
 def outputs_dir() -> Path:
-    """Metrics, manifests, resolved configs. SMALL -> $VSC_DATA on the cluster.
+    """THE single root for everything the code produces. SMALL -> $VSC_DATA on VSC.
 
-    Locally this is `results/_local/`, NOT a separate `res/` directory. Real results
-    are produced on the cluster; anything a laptop writes is a smoke test. Keeping it
-    inside `results/` means there is exactly one place results can live, and `res/`
-    (which existed only as a local scratch dir, and which nothing else referenced)
-    is gone for good.
+    Every generated artefact lives under here — results, figures, logs, manifests — so
+    "what did this run produce?" and "what can I safely delete?" both have one answer.
+    Locally it is `output/` in the repo; on the cluster `$VSC_DATA/CreditICL/output/`,
+    which is the backed-up tier. Only genuinely large files (checkpoints, generated
+    prior pools, processed datasets) go elsewhere, to project storage.
     """
     if on_vsc():
         return _under(data_root(), "output")
-    return REPO_ROOT / "results" / "_local"
+    return REPO_ROOT / "output"
 
 
 def logs_dir() -> Path:
-    return _under(data_root(), "logs")
+    """Timestamped run logs. SMALL -> inside the output tree on $VSC_DATA.
+
+    Under `output/logs/`, not a separate top-level `logs/`. Everything a run writes that
+    is small and durable now lives in one place, so "what did this run produce?" has a
+    single answer and the cleanup helper has a single tree to walk.
+    """
+    return outputs_dir() / "logs"
+
+
+def manifests_dir() -> Path:
+    """Per-run CSV manifests — the training progress curves."""
+    return outputs_dir() / "manifests"
+
+
+def figures_dir(notebook: str | None = None) -> Path:
+    """Generated figures. One folder per notebook, plus a shared CAPTIONS.md."""
+    root = outputs_dir() / "figures"
+    return root / notebook if notebook else root
+
+
+def all_results_path() -> Path:
+    """Every notebook's text summary, concatenated in notebook order."""
+    return outputs_dir() / "All_Results.md"
+
+
+def captions_path() -> Path:
+    """The single shared captions file for every generated figure."""
+    return figures_dir() / "CAPTIONS.md"
 
 
 def repo_dir() -> Path:
@@ -295,7 +322,7 @@ def results_dir(task: str | None = None, pipeline: str | None = None) -> Path:
     Accepts `ood` alongside the real tasks, so out-of-domain scores get their own tree
     rather than being written next to the credit numbers.
     """
-    root = REPO_ROOT / "results"
+    root = outputs_dir() / "results"
     if task is None:
         return root
     task = task.lower()

@@ -176,6 +176,12 @@ def fetch_ood_datasets(
         for task_id in sorted(task_ids):
             if chosen >= n_per_task:
                 break
+            # Log EVERY attempt, not just successes. The first cluster run logged
+            # "advertises 72 tasks" and then went silent for minutes while downloading,
+            # which is indistinguishable from a hang. Downloads are the slow part, so
+            # the log has to show it is making progress.
+            log.info("[ood] %s [%d/%d kept] checking task %s ...",
+                     suite_name, chosen, n_per_task, task_id)
             try:
                 task = openml.tasks.get_task(task_id, download_data=False)
                 ds = openml.datasets.get_dataset(task.dataset_id, download_data=False)
@@ -192,6 +198,7 @@ def fetch_ood_datasets(
                 chosen += 1
                 continue
 
+            log.info("[ood]   downloading %s (id=%s) ...", ds.name, ds.dataset_id)
             try:
                 X_df, y_s, _, _ = ds.get_data(target=task.target_name, dataset_format="dataframe")
             except Exception as exc:  # noqa: BLE001

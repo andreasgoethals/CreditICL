@@ -36,6 +36,7 @@ from .grouping import GroupedSampler
 from .noise_features import add_noise_features
 from .preprocess import process_features, standard_scaling
 from .rng import PriorRNG
+from .shift import apply_shift
 from .targets.lgd import apply_lgd_target
 from .targets.pd import apply_pd_target
 
@@ -54,6 +55,13 @@ class TaskGenerator:
         self.regression = task == "lgd"
 
         self.credit_fraction = float(cfg.get("credit_fraction", 0.0))
+        # Shift stress lives under the credit path, so credit_fraction=0 is untouched.
+        self.shift_cfg = (cfg.get("credit", {}) or {}).get("shift", {}) or {}
+        # The midpoint of the train fraction range, used to place the shift boundary
+        # where the split is most likely to land. The exact split is chosen later by
+        # dataset.py, so this is an approximation on purpose.
+        lo, hi = cfg.get("train_frac_range", [0.3, 0.9])
+        self.train_frac_mid = float((lo + hi) / 2)
         if not 0.0 <= self.credit_fraction <= 1.0:
             raise ValueError(f"credit_fraction must be in [0, 1], got {self.credit_fraction}")
 
@@ -178,6 +186,17 @@ class TaskGenerator:
 
         X = torch.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
         y = torch.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0)
+
+        # Shift stress: arrange the rows so the context/query split falls across a
+        # distribution change. O'Prior's ablations find shift-aware stress contributes
+        # INDEPENDENTLY of mechanism diversity and realism, and it is the most
+        # credit-relevant of the three — a scorecard is always applied to a later,
+        # different population than the one it was built on. Applied to OUR datasets
+        # only, so the control arm stays exactly TabICL's prior.
+        if use_credit and self.shift_cfg:
+            X, y, smeta = apply_shift(self.rng, X, y, self.shift_cfg, self.train_frac_mid)
+            meta.update(smeta)
+
         return SyntheticTask(X=X.float(), y=y.float(), source=source, meta=meta)
 
     # -- public --------------------------------------------------------------

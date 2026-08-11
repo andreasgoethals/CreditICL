@@ -66,7 +66,7 @@ better" is indistinguishable from "our prior is harder".
 
 Two claims in this project's original framing were **weakened after reading
 the actual source**, and the honest versions are load-bearing — see
-[`docs/experimental_design.md`](docs/experimental_design.md) §"Verified
+[`docs/EXPERIMENTAL_DESIGN.md`](docs/EXPERIMENTAL_DESIGN.md) §"Verified
 premises". In short: TabICL's affine target standardisation is
 *shape-preserving*, so bounded/bimodal targets are a question of
 **frequency and alignment, not absence**; and TabICL's prior is **not**
@@ -122,7 +122,7 @@ from a fresh clone.
 
 ### 2. Prior
 
-See [`docs/experimental_design.md`](docs/experimental_design.md). The mixture lever
+See [`docs/EXPERIMENTAL_DESIGN.md`](docs/EXPERIMENTAL_DESIGN.md). The mixture lever
 `credit_fraction` sets the share of datasets from our credit-targeted path; the
 rest come from the unmodified TabICL prior. Defaults sweep `0.0 / 0.1 / 0.2 / 0.3`,
 i.e. 70–90% original plus a control arm.
@@ -147,11 +147,11 @@ full pool is 4.0 GB (LGD) / 5.4 GB (PD) *per variant*, and one shard (~200–270
 twenty times what the plots use:
 
 ```bash
-bash scripts/fetch_prior_sample.sh
+bash scripts/transfer/fetch_prior_sample.sh
 ```
 
 ```bash
-python scripts/inspect_pools.py
+python scripts/generate_prior.py --config config/LGD.yaml --status
 ```
 
 A partial copy is labelled **SAMPLE**, so it can never be mistaken for the pool the
@@ -162,7 +162,7 @@ model actually trained on.
 The same TabICLv2 architecture on each prior variant under a matched budget. One
 checkpoint per (arm × seed). Adaptation strategy — train from scratch, or
 fine-tune with parts frozen — is `init.strategy`; see
-[`docs/finetuning.md`](docs/finetuning.md).
+[`docs/FINETUNING.md`](docs/FINETUNING.md).
 
 ### 4. Eval
 
@@ -452,13 +452,13 @@ bash scripts/submit_pipeline.sh both
 
 preprocess → prior pools (2 arrays × 20 CPU tasks) → verify gate → GPU training
 array → evaluation. Each stage gets the hardware it needs; see
-[`docs/vsc.md`](docs/vsc.md) for why the pools are 40 parallel CPU tasks and why the
+[`docs/VSC.md`](docs/VSC.md) for why the pools are 40 parallel CPU tasks and why the
 gate exists.
 
 The local venv is for development and analysis only. Pretraining runs on
 KU Leuven VSC via SLURM scripts in `scripts/slurm/`. The cluster needs its
 own per-architecture environment — **do not copy the local `CreditICL/` venv to VSC**. See
-[`docs/vsc.md`](docs/vsc.md) for the environment recipe, GPU/partition
+[`docs/VSC.md`](docs/VSC.md) for the environment recipe, GPU/partition
 choice, credit costs, the Lustre-vs-GPFS rule, and the checkpoint/resume
 gap.
 

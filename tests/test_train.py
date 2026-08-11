@@ -8,8 +8,11 @@ every LGD result without ever raising an error.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
 
 pytest.importorskip("torch", reason="torch not installed — run: pip install -e '.[dev]'")
 
@@ -441,3 +444,72 @@ def test_resume_is_quiet_when_nothing_changed(tmp_path, lgd_cfg):
     text = _log_text(l2)
     assert "RESUMED from" in text
     assert "CHANGED" not in text
+
+
+# -- the architecture is fixed, and is NOT a config setting --------------------
+
+TABLE_A1 = {
+    "embed_dim": 128,
+    "col_num_blocks": 3,
+    "row_num_blocks": 3,
+    "icl_num_blocks": 12,
+    "col_nhead": 8,
+    "row_nhead": 8,
+    "icl_nhead": 8,
+    "feature_group_size": 3,
+    "n_cls_cols": 4,
+    "n_cls_rows": 128,
+}
+
+
+def test_model_defaults_are_tabiclv2_table_a1():
+    """The architecture is TabICLv2's, published in its Appendix Table A.1, and it never
+    varies — so it lives in the class defaults rather than in a config block that three
+    experiment files would each have to repeat and keep in sync.
+
+    This test is what makes that safe: the defaults ARE the specification, so a silent
+    edit to them fails here instead of quietly making our runs incomparable to the paper.
+    """
+    import inspect
+
+    from src.models.nanotabiclv2 import NanoTabICLv2
+
+    sig = inspect.signature(NanoTabICLv2.__init__)
+    for name, expected in TABLE_A1.items():
+        assert sig.parameters[name].default == expected, (
+            f"{name} default is {sig.parameters[name].default}, Table A.1 says {expected}"
+        )
+    # The ICL stage runs at embed_dim * n_cls_cols; the paper gives d=512 for TFicl.
+    assert TABLE_A1["embed_dim"] * TABLE_A1["n_cls_cols"] == 512
+
+
+def test_model_block_is_absent_from_the_configs():
+    """`model:` was removed from the configs: the architecture is fixed, so repeating it
+    per experiment only creates a way for the three to drift apart."""
+    from src.utils.config import load_yaml
+
+    for path in ("config/LGD.yaml", "config/PD.yaml"):
+        cfg = load_yaml(ROOT / path)
+        assert "model" not in cfg, (
+            f"{path} still has a model: block. The architecture is TabICLv2's and is "
+            f"fixed in NanoTabICLv2's defaults."
+        )
+
+
+def test_parameter_count_is_close_to_the_released_checkpoint():
+    """Our vendored architecture should be within a fraction of a percent of the released
+    TabICLv2 regressor. Measured difference: 15,224 params (0.05%), which is 44 LayerNorm
+    bias tensors the released regression model omits (`bias_free_ln: True` in its config,
+    and the paper states the regression model uses bias-free layer norms).
+
+    A zero bias is numerically identical to no bias, so this does not change the model at
+    initialisation — it only means ours *can* learn those terms.
+    """
+    from src.models.nanotabiclv2 import NanoTabICLv2
+
+    ours = sum(p.numel() for p in NanoTabICLv2(max_classes=0, out_dim=999).parameters())
+    released = 28_544_991  # measured from checkpoints/tabicl-regressor-v2-20260212.ckpt
+    assert abs(ours - released) / released < 0.001, (
+        f"ours {ours:,} vs released {released:,} — more than 0.1% apart, so the vendored "
+        f"architecture has drifted from the published one"
+    )

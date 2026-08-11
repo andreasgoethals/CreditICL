@@ -28,8 +28,8 @@
 set -euo pipefail
 export PYTHONUNBUFFERED=1
 export CREDITICL_OUTPUT_ROOT="${CREDITICL_OUTPUT_ROOT:-${VSC_DATA}/CreditICL}"
-mkdir -p "${CREDITICL_OUTPUT_ROOT}/logs"
-LOG="${CREDITICL_OUTPUT_ROOT}/logs/slurm_preprocess_$(date +%Y%m%d_%H%M%S)_j${SLURM_JOB_ID}.log"
+mkdir -p "${CREDITICL_OUTPUT_ROOT}/output/logs"
+LOG="${CREDITICL_OUTPUT_ROOT}/output/logs/slurm_preprocess_$(date +%Y%m%d_%H%M%S)_j${SLURM_JOB_ID}.log"
 exec > "$LOG" 2>&1
 echo "slurm wrapper log: ${LOG}"
 

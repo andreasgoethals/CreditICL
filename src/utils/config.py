@@ -70,8 +70,33 @@ def is_literal_list(key: str, value: list | None = None) -> bool:
     return key.endswith(NO_EXPAND_SUFFIX) or key in NO_EXPAND_EXACT
 
 
+def resolve_config_path(path: str | Path) -> Path:
+    """Find a config file whether the caller's cwd is the repo root or not.
+
+    A relative path like `config/LGD.yaml` only resolves when the process was started
+    from the repo root. Jupyter starts in `notebooks/`, so every notebook died with
+    `FileNotFoundError: config/LGD.yaml` even though the file was plainly there and
+    `sys.path` had been fixed up. Falling back to the repo root makes the same string
+    work from anywhere, which is what callers already assume.
+    """
+    p = Path(path)
+    if p.is_file():
+        return p
+    if not p.is_absolute():
+        from src.utils.paths import REPO_ROOT
+
+        candidate = REPO_ROOT / p
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        f"no config at {path!r}. Tried it as given and relative to the repo root. "
+        f"Pass a path that exists, or an absolute one."
+    )
+
+
 def load_yaml(path: str | Path) -> dict[str, Any]:
-    """Load a YAML file into a dict."""
+    """Load a YAML file into a dict. Relative paths resolve against the repo root."""
+    path = resolve_config_path(path)
     with open(path, encoding="utf-8") as fh:
         data = yaml.safe_load(fh)
     if not isinstance(data, dict):
@@ -123,12 +148,56 @@ def sweep_axes(cfg: dict[str, Any]) -> list[tuple[str, list[Any]]]:
     return _walk(cfg)
 
 
+def apply_sweep_block(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Move a top-level ``sweep:`` block into the config tree it refers to.
+
+    The block maps dotted paths to lists::
+
+        sweep:
+          prior.credit_fraction: [0.0, 0.1, 0.2, 0.3]
+          seeds: [0, 1, 2]
+
+    Why it exists: the swept knobs are what define the experiment, and they were
+    scattered four levels deep across a 200-line file, so reading off "what does this
+    run vary?" meant hunting for square brackets. Collecting them at the top makes the
+    whole design visible at a glance, and everything below the block is then a single
+    value by construction.
+
+    Paths are written into the tree, so the rest of the pipeline sees exactly the nested
+    structure it always did — nothing downstream knows this block exists.
+    """
+    if "sweep" not in cfg:
+        return cfg
+    out = copy.deepcopy(cfg)
+    block = out.pop("sweep") or {}
+    if not isinstance(block, dict):
+        raise ValueError(f"sweep: must be a mapping of dotted paths to lists, got {type(block).__name__}")
+
+    for path, values in block.items():
+        if not isinstance(values, list):
+            raise ValueError(
+                f"sweep.{path} must be a LIST — the block exists to hold multi-value "
+                f"knobs. Single values belong in the config body below it."
+            )
+        if len(values) < 2:
+            raise ValueError(
+                f"sweep.{path} has {len(values)} value(s). A one-value entry here is a "
+                f"single value pretending to be a sweep; move it into the config body."
+            )
+        if path == "seeds":
+            out["seeds"] = values
+        else:
+            _set_path(out, path, values)
+    return out
+
+
 def expand_grid(cfg: dict[str, Any]) -> list[dict[str, Any]]:
     """Expand a config into one concrete config per lever combination.
 
     Every returned config has all sweep lists collapsed to single values, plus a
     ``_grid`` block recording which combination it is. Order is deterministic.
     """
+    cfg = apply_sweep_block(cfg)
     axes = sweep_axes(cfg)
     if not axes:
         out = copy.deepcopy(cfg)
@@ -202,6 +271,7 @@ def expand_with_seeds(cfg: dict[str, Any]) -> list[dict[str, Any]]:
     levers rather than in seed. That way a truncated array still covers the
     whole lever grid at one seed instead of one lever at every seed.
     """
+    cfg = apply_sweep_block(cfg)
     seeds = cfg.get("seeds", [cfg.get("seed", 0)])
     if not isinstance(seeds, list):
         seeds = [seeds]

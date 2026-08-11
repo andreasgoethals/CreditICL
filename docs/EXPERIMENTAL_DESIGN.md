@@ -396,17 +396,17 @@ src/train/
 
 One checkpoint per (arm × seed), written to `$VSC_SCRATCH` and copied back to
 `$VSC_DATA` on completion — scratch is purged at 30 days and is not backed up
-(`docs/vsc.md` §4).
+(`docs/VSC.md` §4).
 
 **Checkpoint/resume is mandatory, not optional.** The VSC docs contain **no
 Slurm requeue recipe** (the string `requeue` does not occur), and the 72 h
 walltime ceiling is far below TabICLv2's reference 500,000-step stage 1. The
 prior's **RNG state must be checkpointed too**, or a resumed run silently
 resamples a different task stream and the arm is no longer the arm.
-`docs/vsc.md` §3 has the self-resubmission pattern.
+`docs/VSC.md` §3 has the self-resubmission pattern.
 
 **Fan out one job per arm** (`--array`), since arms are fully independent and
-parallelism is the stated preference. `docs/vsc.md` §8 has the array skeleton.
+parallelism is the stated preference. `docs/VSC.md` §8 has the array skeleton.
 
 ---
 
@@ -482,7 +482,7 @@ more exposed, not less.
 **Freeze a split before touching the prior:** development datasets for prior
 design and all iteration; held-out datasets **never inspected** until the
 final run. Record the split, the date, and the commit in
-`docs/changelog.md`.
+`docs/CHANGELOG.md`.
 
 **[OPEN]** The exact split needs Andreas's ratification — this is a
 scientific commitment, not a coding choice. Proposed starting point: hold

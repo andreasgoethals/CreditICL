@@ -6,7 +6,7 @@
 #
 #  Needs a GPU because TabPFN-3 and TabICLv2 are transformers; CatBoost and the
 #  linear models ignore it. wICE gpu_a100 is the cheapest GPU that fits
-#  (141.667 credits/GPU-min vs 437.50 for B200 — see docs/vsc.md).
+#  (141.667 credits/GPU-min vs 437.50 for B200 — see docs/VSC.md).
 #
 #  BEFORE THE FIRST RUN, from a LOGIN node:
 #    1) export TABPFN_TOKEN=<your key from https://ux.priorlabs.ai/account>
@@ -34,8 +34,8 @@ set -euo pipefail
 export PYTHONUNBUFFERED=1
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 export CREDITICL_OUTPUT_ROOT="${CREDITICL_OUTPUT_ROOT:-${VSC_DATA}/CreditICL}"
-mkdir -p "${CREDITICL_OUTPUT_ROOT}/logs"
-LOG="${CREDITICL_OUTPUT_ROOT}/logs/slurm_evaluate_$(date +%Y%m%d_%H%M%S)_j${SLURM_JOB_ID}.log"
+mkdir -p "${CREDITICL_OUTPUT_ROOT}/output/logs"
+LOG="${CREDITICL_OUTPUT_ROOT}/output/logs/slurm_evaluate_$(date +%Y%m%d_%H%M%S)_j${SLURM_JOB_ID}.log"
 exec > "$LOG" 2>&1
 echo "slurm wrapper log: ${LOG}"
 

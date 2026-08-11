@@ -1,8 +1,0 @@
-dataset,task,n_rows,n_features,target_col,n_raw_rows,n_raw_cols,target_min,target_max,target_mean,n_missing_cells,base_rate,mass_at_0,mass_at_1,cache_version,raw_path,seconds,cached
-0001.heloc,lgd,58862,9,LGD_ACTG,0,0,0.0,1.0,0.7068543434143066,18378,,0.21557201590160036,0.5146614114369202,3,C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\data\raw\lgd\0001.heloc.csv,0.29,True
-0002.loss2,lgd,4637,52,_ELGD,0,0,0.0,1.0,0.39203235507011414,6522,,0.036230321328445114,0.03709294802674143,3,C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\data\raw\lgd\0002.loss2.csv,0.19,True
-0003.axa,lgd,2545,2,lgd_time,0,0,9.999999747378752e-06,0.9999899864196777,0.22813008725643158,0,,0.0,0.0,3,C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\data\raw\lgd\0003.axa.csv,0.04,True
-0004.base_model,lgd,762,202,LGD_brute,0,0,0.0,1.0,0.3233873248100281,13536,,0.10498687664041995,0.1194225721784777,3,C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\data\raw\lgd\0004.base_model.csv,0.32,True
-0005.base_modelisation,lgd,594,256,lgd_defaut,0,0,0.0,1.0,0.33007532358169556,1058,,0.11616161616161616,0.15993265993265993,3,C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\data\raw\lgd\0005.base_modelisation.csv,0.31,True
-0006.lgd_freddie,lgd,16002,20,lgd,0,0,0.0,1.0,0.45884257555007935,3753,,0.1141732283464567,0.08067741532308462,3,C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\data\raw\lgd\0006.lgd_freddie.csv,0.11,True
-0007.lgd_lendingclub,lgd,5627,17,lgd,0,0,0.0,1.0,0.5905107259750366,71,,0.014750311000533143,0.0031988626266216454,3,C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\data\raw\lgd\0007.lgd_lendingclub.csv,0.05,True

@@ -171,6 +171,21 @@ def lgd_collateral(
     # removed the atom this whole mechanism exists to produce. Surplus collateral
     # covers the workout costs in reality, and the bank is made whole.
     net_recovery = coverage * (1.0 - haircut) - costs
+
+    # INTERIOR-ONLY draws: a book with no total losses and no fully-recovered loans.
+    # `atom_prob` needs some datasets to have NO boundary mass at all, because
+    # lgd_lendingclub has only 1.8% — effectively an interior distribution.
+    #
+    # Simply narrowing the parameter ranges did not achieve that. Coverage is lognormal,
+    # so its right tail always produced some rows with net_recovery > 1, and those clip
+    # to exactly 0. The leak was in EVERY draw, which is why atom_prob=0 still yielded
+    # atoms in 57% of datasets. Clamping the ranked coverage per row is what actually
+    # guarantees an interior target: net_recovery is held inside (eps, 1-eps), so the
+    # clip below never binds.
+    if cfg.get("interior_only", False):
+        eps = float(cfg.get("interior_margin", 0.02))
+        net_recovery = net_recovery.clamp(min=eps).clamp(max=1.0 - eps)
+
     y = (1.0 - net_recovery).clamp(0.0, 1.0)
 
     meta = {
@@ -233,7 +248,14 @@ def lgd_workout(
 
     cost_mean = float(rng.uniform(*cfg.get("cost_range", [0.0, 0.15])))
     costs = cost_mean * (0.5 + rng.rand(n))
-    y = (1.0 - discounted + costs).clamp(0.0, 1.0)
+    loss = 1.0 - discounted + costs
+    # Same interior guarantee as `lgd_collateral`. With a recovery floor this path is
+    # already interior in practice, but the flag has to mean the same thing everywhere or
+    # `segment_mixture` (which mixes the two) could reintroduce atoms through one branch.
+    if cfg.get("interior_only", False):
+        eps = float(cfg.get("interior_margin", 0.02))
+        loss = loss.clamp(min=eps).clamp(max=1.0 - eps)
+    y = loss.clamp(0.0, 1.0)
 
     meta = {
         "mechanism": "workout",
@@ -325,23 +347,17 @@ def apply_lgd_mechanism(
     wants_atoms = rng.boolean(atom_prob)
     mech_cfg = dict(cfg)
     if not wants_atoms:
-        # Force a fully-interior draw: every facility recovers something (a floor well
-        # above the workout costs), nothing is unsecured, and no facility recovers
-        # nothing. The result lands strictly inside (0, 1).
-        mech_cfg["recovery_floor_range"] = [0.35, 0.6]
+        # A book with no total losses and no fully-recovered loans — partially secured
+        # lending at moderate LTV, which is a real portfolio type, not a contrivance.
+        #
+        # `interior_only` is an explicit guarantee rather than an attempt to arrange it
+        # by narrowing parameter ranges. The range-narrowing version leaked: coverage is
+        # lognormal, its right tail always pushed some rows past full recovery, and those
+        # clipped to exactly 0. See `lgd_collateral`.
+        mech_cfg["interior_only"] = True
         mech_cfg["zero_recovery_range"] = [0.0, 0.0]
         mech_cfg["unsecured_share_range"] = [0.0, 0.0]
-        mech_cfg["log_coverage_mean_range"] = [-0.2, 0.2]
-        mech_cfg["log_coverage_sd_range"] = [0.2, 0.4]
-        mech_cfg["cost_range"] = [0.02, 0.10]
-        # The haircut has to be bounded too. With coverage near 1 and a 55% haircut,
-        # net recovery goes negative and the target clips to exactly 1 — which put atoms
-        # back into a draw that was supposed to be interior. A small haircut keeps
-        # net recovery inside (0, 1) so the whole distribution stays interior.
-        mech_cfg["haircut_range"] = [0.05, 0.15]
-        mech_cfg["shock_beta_range"] = [0.0, 0.1]
-        mech_cfg["discount_range"] = [0.0, 0.05]
-        mech_cfg["max_segments"] = 2
+        mech_cfg["recovery_floor_range"] = [0.25, 0.6]
 
     y, meta = LGD_MECHANISMS[choice](rng, y_latent, mech_cfg, shock)
 

@@ -191,7 +191,7 @@ def _require_variants(loaded: dict[str, list[SyntheticTask]]) -> None:
             "no variants to plot. Either generate a pool:\n"
             "  python scripts/generate_prior.py --config config/LGD.yaml --variant original --all\n"
             "or copy one from the cluster:\n"
-            "  bash scripts/fetch_prior_sample.sh\n"
+            "  bash scripts/transfer/fetch_prior_sample.sh\n"
             "or use load_variants_or_generate(), which falls back to live generation."
         )
 

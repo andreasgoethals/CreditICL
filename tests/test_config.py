@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.utils.config import (  # noqa: E402
+    apply_sweep_block,
     expand_grid,
     expand_with_seeds,
     is_literal_list,
@@ -33,14 +34,15 @@ CONFIGS = ["config/LGD.yaml", "config/PD.yaml"]
 
 @pytest.mark.parametrize("path", CONFIGS)
 def test_config_loads(path):
-    cfg = load_yaml(ROOT / path)
-    for key in ("experiment", "task", "seeds", "prior", "model", "train", "init"):
+    cfg = apply_sweep_block(load_yaml(ROOT / path))
+    # No "model": the architecture is fixed in NanoTabICLv2's defaults, not configured.
+    for key in ("experiment", "task", "seeds", "prior", "train", "init"):
         assert key in cfg, f"{path} is missing the '{key}' block"
 
 
 @pytest.mark.parametrize("path", CONFIGS)
 def test_task_matches_filename(path):
-    cfg = load_yaml(ROOT / path)
+    cfg = apply_sweep_block(load_yaml(ROOT / path))
     expected = "lgd" if "LGD" in path else "pd"
     assert cfg["task"] == expected
     assert cfg["experiment"] == expected
@@ -128,7 +130,7 @@ def test_seeds_are_crossed_outermost(path):
     """A cut-short array should cover the lever grid at one seed, not one lever
     at every seed. That only holds if seed is the outer loop."""
     runs = expand_with_seeds(load_yaml(ROOT / path))
-    n_seeds = len(load_yaml(ROOT / path)["seeds"])
+    n_seeds = len(apply_sweep_block(load_yaml(ROOT / path))["seeds"])
     per_seed = len(runs) // n_seeds
     assert {r["seed"] for r in runs[:per_seed]} == {runs[0]["seed"]}
 
@@ -145,7 +147,7 @@ def test_grid_stays_a_sane_size(path):
 
 @pytest.mark.parametrize("path", CONFIGS)
 def test_credit_fraction_is_a_probability(path):
-    cfg = load_yaml(ROOT / path)
+    cfg = apply_sweep_block(load_yaml(ROOT / path))
     values = cfg["prior"]["credit_fraction"]
     for v in values if isinstance(values, list) else [values]:
         assert 0.0 <= v <= 1.0
@@ -155,7 +157,7 @@ def test_credit_fraction_is_a_probability(path):
 def test_control_arm_is_present(path):
     """credit_fraction = 0 is the baseline everything is measured against. If it
     is missing there is nothing to compare to."""
-    values = load_yaml(ROOT / path)["prior"]["credit_fraction"]
+    values = apply_sweep_block(load_yaml(ROOT / path))["prior"]["credit_fraction"]
     values = values if isinstance(values, list) else [values]
     assert 0.0 in values, "the control arm (credit_fraction 0.0) must be in the sweep"
 
@@ -181,12 +183,14 @@ def test_pretrained_path_required_when_not_scratch(path):
 
 
 @pytest.mark.parametrize("path", CONFIGS)
-def test_model_block_is_identical_across_configs(path):
-    """The controlled comparison requires the architecture to be the same for LGD
-    and PD. If these drift apart the two experiments stop being comparable."""
-    lgd = load_yaml(ROOT / "config" / "LGD.yaml")["model"]
-    pd_ = load_yaml(ROOT / "config" / "PD.yaml")["model"]
-    assert lgd == pd_
+def test_no_model_block_in_the_configs(path):
+    """The architecture is TabICLv2's, is identical for LGD and PD, and never varies — so
+    it lives in NanoTabICLv2's defaults, not in a config block each file would have to
+    repeat and keep in sync. See test_train.py for the check that those defaults match
+    the paper's Table A.1."""
+    assert "model" not in load_yaml(ROOT / path), (
+        f"{path} has a model: block; the architecture is fixed in code"
+    )
 
 
 def test_config_folder_has_no_subfolders():

@@ -105,8 +105,10 @@ core.log
 wandb/
 slurm-*.out
 slurm-*.err
-logs/*
-!logs/.gitkeep
+# Run logs now live under the output tree (results/_local/logs locally,
+# $VSC_DATA/CreditICL/output/logs on the cluster), so everything a run writes is in
+# one place. The old top-level logs/ stays ignored so a stray write cannot be committed.
+logs/
 
 # ---------------------------------------------------------------------------
 # Editor / OS
@@ -123,3 +125,30 @@ desktop.ini
 # NOTE: tfm-library/ is a submodule and is tracked as a commit pointer only.
 # Never add files inside it. See AGENTS.md.
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# output/ — THE single root for everything the code generates.
+#
+# Committed:  CAPTIONS.md, All_Results.md, PNG figures, small result CSVs. These are
+#             the readable record of a run and are worth having in git history.
+# Ignored:    PDF figures (regenerated, and the PNG carries the same picture), logs,
+#             per-run metrics, manifests, and any large array.
+# ---------------------------------------------------------------------------
+output/**/*.pdf
+output/logs/
+output/manifests/
+output/**/*.npy
+output/**/*.npz
+output/**/*.parquet
+output/**/*.pkl
+output/**/*.jsonl
+output/**/_run.py
+output/**/_capture.json
+
+# Superseded top-level output locations, kept ignored so a stray write cannot be
+# committed. LEADING SLASH matters: a bare `figures/` matches at any depth and would
+# also swallow `output/figures/`, which is the one place figures now belong.
+/logs/
+/res/
+/results/
+/figures/

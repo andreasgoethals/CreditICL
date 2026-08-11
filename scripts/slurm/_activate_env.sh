@@ -75,16 +75,45 @@ _env_is_healthy() {
     # `conda activate` can "succeed" on an empty env, whose bin/ contributes
     # nothing and where `python` silently falls through to /bin/python. So check
     # that the interpreter really lives in the env AND that the deps import.
+    local env_name="${CONDA_DEFAULT_ENV:-?}"
     local py
     py="$(command -v python || true)"
     if [[ -z "${CONDA_PREFIX:-}" || "${py}" != "${CONDA_PREFIX}"* ]]; then
-        echo "  [activate] python (${py:-none}) is NOT inside CONDA_PREFIX (${CONDA_PREFIX:-unset})." >&2
+        echo "  [activate] '${env_name}': python (${py:-none}) is NOT inside CONDA_PREFIX (${CONDA_PREFIX:-unset})." >&2
         return 1
     fi
-    local err
-    if ! err=$(python -c "import numpy, torch, sklearn, yaml" 2>&1); then
-        echo "  [activate] dependency import failed in env '${CONDA_DEFAULT_ENV:-?}':" >&2
-        echo "${err}" | head -3 | sed 's/^/      /' >&2
+    echo "  [activate] '${env_name}': python = ${py} ($(python -V 2>&1))" >&2
+
+    # Report EVERY missing package by name, one per line. The previous version ran a
+    # single combined import and printed `head -3` of the traceback — which is exactly
+    # the three boilerplate lines ("Traceback", "File <string>", the import statement)
+    # and cuts off the fourth line, the ModuleNotFoundError that actually names the
+    # missing package. The first real cluster run produced a completely undiagnosable
+    # log because of it.
+    local missing=""
+    local pkg
+    for pkg in numpy torch sklearn yaml pandas pyarrow; do
+        if ! python -c "import ${pkg}" >/dev/null 2>&1; then
+            missing="${missing} ${pkg}"
+        fi
+    done
+    if [[ -n "${missing}" ]]; then
+        echo "  [activate] '${env_name}': MISSING PACKAGES:${missing}" >&2
+        # The full error for the first missing one, so an ABI/CUDA failure (which is
+        # not a missing package at all) is distinguishable from a plain absent import.
+        local first
+        first="$(echo "${missing}" | awk '{print $1}')"
+        echo "  [activate] full error for '${first}':" >&2
+        python -c "import ${first}" 2>&1 | tail -5 | sed 's/^/      /' >&2
+        echo "  [activate] pip sees: $(python -m pip --version 2>&1 | head -1)" >&2
+        return 1
+    fi
+
+    # `import src` proves the project itself is installed (`pip install -e .`), not just
+    # its dependencies. Without it every script dies later on `from src.utils...`.
+    if ! python -c "import src" >/dev/null 2>&1; then
+        echo "  [activate] '${env_name}': dependencies are fine but the PROJECT is not installed." >&2
+        echo "  [activate] run:  pip install -e '.[dev,eval]'  (from \$VSC_DATA/CreditICL)" >&2
         return 1
     fi
     return 0
@@ -104,11 +133,19 @@ fi
 if [[ -z "${_activated}" ]]; then
     echo "ERROR: no usable conda env (tried '${CONDA_ENV}' and 'base')." >&2
     conda env list >&2
-    echo "       Repair once from a Genius login node:" >&2
-    echo "         conda create -y -n ${CONDA_ENV} python=3.12" >&2
+    echo "" >&2
+    echo "       REPAIR, once, from a login node. Run these one line at a time:" >&2
+    echo "         conda deactivate            # leave whatever is active now" >&2
     echo "         conda activate ${CONDA_ENV}" >&2
+    echo "         which python                # MUST be inside .../envs/${CONDA_ENV}/bin" >&2
     echo "         cd \$VSC_DATA/CreditICL" >&2
-    echo "         pip install -e \".[dev]\"" >&2
+    echo "         pip install -e \".[dev,eval]\"" >&2
+    echo "" >&2
+    echo "       If 'which python' points anywhere else, the install lands in the WRONG" >&2
+    echo "       env and this job fails again with exactly this message. That is the" >&2
+    echo "       single most common cause. If the env is broken beyond repair:" >&2
+    echo "         conda env remove -n ${CONDA_ENV}" >&2
+    echo "         conda create -y -n ${CONDA_ENV} python=3.12" >&2
     exit 1
 fi
 

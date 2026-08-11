@@ -22,7 +22,7 @@ seconds, and the decoding rule. A number without those is not reproducible, and
 **Splits are random by default and that is a known weakness.** Purucker 2026 shows
 TFM rankings change once splits become temporal or grouped, and credit data is
 exactly where that bites. `split="temporal"` is wired but needs a date column per
-dataset, which we do not yet have — see docs/experimental_design.md §5.4.
+dataset, which we do not yet have — see docs/EXPERIMENTAL_DESIGN.md §5.4.
 """
 
 from __future__ import annotations
@@ -68,7 +68,7 @@ def make_split(
         # temporal result that was not temporal.
         raise NotImplementedError(
             "temporal splits need a per-dataset date column, which the registry does "
-            "not carry yet. See docs/experimental_design.md §5.4."
+            "not carry yet. See docs/EXPERIMENTAL_DESIGN.md §5.4."
         )
     if split != "random":
         raise ValueError(f"unknown split {split!r}")

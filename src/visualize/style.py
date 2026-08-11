@@ -60,6 +60,8 @@ def use_style(context: str = "notebook") -> None:
             # the laptop and on the cluster — no missing-font fallbacks.
             "font.family": "DejaVu Sans",
             "font.size": base,
+            # Minus signs as a proper typographic minus rather than a hyphen.
+            "axes.unicode_minus": True,
             "axes.titlesize": base * 1.05,
             "axes.labelsize": base * 0.95,
             "xtick.labelsize": base * 0.85,
@@ -68,7 +70,7 @@ def use_style(context: str = "notebook") -> None:
             "figure.titlesize": base * 1.35,
             # Titles left-aligned and bold: the eye finds them without hunting.
             "axes.titlelocation": "left",
-            "axes.titleweight": "semibold",
+            "axes.titleweight": "bold",
             "axes.titlepad": 10,
             # Ink. Only the left and bottom spines; the other two carry no data.
             "axes.edgecolor": MUTED,
@@ -81,12 +83,23 @@ def use_style(context: str = "notebook") -> None:
             "ytick.color": MUTED,
             "xtick.direction": "out",
             "ytick.direction": "out",
-            # A grid you can read through, behind the data.
+            # A grid you can read through, behind the data. Dashed rather than solid
+            # so it recedes further: a solid grid competes with thin data lines.
             "axes.grid": True,
             "axes.grid.axis": "y",
             "grid.color": GRID,
-            "grid.linewidth": 0.8,
+            "grid.linewidth": 0.7,
+            "grid.linestyle": "-",
+            "grid.alpha": 0.9,
             "axes.axisbelow": True,
+            # Ticks pulled in and shortened; with only two spines the long default
+            # ticks read as stray marks.
+            "xtick.major.size": 3.5,
+            "ytick.major.size": 3.5,
+            "xtick.major.width": 0.8,
+            "ytick.major.width": 0.8,
+            "xtick.major.pad": 4,
+            "ytick.major.pad": 4,
             # Figure. White, not transparent: a transparent PNG pasted into a dark
             # slide turns all the black text invisible.
             "figure.facecolor": "white",
@@ -95,14 +108,28 @@ def use_style(context: str = "notebook") -> None:
             "figure.dpi": 110,
             "savefig.dpi": 200,
             "savefig.bbox": "tight",
+            "savefig.pad_inches": 0.08,
             "figure.constrained_layout.use": True,
+            # Breathing room between panels. The default packs subplots so tightly that
+            # a two-line title on one panel touches the axis labels of the one above.
+            "figure.constrained_layout.h_pad": 0.09,
+            "figure.constrained_layout.w_pad": 0.09,
+            "figure.constrained_layout.hspace": 0.10,
+            "figure.constrained_layout.wspace": 0.08,
             # Data marks.
             "lines.linewidth": 1.8,
             "lines.markersize": 5,
+            "lines.solid_capstyle": "round",
             "patch.linewidth": 0.6,
             "patch.edgecolor": "white",
             "hist.bins": 40,
             "legend.frameon": False,
+            "legend.borderaxespad": 0.4,
+            "legend.handlelength": 1.6,
+            "legend.columnspacing": 1.2,
+            # Suptitles sit slightly larger and are left-aligned to match panel titles,
+            # so the eye reads down one column rather than zig-zagging.
+            "figure.titleweight": "bold",
             "axes.prop_cycle": mpl.cycler(color=SERIES),
         }
     )

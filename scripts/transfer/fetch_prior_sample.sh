@@ -2,9 +2,9 @@
 # =============================================================================
 #  Copy prior pools from the cluster to this machine, for local visualisation.
 #
-#      bash scripts/fetch_prior_sample.sh                 # 1 shard per pool  (~1 GB)
-#      bash scripts/fetch_prior_sample.sh --shards 3      # 3 shards per pool (~3 GB)
-#      bash scripts/fetch_prior_sample.sh --full          # everything       (~19 GB)
+#      bash scripts/transfer/fetch_prior_sample.sh                 # 1 shard per pool  (~1 GB)
+#      bash scripts/transfer/fetch_prior_sample.sh --shards 3      # 3 shards per pool (~3 GB)
+#      bash scripts/transfer/fetch_prior_sample.sh --full          # everything       (~19 GB)
 #
 #  WHY THE DEFAULT IS ONE SHARD, NOT EVERYTHING
 #
@@ -45,7 +45,7 @@ done
 if [[ -z "$USER_ID" ]]; then
     echo "ERROR: set your VSC username first:" >&2
     echo "    export VSC_USER=vsc3xxxxx" >&2
-    echo "  or: bash scripts/fetch_prior_sample.sh --user vsc3xxxxx" >&2
+    echo "  or: bash scripts/transfer/fetch_prior_sample.sh --user vsc3xxxxx" >&2
     exit 2
 fi
 
@@ -96,7 +96,7 @@ done
 cat <<'EOF'
 Done. Check what you have:
 
-    python scripts/inspect_pools.py
+    python scripts/generate_prior.py --config config/LGD.yaml --status
 
 Then open notebooks/prior_visualisation.ipynb — it discovers whatever is present.
 EOF

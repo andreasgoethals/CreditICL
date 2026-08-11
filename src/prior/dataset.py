@@ -8,7 +8,7 @@ model consumes a dense (batch, rows, cols) tensor. TabICL achieves the same via
 
 Prior generation is CPU-bound and dominates wall-clock — TabICLv2's reference
 scripts run it with `--prior_device cpu --n_jobs 16`. That is why `num_workers`
-matters more here than in a typical training job, and why `docs/vsc.md` picks
+matters more here than in a typical training job, and why `docs/VSC.md` picks
 partitions by cores-per-GPU rather than by GPU speed alone.
 
 Each worker gets its own `PriorRNG`, seeded from (base_seed, worker_id), so the

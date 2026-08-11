@@ -40,15 +40,17 @@ Read `tfm-library/AGENTS.md` for the full upstream contract.
 - When a result depends on the literature, record the pinned commit.
   Current pin: **`21d555a`** (2026-08-05).
 
-## 2. The faculty template is the layout. Fill it in; do not restructure.
+## 2. Follow the template
 
-`config/ data/ notebooks/ scripts/ src/` come from our research group's
-project template. Do not rename or delete them. `src/` holds importable
-code, `scripts/` holds thin runnables, `config/` holds YAML. If something
-has no obvious home, **ask** rather than inventing a parallel structure.
+`docs/TEMPLATE.md` defines the layout and the rules. **Adhere to it.** The only
+reason to deviate is that the user has explicitly told you to, and when you
+deviate you must **say so in your reply** — never silently.
 
-See [README.md](README.md#repository-layout) for what goes where in this
-project specifically.
+In short: `src/` holds all importable logic, `scripts/` holds only runnables
+you actually invoke, `config/` holds YAML, `docs/` holds documentation,
+`output/` holds everything the code generates, `tests/` mirrors `src/`.
+
+See [README.md](README.md#repository-layout) for what goes where here.
 
 ## 3. Never commit data or checkpoints
 
@@ -68,7 +70,7 @@ confirmed from the library, the upstream source, or a primary reference,
 - a library annotation from the primary source it summarises.
 
 Several claims in this project's framing were revised on exactly these
-grounds — see [`docs/experimental_design.md`](docs/experimental_design.md)
+grounds — see [`docs/EXPERIMENTAL_DESIGN.md`](docs/EXPERIMENTAL_DESIGN.md)
 §"Verified premises".
 
 ## 5. Do not run training, install packages, or push without asking
@@ -93,5 +95,5 @@ normal POSIX syntax. Keep the two straight.
 ## 7. Log substantive changes
 
 Every substantive change gets a dated entry in
-[`docs/changelog.md`](docs/changelog.md) — one line each for what and why.
+[`docs/CHANGELOG.md`](docs/CHANGELOG.md) — one line each for what and why.
 Mirrors the library's own convention.

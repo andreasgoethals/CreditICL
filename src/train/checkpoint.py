@@ -4,7 +4,7 @@ Why this is load-bearing rather than a convenience: the KU Leuven VSC
 documentation contains **no Slurm requeue recipe** (the string `requeue` does not
 appear in it), and its only documented checkpointing facility is the Torque-era
 `csub`/BLCR framework. With a 72 h walltime ceiling, a long run must checkpoint,
-resume, and resubmit itself. See `docs/vsc.md` §3.
+resume, and resubmit itself. See `docs/VSC.md` §3.
 
 Naming follows TabICL (`step-<n>.ckpt`) so `get_latest_checkpoint` logic is
 familiar, and distinguishes *temporary* checkpoints (frequent, pruned) from

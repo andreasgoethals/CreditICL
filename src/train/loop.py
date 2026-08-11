@@ -18,7 +18,7 @@ A note on the quantile head and boundary atoms: a 999-quantile grid represents a
 point mass *exactly* (an atom at 0 with mass 0.11 is just levels 0.001..0.11 all
 mapping to 0). Representability is therefore **not** the bottleneck for LGD; the
 open questions are point-prediction extraction from a bimodal predictive and
-support constraints at decode time. See docs/experimental_design.md §1.5.
+support constraints at decode time. See docs/EXPERIMENTAL_DESIGN.md §1.5.
 """
 
 from __future__ import annotations
@@ -40,6 +40,7 @@ from . import distributed as dist
 from .adapt import STRATEGIES, apply_freezing, load_pretrained, set_training_mode
 from .checkpoint import latest_checkpoint, load_checkpoint, prune_checkpoints, save_checkpoint
 from .optim import build_optimizer, build_scheduler
+from .progress import ProgressConfig, ProgressTracker
 
 
 def _slurm_seconds_left() -> float:
@@ -253,6 +254,36 @@ class Trainer:
         self.datasets_seen = 0
         self.resumed_at: int | None = None
 
+        # Learning curve on REAL data. Only rank 0 measures and writes, so a multi-GPU
+        # run produces one curve rather than N interleaved ones.
+        pcfg = cfg.get("progress", {}) or {}
+        from ..utils.paths import manifests_dir, on_vsc
+
+        # Same tier rule as the logs: on the cluster the manifest joins the other small
+        # durable output under $VSC_DATA/output/; locally it stays inside the run's own
+        # directory, so a test with an explicit out_dir is self-contained.
+        manifest_dir = manifests_dir() if on_vsc() else Path(self.out_dir) / "manifests"
+
+        self.progress = ProgressTracker(
+            ProgressConfig(
+                every_datasets=int(pcfg.get("every_datasets", 0)),
+                datasets=list(pcfg.get("datasets", []) or []),
+                n_datasets=int(pcfg.get("n_datasets", 4)),
+                n_ood=int(pcfg.get("n_ood", 4)),
+                context_rows=int(pcfg.get("context_rows", 512)),
+                max_test_rows=int(pcfg.get("max_test_rows", 2000)),
+                seed=self.seed,
+            ),
+            self.task,
+            cfg.get("_run_name", "run"),
+            manifest_dir,
+        ) if self.dist.is_main else None
+        if self.progress is not None and self.progress.enabled:
+            self.log.info(
+                "progress curve -> %s  (every %s datasets)",
+                self.progress.path, f"{self.progress.cfg.every_datasets:,}",
+            )
+
         self.log.info(
             "budget: %d steps x %d datasets/step = %d datasets  |  amp=%s  workers=%d",
             self.max_steps,
@@ -426,6 +457,10 @@ class Trainer:
             for k, v in stats.items():
                 window[k] = window.get(k, 0.0) + v
             window_n += 1
+            # Kept separately from `window`, which is reset every log_every steps: the
+            # progress hook fires on a dataset count, not a step count, so the two are
+            # not in phase and it would often read an empty window.
+            last_loss = float(stats.get("loss", float("nan")))
 
             if self.step % self.log_every == 0:
                 avg = {k: v / max(window_n, 1) for k, v in window.items()}
@@ -473,6 +508,15 @@ class Trainer:
 
             if self.log_prior_every and self.step % self.log_prior_every == 0:
                 self._log_prior_report()
+
+            if self.progress is not None and self.progress.due(self.datasets_seen):
+                self.progress.record(
+                    dist.unwrap(self.model),
+                    step=self.step,
+                    datasets_seen=self.datasets_seen,
+                    train_loss=last_loss,
+                    elapsed_s=time.time() - started,
+                )
 
             is_temp = self.save_temp_every > 0 and self.step % self.save_temp_every == 0
             is_perm = self.save_perm_every > 0 and self.step % self.save_perm_every == 0

@@ -354,3 +354,58 @@ def test_woe_is_a_monotone_staircase(latent):
 def test_woe_preserves_rank_information(latent):
     woe, _ = M.pd_monotone_woe(PriorRNG(28), latent, {"min_bins": 8, "max_bins": 8})
     assert _spearman(latent, woe) > 0.9
+
+
+# -- atom_prob must actually control the share of datasets with atoms ---------
+
+
+@pytest.mark.parametrize("atom_prob", [0.0, 0.2, 0.6, 0.8])
+def test_atom_prob_controls_the_share_of_datasets_with_atoms(atom_prob, latent):
+    """The lever has to mean what it says.
+
+    It previously did not: `atom_prob=0` still produced atoms in 57% of datasets, and
+    0.6 vs 0.8 gave 87% vs 93% instead of 60% vs 80%. The cause was `lgd_collateral` —
+    coverage is lognormal, its right tail always pushed some rows past full recovery,
+    and those clipped to exactly 0. Narrowing the parameter ranges did not fix it
+    because the tail is unbounded; the interior draws now clamp net recovery explicitly.
+
+    This matters because lgd_lendingclub has only 1.8% boundary mass — effectively an
+    interior distribution. A prior that cannot produce interior datasets cannot
+    represent it.
+    """
+    rng = PriorRNG(11)
+    with_atoms = 0
+    trials = 300
+    for _ in range(trials):
+        y, _ = M.apply_lgd_mechanism(rng, latent, {"atom_prob": atom_prob})
+        mass = float((y == 0.0).float().mean()) + float((y == 1.0).float().mean())
+        with_atoms += mass > 0.01
+    observed = with_atoms / trials
+    assert abs(observed - atom_prob) < 0.10, (
+        f"atom_prob={atom_prob} produced atoms in {observed:.0%} of datasets"
+    )
+
+
+def test_interior_only_draws_never_touch_a_boundary(latent):
+    """The guarantee the fix rests on: with `interior_only`, no row lands on 0 or 1."""
+    rng = PriorRNG(12)
+    for name, fn in sorted(M.LGD_MECHANISMS.items()):
+        for _ in range(40):
+            y, _ = fn(rng, latent, {"interior_only": True,
+                                    "zero_recovery_range": [0.0, 0.0],
+                                    "unsecured_share_range": [0.0, 0.0]})
+            assert float(y.min()) > 0.0, f"{name} produced an atom at 0"
+            assert float(y.max()) < 1.0, f"{name} produced an atom at 1"
+
+
+def test_atom_prob_one_still_produces_a_range_of_masses(latent):
+    """atom_prob=1 means every dataset HAS atoms, not that they all have the same
+    amount — the real datasets span 1.8% to 73%."""
+    rng = PriorRNG(13)
+    masses = []
+    for _ in range(150):
+        y, _ = M.apply_lgd_mechanism(rng, latent, {"atom_prob": 1.0})
+        masses.append(float((y == 0.0).float().mean()) + float((y == 1.0).float().mean()))
+    assert min(masses) < 0.10 and max(masses) > 0.50, (
+        f"boundary mass spans only {min(masses):.2f}-{max(masses):.2f}"
+    )
