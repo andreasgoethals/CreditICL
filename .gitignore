@@ -46,15 +46,10 @@ data/processed/**/*.json
 # logs/ is purely informational and never holds results, so it is fully ignored.
 # res/ is the old scratch output dir, kept ignored for local runs.
 # ---------------------------------------------------------------------------
-results/**/*.npy
-results/**/*.npz
-results/**/*.parquet
-results/**/*.pkl
 
 # res/ — local scratch output (checkpoints, figures from the notebooks). The comment
 # above claimed this was ignored but no pattern actually matched it, so notebook
 # figures showed up as untracked files. Regenerate rather than commit.
-res/
 
 # ---------------------------------------------------------------------------
 # Python
@@ -92,8 +87,6 @@ htmlcov/
 # Local scratch output. Real results are produced on the cluster and live in
 # `results/`; anything a laptop writes is a smoke test. The old top-level `res/`
 # directory is gone — kept here so it cannot come back.
-res/
-results/_local/
 .ipynb_checkpoints/
 
 # ---------------------------------------------------------------------------
@@ -108,7 +101,6 @@ slurm-*.err
 # Run logs now live under the output tree (results/_local/logs locally,
 # $VSC_DATA/CreditICL/output/logs on the cluster), so everything a run writes is in
 # one place. The old top-level logs/ stays ignored so a stray write cannot be committed.
-logs/
 
 # ---------------------------------------------------------------------------
 # Editor / OS
@@ -135,15 +127,16 @@ desktop.ini
 #             per-run metrics, manifests, and any large array.
 # ---------------------------------------------------------------------------
 output/**/*.pdf
-output/logs/
-output/manifests/
+output/logs/*
+!output/logs/.gitkeep
+output/manifests/*
+!output/manifests/.gitkeep
 output/**/*.npy
 output/**/*.npz
 output/**/*.parquet
 output/**/*.pkl
 output/**/*.jsonl
-output/**/_run.py
-output/**/_capture.json
+output/**/_stdout.txt
 
 # Superseded top-level output locations, kept ignored so a stray write cannot be
 # committed. LEADING SLASH matters: a bare `figures/` matches at any depth and would

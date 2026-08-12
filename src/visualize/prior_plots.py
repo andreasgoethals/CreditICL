@@ -71,7 +71,7 @@ def plot_target_grid(tasks: list[Any], n_show: int = 100, bins: int = 30, ncols:
     whether the shapes DIFFER from each other. A family that always looks the same
     is a family that will overfit to one dataset.
     """
-    style.use_style()
+    style.apply()
     n_show = min(n_show, len(tasks))
     nrows = int(np.ceil(n_show / ncols))
     fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 1.45, nrows * 1.3))
@@ -115,12 +115,12 @@ def plot_boundary_mass(tasks: list[Any], real_reference: dict[str, tuple[float, 
     This is the plot that answers "does the prior look like the data?". The real
     datasets are the target; the cloud is what we generate.
     """
-    style.use_style()
+    style.apply()
     stats = [target_stats(t.y) for t in tasks]
     at_min = np.array([s["frac_at_min"] for s in stats])
     at_max = np.array([s["frac_at_max"] for s in stats])
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.5, 4.4))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=style.figsize(style.WIDTH_FULL, 0.40))
 
     ax1.scatter(at_min, at_max, s=34, alpha=0.5, color=style.CREDIT,
                 edgecolor="white", linewidth=0.4, label="sampled tasks", zorder=3)
@@ -163,7 +163,7 @@ def plot_table_shapes(tasks: list[Any]):
     discretisation function ends up driving it. That is a real property of the
     prior, not a bug, but you want to know how often it happens.
     """
-    style.use_style()
+    style.apply()
     rows = np.array([t.n_rows for t in tasks])
     feats = np.array([t.n_features for t in tasks])
     distinct = np.array([len(np.unique(t.y.numpy())) / max(t.n_rows, 1) for t in tasks])
@@ -173,7 +173,7 @@ def plot_table_shapes(tasks: list[Any]):
         (feats, "features per task", "table width"),
         (distinct, "distinct target values / rows", "low = effectively discrete"),
     ]
-    fig, axes = plt.subplots(1, 3, figsize=(13, 3.8))
+    fig, axes = plt.subplots(1, 3, figsize=style.figsize(style.WIDTH_FULL, 0.32))
     for ax, (data, label, hint) in zip(axes, panels):
         ax.hist(data, bins=25, color=style.CREDIT)
         ax.axvline(float(np.median(data)), color=style.INK, lw=1.5, ls="--")
@@ -192,9 +192,9 @@ def plot_feature_relationships(tasks: list[Any], n_show: int = 6):
     version of that: solid blocks mean whole groups of features move together,
     which is what a shared graph ancestor produces.
     """
-    style.use_style()
+    style.apply()
     n_show = min(n_show, len(tasks))
-    fig, axes = plt.subplots(1, n_show, figsize=(2.4 * n_show, 2.9))
+    fig, axes = plt.subplots(1, n_show, figsize=style.grid_figsize(n_show, 1, panel_ratio=1.15))
     axes = np.atleast_1d(axes).ravel()
     for ax, t in zip(axes, tasks[:n_show]):
         X = t.X.numpy()
@@ -233,8 +233,8 @@ def plot_correlation_spectrum(tasks: list[Any]):
         ev = np.sort(np.linalg.eigvalsh(C))[::-1]
         spectra.append(ev / max(ev[0], 1e-9))
 
-    style.use_style()
-    fig, ax = plt.subplots(figsize=(6.5, 4.4))
+    style.apply()
+    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.62))
     for ev in spectra[:60]:
         ax.plot(np.arange(1, len(ev) + 1) / len(ev), ev,
                 color=style.CREDIT, alpha=0.22, linewidth=0.9)
@@ -262,11 +262,11 @@ def plot_feature_target_relation(tasks: list[Any], n_show: int = 8):
     Shows what the model is actually asked to learn: a clean trend, a step from a
     threshold rule, or a cloud. Horizontal bands at 0 and 1 are the censoring.
     """
-    style.use_style()
+    style.apply()
     n_show = min(n_show, len(tasks))
     ncols = 4
     nrows = int(np.ceil(n_show / ncols))
-    fig, axes = plt.subplots(nrows, ncols, figsize=(3.1 * ncols, 2.6 * nrows))
+    fig, axes = plt.subplots(nrows, ncols, figsize=style.grid_figsize(ncols, nrows, panel_ratio=0.86))
     axes = np.atleast_1d(axes).ravel()
 
     for i in range(len(axes)):
@@ -305,8 +305,8 @@ def compare_priors(config_path: str, n: int = 100, seed: int = 0):
     ours_tasks, ours_info = sample_tasks(config_path, n, credit_fraction=1.0, seed=seed)
     task = base_info["task"]
 
-    style.use_style()
-    fig, axes = plt.subplots(2, 2, figsize=(11.5, 7.4))
+    style.apply()
+    fig, axes = plt.subplots(2, 2, figsize=style.figsize(style.WIDTH_FULL, 0.66))
     arms = [
         (base_tasks, "original TabICL prior", style.ORIGINAL),
         (ours_tasks, "our prior", style.CREDIT),

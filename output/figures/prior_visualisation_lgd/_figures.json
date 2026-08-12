@@ -1,0 +1,50 @@
+[
+  {
+    "index": 1,
+    "stem": "01_palette",
+    "name": "palette",
+    "caption": "Colour key. Grey denotes the unmodified TabICL prior, blue the credit-targeted prior, orange values measured from the real datasets, and red out-of-range or flagged values."
+  },
+  {
+    "index": 2,
+    "stem": "02_target_comparison",
+    "name": "target_comparison",
+    "caption": "Left: distribution of total boundary mass per synthetic dataset, one step histogram per prior variant, 30 bins. Dotted vertical lines mark values measured from the real datasets. Right: mass at the low boundary against mass at the high boundary, one point per synthetic dataset; stars mark the real datasets. Legend gives the mean per variant."
+  },
+  {
+    "index": 3,
+    "stem": "03_target_shapes_by_variant",
+    "name": "target_shapes_by_variant",
+    "caption": "Histograms of the target for ten synthetic datasets per prior variant, one variant per row, 25 bins per panel. Rows use the same random draw, so panels in the same column are directly comparable."
+  },
+  {
+    "index": 4,
+    "stem": "04_spectrum_by_variant",
+    "name": "spectrum_by_variant",
+    "caption": "Eigenvalue spectra of the feature correlation matrix for up to 40 synthetic datasets per prior variant, normalised by the largest eigenvalue and plotted against normalised eigenvalue rank. Faint lines are individual datasets; bold lines are the per-variant median."
+  },
+  {
+    "index": 5,
+    "stem": "05_shapes_by_variant",
+    "name": "shapes_by_variant",
+    "caption": "Left: distribution of rows per synthetic dataset. Right: distribution of features per synthetic dataset. One step histogram per prior variant, 20 bins."
+  },
+  {
+    "index": 6,
+    "stem": "06_boundary_mass",
+    "name": "boundary_mass",
+    "caption": "Left: mass at the low boundary against mass at the high boundary, one point per synthetic dataset, with real datasets marked as stars. Right: distribution of the total boundary mass, 25 bins, with the mean marked by a dashed line."
+  },
+  {
+    "index": 7,
+    "stem": "07_feature_relationships",
+    "name": "feature_relationships",
+    "caption": "Pearson correlation matrices between features for individual synthetic datasets, one panel each. Colour scale spans -1 to 1. Panel subtitles give the number of features and the mean absolute off-diagonal correlation."
+  },
+  {
+    "index": 8,
+    "stem": "08_feature_target_relation",
+    "name": "feature_target_relation",
+    "caption": "Target against the most strongly correlated feature, one panel per synthetic dataset. Dotted horizontal lines mark the minimum and maximum target values. Panel subtitles give the feature index and its Pearson correlation with the target."
+  }
+]

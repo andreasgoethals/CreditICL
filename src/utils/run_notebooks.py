@@ -1,24 +1,26 @@
-"""Execute every notebook in parallel and collect its figures and text summary.
+"""Run every notebook in parallel, then rebuild the two summary documents.
 
-WHAT IT PRODUCES, all under `output/`:
+    python -m src.utils.run_notebooks                     every notebook in notebooks/
+    python -m src.utils.run_notebooks --only exploration  just these, by stem
+    python -m src.utils.run_notebooks --summaries-only    rebuild the two .md files only
 
-    output/figures/<notebook>/fig01_....pdf     vector, print quality
-    output/figures/<notebook>/fig01_....png     raster, small enough to commit
-    output/figures/CAPTIONS.md                  ONE file, ordered by notebook
-    output/All_Results.md                       every notebook's text summary
+    output/figures/<notebook>/*.pdf   written by the notebooks themselves
+    output/figures/CAPTIONS.md        ONE file, all notebooks, notebook order
+    output/All_Results.md             every notebook's printed summary, alphabetical
 
-Each notebook's figure folder is **wiped** before it runs, so only the current run's
-figures survive. Stale PDFs mixed with fresh ones is how a paper ends up with a figure
-that no longer matches the code that made it.
+SEPARATE PROCESSES, NOT THREADS: matplotlib's figure registry is global, so two notebooks in
+one interpreter would capture each other's figures — silently, giving plausible figures
+attributed to the wrong notebook.
 
-Notebooks run in separate processes, in parallel. Separate processes rather than threads
-because matplotlib's state is global — two notebooks in one interpreter would capture
-each other's figures.
+A FLATTENED SCRIPT, NOT A JUPYTER KERNEL: nothing extra to install, identical on the cluster,
+and a traceback points at a line number instead of a cell index. Magics are stripped, which is
+deliberate — a notebook needing one cannot be executed non-interactively at all.
 
-CAPTIONS ARE PURE DESCRIPTION. They say what is plotted, on what axes, from how much
-data. No interpretation, no conclusions, no "this shows that" — a journal caption
-describes the figure so it can be read on its own, and the argument belongs in the body
-text. Caption text lives in `FIGURE_CAPTIONS`, keyed by the function that drew it.
+THE RUNNER DOES NOT SAVE FIGURES; each notebook does, through `FigureSaver`, so an interactive
+*Run All* produces exactly the same PDFs. The runner adds parallelism and the two documents.
+
+NOTEBOOKS ARE DISCOVERED, NOT LISTED, alphabetically — which is also the order in both summary
+documents. A hard-coded list silently stops covering a notebook someone added.
 """
 
 from __future__ import annotations
@@ -28,25 +30,26 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.utils.paths import REPO_ROOT, all_results_path, captions_path, figures_dir
-
-#: Notebooks to run, alphabetical — which is also the order they appear in the shared
-#: CAPTIONS.md and All_Results.md.
-NOTEBOOKS = (
-    "data_exploration",
-    "prior_visualisation_lgd",
-    "prior_visualisation_pd",
+from src.utils.paths import (
+    REPO_ROOT,
+    all_results_path,
+    captions_path,
+    figures_dir,
+    notebooks_dir,
 )
 
-#: DPI for the committed PNGs. Large enough to read on screen, small enough that a
-#: couple of dozen of them do not bloat the repository.
-PNG_DPI = 110
-#: DPI for the PDFs. Vector already, but raster elements (heatmaps, scatter) need this.
-PDF_DPI = 300
+#: Per-notebook wall-clock limit. A notebook summarises a finished computation; one needing
+#: longer is doing work that belongs in a script.
+DEFAULT_TIMEOUT = 1800
+
+#: Captured stdout, parked between execution and assembly, then removed. `_figures.json` is
+#: KEPT: CAPTIONS.md must be rebuildable from disk without re-executing anything.
+STDOUT_FILE = "_stdout.txt"
 
 
 @dataclass
@@ -58,196 +61,75 @@ class NotebookResult:
     error: str = ""
 
 
-#: Journal-style captions: what is plotted, nothing more. Keyed by a substring of the
-#: drawing function's name.
-FIGURE_CAPTIONS: dict[str, str] = {
-    "show_palette": (
-        "Colour key. Grey denotes the unmodified TabICL prior, blue the credit-targeted "
-        "prior, orange values measured from the real datasets, and red out-of-range or "
-        "flagged values."
-    ),
-    "lgd_targets": (
-        "Histograms of the Loss Given Default target for each of the seven LGD "
-        "datasets, ordered by sample size. Forty bins per panel. Dashed vertical lines "
-        "mark the minimum and maximum observed values where more than 1% of "
-        "observations fall exactly on them. Panel subtitles give the combined share of "
-        "observations at the two boundaries."
-    ),
-    "boundary_mass_ranking": (
-        "Share of observations lying exactly at a boundary of the observed target range, "
-        "per LGD dataset, ordered by total. Bars are split into mass at the minimum "
-        "(blue) and at the maximum (orange). Percentages give the total per dataset."
-    ),
-    "pd_base_rates": (
-        "Default rate per PD dataset, ordered by rate, on a logarithmic horizontal axis. "
-        "The dashed vertical line marks a 50% rate. Percentages give the rate per "
-        "dataset."
-    ),
-    "shapes": (
-        "Number of rows against number of features for all 21 evaluation datasets, both "
-        "axes logarithmic. Colour denotes task; each point is labelled with its dataset "
-        "name."
-    ),
-    "type_mix": (
-        "Share of columns that are categorical, per dataset, ordered by share. Colour "
-        "denotes task."
-    ),
-    "missingness": (
-        "Share of cells that are missing, per dataset, ordered by share, measured after "
-        "preprocessing. Colour denotes task."
-    ),
-    "feature_correlations": (
-        "Pearson correlation matrices between features for the six largest datasets of "
-        "the task, computed on the first 5,000 rows with constant columns removed. "
-        "Colour scale spans -1 to 1. Panel subtitles give the number of columns "
-        "retained and the mean absolute off-diagonal correlation."
-    ),
-    "boundary_mass_by_variant": (
-        "Left: distribution of total boundary mass per synthetic dataset, one step "
-        "histogram per prior variant, 30 bins. Dotted vertical lines mark values "
-        "measured from the real datasets. Right: mass at the low boundary against mass "
-        "at the high boundary, one point per synthetic dataset; stars mark the real "
-        "datasets. Legend gives the mean per variant."
-    ),
-    "base_rate_by_variant": (
-        "Distribution of the positive-class rate per synthetic dataset, one step "
-        "histogram per prior variant, 30 bins. The dashed vertical line marks a 50% "
-        "rate; dotted lines mark rates measured from the real datasets. Legend gives "
-        "the mean per variant."
-    ),
-    "target_shapes_by_variant": (
-        "Histograms of the target for ten synthetic datasets per prior variant, one "
-        "variant per row, 25 bins per panel. Rows use the same random draw, so panels "
-        "in the same column are directly comparable."
-    ),
-    "spectrum_by_variant": (
-        "Eigenvalue spectra of the feature correlation matrix for up to 40 synthetic "
-        "datasets per prior variant, normalised by the largest eigenvalue and plotted "
-        "against normalised eigenvalue rank. Faint lines are individual datasets; bold "
-        "lines are the per-variant median."
-    ),
-    "shapes_by_variant": (
-        "Left: distribution of rows per synthetic dataset. Right: distribution of "
-        "features per synthetic dataset. One step histogram per prior variant, 20 bins."
-    ),
-    "target_grid": (
-        "Histograms of the target for 100 synthetic datasets from one prior variant, "
-        "30 bins per panel. Axes are suppressed."
-    ),
-    "boundary_mass": (
-        "Left: mass at the low boundary against mass at the high boundary, one point "
-        "per synthetic dataset, with real datasets marked as stars. Right: distribution "
-        "of the total boundary mass, 25 bins, with the mean marked by a dashed line."
-    ),
-    "table_shapes": (
-        "Distributions of rows per dataset, features per dataset, and the ratio of "
-        "distinct target values to rows, across sampled synthetic datasets. 25 bins "
-        "each; dashed lines mark the medians given in the panel titles."
-    ),
-    "feature_relationships": (
-        "Pearson correlation matrices between features for individual synthetic "
-        "datasets, one panel each. Colour scale spans -1 to 1. Panel subtitles give the "
-        "number of features and the mean absolute off-diagonal correlation."
-    ),
-    "correlation_spectrum": (
-        "Eigenvalue spectra of the feature correlation matrix for up to 60 synthetic "
-        "datasets, normalised by the largest eigenvalue and plotted against normalised "
-        "eigenvalue rank. Faint lines are individual datasets; the bold line is the "
-        "median."
-    ),
-    "feature_target_relation": (
-        "Target against the most strongly correlated feature, one panel per synthetic "
-        "dataset. Dotted horizontal lines mark the minimum and maximum target values. "
-        "Panel subtitles give the feature index and its Pearson correlation with the "
-        "target."
-    ),
-}
+def discover(names: tuple[str, ...] | None = None) -> tuple[str, ...]:
+    """Notebook stems, alphabetical. `names` overrides discovery for a partial rerun."""
+    if names:
+        return tuple(names)
+    return tuple(sorted(p.stem for p in notebooks_dir().glob("*.ipynb")))
 
 
-#: Functions that dispatch to another plotter and never draw anything themselves, so
-#: the figure they produce is captioned by the function they delegate to.
-DISPATCHERS = ("plot_target_comparison",)
-
-
-def caption_for(figure_name: str, index: int) -> str:
-    """Caption for a figure, matched on the name the notebook gave it."""
-    for key, text in FIGURE_CAPTIONS.items():
-        if key in figure_name:
-            return text
-    return (
-        f"No caption registered for {figure_name!r} — add one to FIGURE_CAPTIONS in "
-        f"src/utils/run_notebooks.py."
-    )
+# ---------------------------------------------------------------------------
+# Execution
+# ---------------------------------------------------------------------------
 
 
 def _prelude() -> str:
-    """Injected at the top of each notebook: headless backend, capture printed output.
-
-    Figures are NOT captured here any more. The notebooks save their own via
-    `src.visualize.figures.FigureSaver`, so an interactive Jupyter run produces exactly
-    the same files as this runner. Monkey-patching matplotlib only ever worked in the
-    runner, which meant Run All in Jupyter drew figures and saved nothing.
-    """
-    return """
-import matplotlib
-matplotlib.use("Agg")
-import io as _io
-from contextlib import redirect_stdout as _redirect
-
-# Everything the notebook prints is captured, so All_Results.md can be assembled
-# without the notebook knowing about it.
-_TEXT = _io.StringIO()
-"""
+    """Injected above every flattened notebook. `Agg` because a compute node has no display, and
+    stdout is captured so `All_Results.md` can be built without the notebook knowing."""
+    return (
+        "import matplotlib\n"
+        'matplotlib.use("Agg")\n'
+        "import io as _io\n"
+        "from contextlib import redirect_stdout as _redirect\n"
+        "_TEXT = _io.StringIO()\n"
+    )
 
 
 def _build_script(nb_path: Path, text_path: Path) -> str:
-    """Flatten a notebook's code cells into one script with the capture prelude.
-
-    A plain script rather than a Jupyter kernel: nothing extra to install, and a
-    traceback points at readable line numbers instead of a cell index.
-    """
+    """Flatten a notebook's code cells into one script under the capture prelude."""
     nb = json.loads(nb_path.read_text(encoding="utf-8"))
     parts = [_prelude(), "\nwith _redirect(_TEXT):\n"]
-    for i, cell in enumerate(nb["cells"], start=1):
-        if cell["cell_type"] != "code":
+    for i, cell in enumerate(nb.get("cells", []), start=1):
+        if cell.get("cell_type") != "code":
             continue
-        src = re.sub(r"^\s*%.*$", "", "".join(cell["source"]), flags=re.M)
-        # Indented under the stdout redirect, so printed output reaches All_Results.md.
-        body = "\n".join(f"    {line}" for line in src.split("\n"))
+        source = "".join(cell.get("source", []))
+        # Strip IPython magics and shell escapes: they are syntax errors in a plain
+        # interpreter. A notebook that depends on one cannot be run non-interactively,
+        # which the compliance rules already forbid.
+        source = re.sub(r"^\s*[%!].*$", "", source, flags=re.M)
+        body = "\n".join(f"    {line}" for line in source.split("\n"))
         parts.append(f"\n    # ---- cell {i} ----\n{body}\n")
-    # The notebook has already written its own figures and manifest. All this needs to do
-    # is persist what it printed, so All_Results.md can be assembled.
     parts.append(
-        f'\nimport pathlib as _pl\n'
-        f'_pl.Path(r"{text_path}").write_text(_TEXT.getvalue(), encoding="utf-8")\n'
+        "\nimport pathlib as _pl\n"
+        f"_pl.Path(r{str(text_path)!r}).write_text(_TEXT.getvalue(), encoding='utf-8')\n"
     )
     return "".join(parts)
 
 
-def run_one(name: str, timeout: int = 1800) -> NotebookResult:
-    """Execute one notebook in a fresh process. Never raises."""
-    import time
-
+def run_one(name: str, timeout: int = DEFAULT_TIMEOUT) -> NotebookResult:
+    """Execute one notebook in a fresh process. Never raises — it reports."""
     started = time.time()
-    # The figure folder is NOT wiped here. The notebook's own setup cell does it, so the
-    # behaviour is identical whether it runs here or interactively in Jupyter — and only
-    # ever that one notebook's folder.
-    out_dir = figures_dir(name)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    nb_path = REPO_ROOT / "notebooks" / f"{name}.ipynb"
+    nb_path = notebooks_dir() / f"{name}.ipynb"
     if not nb_path.is_file():
         return NotebookResult(name, False, 0.0, 0, f"{nb_path} not found")
 
-    text_path = out_dir / "_stdout.txt"
-    # NOT inside out_dir: the notebook clears its own figure folder as its first act, and
-    # on Windows a directory cannot be modified while it holds the running script.
-    tmp = Path(tempfile.gettempdir()) / f"crediticl_{name}_run.py"
+    out_dir = figures_dir(name)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    text_path = out_dir / STDOUT_FILE
+
+    # The generated script goes to the system temp dir, NOT into the figure folder: the
+    # notebook clears that folder as its first act, and on Windows a directory cannot be
+    # modified while it holds the script currently being executed from it.
+    tmp = Path(tempfile.gettempdir()) / f"nbrun_{name}.py"
     tmp.write_text(_build_script(nb_path, text_path), encoding="utf-8")
     try:
         proc = subprocess.run(
-            [sys.executable, str(tmp)], cwd=str(REPO_ROOT),
-            capture_output=True, text=True, timeout=timeout, check=False,
+            [sys.executable, str(tmp)],
+            cwd=str(REPO_ROOT),   # so `from src...` resolves without an install
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
         )
     except subprocess.TimeoutExpired:
         return NotebookResult(name, False, time.time() - started, 0, f"timed out after {timeout}s")
@@ -256,44 +138,55 @@ def run_one(name: str, timeout: int = 1800) -> NotebookResult:
 
     n_figs = len(list(out_dir.glob("*.pdf")))
     if proc.returncode != 0:
+        # Only the tail: a full traceback from twelve notebooks buries the one that matters.
         tail = "\n".join((proc.stderr or "").strip().splitlines()[-12:])
         return NotebookResult(name, False, time.time() - started, n_figs, tail)
     return NotebookResult(name, True, time.time() - started, n_figs)
 
 
-def _read_capture(name: str) -> dict:
-    """What a notebook produced: its figure manifest, and whatever it printed."""
-    from src.visualize.figures import read_manifest
+# ---------------------------------------------------------------------------
+# The two summary documents
+# ---------------------------------------------------------------------------
 
-    text_path = figures_dir(name) / "_stdout.txt"
-    return {
-        "figures": read_manifest(name),
-        "text": text_path.read_text(encoding="utf-8") if text_path.is_file() else "",
-    }
+
+def _captured_text(name: str) -> str:
+    path = figures_dir(name) / STDOUT_FILE
+    return path.read_text(encoding="utf-8") if path.is_file() else ""
 
 
 def write_captions(notebooks: tuple[str, ...]) -> Path:
-    """One shared CAPTIONS.md, grouped by notebook, figures in notebook order."""
+    """ONE CAPTIONS.md for the project, grouped per notebook, in notebook order.
+
+    Built from each `_figures.json`, so it regenerates from disk after an interactive run. A
+    figure with no caption gets a loud placeholder rather than being skipped — a gap should be
+    visible in the document meant to contain it.
+    """
+    from src.visualize.figures import read_manifest
+
     lines = [
         "# Figure captions",
         "",
-        "Generated by `python scripts/run_notebooks.py`. Grouped by notebook, in the",
-        "order the figures appear in each notebook. Caption text is maintained in",
-        "`FIGURE_CAPTIONS` in `src/utils/run_notebooks.py` — edits here are overwritten.",
+        "Generated by `python -m src.utils.run_notebooks`. Grouped by notebook, figures in",
+        "the order that notebook drew them. Caption text is passed to",
+        "`FigureSaver.save(..., caption=...)` in the notebook — edits here are overwritten.",
+        "",
+        "These are the paper's captions: paste one straight under its figure. Pure description",
+        "— what is plotted, on what axes, from how much data. No interpretation.",
+        "",
+        "Figures are PDFs, drawn at the width they will occupy on an A4 page; never rescale one",
+        "in the document, because that rescales its text with it.",
         "",
     ]
     for name in notebooks:
-        cap = _read_capture(name)
-        lines.append(f"## {name}")
-        lines.append("")
-        if not cap["figures"]:
-            lines.append("_No figures produced._")
-            lines.append("")
+        entries = read_manifest(name)
+        lines += [f"## {name}", ""]
+        if not entries:
+            lines += ["_No figures produced._", ""]
             continue
-        for e in cap["figures"]:
-            lines.append(f"**{e['stem']}**")
+        for e in entries:
+            lines.append(f"**{e['stem']}** — `{e['name']}`")
             lines.append("")
-            lines.append(caption_for(e["name"], e["index"]))
+            lines.append(e["caption"] or "> MISSING CAPTION. Add one at the `save()` call.")
             lines.append("")
     path = captions_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -302,71 +195,131 @@ def write_captions(notebooks: tuple[str, ...]) -> Path:
 
 
 def write_all_results(notebooks: tuple[str, ...]) -> Path:
-    """One file holding every notebook's printed output, in notebook order."""
+    """Every notebook's printed summary, concatenated. The shape is fixed:
+
+    one block per notebook, **sorted alphabetically by notebook name**; each block is that
+    notebook's printed summary **verbatim**, not a rewrite; and that summary follows the
+    notebook's own section order, so the file and the notebook read the same way round.
+
+    Verbatim matters: the moment this file paraphrases, the two disagree and the notebook wins —
+    but this file is the one anybody actually reads.
+    """
+    names = tuple(sorted(notebooks))
     lines = [
         "# All results",
         "",
-        "Every notebook's printed text summary, concatenated in notebook order.",
-        "Generated by `python scripts/run_notebooks.py`.",
+        "Every notebook's printed summary, verbatim, one block per notebook in alphabetical",
+        "order. Each block follows that notebook's own section order.",
+        "Generated by `python -m src.utils.run_notebooks`.",
         "",
     ]
-    for name in notebooks:
-        text = _read_capture(name)["text"].strip()
-        lines.append("---")
-        lines.append("")
-        lines.append(f"# {name}")
-        lines.append("")
-        lines.append("```")
-        lines.append(text or "(no output captured)")
-        lines.append("```")
-        lines.append("")
+    for name in names:
+        text = _captured_text(name).strip()
+        lines += ["---", "", f"## {name}", "", "```", text or "(no output captured)", "```", ""]
     path = all_results_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
 
 
-def _cleanup_intermediate(notebooks: tuple[str, ...]) -> None:
-    """Remove the runner's scratch files once folded into the two summaries.
-
-    `_figures.json` is KEPT: it is the notebook's own record of what it drew and in what
-    order, and CAPTIONS.md must be rebuildable after an interactive run without
-    re-executing anything.
-    """
+def _cleanup(notebooks: tuple[str, ...]) -> None:
+    """Drop the captured-stdout scratch files once folded into `All_Results.md`."""
     for name in notebooks:
-        (figures_dir(name) / "_stdout.txt").unlink(missing_ok=True)
+        (figures_dir(name) / STDOUT_FILE).unlink(missing_ok=True)
 
 
-def run_all(notebooks: tuple[str, ...] = NOTEBOOKS, max_workers: int | None = None) -> list[NotebookResult]:
-    """Run every notebook in parallel, then write CAPTIONS.md and All_Results.md."""
-    workers = max_workers or min(len(notebooks), 4)
+# ---------------------------------------------------------------------------
+# The one entry point
+# ---------------------------------------------------------------------------
+
+
+def run_all(
+    notebooks: tuple[str, ...] | None = None,
+    max_workers: int | None = None,
+    timeout: int = DEFAULT_TIMEOUT,
+) -> list[NotebookResult]:
+    """Run every notebook in parallel, then rebuild both summary documents.
+
+    Rebuilt even when a notebook failed, from whatever the successful ones wrote: a
+    half-updated summary beats a stale one, and the failure is reported separately.
+    """
+    names = discover(notebooks)
+    if not names:
+        return []
+    # Capped at 4: notebooks are numpy-heavy and each already uses several threads, so more
+    # workers than this trades parallelism for cache thrashing.
+    workers = max_workers or min(len(names), 4)
+
     results: list[NotebookResult] = []
     with ProcessPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(run_one, nb): nb for nb in notebooks}
+        futures = {pool.submit(run_one, name, timeout): name for name in names}
         for fut in as_completed(futures):
             results.append(fut.result())
 
-    write_captions(notebooks)
-    write_all_results(notebooks)
-    _cleanup_intermediate(notebooks)
-    return sorted(results, key=lambda r: notebooks.index(r.name))
+    write_captions(names)
+    write_all_results(names)
+    _cleanup(names)
+    return sorted(results, key=lambda r: names.index(r.name))
 
 
 def summarise(results: list[NotebookResult]) -> str:
+    if not results:
+        return "No notebooks found in notebooks/."
     lines = ["", "=" * 74, "NOTEBOOK RUN SUMMARY", "=" * 74]
     for r in results:
         lines.append(
-            f"  {'OK    ' if r.ok else 'FAILED'} {r.name:<28} "
+            f"  {'OK    ' if r.ok else 'FAILED'} {r.name:<32} "
             f"{r.seconds:6.1f}s  {r.n_figures:2d} figures"
         )
         if not r.ok:
-            lines.extend(f"           {line}" for line in r.error.splitlines())
+            lines += [f"           {line}" for line in r.error.splitlines()]
     ok = sum(1 for r in results if r.ok)
     lines += [
         "",
         f"{ok}/{len(results)} notebooks OK, {sum(r.n_figures for r in results)} figures",
-        f"  figures  -> {figures_dir()}",
-        f"  captions -> {captions_path()}",
-        f"  summaries-> {all_results_path()}",
+        f"  figures   -> {figures_dir()}",
+        f"  captions  -> {captions_path()}",
+        f"  summaries -> {all_results_path()}",
     ]
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Entry point. `--summaries-only` exists because both documents are built from what the notebooks
+# left on disk (`_figures.json`), so after an interactive Jupyter session they can be regenerated
+# without executing anything.
+# ---------------------------------------------------------------------------
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--only", nargs="+", metavar="STEM", help="notebook stems to run")
+    parser.add_argument("--workers", type=int, default=None, help="parallel processes")
+    parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT, help="seconds per notebook")
+    parser.add_argument("--summaries-only", action="store_true",
+                        help="rebuild both documents from disk, run nothing")
+    args = parser.parse_args(argv)
+
+    names = discover(tuple(args.only) if args.only else None)
+    if not names:
+        print("No notebooks found in notebooks/.")
+        return 0
+
+    if args.summaries_only:
+        print(f"Rebuilding summaries from disk for: {', '.join(names)}")
+        print(f"  captions  -> {write_captions(names)}")
+        print(f"  summaries -> {write_all_results(names)}")
+        return 0
+
+    print(f"Running {len(names)} notebook(s): {', '.join(names)}")
+    results = run_all(names, max_workers=args.workers, timeout=args.timeout)
+    print(summarise(results))
+    return 0 if all(r.ok for r in results) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

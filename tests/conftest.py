@@ -26,6 +26,42 @@ def repo_root() -> Path:
     return ROOT
 
 
+@pytest.fixture(autouse=True)
+def _headless_matplotlib() -> None:
+    """Force the Agg backend. A compute node has no display, and the default backend either
+    fails there or opens a window that blocks the run."""
+    import matplotlib
+
+    matplotlib.use("Agg", force=True)
+
+
+@pytest.fixture
+def isolated_output(tmp_path, monkeypatch) -> Path:
+    """Point every resolved path at `tmp_path` for the duration of one test.
+
+    Setting `VSC_DATA` *and* the staging override is how the cluster's two-tier layout gets
+    exercised off-cluster: `paths.on_vsc()` becomes true, so the test covers the branch that
+    otherwise only ever runs in production.
+
+    Use this for anything that writes. Setting only the staging root is not enough — figures,
+    logs and manifests hang off `outputs_dir()`, which ignores staging and stays in the repo,
+    so a test that set only staging wrote into the real `output/` tree and left files behind.
+    """
+    import importlib
+
+    from src.utils import paths
+
+    monkeypatch.setenv("VSC_DATA", str(tmp_path / "vsc_data"))
+    monkeypatch.setenv(paths.STAGING_ENV_VARS[0], str(tmp_path / "staging"))
+    importlib.reload(paths)
+    # Fail loudly rather than write into the real tree. Both tiers, because they resolve
+    # through different branches and only `results/` follows staging.
+    for resolved in (paths.outputs_dir(), paths.results_dir(), paths.logs_dir()):
+        assert tmp_path in resolved.parents, f"not isolated: {resolved} is outside {tmp_path}"
+    yield tmp_path
+    importlib.reload(paths)
+
+
 @pytest.fixture
 def lgd_cfg() -> dict:
     """A tiny LGD config: real code paths, ~100 rows, a handful of features."""

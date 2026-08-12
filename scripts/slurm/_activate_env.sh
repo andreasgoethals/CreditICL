@@ -156,5 +156,5 @@ echo "Active conda env: ${CONDA_DEFAULT_ENV:-?} ($(command -v python))"
 # to regenerate, so do it every job rather than debugging a stale copy later.
 if [[ ! -f src/models/nanotabiclv2.py ]]; then
     echo "Vendoring the model from the pinned tfm-library dump..."
-    python scripts/vendor_model.py
+    python -m src.utils.vendor_model
 fi

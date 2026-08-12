@@ -105,10 +105,10 @@ def plot_lgd_targets(datasets: dict[str, Any], ncols: int = 4):
     in the two end bars compared with the middle — and then compare with the same
     plot for the original prior in `prior_visualisation.ipynb`, which has none.
     """
-    style.use_style()
+    style.apply()
     items = sorted(datasets.items(), key=lambda kv: -kv[1].n_rows)
     nrows = int(np.ceil(len(items) / ncols))
-    fig, axes = plt.subplots(nrows, ncols, figsize=(3.4 * ncols, 2.7 * nrows), squeeze=False)
+    fig, axes = plt.subplots(nrows, ncols, figsize=style.grid_figsize(ncols, nrows, panel_ratio=0.82), squeeze=False)
     flat = axes.ravel()
 
     for ax, (slug, ds) in zip(flat, items):
@@ -141,7 +141,7 @@ def plot_boundary_mass_ranking(datasets: dict[str, Any]):
     A ranking rather than a scatter, because the practical question is "which
     datasets does this actually matter for?" and the answer is a sorted list.
     """
-    style.use_style()
+    style.apply()
     rows = []
     for slug, ds in datasets.items():
         st = target_stats(np.asarray(ds.y, dtype=float))
@@ -151,7 +151,7 @@ def plot_boundary_mass_ranking(datasets: dict[str, Any]):
     at0 = np.array([r[1] for r in rows])
     at1 = np.array([r[2] for r in rows])
 
-    fig, ax = plt.subplots(figsize=(8, 0.55 * len(rows) + 2))
+    fig, ax = plt.subplots(figsize=style.row_figsize(len(rows), per_row=0.22, base=1.1))
     ypos = np.arange(len(rows))
     ax.barh(ypos, at0, color=style.CREDIT, label="at 0 (full recovery)")
     ax.barh(ypos, at1, left=at0, color=style.REAL, label="at 1 (total loss)")
@@ -182,7 +182,7 @@ def plot_pd_base_rates(datasets: dict[str, Any]):
     Log axis because the rates span two orders of magnitude; on a linear axis every
     dataset below 5% collapses into the same sliver and the variation disappears.
     """
-    style.use_style()
+    style.apply()
     rows = sorted(
         ((slug.split(".", 1)[-1], float(np.asarray(ds.y).mean()), ds.n_rows)
          for slug, ds in datasets.items()),
@@ -191,7 +191,7 @@ def plot_pd_base_rates(datasets: dict[str, Any]):
     names = [r[0] for r in rows]
     rates = np.array([r[1] for r in rows])
 
-    fig, ax = plt.subplots(figsize=(8, 0.5 * len(rows) + 2.2))
+    fig, ax = plt.subplots(figsize=style.row_figsize(len(rows), per_row=0.20, base=1.2))
     ypos = np.arange(len(rows))
     ax.barh(ypos, rates, color=style.TASK_COLOR["pd"], alpha=0.9)
     ax.axvline(0.5, color=style.ORIGINAL, lw=2, ls="--")
@@ -222,8 +222,8 @@ def plot_shapes(datasets_by_task: dict[str, dict[str, Any]]):
     Both axes are log: dataset sizes here span 1,000 to over a million rows, and on
     a linear axis every small dataset would sit on top of the origin.
     """
-    style.use_style()
-    fig, ax = plt.subplots(figsize=(7.5, 5.5))
+    style.apply()
+    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.68))
     for task, datasets in datasets_by_task.items():
         xs = [ds.n_rows for ds in datasets.values()]
         ys = [ds.n_features for ds in datasets.values()]
@@ -253,7 +253,7 @@ def plot_type_mix(datasets_by_task: dict[str, dict[str, Any]]):
     that fraction is a hyperparameter we could be setting from evidence rather than
     from the default.
     """
-    style.use_style()
+    style.apply()
     rows = []
     for task, datasets in datasets_by_task.items():
         for slug, ds in datasets.items():
@@ -264,7 +264,7 @@ def plot_type_mix(datasets_by_task: dict[str, dict[str, Any]]):
     colours = [style.TASK_COLOR[r[1]] for r in rows]
     shares = np.array([r[2] for r in rows])
 
-    fig, ax = plt.subplots(figsize=(8, 0.36 * len(rows) + 2))
+    fig, ax = plt.subplots(figsize=style.row_figsize(len(rows), per_row=0.16, base=1.1))
     ypos = np.arange(len(rows))
     ax.barh(ypos, shares, color=colours, alpha=0.9)
     ax.set_yticks(ypos, names, fontsize=8)
@@ -286,7 +286,7 @@ def plot_missingness(datasets_by_task: dict[str, dict[str, Any]]):
     settings, and several of these datasets have already been imputed upstream,
     which is itself worth seeing.
     """
-    style.use_style()
+    style.apply()
     rows = []
     for task, datasets in datasets_by_task.items():
         for slug, ds in datasets.items():
@@ -296,7 +296,7 @@ def plot_missingness(datasets_by_task: dict[str, dict[str, Any]]):
     vals = np.array([r[2] for r in rows])
     colours = [style.TASK_COLOR[r[1]] for r in rows]
 
-    fig, ax = plt.subplots(figsize=(8, 0.36 * len(rows) + 2))
+    fig, ax = plt.subplots(figsize=style.row_figsize(len(rows), per_row=0.16, base=1.1))
     ypos = np.arange(len(rows))
     ax.barh(ypos, vals, color=colours, alpha=0.9)
     ax.set_yticks(ypos, names, fontsize=8)
@@ -319,11 +319,11 @@ def plot_feature_correlations(datasets: dict[str, Any], n_show: int = 6):
     correlated features (several measures of the same balance), not independent
     columns. If our DAGs produced independent features they would be wrong here.
     """
-    style.use_style()
+    style.apply()
     items = sorted(datasets.items(), key=lambda kv: -kv[1].n_rows)[:n_show]
     ncols = min(3, len(items))
     nrows = int(np.ceil(len(items) / ncols))
-    fig, axes = plt.subplots(nrows, ncols, figsize=(3.5 * ncols, 3.2 * nrows), squeeze=False)
+    fig, axes = plt.subplots(nrows, ncols, figsize=style.grid_figsize(ncols, nrows, panel_ratio=0.95), squeeze=False)
     flat = axes.ravel()
 
     for ax, (slug, ds) in zip(flat, items):

@@ -44,9 +44,9 @@ def tasks():
 
 def test_style_is_idempotent():
     """A notebook re-runs its setup cell constantly; that must not accumulate state."""
-    style.use_style()
+    style.apply()
     first = dict(matplotlib.rcParams)
-    style.use_style()
+    style.apply()
     assert dict(matplotlib.rcParams) == first
 
 
@@ -61,7 +61,7 @@ def test_colours_are_distinct_and_meaningful():
 
 def test_saved_figures_are_opaque():
     """A transparent PNG dropped into a dark slide turns all the text invisible."""
-    style.use_style()
+    style.apply()
     assert matplotlib.rcParams["savefig.facecolor"] == "white"
 
 
@@ -71,11 +71,17 @@ def test_series_palette_has_enough_colours():
     assert len(set(style.SERIES)) == len(style.SERIES), "no duplicate colours"
 
 
-def test_savefig_creates_missing_directories(tmp_path):
-    fig, ax = plt.subplots()
-    ax.plot([0, 1], [0, 1])
-    out = style.savefig(fig, str(tmp_path / "deep" / "nested" / "f.png"))
-    assert (tmp_path / "deep" / "nested" / "f.png").is_file(), out
+def test_saving_belongs_to_figuresaver_not_style():
+    """`style.savefig` was a second way to write a figure, which meant a figure could reach
+    disk without a caption or a manifest entry. `FigureSaver` is the only path now."""
+    assert not hasattr(style, "savefig")
+
+
+def test_sizes_come_from_a4_not_from_the_caller():
+    """Every figure is drawn at the width it will occupy on the printed page."""
+    assert style.figsize()[0] == style.WIDTH_FULL
+    assert style.grid_figsize(4, 3)[0] == style.WIDTH_FULL, "a grid never exceeds the page"
+    assert style.row_figsize(200)[1] <= style.MAX_HEIGHT, "row charts must clamp"
 
 
 def test_palette_swatch_builds():

@@ -167,7 +167,7 @@ extend-exclude = [
     # site-packages. Both spellings listed to cover the rename.
     ".CreditICL",
     "CreditICL",
-    # GENERATED, not written: scripts/vendor_model.py extracts this verbatim from
+    # GENERATED, not written: python -m src.utils.vendor_model extracts this verbatim from
     # the pinned library dump. Formatting it would be undone on the next
     # extraction, and any real change would make our arms incomparable to the
     # reference architecture.

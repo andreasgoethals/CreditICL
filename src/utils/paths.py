@@ -48,6 +48,13 @@ def on_vsc() -> bool:
     return bool(os.environ.get("VSC_DATA"))
 
 
+#: Checked in order; the first one set wins. The two lab-wide names are accepted so a shell
+#: already configured for a sibling project works here unchanged. A module constant rather
+#: than a literal inside the function because the test fixture has to set the same variable
+#: this reads — two copies of that name would drift.
+STAGING_ENV_VARS = ("CREDITICL_STAGING_ROOT", "CREDITPFN_STAGING_ROOT", "TABPFN_STAGING_ROOT")
+
+
 def staging_override() -> Path | None:
     """An explicitly requested staging root, or None.
 
@@ -57,7 +64,7 @@ def staging_override() -> Path | None:
     point it at a temp dir, and it is the supported way to put pools on an external
     drive instead of inside the repo.
     """
-    for var in ("CREDITICL_STAGING_ROOT", "CREDITPFN_STAGING_ROOT", "TABPFN_STAGING_ROOT"):
+    for var in STAGING_ENV_VARS:
         p = _env_path(var)
         if p:
             return p
@@ -121,9 +128,13 @@ def datasets_dir() -> Path:
     return _under(staging_root(), "data")
 
 
-def checkpoints_dir() -> Path:
-    """Pretrained weights, one dir per run. BIG -> staging."""
-    return _under(staging_root(), "checkpoints")
+def checkpoints_dir(*parts: str) -> Path:
+    """Pretrained weights, one dir per run. BIG -> staging.
+
+    Never deleted by the cleaner: every file here is either downloaded from upstream or
+    cost a training run to reproduce.
+    """
+    return _under(staging_root(), "checkpoints", *parts)
 
 
 def outputs_dir() -> Path:
@@ -187,6 +198,58 @@ def repo_dir() -> Path:
 # ---------------------------------------------------------------------------
 
 TASKS = ("pd", "lgd")
+
+
+def raw_dir(*parts: str) -> Path:
+    """`data/raw/` — never modified, never committed, never deleted by the cleaner.
+
+    The plain root. The task-aware search helpers below (`find_raw_path` and friends) are
+    what this project actually calls; this exists because it is the template's name for
+    the concept and because `clean_run` and any new code should not have to know about
+    `<task>/<dataset>` layout to name the folder they must not touch.
+    """
+    if _use_staging():
+        return _under(staging_root(), "data", "raw", *parts)
+    return REPO_ROOT.joinpath("data", "raw", *parts)
+
+
+def processed_dir(*parts: str) -> Path:
+    """`data/processed/` — a cache, rebuildable from `raw/`, so the first thing to delete."""
+    if _use_staging():
+        return _under(staging_root(), "data", "processed", *parts)
+    return REPO_ROOT.joinpath("data", "processed", *parts)
+
+
+def config_path(name: str) -> Path:
+    """`config/<name>.yaml`. Always in the repo — configs are code, not data.
+
+    Takes the name with or without the extension, so a caller can pass either what the
+    user typed on the command line or a bare experiment name.
+    """
+    stem = name[:-5] if name.endswith(".yaml") else name
+    return REPO_ROOT / "config" / f"{stem}.yaml"
+
+
+def notebooks_dir() -> Path:
+    """Where the notebooks live. `run_notebooks` discovers them here rather than from a
+    hard-coded list, so a notebook someone adds is covered automatically."""
+    return REPO_ROOT / "notebooks"
+
+
+def library_dir() -> Path:
+    """The read-only literature submodule. READ from it; never write inside it."""
+    return REPO_ROOT / "tfm-library"
+
+
+def ensure(path: Path) -> Path:
+    """`mkdir -p` the directory and return the path unchanged.
+
+    Given a file path (anything with a suffix) it creates the *parent*, so a caller can
+    write `ensure(results_dir("lgd") / "scores.csv").write_text(...)` in one line.
+    """
+    target = path.parent if path.suffix else path
+    target.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def _check_task(task: str) -> str:
@@ -287,16 +350,25 @@ def processed_write_dir(task: str, dataset: str) -> Path:
     return REPO_ROOT / "data" / "processed" / task / dataset
 
 
+def prior_cache_root() -> Path:
+    """The parent of every pre-generated prior pool. BIG -> staging.
+
+    Separate from `prior_cache_dir` so the cleaner can name the whole tree without
+    inventing a pool name.
+    """
+    if _use_staging():
+        return _under(staging_root(), "prior_cache")
+    return REPO_ROOT / "prior_cache"
+
+
 def prior_cache_dir(name: str) -> Path:
-    """Where a pre-generated pool of synthetic datasets lives. BIG -> staging.
+    """Where one pre-generated pool of synthetic datasets lives. BIG -> staging.
 
     Pools are the largest thing this project writes (40,000 datasets per variant),
     so `$CREDITICL_STAGING_ROOT` is honoured off-VSC too — otherwise they land
     inside the repo, which is exactly where they must not be.
     """
-    if _use_staging():
-        return _under(staging_root(), "prior_cache", name)
-    return REPO_ROOT / "prior_cache" / name
+    return prior_cache_root() / name
 
 
 # ---------------------------------------------------------------------------
@@ -316,23 +388,32 @@ PIPELINES = ("data", "prior", "training", "eval")
 RESULT_NAMESPACES = TASKS + ("ood",)
 
 
-def results_dir(task: str | None = None, pipeline: str | None = None) -> Path:
-    """results/ , results/<task>/ or results/<task>/<pipeline>/.
+def results_dir(*parts: str) -> Path:
+    """`results/`, `results/<namespace>/` or `results/<namespace>/<pipeline>/`.
 
-    Accepts `ood` alongside the real tasks, so out-of-domain scores get their own tree
-    rather than being written next to the credit numbers.
+    THE ONE PART OF `output/` ON PROJECT STORAGE. Per-row predictions across every
+    dataset, arm and seed reach gigabytes; leaving them on `$VSC_DATA`'s 75 GiB would
+    fill it and then every job that writes a log fails too. Everything else in
+    `output/` is small and stays on the backed-up, browsable tier.
+
+    Variadic to match the template, but the first two components are still checked
+    against a whitelist: a typo'd namespace silently creates `results/lgd_/` and the
+    scores go missing rather than erroring, which is far more expensive than a raise.
+    `ood` is a namespace alongside the real tasks so out-of-domain scores never land
+    next to the credit numbers — a mean across both would be meaningless.
     """
-    root = outputs_dir() / "results"
-    if task is None:
-        return root
-    task = task.lower()
-    if task not in RESULT_NAMESPACES:
-        raise ValueError(f"results namespace must be one of {RESULT_NAMESPACES}, got {task!r}")
-    if pipeline is None:
-        return root / task
-    if pipeline not in PIPELINES:
-        raise ValueError(f"pipeline must be one of {PIPELINES}, got {pipeline!r}")
-    return root / task / pipeline
+    if parts:
+        namespace = parts[0].lower()
+        if namespace not in RESULT_NAMESPACES:
+            raise ValueError(
+                f"results namespace must be one of {RESULT_NAMESPACES}, got {parts[0]!r}"
+            )
+        if len(parts) > 1 and parts[1] not in PIPELINES:
+            raise ValueError(f"pipeline must be one of {PIPELINES}, got {parts[1]!r}")
+        parts = (namespace, *parts[1:])
+    if _use_staging():
+        return _under(staging_root(), "output", "results", *parts)
+    return outputs_dir().joinpath("results", *parts)
 
 
 def resolve_writable(preferred: Path, fallback: Path | None = None) -> Path:

@@ -1,113 +1,162 @@
-"""Saving figures from a notebook, so an interactive run produces the same files.
+"""Saving figures. One folder per notebook, one PDF per figure, cleared before drawing.
 
-THE PROBLEM THIS SOLVES
+    output/figures/<notebook>/01_<name>.pdf     the figure — vector, for the paper
+    output/figures/<notebook>/_figures.json     what was drawn, in order, with captions
 
-Figure capture used to live entirely in `scripts/run_notebooks.py`, which monkey-patches
-matplotlib while executing a notebook as a script. That works for the batch runner and
-**not at all** in Jupyter: opening a notebook and pressing Run All produced figures on
-screen and nothing on disk. Since Jupyter is how the notebooks are actually read and
-iterated on, that was the wrong way round.
+PDF ONLY, AND SIZED FOR A4. The PDF is what the paper uses: vector, text embedded as TrueType so
+journal systems accept it, drawn at the width it will occupy on the A4 page (see
+`src/visualize/style.py`). The notebook *displays* each figure inline, so a reader sees them by
+scrolling the notebook — there is no second raster copy on disk to go stale.
 
-So the notebook saves its own figures. `FigureSaver` works identically in Jupyter and
-under the runner, which also means the runner no longer has to guess which function drew
-what — the notebook names each figure explicitly.
+THE NOTEBOOK SAVES ITS OWN FIGURES, not the runner: a runner that captures them on the notebook's
+behalf only works inside the runner, so *Run All* in Jupyter — where figures are actually iterated
+on — produces nothing, and the two paths silently disagree.
 
-TWO GUARANTEES:
+THE FOLDER IS CLEARED ON CONSTRUCTION, before anything is drawn, and only ever this notebook's
+own: a stale PDF beside a fresh one is how a paper ends up with a figure that no longer matches
+the code that made it.
 
-* **A notebook deletes only its OWN figures**, never another notebook's. The folders are
-  per notebook and `wipe()` touches exactly one.
-* **Deletion happens BEFORE anything is drawn**, in the setup cell, so a figure removed
-  from a notebook does not linger from the previous run.
-
-Every figure is written twice: PDF at high DPI for the paper, PNG at lower DPI so it is
-small enough to commit and to render inline.
+THE NUMBERED PREFIX makes alphabetical order equal drawing order, so `CAPTIONS.md` is rebuildable
+from disk without re-executing anything.
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any
+from pathlib import Path
+
+import matplotlib.pyplot as plt
 
 from src.utils.paths import figures_dir
 
-#: PDF for print. Vector already, but raster elements (heatmaps, dense scatter) need this.
-PDF_DPI = 300
-#: PNG for the repository and for inline display. Readable, and small enough to commit.
-PNG_DPI = 110
+#: Vector already, but heatmaps and scatter clouds inside a PDF rasterise, so it still needs a
+#: print DPI.
+DPI = 300
+
+#: The only things ever deleted from a notebook's folder. Anything else a person put there
+#: survives: a cleaner that removes what it does not recognise eventually removes something
+#: irreplaceable.
+_OWNED = ("*.pdf", "_figures.json", "_stdout.txt")
+
+MANIFEST = "_figures.json"
+
+
+def manifest_path(notebook: str) -> Path:
+    return figures_dir(notebook) / MANIFEST
+
+
+def read_manifest(notebook: str) -> list[dict]:
+    """What this notebook drew last time it ran, in order. `[]` if it never has."""
+    path = manifest_path(notebook)
+    if not path.is_file():
+        return []
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        # A run killed mid-write leaves truncated JSON. That is a missing manifest, not a crash:
+        # the figures are still on disk and the next run rewrites it.
+        return []
+
+
+def clear(notebook: str) -> int:
+    """Delete this notebook's own figures and manifest; returns how many went.
+
+    Scoped to one folder, to the patterns above, and non-recursive, so it cannot reach a sibling
+    notebook's figures.
+    """
+    folder = figures_dir(notebook)
+    if not folder.is_dir():
+        return 0
+    removed = 0
+    for pattern in _OWNED:
+        for path in folder.glob(pattern):
+            if path.is_file():
+                path.unlink()
+                removed += 1
+    return removed
 
 
 class FigureSaver:
-    """Names, numbers and saves a notebook's figures.
+    """Saves every figure of ONE notebook, in order, with its caption.
 
-    Usage in a notebook's setup cell::
+    Construct it in the notebook's setup cell, before anything is drawn:
 
-        FIGS = figures.for_notebook("data_exploration")
+        from src.visualize import figures, style
+        style.apply()
+        save = figures.FigureSaver("example_analysis")   # clears its own folder here
 
-    then, per plot::
+        fig, ax = plt.subplots()
+        ...
+        save(fig, "target_distribution",
+             caption="Histogram of the target, 40 bins, n = 12,043.")
 
-        FIGS.save(data_plots.plot_lgd_targets(lgd), "lgd_targets")
+    THE CAPTION IS THE PAPER'S CAPTION. Write it to be pasted straight under the figure in the
+    manuscript: pure description — what is plotted, on what axes, from how much data. No
+    interpretation, no conclusion. The argument goes in the body text, and a caption that argues has
+    to be rewritten when the argument changes.
 
-    `save` returns the figure, so Jupyter still displays it inline.
+    Passed at save time rather than kept in a central registry, so a caption lives next to the
+    figure it describes and cannot go stale when that figure is renamed.
     """
 
-    def __init__(self, notebook: str, wipe: bool = True):
+    def __init__(self, notebook: str, *, clear_first: bool = True) -> None:
         self.notebook = notebook
-        self.dir = figures_dir(notebook)
-        self.dir.mkdir(parents=True, exist_ok=True)
-        if wipe:
-            # Remove the FILES this notebook produces, not the directory. Deleting the
-            # directory failed on Windows when the batch runner had a file open inside it,
-            # and removing only known extensions means an unrelated file can never be
-            # caught. Never touches another notebook's folder.
-            for pattern in ("*.pdf", "*.png", "_figures.json"):
-                for stale in self.dir.glob(pattern):
-                    stale.unlink(missing_ok=True)
-        self.entries: list[dict[str, Any]] = []
+        self.folder = figures_dir(notebook)
+        self.folder.mkdir(parents=True, exist_ok=True)
+        #: `clear_first=False` is for one case only: re-running a single cell mid-session without
+        #: wiping what the earlier cells wrote. Never pass it in the setup cell.
+        if clear_first:
+            clear(notebook)
+        self.entries: list[dict] = [] if clear_first else read_manifest(notebook)
 
-    def save(self, fig: Any, name: str) -> Any:
-        """Write one figure as PDF and PNG. Returns the figure for inline display."""
-        if fig is None:
-            raise ValueError(
-                f"{self.notebook}/{name}: got None instead of a figure. The plotting "
-                f"functions all return a Figure — check you are not passing the result "
-                f"of something that only draws."
-            )
-        index = len(self.entries) + 1
-        stem = f"fig{index:02d}_{name}"
-        fig.savefig(self.dir / f"{stem}.pdf", format="pdf", dpi=PDF_DPI, bbox_inches="tight")
-        fig.savefig(self.dir / f"{stem}.png", format="png", dpi=PNG_DPI, bbox_inches="tight")
-        self.entries.append({"index": index, "stem": stem, "name": name})
-        self._write_manifest()
-        return fig
+    def __call__(self, fig: plt.Figure, name: str, caption: str = "", **kwargs) -> Path:
+        return self.save(fig, name, caption=caption, **kwargs)
 
-    def _write_manifest(self) -> None:
-        """Record order and names, so CAPTIONS.md can be rebuilt without re-running.
+    def save(self, fig: plt.Figure, name: str, *, caption: str = "") -> Path:
+        """Write `<NN>_<name>.pdf` and record the caption.
 
-        Written after every save rather than once at the end: a notebook abandoned
-        half-way should still leave a usable record of what it produced.
+        The figure is left open so it still displays in Jupyter — that inline render is the only
+        raster copy there is, and the interactive run has to look the same as the runner's.
         """
-        (self.dir / "_figures.json").write_text(
-            json.dumps({"notebook": self.notebook, "figures": self.entries}, indent=1),
-            encoding="utf-8",
+        index = len(self.entries) + 1
+        stem = f"{index:02d}_{_slug(name)}"
+        path = self.folder / f"{stem}.pdf"
+        _guard(path, self.folder)
+        fig.savefig(path, format="pdf", dpi=DPI)
+        self.entries.append(
+            {"index": index, "stem": stem, "name": name, "caption": caption.strip()}
         )
+        # Rewritten after every figure, so a notebook that dies halfway still has a manifest
+        # describing the figures it did produce.
+        manifest_path(self.notebook).write_text(
+            json.dumps(self.entries, indent=2), encoding="utf-8"
+        )
+        return path
 
     def summary(self) -> str:
-        """One line per figure, for the notebook's closing text summary."""
+        """What was saved, for the notebook's final `print` — so `All_Results.md` says what the run
+        drew, not only what it computed."""
         if not self.entries:
-            return "No figures saved."
-        lines = [f"{len(self.entries)} figures written to {self.dir}:"]
-        lines += [f"  {e['stem']}.pdf / .png" for e in self.entries]
+            return f"{self.notebook}: no figures saved."
+        lines = [f"{self.notebook}: {len(self.entries)} figures -> {self.folder}"]
+        for e in self.entries:
+            lines.append(f"  {e['index']:02d}  {e['name']}")
+            if not e["caption"]:
+                lines.append("      NO CAPTION — add one; CAPTIONS.md will flag it.")
         return "\n".join(lines)
 
 
-def for_notebook(notebook: str, wipe: bool = True) -> FigureSaver:
-    """Start (and by default clear) a notebook's figure folder."""
-    return FigureSaver(notebook, wipe=wipe)
+def _slug(name: str) -> str:
+    """A filename-safe version of a figure name. Keeps it readable, not opaque."""
+    keep = [c if (c.isalnum() or c in "-_") else "_" for c in name.strip().lower()]
+    return "".join(keep).strip("_") or "figure"
 
 
-def read_manifest(notebook: str) -> list[dict[str, Any]]:
-    """The figures a notebook produced, in order. Empty if it has not run."""
-    path = figures_dir(notebook) / "_figures.json"
-    if not path.is_file():
-        return []
-    return json.loads(path.read_text(encoding="utf-8")).get("figures", [])
+def _guard(path: Path, folder: Path) -> None:
+    """Refuse to write outside this notebook's own folder — a `..` in a figure name would put a
+    generated file outside `output/`, the one rule the layout rests on."""
+    if folder.resolve() != path.resolve().parent:
+        raise ValueError(
+            f"figure would be written to {path.resolve()}, outside {folder.resolve()}. "
+            f"Figure names are plain names, not paths."
+        )

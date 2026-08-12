@@ -267,8 +267,8 @@ def plot_boundary_mass_by_variant(loaded: dict[str, list[SyntheticTask]], real_r
     actually cover where the real datasets sit?
     """
     _require_variants(loaded)
-    style.use_style()
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.6))
+    style.apply()
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=style.figsize(style.WIDTH_FULL, 0.38))
 
     for i, (variant, tasks) in enumerate(loaded.items()):
         stats = [target_stats(t.y) for t in tasks]
@@ -309,8 +309,8 @@ def plot_boundary_mass_by_variant(loaded: dict[str, list[SyntheticTask]], real_r
 def plot_base_rate_by_variant(loaded: dict[str, list[SyntheticTask]], real_reference=None):
     """Base-rate distribution per variant. The PD counterpart of boundary mass."""
     _require_variants(loaded)
-    style.use_style()
-    fig, ax = plt.subplots(figsize=(9, 4.8))
+    style.apply()
+    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.50))
     for i, (variant, tasks) in enumerate(loaded.items()):
         rates = np.array([float((t.y > 0.5).float().mean()) for t in tasks])
         ax.hist(rates, bins=30, histtype="step", lw=2.2, color=variant_color(variant, i),
@@ -337,9 +337,9 @@ def plot_target_shapes_by_variant(loaded: dict[str, list[SyntheticTask]], n_per:
     are seen rather than remembered.
     """
     _require_variants(loaded)
-    style.use_style()
+    style.apply()
     n_var = len(loaded)
-    fig, axes = plt.subplots(n_var, n_per, figsize=(1.35 * n_per, 1.5 * n_var), squeeze=False)
+    fig, axes = plt.subplots(n_var, n_per, figsize=style.grid_figsize(n_per, n_var, panel_ratio=1.1), squeeze=False)
     for r, (variant, tasks) in enumerate(loaded.items()):
         colour = variant_color(variant, r)
         for c in range(n_per):
@@ -368,8 +368,8 @@ def plot_spectrum_by_variant(loaded: dict[str, list[SyntheticTask]], n_curves: i
     they teach a similar dependence structure however different the targets look.
     """
     _require_variants(loaded)
-    style.use_style()
-    fig, ax = plt.subplots(figsize=(7.5, 5))
+    style.apply()
+    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.62))
     grid = np.linspace(0, 1, 50)
     for i, (variant, tasks) in enumerate(loaded.items()):
         colour = variant_color(variant, i)
@@ -464,8 +464,8 @@ def plot_shapes_by_variant(loaded: dict[str, list[SyntheticTask]]):
     difference would mean an accidental confound rather than a finding.
     """
     _require_variants(loaded)
-    style.use_style()
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
+    style.apply()
+    fig, axes = plt.subplots(1, 2, figsize=style.figsize(style.WIDTH_FULL, 0.38))
     for i, (variant, tasks) in enumerate(loaded.items()):
         colour = variant_color(variant, i)
         axes[0].hist([t.n_rows for t in tasks], bins=20, histtype="step", lw=2.2,

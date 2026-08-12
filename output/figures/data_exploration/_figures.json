@@ -1,0 +1,50 @@
+[
+  {
+    "index": 1,
+    "stem": "01_lgd_targets",
+    "name": "lgd_targets",
+    "caption": "Histograms of the Loss Given Default target for each of the seven LGD datasets, ordered by sample size. Forty bins per panel. Dashed vertical lines mark the minimum and maximum observed values where more than 1% of observations fall exactly on them. Panel subtitles give the combined share of observations at the two boundaries."
+  },
+  {
+    "index": 2,
+    "stem": "02_boundary_mass_ranking",
+    "name": "boundary_mass_ranking",
+    "caption": "Share of observations lying exactly at a boundary of the observed target range, per LGD dataset, ordered by total. Bars are split into mass at the minimum (blue) and at the maximum (orange). Percentages give the total per dataset."
+  },
+  {
+    "index": 3,
+    "stem": "03_pd_base_rates",
+    "name": "pd_base_rates",
+    "caption": "Default rate per PD dataset, ordered by rate, on a logarithmic horizontal axis. The dashed vertical line marks a 50% rate. Percentages give the rate per dataset."
+  },
+  {
+    "index": 4,
+    "stem": "04_shapes",
+    "name": "shapes",
+    "caption": "Number of rows against number of features for all 21 evaluation datasets, both axes logarithmic. Colour denotes task; each point is labelled with its dataset name."
+  },
+  {
+    "index": 5,
+    "stem": "05_type_mix",
+    "name": "type_mix",
+    "caption": "Share of columns that are categorical, per dataset, ordered by share. Colour denotes task."
+  },
+  {
+    "index": 6,
+    "stem": "06_missingness",
+    "name": "missingness",
+    "caption": "Share of cells that are missing, per dataset, ordered by share, measured after preprocessing. Colour denotes task."
+  },
+  {
+    "index": 7,
+    "stem": "07_feature_correlations_lgd",
+    "name": "feature_correlations_lgd",
+    "caption": "Pearson correlation matrices between features for the six largest datasets of the task, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel subtitles give the number of columns retained and the mean absolute off- diagonal correlation."
+  },
+  {
+    "index": 8,
+    "stem": "08_feature_correlations_pd",
+    "name": "feature_correlations_pd",
+    "caption": "Pearson correlation matrices between features for the six largest datasets of the task, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel subtitles give the number of columns retained and the mean absolute off- diagonal correlation."
+  }
+]

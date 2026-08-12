@@ -5,6 +5,62 @@ reason is not obvious.
 
 ---
 
+## 11-08-2026
+
+Brought the repository in line with `docs/TEMPLATE.md`. Shared modules were **copied** from
+the template rather than rewritten, so they stay identical across projects.
+
+- **Figures are sized for A4.** `style.py` gains `WIDTH_FULL` (6.30 in = the 160 mm text
+  block), `WIDTH_HALF`, `WIDTH_THIRD`, `MAX_HEIGHT`, `figsize()`, plus `grid_figsize()` and
+  `row_figsize()` for panel grids and bar charts. Replaced 18 hard-coded sizes that were
+  11–13 in wide — every figure would have been scaled to ~50 % in the document, taking 9pt
+  text below the 7pt print floor. Two tests measure the PDFs themselves.
+- **`style.use_style()` → `style.apply()`**; `style.savefig` removed, since it was a second
+  way for a figure to reach disk without a caption or a manifest entry.
+- **Figures are PDF only.** The notebook displays each one inline, so the PNGs were a second
+  raster copy that could go stale. `savefig.bbox` is no longer `tight`: cropping to content
+  makes two figures declared at the same width come out different widths.
+- **Captions moved to the save site**, `FIGS.save(fig, name, caption=...)`, and out of the
+  central `FIGURE_CAPTIONS` dict — a caption now cannot go stale when its figure is renamed.
+- **Notebooks are discovered, not listed.** `run_notebooks.discover()` globs `notebooks/`
+  alphabetically; the hard-coded tuple silently stopped covering anything added.
+- **`results_dir()` now resolves to project storage**, as the two-tier layout always
+  intended. It returned `outputs_dir()/results`, so per-row predictions would have filled
+  `$VSC_DATA`'s 75 GiB and then every job that writes a log would fail too.
+- **`paths.py`** gains `raw_dir`, `processed_dir`, `config_path`, `ensure`, `notebooks_dir`,
+  `library_dir`, `prior_cache_root`, and `STAGING_ENV_VARS`; `results_dir`/`checkpoints_dir`
+  are variadic.
+- **`src/utils/clean_run.py`** and **`update_tfm_library.py`** copied in; `clean_run` gains
+  `--prior-cache` because this project's largest artefact lives outside `output/`.
+- **Utilities moved out of `scripts/`**, which now holds only experiments and `slurm/`:
+  `clean_run.py` and `run_notebooks.py` deleted (superseded), `vendor_model.py` →
+  `src/utils/`.
+- **`CLAUDE.md`** added (one line, `@AGENTS.md`) — Claude Code reads that file and not
+  `AGENTS.md`, so until now it read no rules at all. **`AGENTS.md`** replaced with the
+  template's, which adds "read `AGENTS_MEMORY.md` first" and the notebook/figure rules.
+- **`docs/AGENTS_MEMORY.md`** added and seeded with ten verified dead ends. The Runs table
+  starts empty: earlier wICE logs were read but never recorded and are no longer on disk.
+- **`src/data/loaders.py`** added as the documented entry point over `pipeline.py` and
+  `discovery.py`, so the template's name resolves to something real.
+- **`.vscode/settings.json`** replaced with the template's. Ours was **not valid JSON** —
+  `"${workspaceFolder}\.CreditICL\Scripts\python.exe"` contains `\C` and `\S`, which are
+  not legal escapes — and lacked `jupyter.notebookFileRoot`.
+- **`.gitignore`**: dropped nine unanchored or stale rules (`logs/`, `res/`,
+  `results/**/*.npy`, `results/_local/`, `output/**/_run.py`, …) already covered by anchored
+  ones. `output/logs/` and `output/manifests/` now ignore their *contents*, so the tracked
+  `.gitkeep` survives and a fresh clone has somewhere to write.
+- **The test suite was destroying real output.** `test_run_artifacts.py`'s `tree` fixture set
+  the staging root but *deleted* `VSC_DATA`, so `logs_dir()` and `manifests_dir()` resolved to
+  the real repository `output/` — the cleanup tests then deleted from it, wiping
+  `data_exploration/`'s eight figures and `CAPTIONS.md` on every run. Both tiers are now
+  redirected, and an assertion in the fixture fails loudly if that ever stops holding.
+- **`isolated_output` fixture** added to `conftest.py`, setting `VSC_DATA` *and* the staging
+  root with the same guard. A test that set only staging wrote two fake PDFs into the real
+  tree, because `figures_dir()` ignores staging.
+- **`src/methods/`** deleted — an empty package nothing imported.
+- `output/` tree created with tracked `.gitkeep` markers, `data/processed/.gitkeep` added,
+  and `README.md` now ends with the template chapter.
+
 ## 09-08-2026
 
 - **One output root.** Everything generated goes under `output/` — results, figures,
@@ -44,7 +100,7 @@ reason is not obvious.
 - **Training progress curve** (`src/train/progress.py`). One CSV row per 10,000 synthetic
   datasets with metrics on real and out-of-domain data, so a run is a curve rather than
   one end-of-run number. Never fatal.
-- **Run cleanup** (`src/utils/run_artifacts.py`, `scripts/clean_run.py`). Lists by
+- **Run cleanup** (`src/utils/run_artifacts.py`, `src/utils/clean_run.py`). Lists by
   default; expensive categories need naming explicitly; raw data and downloaded weights
   are unreachable by construction.
 - **Verified:** our ExtraTrees filter matches TabICLv2 Appendix E.14 exactly.

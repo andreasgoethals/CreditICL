@@ -481,3 +481,16 @@ gap.
 
 MIT — see [LICENSE](LICENSE). Note this covers *our code only*; the
 datasets under `data/` carry their own, more restrictive terms.
+
+---
+
+## Based on the repository template
+
+This repository was created from
+[**andreasgoethals/0.-Template**](https://github.com/andreasgoethals/0.-Template).
+[`docs/TEMPLATE.md`](docs/TEMPLATE.md) is that template: it explains every folder and file here,
+and it is a **starting point, not a contract** — this project may grow past it, and deviating where
+the work needs it is fine as long as you say so. Generic rule changes belong at the source above.
+
+*Keep this chapter, at the bottom, in every project that starts from the template. Everything above
+it is that project's own.*

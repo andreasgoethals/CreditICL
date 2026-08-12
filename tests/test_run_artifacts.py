@@ -21,15 +21,28 @@ from src.utils import run_artifacts as ra
 
 @pytest.fixture
 def tree(tmp_path, monkeypatch):
-    """A fake output tree on a temp staging root."""
+    """A fake output tree, with BOTH storage tiers redirected into `tmp_path`.
+
+    `VSC_DATA` has to be set, not deleted. Without it `paths.on_vsc()` is false, so
+    `outputs_dir()` — and therefore `logs_dir()` and `manifests_dir()` — resolves to the REAL
+    repository `output/`. These tests then write files there and the cleanup tests below
+    delete from it: the earlier version of this fixture destroyed a notebook's committed
+    figures and `CAPTIONS.md` on every run, silently, three test files away from the cause.
+    """
     import importlib
 
-    monkeypatch.setenv("CREDITICL_STAGING_ROOT", str(tmp_path))
-    monkeypatch.delenv("VSC_DATA", raising=False)
+    monkeypatch.setenv("VSC_DATA", str(tmp_path / "vsc_data"))
+    monkeypatch.setenv("CREDITICL_STAGING_ROOT", str(tmp_path / "staging"))
     import src.utils.paths as paths
 
     importlib.reload(paths)
     importlib.reload(ra)
+
+    # Guard rather than trust: if a future edit re-breaks the redirect, fail here instead of
+    # deleting real output.
+    assert tmp_path in paths.outputs_dir().parents, (
+        f"output tree not isolated: {paths.outputs_dir()} is outside {tmp_path}"
+    )
 
     (paths.logs_dir()).mkdir(parents=True, exist_ok=True)
     (paths.logs_dir() / "run.log").write_text("x" * 500, encoding="utf-8")
