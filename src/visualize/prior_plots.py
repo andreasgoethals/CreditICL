@@ -22,7 +22,7 @@ import numpy as np
 
 from src.prior.generator import TaskGenerator
 from src.prior.rng import PriorRNG
-from src.utils.config import expand_with_seeds, load_yaml
+from src.utils.config import expand_with_seeds, load
 from src.utils.target_stats import target_stats
 from src.visualize import style
 
@@ -40,7 +40,7 @@ def sample_tasks(
     `credit_fraction=None` uses whatever the config says. Override it to compare
     the original prior (0.0) against ours (1.0) side by side.
     """
-    cfg = expand_with_seeds(load_yaml(config_path))[grid_index]
+    cfg = expand_with_seeds(load(config_path))[grid_index]
     task = cfg["task"]
     if credit_fraction is not None:
         cfg["prior"]["credit_fraction"] = credit_fraction
@@ -63,50 +63,6 @@ def sample_tasks(
 # The target — the thing this project is actually about
 # ---------------------------------------------------------------------------
 
-
-def plot_target_grid(tasks: list[Any], n_show: int = 100, bins: int = 30, ncols: int = 10):
-    """A histogram per task. The single most informative plot here.
-
-    Look for: U shapes, spikes at the edges, flat interiors, and — importantly —
-    whether the shapes DIFFER from each other. A family that always looks the same
-    is a family that will overfit to one dataset.
-    """
-    style.apply()
-    n_show = min(n_show, len(tasks))
-    nrows = int(np.ceil(n_show / ncols))
-    fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 1.45, nrows * 1.3))
-    axes = np.atleast_1d(axes).ravel()
-
-    for i in range(len(axes)):
-        ax = axes[i]
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.grid(visible=False)
-        if i >= n_show:
-            ax.axis("off")
-            continue
-        y = tasks[i].y.numpy()
-        ax.hist(y, bins=bins, color=style.source_color(tasks[i].source))
-        for spine in ax.spines.values():
-            spine.set_linewidth(0.4)
-            spine.set_color(style.GRID)
-        ax.spines["top"].set_visible(True)
-        ax.spines["right"].set_visible(True)
-
-    n_credit = sum(t.source == "credit" for t in tasks[:n_show])
-    fig.suptitle(f"Target distribution across {n_show} sampled tasks")
-    fig.legend(
-        handles=style.legend_patches({
-            f"our prior ({n_credit})": style.CREDIT,
-            f"original TabICL prior ({n_show - n_credit})": style.ORIGINAL,
-        }),
-        loc="upper right", ncol=2, bbox_to_anchor=(0.99, 1.0),
-    )
-    style.figure_note(
-        fig, "Look for VARIETY: a family that always looks the same will overfit to "
-        "one dataset. Spikes at the panel edges are the boundary atoms."
-    )
-    return fig
 
 
 def plot_boundary_mass(tasks: list[Any], real_reference: dict[str, tuple[float, float]] | None = None):
@@ -183,37 +139,6 @@ def plot_table_shapes(tasks: list[Any]):
     fig.suptitle("Shape of the generated tables")
     return fig
 
-
-def plot_feature_relationships(tasks: list[Any], n_show: int = 6):
-    """Correlation structure between features, for a few tasks.
-
-    O'Prior's central measurement was that its generator matched real data's
-    *correlation spectrum* better than TabICL's. These heatmaps are the eyeball
-    version of that: solid blocks mean whole groups of features move together,
-    which is what a shared graph ancestor produces.
-    """
-    style.apply()
-    n_show = min(n_show, len(tasks))
-    fig, axes = plt.subplots(1, n_show, figsize=style.grid_figsize(n_show, 1, panel_ratio=1.15))
-    axes = np.atleast_1d(axes).ravel()
-    for ax, t in zip(axes, tasks[:n_show]):
-        X = t.X.numpy()
-        with np.errstate(invalid="ignore", divide="ignore"):
-            C = np.corrcoef(X, rowvar=False)
-        C = np.nan_to_num(C)
-        im = ax.imshow(C, vmin=-1, vmax=1, cmap="RdBu_r")
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.grid(visible=False)
-        off = C[~np.eye(len(C), dtype=bool)] if len(C) > 1 else np.array([0.0])
-        style.title(ax, f"{t.n_features} feats", f"mean |r| {np.abs(off).mean():.2f}")
-    fig.colorbar(im, ax=axes, shrink=0.75, label="correlation")
-    fig.suptitle("Feature correlation, one task per panel")
-    style.figure_note(
-        fig, "Solid blocks mean whole groups of features move together — what a shared "
-        "graph ancestor produces, and what real credit data looks like."
-    )
-    return fig
 
 
 def plot_correlation_spectrum(tasks: list[Any]):

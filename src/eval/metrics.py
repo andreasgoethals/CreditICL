@@ -113,6 +113,43 @@ def lgd_metrics(
     }
     out.update(boundary_mass_error(y_true, y_pred))
 
+    # -- systematic error -----------------------------------------------------
+    # `bias` separates "wrong on average" from "noisy": an RMSE of 0.2 made of a constant
+    # 0.2 overprediction is a different defect from one made of symmetric scatter, and only
+    # the first is fixable by recalibration.
+    out["bias"] = float(np.mean(y_pred - y_true))
+    out["brier"] = float(np.mean(resid**2))  # same as MSE on a [0,1] target; the credit name
+
+    # `calibration_slope` regresses truth on prediction. 1.0 is calibrated; below 1 means the
+    # model is over-confident at the extremes (predicting 0.9 when the truth averages 0.7),
+    # which is the characteristic failure on a bounded target and invisible in RMSE.
+    var_pred = float(np.var(y_pred))
+    if var_pred > EPS:
+        out["calibration_slope"] = float(np.cov(y_true, y_pred)[0, 1] / var_pred)
+    else:
+        # A model that outputs one value for everything. Not an error worth raising, but it
+        # must not be reported as perfectly calibrated.
+        out["calibration_slope"] = float("nan")
+        out["constant_prediction"] = 1.0
+
+    # -- ranking, which is what a loss-forecasting model is often used for --------
+    # A bank ranking exposures by expected loss cares about order more than level, and rank
+    # metrics survive a monotone miscalibration that destroys R^2.
+    if y_true.size > 2 and np.unique(y_pred).size > 1:
+        from scipy.stats import kendalltau, spearmanr
+
+        out["spearman"] = float(spearmanr(y_true, y_pred).statistic)
+        out["kendall"] = float(kendalltau(y_true, y_pred).statistic)
+
+    # -- where the error lives ------------------------------------------------
+    # THE debugging split for LGD. A model can score a good overall RMSE while being useless
+    # exactly on the boundary atoms — the part of the distribution this whole project is about.
+    at_boundary = (y_true <= 1e-6) | (y_true >= 1 - 1e-6)
+    for label, mask in (("boundary", at_boundary), ("interior", ~at_boundary)):
+        if mask.any():
+            out[f"mae_{label}"] = float(np.mean(np.abs(resid[mask])))
+            out[f"n_{label}"] = int(mask.sum())
+
     if quantiles is not None and levels is not None:
         q = np.asarray(quantiles, dtype=float)
         lv = np.asarray(levels, dtype=float)
@@ -123,6 +160,14 @@ def lgd_metrics(
             lo = q[:, int(np.argmin(np.abs(lv - lo_l)))]
             hi = q[:, int(np.argmin(np.abs(lv - hi_l)))]
             out[f"coverage_{int(nominal * 100)}"] = interval_coverage(y_true, lo, hi)
+        # PIT: where each true value falls in its own predicted distribution. If the
+        # predictive is right, these are uniform on [0,1], so the distance from uniform is a
+        # single number for "is the whole distribution right", not just its middle. Reported
+        # as the mean absolute deviation of the PIT histogram from flat.
+        pit = np.mean(q <= y_true[:, None], axis=1)
+        hist, _ = np.histogram(pit, bins=10, range=(0.0, 1.0))
+        out["pit_uniformity_error"] = float(np.mean(np.abs(hist / max(pit.size, 1) - 0.1)))
+        out["pit_mean"] = float(pit.mean())  # 0.5 when centred; away from it means biased
     return out
 
 
@@ -149,6 +194,26 @@ def expected_calibration_error(y_true: np.ndarray, p: np.ndarray, n_bins: int = 
             continue
         ece += (m.mean()) * abs(y_true[m].mean() - p[m].mean())
     return float(ece)
+
+
+def ks_statistic(y_true: np.ndarray, p: np.ndarray) -> float:
+    """Kolmogorov-Smirnov: the largest gap between the score distributions of defaults and
+    non-defaults.
+
+    The standard discrimination measure in credit scoring, reported alongside AUC because it
+    answers a different question: AUC averages separation over every threshold, KS reports the
+    single best one — which is the threshold a cut-off policy would actually use.
+    """
+    y_true = np.asarray(y_true, dtype=float).ravel()
+    p = np.asarray(p, dtype=float).ravel()
+    pos, neg = p[y_true >= 0.5], p[y_true < 0.5]
+    if pos.size == 0 or neg.size == 0:
+        return float("nan")
+    grid = np.unique(p)
+    # Empirical CDFs on a shared grid; `searchsorted` keeps it O(n log n) rather than looping.
+    cdf_pos = np.searchsorted(np.sort(pos), grid, side="right") / pos.size
+    cdf_neg = np.searchsorted(np.sort(neg), grid, side="right") / neg.size
+    return float(np.max(np.abs(cdf_pos - cdf_neg)))
 
 
 def recall_at_top_k(y_true: np.ndarray, p: np.ndarray, k_frac: float) -> float:
@@ -200,15 +265,49 @@ def pd_metrics(y_true: np.ndarray, p: np.ndarray) -> dict[str, float]:
         "calibration_bias": float(p.mean() - base_rate),
     }
 
+    # Brier decomposed. `brier` alone cannot say WHY a model is wrong; the split says whether
+    # it is miscalibrated (fixable by rescaling) or simply cannot separate the classes
+    # (not fixable that way). Standard Murphy decomposition: brier = reliability - resolution
+    # + uncertainty, where uncertainty is the base rate's own variance and is a property of the
+    # dataset rather than the model.
+    out["brier_uncertainty"] = float(base_rate * (1 - base_rate))
+    out["brier_skill_score"] = float(1.0 - out["brier"] / max(out["brier_uncertainty"], EPS))
+
+    # `calibration_slope` from a logistic regression of the outcome on the log-odds. 1.0 is
+    # calibrated, below 1 over-confident. Named in every credit-scoring validation standard,
+    # and the reason it is here rather than only ECE: it gives a DIRECTION, not just a size.
+    log_odds = np.log(p / (1 - p))
+    if float(np.var(log_odds)) > EPS:
+        try:
+            from sklearn.linear_model import LogisticRegression
+
+            # C=inf, not penalty=None: unregularised is what a calibration slope means (any
+            # shrinkage would bias it toward 0 and make a calibrated model look over-confident),
+            # and `penalty=None` is deprecated from sklearn 1.8.
+            fit = LogisticRegression(C=np.inf, solver="lbfgs", max_iter=1000)
+            fit.fit(log_odds.reshape(-1, 1), (y_true >= 0.5).astype(int))
+            out["calibration_slope"] = float(fit.coef_[0][0])
+            out["calibration_intercept"] = float(fit.intercept_[0])
+        except Exception:  # noqa: BLE001 — a diagnostic must not fail an eval pass
+            out["calibration_slope"] = float("nan")
+    else:
+        out["calibration_slope"] = float("nan")
+
     if 0.0 < base_rate < 1.0:
         out["roc_auc"] = float(roc_auc_score(y_true, p))
         out["pr_auc"] = float(average_precision_score(y_true, p))
+        # Gini = 2*AUC - 1. Redundant with AUC, and included anyway because credit-risk
+        # reporting is written in Gini and a reader should not have to convert.
+        out["gini"] = float(2.0 * out["roc_auc"] - 1.0)
         # PR-AUC of a random model equals the base rate, so the lift over it is
         # the interpretable version under heavy imbalance.
         out["pr_auc_lift"] = out["pr_auc"] / max(base_rate, EPS)
+        out["ks"] = ks_statistic(y_true, p)
         for k in (0.01, 0.05, 0.10, 0.20):
             out[f"recall_at_top_{int(k * 100)}pct"] = recall_at_top_k(y_true, p, k)
     else:
-        out["roc_auc"] = float("nan")
-        out["pr_auc"] = float("nan")
+        # A test fold with one class present. Reported as NaN rather than omitted, so a
+        # missing column never reads as "this metric was not requested".
+        for key in ("roc_auc", "pr_auc", "gini", "ks"):
+            out[key] = float("nan")
     return out

@@ -151,10 +151,10 @@ def test_grouping_is_on_by_default_in_both_configs():
     """The control arm should be as faithful to TabICL as we can make it, and TabICL
     groups. If someone turns this off in a config, this test should say so loudly.
     """
-    from src.utils.config import load_yaml
+    from src.utils.config import load
 
-    for path in ("config/LGD.yaml", "config/PD.yaml"):
-        cfg = load_yaml(path)
+    for path in ("config/Exp1_LGD.yaml", "config/Exp1_PD.yaml"):
+        cfg = load(path)
         gs = cfg["prior"]["grouping"]["group_size"]
         # The lever is sweepable, so it may be a list; either way the default (first
         # value) must be > 1.

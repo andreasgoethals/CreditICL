@@ -151,7 +151,7 @@ bash scripts/transfer/fetch_prior_sample.sh
 ```
 
 ```bash
-python scripts/generate_prior.py --config config/LGD.yaml --status
+python scripts/generate_prior.py --config config/Exp1_LGD.yaml --status
 ```
 
 A partial copy is labelled **SAMPLE**, so it can never be mistaken for the pool the
@@ -421,11 +421,11 @@ preprocess Home Credit's 307k rows.
 live. Build them once per variant:
 
 ```powershell
-python scripts/generate_prior.py --config config/LGD.yaml --variant original --all
+python scripts/generate_prior.py --config config/Exp1_LGD.yaml --variant original --all
 ```
 
 ```powershell
-python scripts/generate_prior.py --config config/LGD.yaml --status
+python scripts/generate_prior.py --config config/Exp1_LGD.yaml --status
 ```
 
 The first writes `prior_cache/lgd__original/`; `--variant credit_v1` writes ours.
@@ -447,7 +447,7 @@ Without the file the baseline skips with an explanatory line rather than failing
 `--dependency=afterok`, so you can submit and log out:
 
 ```bash
-bash scripts/submit_pipeline.sh both
+bash scripts/slurm/submit_pipeline.sh both
 ```
 
 preprocess → prior pools (2 arrays × 20 CPU tasks) → verify gate → GPU training

@@ -125,7 +125,7 @@ class ProgressTracker:
             log.info("[progress] tracking %d out-of-domain datasets: %s",
                      len(entries), ", ".join(e.name for e in entries))
         else:
-            log.info("[progress] no out-of-domain cache — run scripts/fetch_ood.py "
+            log.info("[progress] no out-of-domain cache — run src/utils/fetch_ood.py "
                      "on a login node to add those columns")
         return entries
 

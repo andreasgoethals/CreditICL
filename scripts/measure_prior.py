@@ -4,8 +4,8 @@ This is the honesty check. Several claims about "what the original prior does an
 does not contain" are easy to assert and easy to get wrong — this project already
 had to walk two of them back after reading the code. So measure instead.
 
-    python scripts/measure_prior.py --config config/LGD.yaml --n 500
-    python scripts/measure_prior.py --config config/PD.yaml  --n 500 \
+    python scripts/measure_prior.py --config config/Exp1_LGD.yaml --n 500
+    python scripts/measure_prior.py --config config/Exp1_PD.yaml  --n 500 \
         --credit-fraction 0.0   # measure the ORIGINAL prior on its own
 
 What it reports, per prior:
@@ -36,7 +36,7 @@ if str(ROOT) not in sys.path:
 
 import numpy as np  # noqa: E402
 
-from src.utils.config import expand_with_seeds, load_yaml  # noqa: E402
+from src.utils.config import expand_with_seeds, load  # noqa: E402
 from src.utils.target_stats import summarise, target_stats  # noqa: E402
 
 
@@ -53,7 +53,7 @@ def main() -> int:
     ap.add_argument("--out", default=None, help="write the JSON report here as well")
     args = ap.parse_args()
 
-    cfg = expand_with_seeds(load_yaml(args.config))[args.index]
+    cfg = expand_with_seeds(load(args.config))[args.index]
     task = cfg["task"]
     if args.credit_fraction is not None:
         cfg["prior"]["credit_fraction"] = args.credit_fraction

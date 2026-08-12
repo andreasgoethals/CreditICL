@@ -60,6 +60,23 @@ dependencies = [
 
     # --- Plots (figures go to results/, which is gitignored locally) ------
     "matplotlib>=3.8",
+
+    # ---------------------------------------------------------------------
+    # THE MODEL. Not optional, and not a reimplementation.
+    #
+    # We train TabICLv2's OWN architecture, from the package that produced the
+    # released checkpoints. That is what makes "same architecture as TabICLv2" a
+    # fact rather than a claim, and it is the only way Exp3 can warm-start: a
+    # checkpoint only loads into the code that saved it.
+    #
+    # Previously this was vendored from NanoTabICL, a 665-line teaching
+    # reimplementation, purely so the repo had a model with no dependency to
+    # install. The cost was that ZERO of its 390 parameter names matched the
+    # checkpoint's 347, which made Exp3 impossible. See docs/AGENTS_MEMORY.md.
+    #
+    # It also brings upstream's training loop and their Muon, so our loop can be
+    # checked against theirs instead of being an independent guess.
+    "tabicl>=2.0",
 ]
 
 [project.optional-dependencies]

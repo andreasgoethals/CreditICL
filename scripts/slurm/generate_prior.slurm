@@ -16,7 +16,7 @@
 #      sbatch --export=ALL,TASK=lgd,VARIANT=original   scripts/slurm/generate_prior.slurm
 #      sbatch --export=ALL,TASK=lgd,VARIANT=credit_v1  scripts/slurm/generate_prior.slurm
 #
-#  or let scripts/submit_pipeline.sh chain the whole thing for you.
+#  or let scripts/slurm/submit_pipeline.sh chain the whole thing for you.
 # =============================================================================
 
 # SINGLE CLUSTER, ON PURPOSE. Slurm job dependencies do not work ACROSS clusters,

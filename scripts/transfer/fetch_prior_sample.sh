@@ -61,7 +61,7 @@ echo ""
 POOLS=$(ssh "$REMOTE" "ls -1 '${REMOTE_ROOT}' 2>/dev/null || true")
 if [[ -z "$POOLS" ]]; then
     echo "No pools found at ${REMOTE_ROOT}." >&2
-    echo "Generate them first:  bash scripts/submit_pipeline.sh both" >&2
+    echo "Generate them first:  bash scripts/slurm/submit_pipeline.sh both" >&2
     exit 1
 fi
 
@@ -96,7 +96,7 @@ done
 cat <<'EOF'
 Done. Check what you have:
 
-    python scripts/generate_prior.py --config config/LGD.yaml --status
+    python scripts/generate_prior.py --config config/Exp1_LGD.yaml --status
 
 Then open notebooks/prior_visualisation.ipynb — it discovers whatever is present.
 EOF

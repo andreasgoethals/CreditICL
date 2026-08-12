@@ -51,18 +51,18 @@ python -c "import json; from src.utils.paths import describe; print(json.dumps(d
 
 echo ""
 echo "=== grid sizes (use these for --array) ==="
-python scripts/pretrain.py --config config/LGD.yaml --list | tail -3
-python scripts/pretrain.py --config config/PD.yaml  --list | tail -3
+python scripts/pretrain.py --config config/Exp1_LGD.yaml --list | tail -3
+python scripts/pretrain.py --config config/Exp1_PD.yaml  --list | tail -3
 
 echo ""
 nvidia-smi || echo '(no GPU visible — AMP path will NOT be tested)'
 
 echo "=== LGD smoke test ==="
-python scripts/smoke_test.py --task lgd --steps 3 --report
+python -m src.utils.smoke_test --task lgd --steps 3 --report
 
 echo ""
 echo "=== PD smoke test ==="
-python scripts/smoke_test.py --task pd --steps 3 --report
+python -m src.utils.smoke_test --task pd --steps 3 --report
 
 echo ""
 echo "=========================================="

@@ -5,6 +5,104 @@ reason is not obvious.
 
 ---
 
+## 12-08-2026 (evening)
+
+- **The released TabICLv2 checkpoints now load with `strict=True`: 347/347 tensors for the
+  regressor, 391/391 for the classifier.** Exp3's blocker is gone. Our LGD model is
+  28,544,991 parameters — the checkpoint's exact count. Two fixes got there: the real
+  constructor takes `bias_free_ln`, not `norm_type`; and `apply_freezing` hard-coded
+  NanoTabICL's stack names, so Exp3's `icl_only` arm would have raised `AttributeError` only
+  after the job had queued.
+- **The test suite now runs on the real architecture** (`conftest` prefers it when installed),
+  shrunk for speed. `test_gradients_actually_reach_the_weights` no longer reaches into one
+  hard-coded layer — it checks that a majority of ALL trainable tensors moved, which would also
+  catch a whole stack sitting frozen.
+- **New Exp1 figures** in `src/visualize/exp1_plots.py`, each answering a question that changes
+  what we do next: prior-realism ranking (the one to read first), LGD mechanism decomposition,
+  PD default clustering against an independence reference, difficulty calibration against real
+  data, side-by-side real/synthetic tables, and boundary-mass sources.
+- **Removed:** `plot_target_grid` (100 thumbnails nobody can compare),
+  `plot_feature_relationships` (random graphs make random correlations), and the PD target
+  histogram (a bar at 0 and a bar at 1 — the default rate, drawn as a picture).
+- **Metrics widened for debugging.** LGD gains `brier`, `bias`, `calibration_slope`,
+  `spearman`, `kendall`, `mae_boundary`/`mae_interior` (the split that matters — a good overall
+  RMSE can hide being useless exactly on the atoms), and PIT uniformity. PD gains `ks`,
+  `gini`, `calibration_slope`/`intercept` and a Brier skill score. `ks` and
+  `calibration_slope` were **named in the configs but never computed**.
+- **`scripts/slurm/debug_exp1.slurm`** — four arms (control, mechanism, quantile, low-mix),
+  1,500 steps, 4 h walltime, running training *and* both evaluations so the half of the
+  pipeline that has never executed on the cluster gets exercised.
+- The realism figure's reference band uses the 10th–90th percentile: one real LGD dataset
+  scores R² = −4.8 under a contiguous split, and min-max made the band span everything.
+
+## 12-08-2026 (later)
+
+- **One architecture for all three experiments: TabICLv2's own.** `tabicl>=2.0` is now a
+  REQUIRED dependency and `src/models/architecture.py` is the single entry point; every config
+  carries `architecture: tabicl`. NanoTabICL was a 665-line reimplementation vendored only so
+  the repo had a model with nothing to install — the cost was that Exp3 could not warm-start
+  and architectural identity was unverifiable. It survives as an explicitly-selected fallback
+  for smoke tests and must never produce a result. **Needs installing before any real run.**
+- **Each experiment owns its own prior; the shared `prior_file:` is gone.** It encoded a false
+  claim: Exp1 sweeps **32** priors, Exp2 runs the **one** that won, Exp3 sweeps the **mixture**.
+  One file cannot represent all three.
+- **Two bugs found while doing it, both caught by tests written for the purpose:** the Exp2/Exp3
+  winner placeholders were never inserted, so those configs would have silently trained on
+  whatever default the prior carried; and a regex put PD's `category_frequency` placeholder
+  under `prior.base` — the **control arm**, which must stay exactly TabICL's.
+- **Exp3 rebuilt as continued pre-training, from the published precedent.** TabPFN-Wide
+  (Kolberg et al. 2026) does exactly this and reports it matches the base model; its recipe is
+  now Exp3's — **LR 1e-5** (not pretraining's 8e-4, which would destroy trained weights),
+  batch 16, 10,000 steps, longer warmup, clip 1.0. Sweeps `credit_fraction` 0→1 (Mitra, Zhang
+  et al. 2025: mixtures beat single priors, so expect an interior optimum) and `init.strategy`
+  `full` vs `icl_only` (Tanna et al. 2026 find full fine-tuning can hurt calibration, which is
+  disqualifying for PD).
+- **Out-of-domain evaluation widened from 10 to ~150 datasets.** Added **TabArena** and
+  **TALENT** — the two suites TabICLv2 itself reports on — beside OpenML-CC18/CTR23, which stay
+  for comparability with O'Prior. 25 per suite, and an unresolvable suite is skipped with a
+  warning rather than aborting the fetch.
+- Tests now assert the evaluation harness is genuinely **shared**: identical metrics and
+  identical dev/holdout split across all three experiments, our own checkpoints registered as a
+  baseline beside CatBoost and TabPFN, and out-of-domain scored *during* training.
+- `docs/PRIORS.md` cut from 268 to 185 lines.
+
+## 12-08-2026
+
+- **Six config files, one per experiment per track** — `Exp{1,2,3}_{LGD,PD}.yaml`, replacing
+  `LGD.yaml`/`PD.yaml`. Exp1 screens the prior grid (96 arms, 50,000 datasets each), Exp2 runs
+  the winner long (400,000), Exp3 is Exp2 with only `init` changed.
+- **`prior_file:`** — the prior lives once per track in `prior_{LGD,PD}.yaml` and each
+  experiment names it, so all three sample the same distribution. `config.load()` deep-merges
+  it; an experiment can override one nested key without deleting its siblings.
+- **`FILL_FROM_EXP1` placeholders** in Exp2/Exp3, and `load()` **refuses** a config that still
+  holds one — a config that runs with a placeholder burns GPU-hours measuring nothing.
+- **`dev_datasets` / `holdout_datasets` filled in**, chosen to SPAN the range rather than
+  cluster: LGD dev covers 1.8 %/22.4 %/73.0 % boundary mass, PD dev covers 6.7 %–40 % base
+  rates and 1k–150k rows. Tests assert the splits are disjoint and cover every dataset on disk.
+- **`src/train/telemetry.py`** — GPU utilisation, memory, power, clocks, CPU/RAM, throughput,
+  and **per-block gradient/weight norms with their ratio**, sampled on two independent cadences
+  (`logging.log_hardware_every`, `log_grad_every`). Answers the two questions every finished run
+  raises: was the GPU actually busy, and was every stack learning. Every probe degrades to a
+  missing column rather than raising; the closing summary warns when a run looks **starved**
+  rather than compute-bound.
+- **`docs/RUNS.md`** — the run write-up log: date, job id, hyperparameters, resolved config,
+  results, bugs, interpretation, with a template and the collect-and-upload workflow.
+- **`docs/PRIORS.md`** — how TabICLv2's own prior works, read out of `tfm-library`. Records that
+  the classifier and regressor share **one** `graph_scm` generator (the only prior-side
+  difference is `--max_classes 10` vs `--regression_method quantile`), that the regression
+  target is standard-scaled, and that the original prior's boundary atoms are the ±4 SD
+  **outlier clamp**, not economics.
+- **Figure pagination.** `grid_figsize` bounds width but ten panels across A4 is 0.63 in each —
+  page-correct and unreadable. `style.paginate`/`page_suffix` split them the way a paper does;
+  `plot_target_shapes_by_variant` is now two figures of five, panels 1.26 in wide.
+- **Titles wrap to their panel.** `axes.titlelocation` is `left` and matplotlib neither wraps a
+  title nor counts its width, so adjacent panels' titles ran into each other.
+- **Honest boundary labels.** The summary called the original prior's min/max ties "at 0 (full
+  recovery)" and "at 1 (total loss)". Its target is not on `[0,1]`, so those are now named as
+  scale-free ties at the extremes, with the clamp explained.
+- `fetch_ood.py` and `smoke_test.py` moved to `src/utils/` (utilities, not experiments);
+  `submit_pipeline.sh` moved into `scripts/slurm/`. `scripts/` now holds only experiments.
+
 ## 11-08-2026
 
 Brought the repository in line with `docs/TEMPLATE.md`. Shared modules were **copied** from

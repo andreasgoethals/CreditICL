@@ -96,9 +96,48 @@ def test_genuinely_unrelated_datasets_are_kept(name):
 def test_the_suites_are_named_not_hardcoded_ids():
     """Suite NAMES are verifiable; dataset ids written from memory are not. The ids must
     come from the API at fetch time and be pinned into the manifest."""
-    assert ood.SUITES == {"classification": "OpenML-CC18", "regression": "OpenML-CTR23"}
+    for kind, names in ood.SUITES.items():
+        assert isinstance(names, list) and names, kind
+        for name in names:
+            assert isinstance(name, str) and not name.isdigit(), f"{name} looks like an id"
     text = pathlib.Path(ood.__file__).read_text(encoding="utf-8")
     assert "NEVER hard-coded" in text or "never hard-coded" in text.lower()
+
+
+def test_both_task_kinds_are_covered_by_several_suites():
+    """A mean over one suite is one suite's opinion, and the out-of-domain average is the
+    number that would catch a prior which buys credit performance by destroying generality.
+    Both kinds are needed because LGD is regression and PD is classification."""
+    assert set(ood.SUITES) == {"classification", "regression"}
+    for kind, names in ood.SUITES.items():
+        assert len(names) >= 2, f"{kind} rests on a single suite: {names}"
+
+
+def test_the_suites_tabiclv2_reports_on_are_included():
+    """TabICLv2 evaluates on TabArena and TALENT. Including them is what lets our numbers be
+    put beside the model we started from; O'Prior's CC18 stays so the control also stays
+    comparable with the closest prior work."""
+    flat = " ".join(n.lower() for names in ood.SUITES.values() for n in names)
+    for expected in ("cc18", "ctr23", "tabarena", "talent"):
+        assert expected in flat, f"{expected} is missing from SUITES"
+
+
+def test_the_out_of_domain_sample_is_large_enough_to_average():
+    """10 datasets was one suite's worth and too noisy to detect a real regression."""
+    assert ood.N_PER_SUITE >= 20
+    total = sum(len(v) for v in ood.SUITES.values()) * ood.N_PER_SUITE
+    assert total >= 100, f"only {total} out-of-domain datasets across both kinds"
+
+
+def test_an_unresolvable_suite_does_not_abort_the_fetch():
+    """TabArena and TALENT are not guaranteed to exist as OpenML studies under these aliases,
+    and a login node's API access is not guaranteed either. A partial cache is useful; losing
+    the whole download to one bad alias is not."""
+    text = pathlib.Path(ood.__file__).read_text(encoding="utf-8")
+    block = text[text.index("def fetch_ood_datasets"):]
+    assert "UNAVAILABLE" in block and "continue" in block, (
+        "the fetch loop must skip a suite it cannot resolve rather than raising"
+    )
 
 
 # -- cache contract ---------------------------------------------------------
@@ -128,7 +167,7 @@ def test_loading_a_missing_dataset_names_the_fix(ood_cache):
     """Compute nodes have no internet, so the error must say where to run the fetch."""
     ghost = ood_cache.OODDataset(name="ghost", openml_id=9999, kind="regression",
                                  n_rows=1, n_features=1)
-    with pytest.raises(FileNotFoundError, match="fetch_ood.py"):
+    with pytest.raises(FileNotFoundError, match="src.utils.fetch_ood"):
         ood_cache.load_ood_dataset(ghost)
     with pytest.raises(FileNotFoundError, match="LOGIN NODE|login node"):
         ood_cache.load_ood_dataset(ghost)
@@ -247,7 +286,7 @@ def test_run_ood_without_a_cache_names_the_fix(tmp_path, monkeypatch):
     import src.eval.ood_runner as runner
 
     importlib.reload(runner)
-    with pytest.raises(FileNotFoundError, match="fetch_ood.py"):
+    with pytest.raises(FileNotFoundError, match="src.utils.fetch_ood"):
         runner.run_ood(runner.OODEvalConfig(models=["linear"]))
 
 

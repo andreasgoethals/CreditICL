@@ -10,10 +10,26 @@ what came out, and what is already known to fail.
 delete an entry: a run you would otherwise repeat and a dead end you already paid for are both
 evidence.
 
+## How a run comes back to you
+
+**After every cluster run, Andreas downloads the output and uploads it into a chat session so an
+agent can read and debug it.** Expect to be handed a folder of `.log` files and `.csv` manifests
+with no other context, and expect that to be the *only* record of the run — so:
+
+- **Read them properly before theorising.** The `hardware:` line says which GPU it was; the
+  `telemetry:` summary at the end of the log says whether the GPU was starved; `grads step` lines
+  say whether every block was learning. Most "the model did not learn" questions are answered in
+  those three places.
+- **Write the run up in [`RUNS.md`](RUNS.md)** using its template, and add the one-line row to the
+  table below. The upload is the only chance to capture it.
+- **A number that looks too good is a bug until proven otherwise.** Check the config actually
+  used (`grid levers:` and `credit_fraction IN USE:`), not the config on disk now.
+
 ## Runs
 
 One row per cluster run worth remembering — which is most of them, because *"have we already tried
-that configuration?"* is the question this table exists to answer.
+that configuration?"* is the question this table exists to answer. The **full** write-up of each
+one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
@@ -96,7 +112,7 @@ fixed, because the fix is one changelog line and the dead end was the hour.
 ### Earlier — `sbatch --parsable` in a dependency expression
 - **Tried:** `dep=$(sbatch --parsable job.slurm)`.
 - **Result:** malformed dependencies — the value is `jobid;cluster`, not `jobid`.
-- **Instead:** `sbatch --parsable "$@" | cut -d';' -f1` (`scripts/submit_pipeline.sh`).
+- **Instead:** `sbatch --parsable "$@" | cut -d';' -f1` (`scripts/slurm/submit_pipeline.sh`).
 
 ### Earlier — `head -3` of a traceback in the env check
 - **Tried:** one combined import in `_activate_env.sh`, printing `head -3` on failure.

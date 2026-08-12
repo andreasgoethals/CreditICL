@@ -1,8 +1,8 @@
 """Download the out-of-domain benchmark suites. RUN THIS ON A VSC LOGIN NODE.
 
-    python scripts/fetch_ood.py            # fetch 10 classification + 10 regression
-    python scripts/fetch_ood.py --status   # what is already cached
-    python scripts/fetch_ood.py --n 20     # more per task
+    python -m src.utils.fetch_ood            # fetch 10 classification + 10 regression
+    python -m src.utils.fetch_ood --status   # what is already cached
+    python -m src.utils.fetch_ood --n 20     # more per task
 
 WHY A LOGIN NODE: VSC compute nodes have **no outbound internet**, so a training or
 evaluation job cannot download anything. This caches the tables to project storage once;

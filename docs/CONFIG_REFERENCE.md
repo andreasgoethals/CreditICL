@@ -1,6 +1,6 @@
 # Config reference
 
-`config/LGD.yaml` and `config/PD.yaml` hold every setting for their experiment.
+`config/Exp1_LGD.yaml` and `config/Exp1_PD.yaml` hold every setting for their experiment.
 This file holds the *reasoning* — why each setting exists and what evidence backs
 it — so the configs stay scannable.
 
@@ -14,7 +14,7 @@ all lists are **crossed**: three settings with two values each is 8 runs, times
 the number of seeds.
 
 ```bash
-python scripts/pretrain.py --config config/LGD.yaml --list
+python scripts/pretrain.py --config config/Exp1_LGD.yaml --list
 ```
 
 `# S: [...]` marks a setting left at one value and shows how to open it up. Names

@@ -4,8 +4,8 @@ Run this BEFORE any real submission. It is also the pre-flight step inside the
 SLURM scripts, so a broken environment costs seconds instead of a queue wait
 plus a dead array.
 
-    python scripts/smoke_test.py --task lgd --steps 2
-    python scripts/smoke_test.py --task pd  --steps 2 --report
+    python -m src.utils.smoke_test --task lgd --steps 2
+    python -m src.utils.smoke_test --task pd  --steps 2 --report
 
 `--report` also prints what the prior actually produced: boundary mass for LGD,
 base rate for PD, plus the filter's rejection statistics. That is the quickest
@@ -31,14 +31,26 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.utils.config import expand_with_seeds, load_yaml  # noqa: E402
+from src.utils.config import expand_with_seeds, load  # noqa: E402
 
-DEFAULT_CONFIG = {"lgd": "config/LGD.yaml", "pd": "config/PD.yaml"}
+DEFAULT_CONFIG = {"lgd": "config/Exp1_LGD.yaml", "pd": "config/Exp1_PD.yaml"}
 
 
 def shrink(cfg: dict, steps: int) -> dict:
     """Make the config tiny so the check is fast but still exercises every path."""
     cfg = copy.deepcopy(cfg)
+    # The point of a smoke test is "does the pipeline run on THIS machine", so it must not be
+    # blocked by a missing package. Prefer the real architecture and say loudly when falling
+    # back, because a pass on the fallback does NOT mean the real model works.
+    from src.models.architecture import DEFAULT, is_available
+
+    if not is_available(DEFAULT):
+        print(
+            f"  NOTE: `{DEFAULT}` is not installed — smoke-testing on the vendored fallback.\n"
+            f"        This checks the PIPELINE, not the architecture the experiments use.\n"
+            f"        Install it before any real run:  pip install \"tabicl>=2.0\""
+        )
+        cfg["architecture"] = "nanotabicl"
     prior = cfg.setdefault("prior", {})
     prior["n_rows_range"] = [96, 128]
     prior["n_features_range"] = [4, 8]
@@ -135,7 +147,7 @@ def main() -> int:
     args = ap.parse_args()
 
     cfg_path = args.config or DEFAULT_CONFIG[args.task]
-    cfg = shrink(expand_with_seeds(load_yaml(cfg_path))[0], args.steps)
+    cfg = shrink(expand_with_seeds(load(cfg_path))[0], args.steps)
 
     print(f"[1/4] config loaded and shrunk: {cfg_path}", flush=True)
 

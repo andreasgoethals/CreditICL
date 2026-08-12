@@ -65,17 +65,17 @@ def isolated_output(tmp_path, monkeypatch) -> Path:
 @pytest.fixture
 def lgd_cfg() -> dict:
     """A tiny LGD config: real code paths, ~100 rows, a handful of features."""
-    from src.utils.config import expand_with_seeds, load_yaml
+    from src.utils.config import expand_with_seeds, load
 
-    cfg = expand_with_seeds(load_yaml(ROOT / "config" / "LGD.yaml"))[0]
+    cfg = expand_with_seeds(load(ROOT / "config" / "Exp1_LGD.yaml"))[0]
     return _shrink(cfg)
 
 
 @pytest.fixture
 def pd_cfg() -> dict:
-    from src.utils.config import expand_with_seeds, load_yaml
+    from src.utils.config import expand_with_seeds, load
 
-    cfg = expand_with_seeds(load_yaml(ROOT / "config" / "PD.yaml"))[0]
+    cfg = expand_with_seeds(load(ROOT / "config" / "Exp1_PD.yaml"))[0]
     return _shrink(cfg)
 
 
@@ -87,9 +87,19 @@ def _shrink(cfg: dict) -> dict:
     p["max_features"] = 16
     p["n_nodes_range"] = [2, 5]
     p["max_filter_attempts"] = 6
-    # `model:` is absent from the real configs — the architecture is TabICLv2's and is
-    # fixed in NanoTabICLv2's defaults. Tests override it to a tiny model purely for
-    # speed, which is the only legitimate reason to set it.
+    # `model:` and `architecture:` are NOT set this way in any real config — the architecture
+    # is TabICLv2's own, from the upstream `tabicl` package, and is never swept. Tests use the
+    # vendored fallback at a fraction of the size purely so the suite runs in seconds on a
+    # machine with nothing installed. NO RESULT may come from this path: its parameter names
+    # do not match the released checkpoints. `test_every_experiment_names_the_same_architecture`
+    # is what keeps the real configs honest.
+    # Prefer the REAL architecture, shrunk, so the suite exercises the model the experiments
+    # actually train. Falls back only when `tabicl` is absent, which keeps a bare clone
+    # runnable. Unknown override names are dropped per architecture by
+    # `src.models.architecture._translate`, so one dict works for both.
+    from src.models.architecture import DEFAULT, is_available
+
+    cfg["architecture"] = DEFAULT if is_available(DEFAULT) else "nanotabicl"
     m = cfg.setdefault("model", {})
     m.update(
         {

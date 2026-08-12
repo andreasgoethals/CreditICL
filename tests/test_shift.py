@@ -164,9 +164,9 @@ def test_control_arm_is_never_shifted(task):
     control, every arm would differ from TabICL by two changes instead of one and the
     comparison would answer a different question than the one we asked."""
     from src.prior.generator import TaskGenerator
-    from src.utils.config import expand_with_seeds, load_yaml
+    from src.utils.config import expand_with_seeds, load
 
-    cfg = expand_with_seeds(load_yaml(f"config/{task.upper()}.yaml"))[0]["prior"]
+    cfg = expand_with_seeds(load(f"config/Exp1_{task.upper()}.yaml"))[0]["prior"]
     control = copy.deepcopy(cfg)
     control["credit_fraction"] = 0.0
     gen = TaskGenerator(control, task, PriorRNG(0))
@@ -177,9 +177,9 @@ def test_control_arm_is_never_shifted(task):
 @pytest.mark.parametrize("task", ["lgd", "pd"])
 def test_credit_arm_gets_shifted_datasets(task):
     from src.prior.generator import TaskGenerator
-    from src.utils.config import expand_with_seeds, load_yaml
+    from src.utils.config import expand_with_seeds, load
 
-    cfg = expand_with_seeds(load_yaml(f"config/{task.upper()}.yaml"))[0]["prior"]
+    cfg = expand_with_seeds(load(f"config/Exp1_{task.upper()}.yaml"))[0]["prior"]
     ours = copy.deepcopy(cfg)
     ours["credit_fraction"] = 1.0
     gen = TaskGenerator(ours, task, PriorRNG(0))
@@ -191,9 +191,9 @@ def test_credit_arm_gets_shifted_datasets(task):
 
 def test_shift_is_configurable_from_the_yaml():
     """A lever unreachable from config is dead code."""
-    from src.utils.config import load_yaml
+    from src.utils.config import load
 
-    for path in ("config/LGD.yaml", "config/PD.yaml"):
-        shift = load_yaml(path)["prior"]["credit"].get("shift")
+    for path in ("config/Exp1_LGD.yaml", "config/Exp1_PD.yaml"):
+        shift = load(path)["prior"]["credit"].get("shift")
         assert shift is not None, f"{path}: no shift block under prior.credit"
         assert shift["shift_prob"] > 0, f"{path}: shift stress is disabled"

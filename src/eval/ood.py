@@ -19,16 +19,25 @@ change. Three outcomes, all publishable:
 
 WHICH BENCHMARKS, AND WHY THESE
 
-* **OpenML-CC18** for classification. It is the suite **O'Prior itself evaluated on**
-  (arXiv 2605.18971), so our out-of-domain numbers sit directly alongside the closest
-  prior work rather than on a benchmark of our own choosing.
-* **OpenML-CTR23** for regression. The curated OpenML regression suite, and the LGD arm
-  is a regression model, so a classification-only benchmark would leave half the project
-  unmeasured.
+Several suites per task, because a mean over one suite is one suite's opinion:
 
-TabICLv2 reports on TabArena and TALENT instead. Those are bigger and better, but they
-are also harder to obtain and slower to run; CC18/CTR23 is the cheaper choice that keeps
-comparability with O'Prior. Stated so nobody later assumes we matched TabICLv2's suite.
+* **OpenML-CC18** (classification) and **OpenML-CTR23** (regression) — CC18 is the suite
+  **O'Prior itself evaluated on** (arXiv 2605.18971), the closest prior work to this
+  project, so our control stays directly comparable with theirs. CTR23 is its regression
+  counterpart, needed because the LGD arm is a regression model.
+* **TabArena** (51 datasets) and **TALENT** (300: 120 binary, 80 multiclass, 100
+  regression) — the two benchmarks **TabICLv2 itself reports on**, so our numbers can be
+  put beside the model we started from.
+
+Up to `N_PER_SUITE` from each, so roughly 75 per task rather than 10. That matters
+because the out-of-domain average is the number that would catch a prior buying credit
+performance by destroying generality, and an average over ten tables is noisy enough to
+hide a real effect.
+
+A suite that will not resolve is **skipped with a warning**, not fatal: the TabArena and
+TALENT aliases are not guaranteed to exist as OpenML studies, and a partially fetched
+cache is still useful. `describe_cache()` reports which suites actually landed, so a
+result is never quietly based on fewer benchmarks than intended.
 
 **DATASET IDS ARE NEVER HARD-CODED HERE.** They are resolved from the suite through the
 OpenML API at fetch time and then pinned into `ood_manifest.json`. Writing IDs from
@@ -36,7 +45,7 @@ memory is how you end up silently evaluating on the wrong tables — the suite *
 the verifiable thing, the IDs are not.
 
 NO INTERNET ON COMPUTE NODES. Fetching must run on a **login node**
-(`python scripts/fetch_ood.py`), which caches to project storage. `load_ood_dataset`
+(`python -m src.utils.fetch_ood`), which caches to project storage. `load_ood_dataset`
 never reaches the network; it raises with the fix if the cache is missing.
 """
 
@@ -53,15 +62,36 @@ import numpy as np
 from src.utils.logging_setup import get_logger
 from src.utils.paths import prior_cache_dir
 
-#: The two OpenML suites. Names, not IDs — see the module docstring.
+#: Suites by task, resolved by NAME through the OpenML API — never by hard-coded id.
+#:
+#: WHY MORE THAN ONE PER TASK. A mean over ten datasets from a single suite is one suite's
+#: opinion. TabICLv2 itself reports on **TabArena (51 datasets)** and **TALENT (300: 120
+#: binary, 80 multiclass, 100 regression)**, so those are the suites this project's numbers
+#: have to be comparable with. OpenML-CC18 and CTR23 stay because O'Prior — the paper whose
+#: prior-shaping result we are extending — evaluated on CC18, and dropping it would make our
+#: control incomparable with theirs.
+#:
+#: TabArena and TALENT are OpenML *benchmark suites* where a resolvable study alias exists;
+#: where it does not, `fetch_ood_datasets` logs the suite as unavailable and carries on with
+#: the rest rather than failing the whole download. That is deliberate: a partially fetched
+#: cache is useful, and a login node with a flaky API should not cost the whole pass.
 SUITES = {
-    "classification": "OpenML-CC18",
-    "regression": "OpenML-CTR23",
+    "classification": ["OpenML-CC18", "tabarena-v0.1", "talent-classification"],
+    "regression": ["OpenML-CTR23", "tabarena-regression-v0.1", "talent-regression"],
 }
 
-#: How many of each to use. The user asked for 10 and 10; enough to see a trend without
-#: making the eval pipeline longer than the training it evaluates.
-N_PER_TASK = 10
+#: Per SUITE, not per task. The out-of-domain average is the number that catches a prior which
+#: buys credit performance by destroying generality, so it wants to be a real average — and
+#: 25 x 3 suites is ~75 per task, against the 10 it used to be.
+#:
+#: The ceiling is inference cost, not principle: this runs at every `progress.every_datasets`
+#: during training as well as in the final pass, so it must stay cheap enough that the
+#: diagnostic does not dominate the run it is diagnosing. `progress.n_ood` samples a handful
+#: mid-training; the full set is used for the end-of-run report.
+N_PER_SUITE = 25
+
+#: Kept as the old name so nothing that imported it breaks; it now means "per suite".
+N_PER_TASK = N_PER_SUITE
 
 #: Anything matching these is NOT out-of-domain and must be dropped. CC18 contains
 #: `credit-g` and `credit-approval`, and O'Prior specifically singles out Credit-g as a
@@ -166,97 +196,109 @@ def fetch_ood_datasets(
     existing = {d.openml_id: d for d in list_ood_datasets()} if not force else {}
     kept: list[OODDataset] = []
 
-    for kind, suite_name in SUITES.items():
-        log.info("[ood] resolving suite %s (%s)", suite_name, kind)
-        suite = openml.study.get_suite(suite_name)
-        task_ids = list(suite.tasks or [])
-        log.info("[ood] %s advertises %d tasks", suite_name, len(task_ids))
-
-        chosen = 0
-        for task_id in sorted(task_ids):
-            if chosen >= n_per_task:
-                break
-            # Log EVERY attempt, not just successes. The first cluster run logged
-            # "advertises 72 tasks" and then went silent for minutes while downloading,
-            # which is indistinguishable from a hang. Downloads are the slow part, so
-            # the log has to show it is making progress.
-            log.info("[ood] %s [%d/%d kept] checking task %s ...",
-                     suite_name, chosen, n_per_task, task_id)
+    unavailable: list[str] = []
+    for kind, suite_names in SUITES.items():
+        for suite_name in suite_names:
+            log.info("[ood] resolving suite %s (%s)", suite_name, kind)
             try:
-                task = openml.tasks.get_task(task_id, download_data=False)
-                ds = openml.datasets.get_dataset(task.dataset_id, download_data=False)
-            except Exception as exc:  # noqa: BLE001 — one bad task must not stop the sweep
-                log.warning("[ood] task %s unavailable: %s", task_id, exc)
-                continue
-
-            if is_credit_like(ds.name):
-                log.info("[ood] SKIP %s — credit-like, so not out-of-domain", ds.name)
-                continue
-
-            if ds.dataset_id in existing:
-                kept.append(existing[ds.dataset_id])
-                chosen += 1
-                continue
-
-            log.info("[ood]   downloading %s (id=%s) ...", ds.name, ds.dataset_id)
-            try:
-                X_df, y_s, _, _ = ds.get_data(target=task.target_name, dataset_format="dataframe")
+                suite = openml.study.get_suite(suite_name)
             except Exception as exc:  # noqa: BLE001
-                log.warning("[ood] %s failed to download: %s", ds.name, exc)
+                # A suite alias that OpenML does not host must not cost the whole download.
+                # TabArena and TALENT are named in TabICLv2's paper but are not guaranteed to
+                # exist as OpenML studies under these aliases, and a login node's API access is
+                # not guaranteed either. Skip loudly and keep the suites that do resolve.
+                log.warning("[ood] suite %s UNAVAILABLE (%s: %s) — skipping",
+                            suite_name, type(exc).__name__, exc)
+                unavailable.append(suite_name)
                 continue
+            task_ids = list(suite.tasks or [])
+            log.info("[ood] %s advertises %d tasks", suite_name, len(task_ids))
 
-            if X_df is None or y_s is None or len(X_df) == 0:
-                continue
-            if X_df.shape[1] > max_features:
-                log.info("[ood] SKIP %s — %d features exceeds the cap", ds.name, X_df.shape[1])
-                continue
-            if len(X_df) > max_rows:
-                # Subsample rather than skip: a large table is still a valid OOD task,
-                # and the in-context models cap rows anyway.
-                X_df = X_df.iloc[:max_rows]
-                y_s = y_s.iloc[:max_rows]
-
-            # Category codes for object/categorical columns, so the cache is numeric and
-            # `.npz` can hold it. Which columns were categorical is recorded separately.
-            cat_idx = [
-                i for i, c in enumerate(X_df.columns)
-                if str(X_df[c].dtype) in ("object", "category", "bool")
-            ]
-            X = X_df.copy()
-            for c in X.columns:
-                if str(X[c].dtype) in ("object", "category", "bool"):
-                    X[c] = X[c].astype("category").cat.codes
-            X_arr = X.to_numpy(dtype=np.float32)
-
-            if kind == "classification":
-                y_arr = y_s.astype("category").cat.codes.to_numpy().astype(np.int64)
-                n_classes = int(len(np.unique(y_arr)))
-                if n_classes < 2:
+            chosen = 0
+            for task_id in sorted(task_ids):
+                if chosen >= n_per_task:
+                    break
+                # Log EVERY attempt, not just successes. The first cluster run logged
+                # "advertises 72 tasks" and then went silent for minutes while downloading,
+                # which is indistinguishable from a hang. Downloads are the slow part, so
+                # the log has to show it is making progress.
+                log.info("[ood] %s [%d/%d kept] checking task %s ...",
+                         suite_name, chosen, n_per_task, task_id)
+                try:
+                    task = openml.tasks.get_task(task_id, download_data=False)
+                    ds = openml.datasets.get_dataset(task.dataset_id, download_data=False)
+                except Exception as exc:  # noqa: BLE001 — one bad task must not stop the sweep
+                    log.warning("[ood] task %s unavailable: %s", task_id, exc)
                     continue
-            else:
-                y_arr = y_s.to_numpy(dtype=np.float32)
-                n_classes = None
-                if not np.isfinite(y_arr).all():
-                    keep = np.isfinite(y_arr)
-                    X_arr, y_arr = X_arr[keep], y_arr[keep]
-                    if len(y_arr) < 50:
+
+                if is_credit_like(ds.name):
+                    log.info("[ood] SKIP %s — credit-like, so not out-of-domain", ds.name)
+                    continue
+
+                if ds.dataset_id in existing:
+                    kept.append(existing[ds.dataset_id])
+                    chosen += 1
+                    continue
+
+                log.info("[ood]   downloading %s (id=%s) ...", ds.name, ds.dataset_id)
+                try:
+                    X_df, y_s, _, _ = ds.get_data(target=task.target_name, dataset_format="dataframe")
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("[ood] %s failed to download: %s", ds.name, exc)
+                    continue
+
+                if X_df is None or y_s is None or len(X_df) == 0:
+                    continue
+                if X_df.shape[1] > max_features:
+                    log.info("[ood] SKIP %s — %d features exceeds the cap", ds.name, X_df.shape[1])
+                    continue
+                if len(X_df) > max_rows:
+                    # Subsample rather than skip: a large table is still a valid OOD task,
+                    # and the in-context models cap rows anyway.
+                    X_df = X_df.iloc[:max_rows]
+                    y_s = y_s.iloc[:max_rows]
+
+                # Category codes for object/categorical columns, so the cache is numeric and
+                # `.npz` can hold it. Which columns were categorical is recorded separately.
+                cat_idx = [
+                    i for i, c in enumerate(X_df.columns)
+                    if str(X_df[c].dtype) in ("object", "category", "bool")
+                ]
+                X = X_df.copy()
+                for c in X.columns:
+                    if str(X[c].dtype) in ("object", "category", "bool"):
+                        X[c] = X[c].astype("category").cat.codes
+                X_arr = X.to_numpy(dtype=np.float32)
+
+                if kind == "classification":
+                    y_arr = y_s.astype("category").cat.codes.to_numpy().astype(np.int64)
+                    n_classes = int(len(np.unique(y_arr)))
+                    if n_classes < 2:
                         continue
+                else:
+                    y_arr = y_s.to_numpy(dtype=np.float32)
+                    n_classes = None
+                    if not np.isfinite(y_arr).all():
+                        keep = np.isfinite(y_arr)
+                        X_arr, y_arr = X_arr[keep], y_arr[keep]
+                        if len(y_arr) < 50:
+                            continue
 
-            entry = OODDataset(
-                name=ds.name, openml_id=int(ds.dataset_id), kind=kind,
-                n_rows=int(X_arr.shape[0]), n_features=int(X_arr.shape[1]),
-                n_classes=n_classes,
-            )
-            out = root / f"{entry.slug}.npz"
-            tmp = out.with_suffix(".npz.tmp")
-            np.savez_compressed(tmp, X=X_arr, y=y_arr, cat_indices=np.asarray(cat_idx, dtype=np.int64))
-            tmp.replace(out)
-            kept.append(entry)
-            chosen += 1
-            log.info("[ood] cached %-28s %6d x %-4d (%s)",
-                     entry.name, entry.n_rows, entry.n_features, kind)
+                entry = OODDataset(
+                    name=ds.name, openml_id=int(ds.dataset_id), kind=kind,
+                    n_rows=int(X_arr.shape[0]), n_features=int(X_arr.shape[1]),
+                    n_classes=n_classes,
+                )
+                out = root / f"{entry.slug}.npz"
+                tmp = out.with_suffix(".npz.tmp")
+                np.savez_compressed(tmp, X=X_arr, y=y_arr, cat_indices=np.asarray(cat_idx, dtype=np.int64))
+                tmp.replace(out)
+                kept.append(entry)
+                chosen += 1
+                log.info("[ood] cached %-28s %6d x %-4d (%s)",
+                         entry.name, entry.n_rows, entry.n_features, kind)
 
-        log.info("[ood] %s: %d/%d datasets cached", suite_name, chosen, n_per_task)
+            log.info("[ood] %s: %d/%d datasets cached", suite_name, chosen, n_per_task)
 
     # Manifest LAST, as the completeness marker — same contract as the data pipeline.
     payload = {"version": OOD_VERSION, "suites": SUITES, "datasets": [asdict(d) for d in kept]}
@@ -273,7 +315,7 @@ def load_ood_dataset(entry: OODDataset) -> tuple[np.ndarray, np.ndarray, list[in
     if not path.is_file():
         raise FileNotFoundError(
             f"{path} is missing. Fetch the out-of-domain suites first, ON A LOGIN NODE "
-            f"(compute nodes have no internet):\n    python scripts/fetch_ood.py"
+            f"(compute nodes have no internet):\n    python -m src.utils.fetch_ood"
         )
     with np.load(path) as z:
         return z["X"], z["y"], [int(i) for i in z["cat_indices"]]

@@ -270,11 +270,22 @@ def test_loss_is_finite_and_decreases_over_a_few_steps(tmp_path, lgd_cfg):
 
 
 def test_gradients_actually_reach_the_weights(tmp_path, lgd_cfg):
+    """Every trainable weight must move. Checked across the WHOLE model by name rather than on
+    one hard-coded layer: the previous version reached into `out_mlp`, which only exists on the
+    vendored fallback, so it broke the moment the real TabICL was installed — and a test that
+    names one layer would not have noticed a whole stack sitting frozen anyway."""
     trainer = Trainer(lgd_cfg, tmp_path / "out", device="cpu", ckpt_dir=tmp_path / "ck", log_dir=tmp_path / "logs")
-    before = trainer.model.out_mlp[0].weight.detach().clone()
+    before = {n: p.detach().clone() for n, p in trainer.model.named_parameters() if p.requires_grad}
+    assert before, "no trainable parameters at all"
     trainer.train()
-    after = trainer.model.out_mlp[0].weight.detach()
-    assert not torch.allclose(before, after), "weights did not move — the optimizer step is not connected"
+    after = dict(trainer.model.named_parameters())
+    moved = [n for n, old in before.items() if not torch.allclose(old, after[n].detach())]
+    assert moved, "no weight moved — the optimizer step is not connected"
+    # Not every tensor has to move in two steps (a rarely-hit embedding row may not), but a
+    # large majority should; a small fraction means most of the model is receiving no gradient.
+    assert len(moved) / len(before) > 0.5, (
+        f"only {len(moved)}/{len(before)} tensors moved — most of the model is not training"
+    )
 
 
 # --- checkpoints -------------------------------------------------------------
@@ -486,10 +497,10 @@ def test_model_defaults_are_tabiclv2_table_a1():
 def test_model_block_is_absent_from_the_configs():
     """`model:` was removed from the configs: the architecture is fixed, so repeating it
     per experiment only creates a way for the three to drift apart."""
-    from src.utils.config import load_yaml
+    from src.utils.config import load
 
-    for path in ("config/LGD.yaml", "config/PD.yaml"):
-        cfg = load_yaml(ROOT / path)
+    for path in ("config/Exp1_LGD.yaml", "config/Exp1_PD.yaml"):
+        cfg = load(ROOT / path)
         assert "model" not in cfg, (
             f"{path} still has a model: block. The architecture is TabICLv2's and is "
             f"fixed in NanoTabICLv2's defaults."

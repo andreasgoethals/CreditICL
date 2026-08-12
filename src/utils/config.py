@@ -73,9 +73,9 @@ def is_literal_list(key: str, value: list | None = None) -> bool:
 def resolve_config_path(path: str | Path) -> Path:
     """Find a config file whether the caller's cwd is the repo root or not.
 
-    A relative path like `config/LGD.yaml` only resolves when the process was started
+    A relative path like `config/Exp1_LGD.yaml` only resolves when the process was started
     from the repo root. Jupyter starts in `notebooks/`, so every notebook died with
-    `FileNotFoundError: config/LGD.yaml` even though the file was plainly there and
+    `FileNotFoundError: config/Exp1_LGD.yaml` even though the file was plainly there and
     `sys.path` had been fixed up. Falling back to the repo root makes the same string
     work from anywhere, which is what callers already assume.
     """
@@ -102,6 +102,78 @@ def load_yaml(path: str | Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError(f"{path}: top level of a config must be a mapping, got {type(data).__name__}")
     return data
+
+
+#: What an unfilled Exp2/Exp3 config still contains. Exp1 chooses the winning prior
+#: setting, and until it has run there is nothing to put in these slots. A YAML default
+#: would be worse than a hole: it would submit, run for hours, and quietly measure the
+#: wrong arm.
+PLACEHOLDER = "FILL_FROM_EXP1"
+
+
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """`override` wins, recursing into nested mappings rather than replacing them.
+
+    A plain `dict.update` would let an experiment file that overrides one prior knob
+    delete the other forty, which is exactly the accident this guards against.
+    """
+    out = copy.deepcopy(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = _deep_merge(out[key], value)
+        else:
+            out[key] = copy.deepcopy(value)
+    return out
+
+
+def find_placeholders(node: Any, prefix: str = "") -> list[str]:
+    """Dotted paths still holding `FILL_FROM_EXP1`. Empty means the config is runnable."""
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            found += find_placeholders(value, f"{prefix}{key}.")
+    elif isinstance(node, list):
+        for i, value in enumerate(node):
+            found += find_placeholders(value, f"{prefix}[{i}].")
+    elif node == PLACEHOLDER:
+        found.append(prefix.rstrip("."))
+    return found
+
+
+def load(path: str | Path, *, allow_placeholders: bool = False) -> dict[str, Any]:
+    """THE way to read a config: resolve `prior_file:`, then apply the `sweep:` block.
+
+    `prior_file:` is the one piece of indirection in the layout, and it earns its place.
+    All three experiments on a track must sample the SAME prior — that is what makes
+    them comparable — so the prior lives in one file and each experiment names it.
+    Copying sixty lines of prior into six files would guarantee they drift, and a drift
+    of one number silently invalidates the comparison between two experiments.
+
+    The experiment file's own `prior:` block is merged ON TOP, key by key, which is how
+    Exp2 and Exp3 pin the single setting Exp1 chose without restating the rest.
+
+    Refuses a config still holding `FILL_FROM_EXP1` unless asked not to. `--list` and the
+    tests pass `allow_placeholders=True` so a template can still be inspected; nothing
+    that starts a training run does.
+    """
+    resolved = resolve_config_path(path)
+    cfg = load_yaml(resolved)
+
+    prior_file = cfg.pop("prior_file", None)
+    if prior_file:
+        # Resolve beside the experiment file, so config/ can be moved as a unit.
+        cfg = _deep_merge(load_yaml(resolved.parent / prior_file), cfg)
+
+    if not allow_placeholders:
+        holes = find_placeholders(cfg)
+        if holes:
+            raise ValueError(
+                f"{resolved.name} is still a template: {len(holes)} unfilled value(s) — "
+                f"{', '.join(holes)}. Run Exp1 first, then replace every "
+                f"{PLACEHOLDER} with the winning value. Refusing to expand it, because a "
+                f"config that runs with a placeholder wastes GPU-hours measuring nothing."
+            )
+    return apply_sweep_block(cfg)
 
 
 def _walk(node: Any, prefix: str = "") -> list[tuple[str, list[Any]]]:

@@ -244,10 +244,10 @@ def test_progress_schedules_the_next_measurement(tmp_path):
 
 def test_progress_config_is_read_from_the_yaml():
     """The lever has to be reachable from config, or it is dead code."""
-    from src.utils.config import expand_with_seeds, load_yaml
+    from src.utils.config import expand_with_seeds, load
 
-    for path in ("config/LGD.yaml", "config/PD.yaml"):
-        cfg = expand_with_seeds(load_yaml(path))[0]
+    for path in ("config/Exp1_LGD.yaml", "config/Exp1_PD.yaml"):
+        cfg = expand_with_seeds(load(path))[0]
         assert cfg["progress"]["every_datasets"] > 0, f"{path}: progress curve is off"
 
 

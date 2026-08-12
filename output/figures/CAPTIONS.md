@@ -50,33 +50,41 @@ Pearson correlation matrices between features for the six largest datasets of th
 
 Colour key. Grey denotes the unmodified TabICL prior, blue the credit-targeted prior, orange values measured from the real datasets, and red out-of-range or flagged values.
 
-**02_target_comparison** — `target_comparison`
+**02_prior_realism_ranking** — `prior_realism_ranking`
 
-Left: distribution of total boundary mass per synthetic dataset, one step histogram per prior variant, 30 bins. Dotted vertical lines mark values measured from the real datasets. Right: mass at the low boundary against mass at the high boundary, one point per synthetic dataset; stars mark the real datasets. Legend gives the mean per variant.
+Distance between each prior variant's pooled target distribution and each real LGD dataset's, as total variation over 40 fixed bins. Diamonds give the mean across datasets, dots one per dataset. Variants ordered by mean distance.
 
-**03_target_shapes_by_variant** — `target_shapes_by_variant`
+**03_mechanism_decomposition** — `mechanism_decomposition`
 
-Histograms of the target for ten synthetic datasets per prior variant, one variant per row, 25 bins per panel. Rows use the same random draw, so panels in the same column are directly comparable.
+Distribution of the LGD target, split by the loss mechanism that generated each synthetic dataset, 40 bins per panel on a fixed [0,1] support. Percentages give the share of rows lying exactly at 0 and exactly at 1. Panel subtitles give the number of datasets per mechanism.
 
-**04_spectrum_by_variant** — `spectrum_by_variant`
+**04_boundary_mass_sources** — `boundary_mass_sources`
+
+Share of rows at exactly 0 against share at exactly 1, one point per synthetic dataset and one panel per prior variant. Stars mark the real LGD datasets. The dotted diagonal is equal mass at both ends.
+
+**05_target_shapes_by_variant_p1** — `target_shapes_by_variant_p1`
+
+Histograms of the target for ten synthetic datasets per prior variant, one variant per row, 25 bins per panel. Rows use the same draw index, so panels in the same column are directly comparable. Page 1 of 2.
+
+**06_target_shapes_by_variant_p2** — `target_shapes_by_variant_p2`
+
+Histograms of the target for ten synthetic datasets per prior variant, one variant per row, 25 bins per panel. Rows use the same draw index, so panels in the same column are directly comparable. Page 2 of 2.
+
+**07_difficulty_calibration** — `difficulty_calibration`
+
+Predictability of each synthetic dataset under a small ExtraTrees on a 70/30 split, one point per dataset and one column per prior variant, with the median marked. The shaded band spans the same measurement on the real credit datasets.
+
+**08_side_by_side_tables** — `side_by_side_tables`
+
+Eight rows of one synthetic dataset and one real credit dataset, shown as heatmaps with the target as the final column separated by a vertical rule. Each feature is rank-normalised within its own column, so shade encodes relative value rather than units.
+
+**09_spectrum_by_variant** — `spectrum_by_variant`
 
 Eigenvalue spectra of the feature correlation matrix for up to 40 synthetic datasets per prior variant, normalised by the largest eigenvalue and plotted against normalised eigenvalue rank. Faint lines are individual datasets; bold lines are the per-variant median.
 
-**05_shapes_by_variant** — `shapes_by_variant`
+**10_shapes_by_variant** — `shapes_by_variant`
 
 Left: distribution of rows per synthetic dataset. Right: distribution of features per synthetic dataset. One step histogram per prior variant, 20 bins.
-
-**06_boundary_mass** — `boundary_mass`
-
-Left: mass at the low boundary against mass at the high boundary, one point per synthetic dataset, with real datasets marked as stars. Right: distribution of the total boundary mass, 25 bins, with the mean marked by a dashed line.
-
-**07_feature_relationships** — `feature_relationships`
-
-Pearson correlation matrices between features for individual synthetic datasets, one panel each. Colour scale spans -1 to 1. Panel subtitles give the number of features and the mean absolute off-diagonal correlation.
-
-**08_feature_target_relation** — `feature_target_relation`
-
-Target against the most strongly correlated feature, one panel per synthetic dataset. Dotted horizontal lines mark the minimum and maximum target values. Panel subtitles give the feature index and its Pearson correlation with the target.
 
 ## prior_visualisation_pd
 
@@ -84,30 +92,30 @@ Target against the most strongly correlated feature, one panel per synthetic dat
 
 Colour key. Grey denotes the unmodified TabICL prior, blue the credit-targeted prior, orange values measured from the real datasets, and red out-of-range or flagged values.
 
-**02_target_comparison** — `target_comparison`
+**02_prior_realism_ranking** — `prior_realism_ranking`
+
+Distance between each prior variant's pooled target distribution and each real PD dataset's, as total variation over 40 fixed bins. Diamonds give the mean across datasets, dots one per dataset. Variants ordered by mean distance.
+
+**03_default_clustering** — `default_clustering`
+
+Left: distribution across synthetic datasets of the between-cohort standard deviation of the default rate, divided by the binomial standard error expected under independence; one violin per prior variant, stars for the real datasets, dashed line at the independence reference. Right: default rate per cohort for one dataset per variant and two real datasets. Cohorts are twelve contiguous blocks of rows.
+
+**04_base_rate_by_variant** — `base_rate_by_variant`
 
 Distribution of the positive-class rate per synthetic dataset, one step histogram per prior variant, 30 bins. The dashed vertical line marks a 50% rate; dotted lines mark rates measured from the real datasets. Legend gives the mean per variant.
 
-**03_target_shapes_by_variant** — `target_shapes_by_variant`
+**05_difficulty_calibration** — `difficulty_calibration`
 
-Histograms of the target for ten synthetic datasets per prior variant, one variant per row, 25 bins per panel. Rows use the same random draw, so panels in the same column are directly comparable.
+Predictability of each synthetic dataset under a small ExtraTrees on a 70/30 split, one point per dataset and one column per prior variant, with the median marked. The shaded band spans the same measurement on the real credit datasets.
 
-**04_spectrum_by_variant** — `spectrum_by_variant`
+**06_side_by_side_tables** — `side_by_side_tables`
+
+Eight rows of one synthetic dataset and one real credit dataset, shown as heatmaps with the target as the final column separated by a vertical rule. Each feature is rank-normalised within its own column, so shade encodes relative value rather than units.
+
+**07_spectrum_by_variant** — `spectrum_by_variant`
 
 Eigenvalue spectra of the feature correlation matrix for up to 40 synthetic datasets per prior variant, normalised by the largest eigenvalue and plotted against normalised eigenvalue rank. Faint lines are individual datasets; bold lines are the per-variant median.
 
-**05_shapes_by_variant** — `shapes_by_variant`
+**08_shapes_by_variant** — `shapes_by_variant`
 
 Left: distribution of rows per synthetic dataset. Right: distribution of features per synthetic dataset. One step histogram per prior variant, 20 bins.
-
-**06_table_shapes** — `table_shapes`
-
-Distributions of rows per dataset, features per dataset, and the ratio of distinct target values to rows, across sampled synthetic datasets. 25 bins each; dashed lines mark the medians given in the panel titles.
-
-**07_feature_relationships** — `feature_relationships`
-
-Pearson correlation matrices between features for individual synthetic datasets, one panel each. Colour scale spans -1 to 1. Panel subtitles give the number of features and the mean absolute off-diagonal correlation.
-
-**08_feature_target_relation** — `feature_target_relation`
-
-Target against the most strongly correlated feature, one panel per synthetic dataset. Dotted horizontal lines mark the minimum and maximum target values. Panel subtitles give the feature index and its Pearson correlation with the target.

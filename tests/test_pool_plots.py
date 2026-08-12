@@ -204,13 +204,26 @@ def test_existing_prior_plots_work_on_pooled_data(pools):
 
     tasks = pools.load_variant("lgd", "credit_v1", n=6)
     for name in (
-        "plot_target_grid",
         "plot_boundary_mass",
         "plot_table_shapes",
-        "plot_feature_relationships",
         "plot_feature_target_relation",
     ):
         assert getattr(prior_plots, name)(tasks) is not None, name
+
+
+def test_the_exp1_figures_work_on_pooled_data_too(pools):
+    """The whole point of the pool path: a figure built on live-generated data must also work on
+    the shards training actually reads, or the notebook silently answers a different question."""
+    from src.visualize import exp1_plots as e1
+
+    loaded = {
+        "original": pools.load_variant("lgd", "original", n=5),
+        "credit_v1": pools.load_variant("lgd", "credit_v1", n=5),
+    }
+    assert e1.plot_prior_realism_ranking(loaded, None, task="lgd") is not None
+    assert e1.plot_boundary_mass_sources(loaded, None) is not None
+    assert e1.plot_mechanism_decomposition(loaded["credit_v1"]) is not None
+    assert e1.plot_side_by_side_tables(loaded["credit_v1"][0], None) is not None
 
 
 def test_same_seed_gives_the_same_draw(pools):

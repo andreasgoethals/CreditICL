@@ -1,14 +1,14 @@
 """PIPELINE 2 — generate a pool of synthetic datasets and write it to disk.
 
     # one shard (what an array task runs)
-    python scripts/generate_prior.py --config config/LGD.yaml --variant original \
+    python scripts/generate_prior.py --config config/Exp1_LGD.yaml --variant original \
         --shard 0 --n-shards 20
 
     # everything, serially (fine locally, slow on a cluster)
-    python scripts/generate_prior.py --config config/LGD.yaml --variant original --all
+    python scripts/generate_prior.py --config config/Exp1_LGD.yaml --variant original --all
 
     # check what exists
-    python scripts/generate_prior.py --config config/LGD.yaml --status
+    python scripts/generate_prior.py --config config/Exp1_LGD.yaml --status
 
 VARIANTS. `--variant original` forces `credit_fraction=0` and generates the
 unmodified TabICL prior — the pool EVERY arm shares. `--variant credit_v1` forces
@@ -33,7 +33,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.utils.config import expand_with_seeds, load_yaml  # noqa: E402
+from src.utils.config import expand_with_seeds, load  # noqa: E402
 from src.utils.logging_setup import log_environment, log_section, setup_logging  # noqa: E402
 from src.utils.paths import describe, logs_dir, results_dir  # noqa: E402
 
@@ -58,7 +58,7 @@ def main() -> int:
     ap.add_argument("--force", action="store_true")
     args = ap.parse_args()
 
-    cfg = expand_with_seeds(load_yaml(args.config))[0]
+    cfg = expand_with_seeds(load(args.config))[0]
     task = cfg["task"]
 
     log, _, log_path = setup_logging(f"generate_prior_{task}_{args.variant}", logs_dir(), console=True)

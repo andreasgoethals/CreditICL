@@ -77,10 +77,24 @@ def prior_summary(
                 1.0 if (float(t.y.min()) >= -1e-6 and float(t.y.max()) <= 1 + 1e-6) else 0.0
                 for t in tasks
             ]
-            lines.append(f"  in [0,1]       {np.mean(in_unit):.1%} of datasets")
+            share_in_unit = float(np.mean(in_unit))
+            lines.append(f"  in [0,1]       {share_in_unit:.1%} of datasets")
             lines.append(f"  boundary mass  {_fmt_range(boundary, pct=True)}")
-            lines.append(f"    at 0 (full recovery) mean {np.mean(at0):.1%}")
-            lines.append(f"    at 1 (total loss)    mean {np.mean(at1):.1%}")
+            # "at 0" and "at 1" only MEAN full recovery and total loss when the target is
+            # actually on [0,1]. The original prior standard-scales its target, so labelling
+            # its min/max ties that way reads as an economic finding when it is nothing of the
+            # sort — the ties there are `outlier_removing`'s clamp at +-4 SD piling rows onto
+            # exactly two values. Same numbers, honest names.
+            if share_in_unit > 0.5:
+                lines.append(f"    at 0 (full recovery) mean {np.mean(at0):.1%}")
+                lines.append(f"    at 1 (total loss)    mean {np.mean(at1):.1%}")
+            else:
+                lines.append(f"    at its own min       mean {np.mean(at0):.1%}  (NOT 0)")
+                lines.append(f"    at its own max       mean {np.mean(at1):.1%}  (NOT 1)")
+                lines.append(
+                    "    target is not on [0,1], so these are scale-free ties at the "
+                    "extremes,\n      largely the +-4 SD outlier clamp — not recovery or loss."
+                )
             lines.append(f"  any atoms      {np.mean([b > 0.01 for b in boundary]):.1%} of datasets")
         else:
             rates = [float((t.y > 0.5).float().mean()) for t in tasks]
@@ -250,5 +264,104 @@ def data_summary(
         "   features through random DAGs rather than independently.\n"
         "5. Missingness is mostly pre-imputed away here, so do NOT tune the prior's\n"
         "   missingness rate to these numbers — they measure the upstream pipeline."
+    )
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Real-data helpers for the Exp1 prior notebooks
+#
+# Every figure in those notebooks compares a prior AGAINST the real datasets. Loading them was
+# previously done inline per notebook, which is how the two notebooks drifted apart; these are
+# the shared version.
+# ---------------------------------------------------------------------------
+
+
+def load_real_datasets(task: str, max_rows: int = 20_000) -> dict[str, Any]:
+    """The real credit datasets for a task, as loaded objects. `{}` if none are on this machine.
+
+    Capped rows because these feed histograms and a quick ExtraTrees, not a training run — a
+    300k-row table would make the notebook slow for no change in any figure.
+
+    Never raises: a machine without the data must still be able to run the notebook and get the
+    prior-only figures, with the comparisons degrading to "no real datasets available".
+    """
+    out: dict[str, Any] = {}
+    try:
+        from src.data.loaders import list_datasets, load_processed
+    except Exception:  # noqa: BLE001
+        return out
+    for name in list_datasets(task):
+        try:
+            ds = load_processed(task, name)
+        except Exception:  # noqa: BLE001 — one missing dataset must not lose the rest
+            continue
+        if max_rows and getattr(ds, "n_rows", 0) > max_rows:
+            import numpy as np
+
+            class _Capped:
+                X = np.asarray(ds.X)[:max_rows]
+                y = np.asarray(ds.y)[:max_rows]
+                n_rows = max_rows
+                n_features = getattr(ds, "n_features", None)
+
+            out[name] = _Capped()
+        else:
+            out[name] = ds
+    return out
+
+
+def real_difficulty(task: str, real: dict[str, Any]) -> dict[str, float]:
+    """How predictable each real dataset is, on the same measurement as the synthetic ones.
+
+    This is the yardstick for `plot_difficulty_calibration`. It has to be the SAME estimator and
+    split as the synthetic side or the comparison is meaningless, so both call
+    `exp1_plots._quick_score`.
+    """
+    from src.visualize.exp1_plots import _quick_score
+
+    scores: dict[str, float] = {}
+    for name, ds in real.items():
+        score = _quick_score(ds, task)
+        if score is not None:
+            scores[name.split(".", 1)[-1]] = score
+    return scores
+
+
+def realism_summary(loaded: dict[str, Any], real: dict[str, Any], task: str) -> str:
+    """The realism ranking as text, so `All_Results.md` carries the conclusion, not just a figure.
+
+    Ordered best to worst, because the one thing a reader wants from this notebook is which
+    prior to take forward.
+    """
+    import numpy as np
+
+    from src.visualize.exp1_plots import _real_targets, distribution_distance
+
+    lines = [_rule(f"PRIOR REALISM RANKING — {task.upper()}")]
+    reals = _real_targets(task, real)
+    if not reals:
+        lines.append("No real datasets on this machine, so no comparison was possible.")
+        return "\n".join(lines)
+
+    lines.append(f"Distance from {len(reals)} real datasets (total variation, 0 = identical).")
+    lines.append("Lower is better. This is the ranking Exp1 exists to refine with training.")
+    lines.append("")
+    rows = []
+    for name, tasks in loaded.items():
+        pooled = np.clip(np.concatenate([np.asarray(t.y).ravel() for t in tasks]), 0.0, 1.0)
+        per = [distribution_distance(pooled, y) for y in reals.values()]
+        rows.append((name, float(np.mean(per)), float(np.min(per)), float(np.max(per))))
+    rows.sort(key=lambda r: r[1])
+    lines.append(f"  {'variant':<28} {'mean':>7} {'best':>7} {'worst':>7}")
+    for name, mean_d, best, worst in rows:
+        lines.append(f"  {name:<28} {mean_d:7.3f} {best:7.3f} {worst:7.3f}")
+    lines.append("")
+    winner, best_mean = rows[0][0], rows[0][1]
+    lines.append(f"Closest to real data: {winner} (mean {best_mean:.3f}).")
+    lines.append(
+        "A CAVEAT THAT MATTERS: looking like real data is not the same as training a better\n"
+        "model. This ranking says which priors are worth the compute; Exp1's training runs are\n"
+        "what decide which one actually helps."
     )
     return "\n".join(lines)

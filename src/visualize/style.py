@@ -76,6 +76,46 @@ def row_figsize(n_rows: int, *, per_row: float = 0.16, base: float = 1.0) -> tup
     return (WIDTH_FULL, min(base + per_row * max(n_rows, 1), MAX_HEIGHT))
 
 
+#: Below this, a panel is too small to carry a readable axis label at 8pt. Ten histograms
+#: across A4 gives 0.63 in each, which is a thumbnail, not a figure.
+MIN_PANEL_WIDTH = 1.15
+
+
+def max_cols(min_width: float = MIN_PANEL_WIDTH) -> int:
+    """How many panels fit across A4 before they stop being legible."""
+    return max(1, int(WIDTH_FULL // min_width))
+
+
+def paginate(items: list[Any], per_page: int | None = None,
+             *, min_width: float = MIN_PANEL_WIDTH) -> list[list[Any]]:
+    """Split items into page-sized chunks, the way a paper does it.
+
+    THE PROBLEM THIS SOLVES. `grid_figsize` guarantees a grid never exceeds the page width,
+    which is necessary but not sufficient: ten histograms across 160 mm are 0.63 in each, so
+    the figure is page-correct and unreadable. Making it *taller* does not help — the
+    constraint is horizontal.
+
+    So the answer is the one a journal uses: more than one figure. Ten panels become
+    "Figure 3 (page 1 of 2)" and "(page 2 of 2)", each with panels wide enough to read.
+
+    Returns a list of pages; a single page means no split was needed, and callers can then
+    skip the page suffix entirely.
+    """
+    if not items:
+        return []
+    per_page = per_page or max_cols(min_width)
+    return [items[i:i + per_page] for i in range(0, len(items), per_page)]
+
+
+def page_suffix(page: int, n_pages: int) -> str:
+    """`" (page 2 of 3)"`, or `""` when there is only one page.
+
+    Goes in the figure's suptitle AND should be repeated in the caption, because a reader who
+    meets page 2 first needs to know that page 1 exists.
+    """
+    return f" (page {page} of {n_pages})" if n_pages > 1 else ""
+
+
 # ---------------------------------------------------------------------------
 # What A4 output requires. Everything here is about the figure being correct on paper.
 # ---------------------------------------------------------------------------
@@ -226,22 +266,52 @@ def source_color(source: str) -> str:
     return CREDIT if source == "credit" else ORIGINAL
 
 
-def title(ax: Any, headline: str, subtitle: str | None = None) -> None:
-    """Headline plus an optional quieter line under it.
+#: Characters per inch for the title face, measured empirically at 10pt DejaVu Sans. Used only
+#: to decide where to wrap, so it does not need to be exact — one character either way changes
+#: nothing, and a real text-extent measurement needs a renderer that does not exist yet when
+#: the title is being set.
+_TITLE_CHARS_PER_INCH = 12.5
 
-    Implemented as a **two-line `set_title`**, not a separate `ax.text`. An `ax.text` at
-    `y > 1` in axes coordinates is invisible to matplotlib's layout engine, so it overlapped
-    the panel above it in every dense grid and ran into the figure suptitle. A real title is
-    measured and laid out.
+
+def _wrap_to_axes(ax: Any, text: str, scale: float = 1.0) -> str:
+    """Wrap `text` to the width of `ax`, in characters.
+
+    Left-aligned titles do not get wrapped by matplotlib and do not participate in horizontal
+    layout, so on a 1x3 grid a long title simply runs across its neighbour's panel. This is
+    the fix: wrap before setting, using the axes' actual width on the figure.
     """
+    import textwrap
+
+    try:
+        width_in = ax.get_window_extent().width / ax.figure.dpi
+    except Exception:  # noqa: BLE001 — no renderer yet; fall back to the declared size
+        width_in = ax.figure.get_size_inches()[0] / max(len(ax.figure.axes), 1)
+    size = mpl.rcParams["axes.titlesize"] * scale
+    chars = max(12, int(width_in * _TITLE_CHARS_PER_INCH * (10.0 / max(size, 1e-6))))
+    return "\n".join(textwrap.wrap(text, chars)) or text
+
+
+def title(ax: Any, headline: str, subtitle: str | None = None) -> None:
+    """Headline plus an optional quieter line under it, wrapped to the panel.
+
+    Implemented as a **`set_title`**, not a separate `ax.text`. An `ax.text` at `y > 1` in axes
+    coordinates is invisible to matplotlib's layout engine, so it overlapped the panel above it
+    in every dense grid and ran into the figure suptitle. A real title is measured and laid out.
+
+    WRAPPING IS NOT COSMETIC. `axes.titlelocation` is `left`, and matplotlib neither wraps a
+    title nor counts its width when laying panels out — so two panels side by side on A4 had
+    their titles run into each other. Now each is wrapped to its own panel's width.
+    """
+    scale = 0.92 if subtitle else 1.0
+    lines = [_wrap_to_axes(ax, headline, scale)]
     if subtitle:
-        ax.set_title(f"{headline}\n{subtitle}", linespacing=1.4)
-        # The two lines cannot take different sizes on one Text object, so the whole title
+        lines.append(_wrap_to_axes(ax, subtitle, scale))
+    ax.set_title("\n".join(lines), linespacing=1.3)
+    if subtitle:
+        # The two parts cannot take different sizes on one Text object, so the whole title
         # drops slightly and the subtitle reads as a continuation. Keeping one object is what
         # makes the layout correct, which matters more than the two-tone look.
-        ax.title.set_fontsize(mpl.rcParams["axes.titlesize"] * 0.92)
-    else:
-        ax.set_title(headline)
+        ax.title.set_fontsize(mpl.rcParams["axes.titlesize"] * scale)
 
 
 def figure_note(fig: Any, text: str) -> None:

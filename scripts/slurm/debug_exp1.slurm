@@ -1,0 +1,153 @@
+#!/bin/bash -l
+# =============================================================================
+#  CreditICL — EXP1 DEBUG RUN. Four arms, short walltime, maximum logging.
+#
+#  THIS IS NOT THE EXPERIMENT. It is the run that finds out whether the pipeline
+#  works on the cluster at all, and what its behaviour looks like: throughput,
+#  GPU utilisation, memory headroom, whether the progress curve fires, whether
+#  the real and out-of-domain evaluations run, and how big the artefacts get.
+#
+#  Four arms chosen to cover the code paths that can differ, NOT to answer
+#  anything scientific:
+#      task 0  credit_fraction 0.0  -> the CONTROL: original prior only
+#      task 1  credit_fraction 0.3  mechanism  -> our loss-mechanism path
+#      task 2  credit_fraction 0.3  quantile   -> our marginal-shaping path
+#      task 3  credit_fraction 0.1  mechanism  -> the mixing path at a low share
+#
+#  Pick the indices from the grid listing before submitting:
+#      python scripts/pretrain.py --config config/Exp1_LGD.yaml --list
+#
+#  WALLTIME IS 4 HOURS, not 72. A debug run that sits in the queue for a day
+#  teaches nothing; a short one gets scheduled sooner and the failure modes it
+#  finds are the same ones.
+# =============================================================================
+
+#SBATCH --job-name=crediticl-debug-exp1
+#SBATCH --clusters=wice
+#SBATCH --account=lp_verbekelab
+#SBATCH --partition=gpu_a100
+#SBATCH --gpus-per-node=1
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=18
+#SBATCH --mem=100G
+#SBATCH --time=04:00:00
+#SBATCH --output=/dev/null
+#SBATCH --error=/dev/null
+# Propagate the submission env, or a cross-cluster sbatch can hit Slurm's
+# login-shell env retrieval ("user env retrieval failed requeued held").
+#SBATCH --export=ALL
+# Four arms, all at once: the point is to see them side by side.
+#SBATCH --array=0-3
+
+set -euo pipefail
+
+REPO="${VSC_DATA}/CreditICL"
+cd "$REPO"
+
+# --- environment ------------------------------------------------------------
+# Names every missing package rather than printing the first three lines of a
+# traceback, which are always the same boilerplate. See docs/AGENTS_MEMORY.md.
+source scripts/slurm/_activate_env.sh
+
+# --- which arm is this? -----------------------------------------------------
+# TASK -> grid index. Read the mapping from `--list` and edit if the grid changes:
+# a hard-coded index that silently points at a different arm is worse than a crash.
+CONFIG="${CONFIG:-config/Exp1_LGD.yaml}"
+# Resolved from `--list` against config/Exp1_LGD.yaml on 12-08-2026, all at seed 0:
+#   0  cf=0.0  mechanism   the control: original prior only
+#   3  cf=0.3  mechanism   our loss-mechanism path at the highest mix
+#  11  cf=0.3  quantile    our marginal-shaping path
+#   1  cf=0.1  mechanism   the mixing path at a low share
+# RE-RESOLVE THESE IF THE SWEEP CHANGES. An index that silently points at a different arm
+# is worse than a crash, which is why the mapping is written out rather than computed.
+ARMS=(0 3 11 1)
+INDEX="${ARMS[$SLURM_ARRAY_TASK_ID]}"
+
+LOGDIR="${VSC_DATA}/CreditICL/output/logs"
+mkdir -p "$LOGDIR"
+STDOUT="${LOGDIR}/debug_exp1_task${SLURM_ARRAY_TASK_ID}_${SLURM_JOB_ID}.out"
+
+# Everything to one file per arm, so a whole arm can be pasted into a chat.
+exec > >(tee -a "$STDOUT") 2>&1
+
+echo "=============================================================="
+echo " CreditICL Exp1 DEBUG"
+echo " job            : ${SLURM_JOB_ID}  array task ${SLURM_ARRAY_TASK_ID}"
+echo " cluster/part   : ${SLURM_CLUSTER_NAME:-?} / ${SLURM_JOB_PARTITION:-?}"
+echo " node           : $(hostname)"
+echo " config         : ${CONFIG}   grid index ${INDEX}"
+echo " started        : $(date -Is)"
+echo "=============================================================="
+
+# The GPU this landed on. Two runs on different cards are not comparable, and
+# this is the only record of which.
+nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv || true
+echo
+
+# What the arm actually is. Printed BEFORE training, so a job that dies early still says
+# which configuration died. `--dry-run` resolves the config and exits without training.
+python scripts/pretrain.py --config "$CONFIG" --index "$INDEX" --dry-run || true
+echo
+
+# --- the run ----------------------------------------------------------------
+# `--max-steps` OVERRIDES the config's 12,500. This is the single most important line in the
+# file: a debug run has to FINISH, including the evaluation that follows it, or it proves
+# nothing about the half of the pipeline that has never executed on the cluster. 1,500 steps is
+# enough to see throughput, GPU utilisation, memory headroom, and three progress-curve points.
+#
+# Raise it once, to the config's real value, only after this run comes back clean.
+DEBUG_STEPS="${DEBUG_STEPS:-1500}"
+echo "DEBUG: overriding max_steps to ${DEBUG_STEPS} (config says 12500)"
+
+# `--resume auto` so a job killed at the walltime can be resubmitted unchanged.
+python scripts/pretrain.py \
+    --config "$CONFIG" \
+    --index "$INDEX" \
+    --max-steps "$DEBUG_STEPS" \
+    --resume auto
+
+STATUS=$?
+echo
+echo "training exited with ${STATUS} at $(date -Is)"
+
+# --- evaluate the checkpoint this arm just produced -------------------------
+# The debug run is only useful if it proves the WHOLE chain works, and evaluation
+# is the half that has never run on the cluster.
+if [ "$STATUS" -eq 0 ]; then
+    # `crediticl` is the baseline that scores OUR checkpoints — it discovers them under
+    # checkpoints/ on project storage. `tabiclv2` is the released model, included so the debug
+    # run also proves the comparison TABLE builds, not only that our model scores.
+    echo "=== evaluating on the real credit datasets ==="
+    python scripts/evaluate.py \
+        --task lgd \
+        --models crediticl,tabiclv2 \
+        --seeds 0 \
+        --tag "debug_${SLURM_JOB_ID}_t${SLURM_ARRAY_TASK_ID}" || \
+        echo "WARNING: credit evaluation failed — see the traceback above"
+
+    echo "=== evaluating out-of-domain ==="
+    python scripts/evaluate_ood.py \
+        --models crediticl,tabiclv2 \
+        --seeds 0 \
+        --kinds regression \
+        --tag "debug_${SLURM_JOB_ID}_t${SLURM_ARRAY_TASK_ID}" || \
+        echo "WARNING: out-of-domain evaluation failed (fetch the cache on a login node first)"
+fi
+
+# --- what to collect --------------------------------------------------------
+echo
+echo "=============================================================="
+echo " ARTEFACTS"
+echo "=============================================================="
+du -sh "${VSC_DATA}/CreditICL/output"/* 2>/dev/null || true
+echo
+echo "telemetry rows:"
+wc -l "${VSC_DATA}/CreditICL/output/manifests/"*telemetry.csv 2>/dev/null || echo "  none"
+echo "progress rows:"
+wc -l "${VSC_DATA}/CreditICL/output/manifests/"*progress.csv 2>/dev/null || echo "  none"
+echo
+echo "Collect with:"
+echo "  tar czf ~/crediticl_debug_${SLURM_JOB_ID}.tar.gz \\"
+echo "      -C \"${VSC_DATA}/CreditICL\" output/logs output/manifests"
+echo "finished: $(date -Is)"

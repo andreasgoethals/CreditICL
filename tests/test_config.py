@@ -21,31 +21,123 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.utils.config import (  # noqa: E402
-    apply_sweep_block,
+    PLACEHOLDER,
     expand_grid,
     expand_with_seeds,
+    find_placeholders,
     is_literal_list,
+    load,
     load_yaml,
     sweep_axes,
 )
 
-CONFIGS = ["config/LGD.yaml", "config/PD.yaml"]
+#: One file per experiment per track. Exp1 screens the prior grid; Exp2 and Exp3 run the
+#: winner long, so they stay templates until Exp1 has finished.
+EXPERIMENTS = [f"config/{e}_{t}.yaml" for e in ("Exp1", "Exp2", "Exp3") for t in ("LGD", "PD")]
+#: The runnable ones. Exp2/Exp3 hold `FILL_FROM_EXP1` and must not expand.
+CONFIGS = ["config/Exp1_LGD.yaml", "config/Exp1_PD.yaml"]
 
 
-@pytest.mark.parametrize("path", CONFIGS)
+def _load(path):
+    """Templates included, so structural checks cover all six files."""
+    return load(ROOT / path, allow_placeholders=True)
+
+
+@pytest.mark.parametrize("path", EXPERIMENTS)
 def test_config_loads(path):
-    cfg = apply_sweep_block(load_yaml(ROOT / path))
+    cfg = _load(path)
     # No "model": the architecture is fixed in NanoTabICLv2's defaults, not configured.
     for key in ("experiment", "task", "seeds", "prior", "train", "init"):
         assert key in cfg, f"{path} is missing the '{key}' block"
 
 
-@pytest.mark.parametrize("path", CONFIGS)
+@pytest.mark.parametrize("path", EXPERIMENTS)
 def test_task_matches_filename(path):
-    cfg = apply_sweep_block(load_yaml(ROOT / path))
+    cfg = _load(path)
     expected = "lgd" if "LGD" in path else "pd"
     assert cfg["task"] == expected
-    assert cfg["experiment"] == expected
+    assert cfg["experiment"].endswith(expected)
+    assert cfg["experiment"].startswith(Path(path).stem.split("_")[0].lower())
+
+
+# -- the six-file layout, and prior_file: ------------------------------------
+
+
+
+# -- placeholders --------------------------------------------------------------
+
+
+@pytest.mark.parametrize("path", CONFIGS)
+def test_exp1_is_runnable_now(path):
+    """Exp1 depends on nothing, so it must load without the escape hatch."""
+    cfg = load(ROOT / path)
+    assert find_placeholders(cfg) == []
+
+
+@pytest.mark.parametrize("path", [p for p in EXPERIMENTS if "Exp1" not in p])
+def test_exp2_and_exp3_refuse_to_expand_until_exp1_has_run(path):
+    """A config that runs with a placeholder burns GPU-hours measuring nothing. The
+    refusal is the whole safeguard, so it gets a test."""
+    with pytest.raises(ValueError, match="still a template"):
+        load(ROOT / path)
+    holes = find_placeholders(_load(path))
+    assert holes, f"{path} claims to be a template but has no {PLACEHOLDER}"
+
+
+
+def test_exp3_refuses_a_silent_partial_load():
+    """A name mismatch that loads nothing still runs and still outputs numbers — they are
+    just partly random. `strict_load` is what turns that into a crash."""
+    for track in ("LGD", "PD"):
+        cfg = _load(f"config/Exp3_{track}.yaml")
+        assert cfg["init"]["strict_load"] is True
+        assert cfg["init"]["pretrained_path"], "a warm start needs a checkpoint"
+
+
+# -- the screening budget ------------------------------------------------------
+
+
+def test_exp1_is_cheaper_per_arm_than_exp2():
+    """Exp1 exists to make the grid affordable. If its budget ever matched Exp2's, the
+    two-phase design would have quietly become one very expensive phase."""
+    for track in ("LGD", "PD"):
+        one = _load(f"config/Exp1_{track}.yaml")["train"]["max_steps"]
+        two = _load(f"config/Exp2_{track}.yaml")["train"]["max_steps"]
+        assert one < two, f"{track}: screening budget {one} is not below the full {two}"
+
+
+def test_exp2_and_exp3_report_more_seeds_than_the_screen():
+    """Ranking arms tolerates 3 seeds; a headline interval does not."""
+    for track in ("LGD", "PD"):
+        assert len(_load(f"config/Exp1_{track}.yaml")["seeds"]) == 3
+        assert len(_load(f"config/Exp2_{track}.yaml")["seeds"]) >= 5
+
+
+# -- the frozen evaluation split ----------------------------------------------
+
+
+@pytest.mark.parametrize("path", EXPERIMENTS)
+def test_dev_and_holdout_are_disjoint_and_non_empty(path):
+    """A dataset in both splits leaks the holdout into prior selection, which is the one
+    mistake that cannot be fixed after the fact."""
+    ev = _load(path)["eval"]
+    dev, hold = set(ev["dev_datasets"]), set(ev["holdout_datasets"])
+    assert dev and hold, f"{path}: both splits must be populated before any run"
+    assert not (dev & hold), f"{path}: {dev & hold} is in both splits"
+    assert ev["select_on"] == "dev", "selecting on holdout invalidates the experiment"
+
+
+@pytest.mark.parametrize("path", EXPERIMENTS)
+def test_the_split_covers_every_dataset_on_disk(path):
+    """A dataset in neither split is silently never evaluated."""
+    from src.data.discovery import list_datasets
+
+    cfg = _load(path)
+    available = set(list_datasets(cfg["task"]))
+    if not available:
+        pytest.skip("datasets not present on this machine")
+    named = set(cfg["eval"]["dev_datasets"]) | set(cfg["eval"]["holdout_datasets"])
+    assert named == available, f"{path}: unassigned {available - named}, unknown {named - available}"
 
 
 def test_single_value_is_not_swept():
@@ -112,16 +204,16 @@ def test_empty_sweep_list_is_an_error():
 @pytest.mark.parametrize("path", CONFIGS)
 def test_grid_is_deterministic(path):
     """A resubmitted array task must land on the same config. Non-negotiable."""
-    cfg = load_yaml(ROOT / path)
+    cfg = _load(path)
     a = [r["_run_name"] for r in expand_with_seeds(cfg)]
-    b = [r["_run_name"] for r in expand_with_seeds(load_yaml(ROOT / path))]
+    b = [r["_run_name"] for r in expand_with_seeds(_load(path))]
     assert a == b
 
 
 @pytest.mark.parametrize("path", CONFIGS)
 def test_run_names_are_unique(path):
     """Two runs sharing a name would overwrite each other's checkpoints."""
-    names = [r["_run_name"] for r in expand_with_seeds(load_yaml(ROOT / path))]
+    names = [r["_run_name"] for r in expand_with_seeds(_load(path))]
     assert len(names) == len(set(names))
 
 
@@ -129,8 +221,8 @@ def test_run_names_are_unique(path):
 def test_seeds_are_crossed_outermost(path):
     """A cut-short array should cover the lever grid at one seed, not one lever
     at every seed. That only holds if seed is the outer loop."""
-    runs = expand_with_seeds(load_yaml(ROOT / path))
-    n_seeds = len(apply_sweep_block(load_yaml(ROOT / path))["seeds"])
+    runs = expand_with_seeds(_load(path))
+    n_seeds = len(_load(path)["seeds"])
     per_seed = len(runs) // n_seeds
     assert {r["seed"] for r in runs[:per_seed]} == {runs[0]["seed"]}
 
@@ -138,7 +230,7 @@ def test_seeds_are_crossed_outermost(path):
 @pytest.mark.parametrize("path", CONFIGS)
 def test_grid_stays_a_sane_size(path):
     """A guard against re-committing an accidental combinatorial explosion."""
-    runs = expand_with_seeds(load_yaml(ROOT / path))
+    runs = expand_with_seeds(_load(path))
     assert len(runs) <= 200, (
         f"{path} expands to {len(runs)} runs. That is almost certainly an accident — "
         "open one lever group at a time."
@@ -147,7 +239,7 @@ def test_grid_stays_a_sane_size(path):
 
 @pytest.mark.parametrize("path", CONFIGS)
 def test_credit_fraction_is_a_probability(path):
-    cfg = apply_sweep_block(load_yaml(ROOT / path))
+    cfg = _load(path)
     values = cfg["prior"]["credit_fraction"]
     for v in values if isinstance(values, list) else [values]:
         assert 0.0 <= v <= 1.0
@@ -157,14 +249,14 @@ def test_credit_fraction_is_a_probability(path):
 def test_control_arm_is_present(path):
     """credit_fraction = 0 is the baseline everything is measured against. If it
     is missing there is nothing to compare to."""
-    values = apply_sweep_block(load_yaml(ROOT / path))["prior"]["credit_fraction"]
+    values = _load(path)["prior"]["credit_fraction"]
     values = values if isinstance(values, list) else [values]
     assert 0.0 in values, "the control arm (credit_fraction 0.0) must be in the sweep"
 
 
 @pytest.mark.parametrize("path", CONFIGS)
 def test_init_strategy_is_known(path):
-    cfg = load_yaml(ROOT / path)
+    cfg = _load(path)
     strategies = cfg["init"]["strategy"]
     for s in strategies if isinstance(strategies, list) else [strategies]:
         assert s in ("scratch", "full", "icl_only", "head_only")
@@ -173,7 +265,7 @@ def test_init_strategy_is_known(path):
 @pytest.mark.parametrize("path", CONFIGS)
 def test_pretrained_path_required_when_not_scratch(path):
     """Catch the config mistake, not the crash six minutes into a queued job."""
-    cfg = load_yaml(ROOT / path)
+    cfg = _load(path)
     strategies = cfg["init"]["strategy"]
     strategies = strategies if isinstance(strategies, list) else [strategies]
     if any(s != "scratch" for s in strategies):
@@ -193,7 +285,138 @@ def test_no_model_block_in_the_configs(path):
     )
 
 
-def test_config_folder_has_no_subfolders():
-    """Everything lives in LGD.yaml or PD.yaml, by request."""
-    entries = sorted(p.name for p in (ROOT / "config").iterdir())
-    assert entries == ["LGD.yaml", "PD.yaml"], f"unexpected entries in config/: {entries}"
+
+
+# -- each experiment owns its own prior ---------------------------------------
+
+
+def test_no_experiment_shares_a_prior_file():
+    """Exp1 sweeps 32 priors, Exp2 runs the ONE that won, Exp3 sweeps the mixture. A shared
+    `prior_file:` encoded the false claim that all three use the same prior, so each config is
+    now self-contained."""
+    for path in EXPERIMENTS:
+        assert "prior_file" not in load_yaml(ROOT / path), (
+            f"{path} names a shared prior file; each experiment must hold its own"
+        )
+        assert "prior" in load_yaml(ROOT / path), f"{path} has no inline prior block"
+
+
+def test_exp1_sweeps_priors_and_never_the_architecture():
+    """The claim the whole project rests on: the architecture is fixed and only the prior
+    varies. An architecture knob appearing in a sweep would silently confound the two."""
+    for track in ("LGD", "PD"):
+        axes = dict(sweep_axes(_load(f"config/Exp1_{track}.yaml")))
+        prior_axes = [k for k in axes if k.startswith("prior.")]
+        assert len(prior_axes) >= 3, f"{track}: Exp1 must sweep the prior, got {prior_axes}"
+        banned = ("model", "embed_dim", "num_blocks", "nhead", "architecture")
+        for key in axes:
+            assert not any(b in key for b in banned), f"{track}: {key} is an architecture knob"
+
+
+def test_exp1_defines_many_priors_and_exp2_exactly_one():
+    """The counts that make the two-phase design what it is."""
+    for track in ("LGD", "PD"):
+        axes = [(k, v) for k, v in sweep_axes(_load(f"config/Exp1_{track}.yaml")) if k != "seeds"]
+        n_priors = 1
+        for _, values in axes:
+            n_priors *= len(values)
+        assert n_priors == 32, f"{track}: expected 32 Exp1 priors, got {n_priors}"
+
+        exp2 = [(k, v) for k, v in sweep_axes(_load(f"config/Exp2_{track}.yaml")) if k != "seeds"]
+        assert exp2 == [("prior.credit_fraction", [0.0, PLACEHOLDER])], (
+            f"{track}: Exp2 must be exactly control-vs-winner, got {exp2}"
+        )
+
+
+def test_exp2_and_exp3_pin_every_knob_exp1_swept():
+    """The bug this catches, which shipped once: the winner placeholders were never inserted, so
+    Exp2 would have silently trained on whatever default the prior happened to carry — measuring
+    an arm nobody chose."""
+    for track in ("LGD", "PD"):
+        swept = {k for k, _ in sweep_axes(_load(f"config/Exp1_{track}.yaml"))
+                 if k not in ("seeds", "prior.credit_fraction")}
+        for exp in ("Exp2", "Exp3"):
+            holes = set(find_placeholders(_load(f"config/{exp}_{track}.yaml")))
+            missing = swept - holes
+            assert not missing, f"{exp}_{track} does not pin Exp1's choice for: {sorted(missing)}"
+
+
+def test_the_control_arm_prior_never_carries_a_placeholder():
+    """`prior.base` IS the unmodified TabICL prior and defines the control arm. A placeholder
+    there would let Exp1's winner change what we measure against — which happened: a regex put
+    PD's `category_frequency` under `base` instead of `credit`."""
+    for path in EXPERIMENTS:
+        base = _load(path)["prior"]["base"]
+        assert PLACEHOLDER not in str(base), f"{path}: control-arm prior was modified: {base}"
+        assert base["category_frequency"] == "balanced"
+        assert base["max_cat_size"] == 100, "TabICL's own value; changing it changes the control"
+
+
+# -- Exp3 is continued pre-training, not pretraining ---------------------------
+
+
+def test_exp3_uses_a_continued_pretraining_learning_rate():
+    """TabPFN-Wide (Kolberg et al. 2026) continued-pretrains at 1e-5. Applying pretraining's
+    8e-4 to already-trained weights destroys them in a few hundred steps, and the loss curve
+    would look like a bad prior rather than a bad learning rate."""
+    for track in ("LGD", "PD"):
+        three = _load(f"config/Exp3_{track}.yaml")["train"]
+        two = _load(f"config/Exp2_{track}.yaml")["train"]
+        assert three["lr"] <= two["lr"] / 10, (
+            f"{track}: Exp3 lr {three['lr']} is not far below Exp2's {two['lr']}"
+        )
+        assert three["muon_lr"] <= two["muon_lr"] / 10
+        assert three["warmup_proportion"] > two["warmup_proportion"], "warm start needs longer warmup"
+        assert three["gradient_clipping"] < two["gradient_clipping"]
+
+
+def test_exp3_sweeps_the_mixture_because_that_is_its_question():
+    """The model already knows the original prior, so how much of ours to add IS the experiment.
+    `1.0` must be included so 'forgetting the original prior' is measurable, and `0.0` so
+    'continued pretraining alone' is a control."""
+    for track in ("LGD", "PD"):
+        axes = dict(sweep_axes(_load(f"config/Exp3_{track}.yaml")))
+        mixture = axes["prior.credit_fraction"]
+        assert 0.0 in mixture and 1.0 in mixture, f"{track}: mixture must span 0..1, got {mixture}"
+        assert len(mixture) >= 4, "an interior optimum needs interior points"
+        assert "init.strategy" in axes, "full vs parameter-efficient must be measured, not assumed"
+
+
+def test_exp3_is_cheaper_than_exp2():
+    """The point of Exp3 is that it is cheap. If its budget ever matched Exp2's there would be
+    no claim left to make."""
+    for track in ("LGD", "PD"):
+        three = _load(f"config/Exp3_{track}.yaml")["train"]
+        two = _load(f"config/Exp2_{track}.yaml")["train"]
+        assert three["max_steps"] * three["batch_size"] < two["max_steps"] * two["batch_size"]
+
+
+# -- one architecture, everywhere ---------------------------------------------
+
+
+def test_every_experiment_names_the_same_architecture():
+    """One architecture for all three, and it is TabICLv2's own. Two experiments on different
+    architectures cannot be compared, and the paper's claim is about the prior."""
+    named = {_load(p)["architecture"] for p in EXPERIMENTS}
+    assert named == {"tabicl"}, f"experiments disagree on the architecture: {named}"
+
+
+def test_config_folder_holds_exactly_the_six_experiments():
+    """Three experiments x two tracks, each self-contained. Anything else here is a file nobody
+    named, which is how a stale config gets submitted."""
+    found = sorted(p.name for p in (ROOT / "config").iterdir())
+    assert found == sorted(Path(p).name for p in EXPERIMENTS), f"unexpected: {found}"
+
+
+def test_exp2_and_exp3_differ_only_where_they_should():
+    """They are not identical any more — Exp3 is continued pre-training, so its budget, learning
+    rate and mixture all differ by design. What must still match is the EVALUATION, or the two
+    cannot be compared at all."""
+    for track in ("LGD", "PD"):
+        two, three = _load(f"config/Exp2_{track}.yaml"), _load(f"config/Exp3_{track}.yaml")
+        assert two["eval"] == three["eval"], f"{track}: evaluation must be identical"
+        assert two["task"] == three["task"]
+        assert two["architecture"] == three["architecture"]
+        assert two["init"]["strategy"] == "scratch"
+        assert three["init"]["strategy"] != "scratch"
+        assert three["init"]["pretrained_path"], "a warm start needs a checkpoint"

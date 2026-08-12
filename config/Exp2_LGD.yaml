@@ -1,0 +1,186 @@
+# =============================================================================
+# EXPERIMENT 2 — LGD — DOES IT TRANSFER? (the headline result, ONE prior)
+#
+# Loss Given Default — bounded [0,1] regression with mass at the boundaries. Head: 999-quantile pinball.
+#
+# THIS EXPERIMENT HAS ONE PRIOR — the arm that won Exp1 — plus the control. That is
+# why its prior block below is all single values: the sweep is over, and what is left
+# is the decision Exp1 made, written down.
+#
+# The question the paper answers: at a real budget, does a credit-targeted prior beat
+# the unmodified TabICL prior on Loss Given Default?
+#
+# A TEMPLATE UNTIL EXP1 FINISHES. Every `FILL_FROM_EXP1` must be replaced; loading
+# refuses a config that still holds one, so it cannot reach the cluster by accident.
+#
+#   python scripts/pretrain.py --config config/Exp2_LGD.yaml --list
+#
+# SELF-CONTAINED: this file holds its own prior. The three experiments do NOT share one,
+# because Exp1 sweeps 32 priors, Exp2 runs the single winner, and Exp3 sweeps the mixture.
+#
+# Prior design: docs/PRIORS.md   Experiment design: docs/EXPERIMENTAL_DESIGN.md
+# Every run written up in: docs/RUNS.md
+# =============================================================================
+
+experiment: exp2_lgd
+task: lgd
+
+# -----------------------------------------------------------------------------
+# ARCHITECTURE — TabICLv2's own, unchanged, and IDENTICAL in all three experiments.
+# Loaded from the upstream `tabicl` package, so "same architecture" is a fact rather
+# than a claim about a reimplementation. Nothing here is ever swept: the experiments
+# are about the PRIOR.
+# -----------------------------------------------------------------------------
+architecture: tabicl # the upstream TabICL class; see src/models/architecture.py
+
+# -----------------------------------------------------------------------------
+# THE SWEEP — every multi-value knob, crossed. This block IS the experiment.
+# 2 arms x 5 seeds = 10 runs. Five seeds, because a headline claim needs an interval.
+# Everything below this block is a single value.
+# -----------------------------------------------------------------------------
+sweep:
+  prior.credit_fraction: [0.0, FILL_FROM_EXP1] # the control, and Exp1's winning share
+  seeds: [0, 1, 2, 3, 4] # five seeds: these are the numbers that get reported
+
+# -----------------------------------------------------------------------------
+# THE PRIOR — ONE configuration, Exp1's winner. Single values throughout: this is a
+# decision that has been made, not a space still being searched.
+# -----------------------------------------------------------------------------
+prior:
+  credit_fraction: FILL_FROM_EXP1 # SWEPT above (control vs winner)
+  n_rows_range: [512, 1024] # rows per synthetic dataset
+  n_features_range: [3, 50] # columns per synthetic dataset
+  max_features: 64 # hard ceiling, leaving room for missingness flags
+  n_nodes_range: [2, 33] # nodes in the random causal graph
+  train_frac_range: [0.3, 0.9] # share of rows given as context
+  max_filter_attempts: 40 # retries before giving up on a rejected dataset
+
+  pool:
+    source: generate # generate = build live | pool = read pre-generated shards
+    original_variant: original # pool folder for the unmodified TabICL prior
+    credit_variant: credit_v1 # pool folder for ours
+
+  grouping:
+    group_size: 4 # datasets sharing shape and difficulty; 1 disables grouping
+    subgroup_size: 2 # datasets sharing exact values within a group
+
+  base: # the UNMODIFIED TabICL prior — changing this changes the control arm
+    max_cat_size: 100 # largest number of categories per column
+    category_frequency: balanced # how category counts are distributed
+
+  credit: # OUR credit-targeted path
+    max_cat_size: 500 # credit has state, MSA, servicer — high cardinality
+    category_frequency: balanced # balanced | power_law (a few levels dominate)
+
+    target:
+      atom_prob: FILL_FROM_EXP1 # Exp1's winning share of datasets with boundary atoms
+      target_scaling: FILL_FROM_EXP1 # Exp1's winner: none | standard
+      mode: FILL_FROM_EXP1 # Exp1's winner: mechanism | quantile
+      boundary_mass_range: [0.02, 0.45] # how much mass sits at 0 or 1, when atoms are present
+      interior_shape_range: [0.4, 3.0] # Kumaraswamy shape span for the interior
+      signal_strength: 1.0 # 1.0 = undiluted; lower makes the target harder to predict
+
+      mechanism: # only read when mode: mechanism
+        mechanism_weights: { collateral: 0.4, workout: 0.35, segment_mixture: 0.25 } # which loss story
+        cohort: { min_cohorts: 1, max_cohorts: 12 } # vintage blocks sharing an economic shock
+
+    shift: # context and predicted rows come from different populations
+      shift_prob: 0.3 # share of datasets given a shift
+      kind_weights: { cohort: 1.0, covariate: 1.0, prior_prob: 1.0 } # time | feature range | base rate
+      prior_prob_range: [0.15, 0.45] # how far the base rate moves
+
+    missingness:
+      missing_col_fraction: 0.3 # share of columns that get missing values
+      missing_rate_range: [0.05, 0.35] # how much is missing in those columns
+      missing_target_coupling: 1.0 # 1.0 = missingness carries signal (a thin file is a risk signal)
+      missing_indicators: true # add a was-missing flag column
+
+    noise_features:
+      fraction: 0.3 # share of columns carrying no information
+      kind_weights: { pure_noise: 1.0, duplicate: 1.0, shuffled: 1.0, constant: 0.5 } # kinds of junk
+
+  filter: # which generated datasets get discarded as unlearnable
+    mode: tabicl # tabicl = as shipped | off = keep all | banded = target credit's signal range
+    quantile_band: [0.05, 0.40] # pseudo-R^2 band kept when mode: banded
+    remove_trivial: false # also drop datasets that are too easy
+    trivial_threshold: 0.02 # what counts as too easy
+
+# -----------------------------------------------------------------------------
+# HOW TO START — from scratch. Exp2 and Exp3 differ in initialisation and budget, and
+# that is what makes "you can skip the expensive pretraining" a measurable claim.
+# -----------------------------------------------------------------------------
+init:
+  strategy: scratch # scratch | full | icl_only | head_only
+  pretrained_path: null # checkpoint to start from, for anything but scratch
+
+# -----------------------------------------------------------------------------
+# TRAINING — 100,000 steps x 4 datasets = 400,000 datasets, seen ONCE each.
+#
+# 10x O'Prior's 40,000, for less sampling noise, and ~1.1% of TabICLv2's own 35.2M.
+# Every result here is a statement about priors AT A FIXED SMALL BUDGET.
+# -----------------------------------------------------------------------------
+train:
+  max_steps: 100000 # gradient updates
+  batch_size: 4 # datasets per update
+  micro_batch_size: 4 # datasets per forward pass, for gradient accumulation
+  num_quantiles: 999 # size of the predicted quantile grid
+
+  optimizer: muon # muon = what TabICLv2 uses | adamw
+  muon_lr: 8.0e-4 # Muon's rate; it prefers ~8x AdamW's
+  lr: 3.0e-4 # AdamW rate, also used for Muon's auxiliary AdamW half
+  scheduler: cosine_with_restarts # cosine_with_restarts | constant
+  beta1: 0.9 # AdamW momentum
+  beta2: 0.95 # AdamW variance decay
+  weight_decay: 0.01 # L2 pull toward zero
+  gradient_clipping: 10.0 # max gradient norm; TabICLv2 raised this from 1 to 10
+  warmup_proportion: 0.01 # share of steps spent ramping the rate up
+  cosine_num_cycles: 1 # restarts in the schedule
+  cosine_amplitude_decay: 1.0 # how much each cycle shrinks
+  cosine_lr_end: 1.0e-7 # floor of the schedule
+
+  amp: true # mixed precision, GPU only
+  num_workers: 12 # CPU workers generating datasets
+  log_every: 250 # steps between log lines
+  save_temp_every: 2000 # steps between rolling checkpoints
+  save_perm_every: 25000 # steps between kept-forever checkpoints
+  max_temp_checkpoints: 2 # rolling checkpoints retained
+
+# -----------------------------------------------------------------------------
+# PROGRESS CURVE — 40 points. This curve IS a result: it shows whether the prior helps
+# early, late, or only at convergence.
+# -----------------------------------------------------------------------------
+progress:
+  every_datasets: 10000 # synthetic datasets between measurements; 0 disables
+  n_datasets: 4 # real credit datasets scored, smallest first
+  n_ood: 8 # out-of-domain datasets scored, if the cache exists
+  context_rows: 512 # rows given as context when scoring
+  max_test_rows: 2000 # rows scored per dataset
+
+# -----------------------------------------------------------------------------
+# LOGGING — every field is explained in docs/RUNS.md, which is also where a finished run
+# gets written up. Log generously: a cluster run cannot be watched, so the log is the only
+# thing that survives it.
+# -----------------------------------------------------------------------------
+logging:
+  level: INFO # INFO | DEBUG | WARNING
+  console: true # also print to stdout
+  to_file: null # null = write files on the cluster only
+  log_prior_every: 500 # steps between prior-composition reports; 0 disables
+  log_prior_samples: 16 # datasets inspected per report
+  log_hardware_every: 100 # steps between GPU / memory / throughput samples; 0 disables
+  log_grad_every: 250 # steps between per-block gradient-norm reports; 0 disables
+
+# -----------------------------------------------------------------------------
+# EVALUATION — the dev/holdout split is frozen BEFORE any prior tuning, and only the final
+# report may read holdout. Identical in all three experiments so their numbers are
+# comparable; see src/eval/ for the shared harness.
+# -----------------------------------------------------------------------------
+# dev SPANS the observed boundary-mass range — 1.8%, 22.4%, 73.0% — so an arm chosen
+# on it cannot be tuned to one regime. It spans size too, 5.6k to 58.9k rows.
+eval:
+  data_dir: data/raw/lgd # where the real datasets live
+  dev_datasets: [0007.lgd_lendingclub, 0004.base_model, 0001.heloc] # used to choose the prior
+  holdout_datasets: [0002.loss2, 0003.axa, 0005.base_modelisation, 0006.lgd_freddie] # untouched until the end
+  metrics: [pinball, crps, coverage, boundary_mass, r2, rmse] # all computed in one run
+  select_on: dev # dev | holdout — anything but `dev` here invalidates the experiment
+  ood_suites: all # which out-of-domain suites to score; see src/eval/ood.py SUITES

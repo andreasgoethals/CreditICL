@@ -387,7 +387,7 @@ python -m scripts.pretrain --config "config/priors/${PRIOR_ARM}.yaml" \
 One command submits everything and you can log out:
 
 ```bash
-bash scripts/submit_pipeline.sh both
+bash scripts/slurm/submit_pipeline.sh both
 ```
 
 Five stages, each on the hardware it actually needs:

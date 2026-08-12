@@ -2,7 +2,7 @@
 
 One invocation == one grid point == one SLURM array task == one checkpoint dir.
 
-    python scripts/pretrain.py --config config/LGD.yaml --index 0
+    python scripts/pretrain.py --config config/Exp1_LGD.yaml --index 0
 
 The config's lever grid is expanded deterministically (see src/utils/config.py),
 so `--index` maps to the same configuration on every call. That is what makes a
@@ -10,8 +10,8 @@ resubmitted or resumed array task land on the run it was meant to.
 
 Useful before submitting anything:
 
-    python scripts/pretrain.py --config config/LGD.yaml --list
-    python scripts/pretrain.py --config config/LGD.yaml --index 0 --dry-run
+    python scripts/pretrain.py --config config/Exp1_LGD.yaml --list
+    python scripts/pretrain.py --config config/Exp1_LGD.yaml --index 0 --dry-run
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.utils.config import expand_with_seeds, load_yaml  # noqa: E402
+from src.utils.config import expand_with_seeds, load  # noqa: E402
 
 
 def main() -> int:
@@ -47,7 +47,7 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    cfg = load_yaml(args.config)
+    cfg = load(args.config)
     runs = expand_with_seeds(cfg)
 
     if args.list:

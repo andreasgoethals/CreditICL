@@ -158,7 +158,7 @@ def run_ood(cfg: OODEvalConfig) -> pd.DataFrame:
     if not status["exists"]:
         raise FileNotFoundError(
             "no out-of-domain cache. Fetch it on a LOGIN node first (compute nodes have "
-            "no internet):\n    python scripts/fetch_ood.py"
+            "no internet):\n    python -m src.utils.fetch_ood"
         )
     if not status["complete"]:
         log.warning(

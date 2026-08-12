@@ -51,7 +51,7 @@ def load_our_checkpoint(
     """Rebuild a NanoTabICLv2 from one of our checkpoints.
 
     The architecture comes from the config stored *inside* the checkpoint, not from the
-    current YAML. If someone edits `config/LGD.yaml` after training, rebuilding from the
+    current YAML. If someone edits `config/Exp1_LGD.yaml` after training, rebuilding from the
     edited file would produce a shape mismatch — or worse, a silent mis-load.
     """
     from src.models.nanotabiclv2 import NanoTabICLv2

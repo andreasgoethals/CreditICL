@@ -35,7 +35,7 @@ def _close_figures():
 def tasks():
     from src.visualize.prior_plots import sample_tasks
 
-    drawn, _ = sample_tasks("config/LGD.yaml", n=8, credit_fraction=1.0, seed=0)
+    drawn, _ = sample_tasks("config/Exp1_LGD.yaml", n=8, credit_fraction=1.0, seed=0)
     return drawn
 
 
@@ -95,8 +95,8 @@ def test_sample_tasks_honours_the_credit_fraction_override():
     """The notebook's whole comparison rests on being able to force each side."""
     from src.visualize.prior_plots import sample_tasks
 
-    base, info_b = sample_tasks("config/LGD.yaml", n=6, credit_fraction=0.0, seed=0)
-    ours, info_o = sample_tasks("config/LGD.yaml", n=6, credit_fraction=1.0, seed=0)
+    base, info_b = sample_tasks("config/Exp1_LGD.yaml", n=6, credit_fraction=0.0, seed=0)
+    ours, info_o = sample_tasks("config/Exp1_LGD.yaml", n=6, credit_fraction=1.0, seed=0)
     assert info_b["sources"]["credit"] == 0
     assert info_o["sources"]["base"] == 0
     assert all(t.source == "credit" for t in ours)
@@ -106,10 +106,8 @@ def test_sample_tasks_honours_the_credit_fraction_override():
 @pytest.mark.parametrize(
     "name,kwargs",
     [
-        ("plot_target_grid", {"n_show": 8, "ncols": 4}),
         ("plot_boundary_mass", {}),
         ("plot_table_shapes", {}),
-        ("plot_feature_relationships", {"n_show": 3}),
         ("plot_correlation_spectrum", {}),
         ("plot_feature_target_relation", {"n_show": 4}),
     ],
@@ -129,13 +127,6 @@ def test_boundary_mass_plot_takes_a_real_reference(tasks):
     assert fig is not None
 
 
-def test_target_grid_handles_fewer_tasks_than_cells(tasks):
-    """Asking for 100 panels with 8 tasks must blank the rest, not raise."""
-    from src.visualize.prior_plots import plot_target_grid
-
-    fig = plot_target_grid(tasks, n_show=100, ncols=10)
-    assert fig is not None
-
 
 def test_compare_priors_returns_a_summary_that_shows_the_difference():
     """This is the motivating figure, and its summary is what goes in a results file.
@@ -145,7 +136,7 @@ def test_compare_priors_returns_a_summary_that_shows_the_difference():
     """
     from src.visualize.prior_plots import compare_priors
 
-    fig, summary = compare_priors("config/LGD.yaml", n=8, seed=0)
+    fig, summary = compare_priors("config/Exp1_LGD.yaml", n=8, seed=0)
     assert fig is not None
     assert set(summary) >= {"original", "ours"}
     assert summary["ours"]["tasks_in_unit_interval"] > summary["original"]["tasks_in_unit_interval"]

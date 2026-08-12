@@ -1,4 +1,4 @@
-"""Pretraining loop for NanoTabICLv2 on a configured prior.
+"""Pretraining loop for TabICLv2 on a configured prior.
 
 Written here because NanoTabICL ships **no pretraining code** (its README defers
 to nanoTabPFN) and nanoTabPFN is classification-only, so it cannot host the LGD
@@ -33,7 +33,6 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 
-from ..models.nanotabiclv2 import NanoTabICLv2
 from ..prior.dataset import build_loader
 from ..utils.logging_setup import close_logging, log_environment, log_section, setup_logging
 from . import distributed as dist
@@ -41,6 +40,7 @@ from .adapt import STRATEGIES, apply_freezing, load_pretrained, set_training_mod
 from .checkpoint import latest_checkpoint, load_checkpoint, prune_checkpoints, save_checkpoint
 from .optim import build_optimizer, build_scheduler
 from .progress import ProgressConfig, ProgressTracker
+from .telemetry import Telemetry
 
 
 def _slurm_seconds_left() -> float:
@@ -143,6 +143,11 @@ class Trainer:
         self.grad_clip = float(tcfg.get("gradient_clipping", 1.0))
         self.num_quantiles = int(tcfg.get("num_quantiles", 999))
         self.log_every = int(tcfg.get("log_every", 50))
+        # Telemetry cadences live under `logging:`, not `train:`, because they change what gets
+        # RECORDED and never what gets computed — switching them off must not alter a result.
+        _lcfg = cfg.get("logging", {})
+        self.log_hardware_every = int(_lcfg.get("log_hardware_every", 0) or 0)
+        self.log_grad_every = int(_lcfg.get("log_grad_every", 0) or 0)
         self.save_temp_every = int(tcfg.get("save_temp_every", 500))
         self.save_perm_every = int(tcfg.get("save_perm_every", 5_000))
         self.max_temp_checkpoints = int(tcfg.get("max_temp_checkpoints", 2))
@@ -278,6 +283,22 @@ class Trainer:
             cfg.get("_run_name", "run"),
             manifest_dir,
         ) if self.dist.is_main else None
+
+        # Rank 0 only: every rank sits on the same node's GPUs, so eight ranks sampling
+        # `nvidia-smi` would write eight near-identical rows and multiply the subprocess cost
+        # by eight for no extra information.
+        self.telemetry = Telemetry(
+            cfg.get("_run_name", "run"),
+            manifest_dir,
+            hardware_every=self.log_hardware_every if self.dist.is_main else 0,
+            grad_every=self.log_grad_every if self.dist.is_main else 0,
+        )
+        # Complements `log_environment()` above rather than repeating it: that one records the
+        # run's identity (task, seed, rank, world size), this one records the MACHINE — GPU
+        # model and capability, library versions, and the SLURM job/array ids. "Which GPU was
+        # this on?" decides whether two runs are comparable at all, and it cannot be
+        # reconstructed from the numbers afterwards.
+        self.log.info("hardware: %s", json.dumps(self.telemetry.environment))
         if self.progress is not None and self.progress.enabled:
             self.log.info(
                 "progress curve -> %s  (every %s datasets)",
@@ -294,26 +315,22 @@ class Trainer:
         )
 
     # -- setup ---------------------------------------------------------------
-    def _build_model(self) -> NanoTabICLv2:
-        mcfg = self.cfg.get("model", {})
-        n_classes = int(self.cfg.get("prior", {}).get("n_classes", 2))
-        # regression: max_classes=0 and out_dim=Q; classification: both = n_classes
-        max_classes = 0 if self.regression else n_classes
-        out_dim = self.num_quantiles if self.regression else n_classes
-        return NanoTabICLv2(
-            max_classes=max_classes,
-            out_dim=out_dim,
-            embed_dim=int(mcfg.get("embed_dim", 128)),
-            col_num_blocks=int(mcfg.get("col_num_blocks", 3)),
-            row_num_blocks=int(mcfg.get("row_num_blocks", 3)),
-            icl_num_blocks=int(mcfg.get("icl_num_blocks", 12)),
-            col_nhead=int(mcfg.get("col_nhead", 8)),
-            row_nhead=int(mcfg.get("row_nhead", 8)),
-            icl_nhead=int(mcfg.get("icl_nhead", 8)),
-            feature_group_size=int(mcfg.get("feature_group_size", 3)),
-            n_cls_cols=int(mcfg.get("n_cls_cols", 4)),
-            n_cls_rows=int(mcfg.get("n_cls_rows", 128)),
-        )
+    def _build_model(self) -> Any:
+        """The model, from `architecture:` — TabICLv2's own in every real config.
+
+        `model:` is NOT in any experiment config: the architecture is fixed and never swept,
+        because the project's claim is about the prior. The block is honoured here only so a
+        test can shrink the network to something that trains in a second.
+        """
+        from ..models.architecture import DEFAULT, build_model
+
+        mcfg = dict(self.cfg.get("model", {}))
+        architecture = self.cfg.get("architecture", DEFAULT)
+        if self.regression:
+            mcfg.setdefault("num_quantiles", self.num_quantiles)
+        else:
+            mcfg.setdefault("max_classes", int(self.cfg.get("prior", {}).get("n_classes", 2)))
+        return build_model(self.task, architecture=architecture, **mcfg)
 
     def maybe_resume(self) -> None:
         path = latest_checkpoint(self.ckpt_dir)
@@ -426,6 +443,24 @@ class Trainer:
                 [p for p in self.model.parameters() if p.requires_grad], self.grad_clip
             )
 
+        # HERE and nowhere else: gradients exist, are unscaled (so the numbers are the real
+        # ones rather than AMP's scaled copies), and have not been zeroed yet. One line later
+        # they are gone and every norm would read 0.0 — which looks like a dead model instead
+        # of a mistimed probe.
+        if self.telemetry.due_grad(self.step + 1):
+            row = self.telemetry.sample_grads(self.model)
+            row.update({"step": self.step + 1, "datasets_seen": self.datasets_seen, "kind": "grad"})
+            self.telemetry.record(row)
+            self.log.info(
+                "grads step %6d  %s",
+                self.step + 1,
+                "  ".join(
+                    f"{k.replace('gw_ratio_', '')}={row[k]:.2e}"
+                    for k in sorted(row)
+                    if k.startswith("gw_ratio_")
+                ),
+            )
+
         self.scaler.step(self.optimizer)
         self.scaler.update()
         self.optimizer.zero_grad(set_to_none=True)
@@ -495,6 +530,24 @@ class Trainer:
                     time.strftime("%a %H:%M", time.localtime(time.time() + eta_s)),
                     f"{self.datasets_seen:,}",
                 )
+                if self.telemetry.due_hardware(self.step):
+                    hw = self.telemetry.sample_hardware(
+                        step=self.step, datasets_seen=self.datasets_seen, steps_per_s=steps_per_s
+                    )
+                    hw["kind"] = "hardware"
+                    hw["train_loss"] = last_loss
+                    self.telemetry.record(hw)
+                    # Utilisation and peak memory in the log line too, not only the CSV: the
+                    # CSV has to be fetched from the cluster, and "was the GPU busy?" should be
+                    # answerable from the log that gets pasted into a message.
+                    parts = [
+                        f"{k}={hw[k]:.1f}"
+                        for k in ("gpu0_utilization_gpu", "mem_max_allocated_gb", "cpu_percent")
+                        if isinstance(hw.get(k), (int, float))
+                    ]
+                    if parts:
+                        self.log.info("hw   step %6d  %s", self.step, "  ".join(parts))
+
                 # A 72h VSC job that will not finish should say so while there is still
                 # time to react, rather than being discovered dead at the wall.
                 if self._walltime_warning_s and eta_s > self._walltime_warning_s:
@@ -532,6 +585,11 @@ class Trainer:
             "pretrained_load": self.load_report,
         }
         self.log.info("finished: %s", json.dumps({k: v for k, v in summary.items() if k != "freeze"}))
+        # Last thing in the log, on purpose: this is what gets read first when a run comes back
+        # slower than expected, and the starvation warning is the most common cause.
+        if self.telemetry.enabled:
+            self.log.info("%s", self.telemetry.summary())
+            summary["telemetry_csv"] = str(self.telemetry.path)
         self.close()
         return summary
 

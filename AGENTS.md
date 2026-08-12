@@ -73,6 +73,10 @@ Newest first, dates `DD-MM-YYYY`.
   the table: config, outcome, headline number. And **every failure** that cost more than a couple of
   minutes, four lines: **Tried**, **Result**, **Why**, **Instead** — even when the eventual fix
   worked, because the dead end is the expensive part.
+- [`docs/RUNS.md`](docs/RUNS.md) — the **full write-up** of every cluster run: date, job id,
+  hyperparameters, the resolved config, results, bugs, and an interpretation. After each run
+  Andreas uploads the output back into a session for debugging; that upload is the only chance to
+  capture it, so write the entry then. Use the template in the file.
 
 ## 7. Notebooks and figures
 

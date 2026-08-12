@@ -9,7 +9,7 @@ see it. Three outcomes are all worth reporting — no degradation (the gain was 
 degradation (a quantified trade-off), or severe degradation (the prior is destructive).
 
 Needs the OOD cache, fetched once on a LOGIN node:
-    python scripts/fetch_ood.py
+    python -m src.utils.fetch_ood
 """
 
 from __future__ import annotations

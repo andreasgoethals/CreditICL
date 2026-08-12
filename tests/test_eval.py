@@ -277,3 +277,71 @@ def test_tfm_feature_cap_applies_and_records():
     assert m.n_seen == TFM_MAX_FEATURES
     assert rep.extra["features_capped_from"] == TFM_MAX_FEATURES + 200
     assert m.predict(X).shape == (100,), "predict must apply the same column subset"
+
+
+# -- one evaluation harness, shared by all three experiments -------------------
+
+
+def test_our_own_checkpoints_are_scorable_like_any_other_model():
+    """The gap this closed: for a while nothing could score a checkpoint WE produced, so a
+    finished run had no number attached to it. `CreditICLBaseline` puts our models in the same
+    registry as CatBoost and TabPFN, which is what makes the comparison a single table."""
+    from src.eval.baselines import BASELINES
+    from src.eval.crediticl_baseline import register
+
+    register()
+    assert "crediticl" in BASELINES, "our own models must be a registered baseline"
+
+
+def test_the_same_metrics_are_used_by_every_experiment():
+    """Three experiments whose numbers are computed differently cannot be compared, and the
+    whole point of Exp2 vs Exp3 is a comparison."""
+    from src.utils.config import load
+
+    for track in ("LGD", "PD"):
+        metrics = {
+            exp: tuple(load(f"config/{exp}_{track}.yaml", allow_placeholders=True)["eval"]["metrics"])
+            for exp in ("Exp1", "Exp2", "Exp3")
+        }
+        assert len(set(metrics.values())) == 1, f"{track}: experiments disagree — {metrics}"
+
+
+def test_the_same_dev_holdout_split_is_used_by_every_experiment():
+    """A different split per experiment would let Exp3 look better than Exp2 purely by being
+    scored on easier datasets."""
+    from src.utils.config import load
+
+    for track in ("LGD", "PD"):
+        splits = {
+            exp: (
+                tuple(load(f"config/{exp}_{track}.yaml", allow_placeholders=True)["eval"]["dev_datasets"]),
+                tuple(load(f"config/{exp}_{track}.yaml", allow_placeholders=True)["eval"]["holdout_datasets"]),
+            )
+            for exp in ("Exp1", "Exp2", "Exp3")
+        }
+        assert len(set(splits.values())) == 1, f"{track}: split differs between experiments"
+
+
+def test_out_of_domain_is_measured_during_training_not_only_at_the_end():
+    """A prior that helps credit by destroying generality must be visible while the run is
+    still going, not discovered afterwards. `progress.n_ood` is what makes the OOD suites part
+    of the training curve rather than a final afterthought."""
+    from src.utils.config import load
+
+    for exp in ("Exp1", "Exp2", "Exp3"):
+        for track in ("LGD", "PD"):
+            progress = load(f"config/{exp}_{track}.yaml", allow_placeholders=True)["progress"]
+            assert progress["every_datasets"] > 0, f"{exp}_{track}: no progress curve"
+            assert progress["n_ood"] > 0, f"{exp}_{track}: out-of-domain not scored during training"
+            assert progress["n_datasets"] > 0, f"{exp}_{track}: credit data not scored during training"
+
+
+def test_the_progress_tracker_records_both_credit_and_out_of_domain():
+    """Both halves in one CSV, so the trade-off is one plot rather than a join."""
+    import inspect
+
+    from src.train import progress
+
+    source = inspect.getsource(progress)
+    assert "_ood_datasets" in source and "list_ood_datasets" in source
+    assert "n_ood" in source

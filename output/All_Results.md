@@ -101,13 +101,14 @@ data_exploration: 8 figures -> C:\Users\U0152019\PhD Documents\Projects\4. Credi
 ## prior_visualisation_lgd
 
 ```
-pools found: none — will generate live
-no pools found for lgd — generating 500 datasets per arm live from config/LGD.yaml
+pools found: none - will generate live
+no pools found for lgd — generating 500 datasets per arm live from config/Exp1_LGD.yaml
 source = live
 {'original (live)': 500, 'credit (live)': 500}
 FOCUS (detail plots) = credit (live)
+real LGD datasets loaded: 7
 reference: measured from 7 real LGD datasets
-credit (live): 500 datasets
+real-data difficulty: {'heloc': 0.46, 'loss2': 0.39, 'axa': 0.173, 'base_model': 0.27, 'base_modelisation': -4.763, 'lgd_freddie': 0.21, 'lgd_lendingclub': 0.699}
 
 ==============================================================================
 PRIOR SUMMARY — LGD
@@ -122,8 +123,10 @@ original (live):
   shape          rows 519 to 1020 (median 778) | features 3 to 50 (median 26)
   in [0,1]       0.4% of datasets
   boundary mass  0.2% to 100.0% (median 0.3%)
-    at 0 (full recovery) mean 5.3%
-    at 1 (total loss)    mean 4.1%
+    at its own min       mean 5.3%  (NOT 0)
+    at its own max       mean 4.1%  (NOT 1)
+    target is not on [0,1], so these are scale-free ties at the extremes,
+      largely the +-4 SD outlier clamp — not recovery or loss.
   any atoms      35.0% of datasets
 
 credit (live):
@@ -154,15 +157,33 @@ Caveat: this describes the PRIOR, not downstream performance. Whether a
 closer-looking prior actually transfers is what the training and evaluation
 pipelines measure.
 
-prior_visualisation_lgd: 8 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\prior_visualisation_lgd
+
+==============================================================================
+PRIOR REALISM RANKING — LGD
+==============================================================================
+Distance from 7 real datasets (total variation, 0 = identical).
+Lower is better. This is the ranking Exp1 exists to refine with training.
+
+  variant                         mean    best   worst
+  credit (live)                  0.365   0.160   0.475
+  original (live)                0.405   0.148   0.637
+
+Closest to real data: credit (live) (mean 0.365).
+A CAVEAT THAT MATTERS: looking like real data is not the same as training a better
+model. This ranking says which priors are worth the compute; Exp1's training runs are
+what decide which one actually helps.
+
+prior_visualisation_lgd: 10 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\prior_visualisation_lgd
   01  palette
-  02  target_comparison
-  03  target_shapes_by_variant
-  04  spectrum_by_variant
-  05  shapes_by_variant
-  06  boundary_mass
-  07  feature_relationships
-  08  feature_target_relation
+  02  prior_realism_ranking
+  03  mechanism_decomposition
+  04  boundary_mass_sources
+  05  target_shapes_by_variant_p1
+  06  target_shapes_by_variant_p2
+  07  difficulty_calibration
+  08  side_by_side_tables
+  09  spectrum_by_variant
+  10  shapes_by_variant
 ```
 
 ---
@@ -170,13 +191,14 @@ prior_visualisation_lgd: 8 figures -> C:\Users\U0152019\PhD Documents\Projects\4
 ## prior_visualisation_pd
 
 ```
-pools found: none — will generate live
-no pools found for pd — generating 500 datasets per arm live from config/PD.yaml
+pools found: none - will generate live
+no pools found for pd — generating 500 datasets per arm live from config/Exp1_PD.yaml
 source = live
 {'original (live)': 500, 'credit (live)': 500}
 FOCUS (detail plots) = credit (live)
+real PD datasets loaded: 14
 reference: measured from 14 real PD datasets
-credit (live): 500 datasets
+real-data difficulty: {'gmsc': 0.858, 'taiwan_creditcard': 0.789, 'vehicle_loan': 0.587, 'lendingclub': 0.636, 'myhom': 0.58, 'hackerearth': 0.749, 'cobranded': 0.82, 'german': 0.806, 'bank_status': 0.739, 'thomas': 0.639, 'loan_default': 0.674, 'home_credit': 0.702, 'hmeq': 0.899, 'algorithmwatch': 0.667}
 
 ==============================================================================
 PRIOR SUMMARY — PD
@@ -219,13 +241,29 @@ Caveat: this describes the PRIOR, not downstream performance. Whether a
 closer-looking prior actually transfers is what the training and evaluation
 pipelines measure.
 
+
+==============================================================================
+PRIOR REALISM RANKING — PD
+==============================================================================
+Distance from 14 real datasets (total variation, 0 = identical).
+Lower is better. This is the ranking Exp1 exists to refine with training.
+
+  variant                         mean    best   worst
+  credit (live)                  0.090   0.011   0.309
+  original (live)                0.287   0.017   0.448
+
+Closest to real data: credit (live) (mean 0.090).
+A CAVEAT THAT MATTERS: looking like real data is not the same as training a better
+model. This ranking says which priors are worth the compute; Exp1's training runs are
+what decide which one actually helps.
+
 prior_visualisation_pd: 8 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\prior_visualisation_pd
   01  palette
-  02  target_comparison
-  03  target_shapes_by_variant
-  04  spectrum_by_variant
-  05  shapes_by_variant
-  06  table_shapes
-  07  feature_relationships
-  08  feature_target_relation
+  02  prior_realism_ranking
+  03  default_clustering
+  04  base_rate_by_variant
+  05  difficulty_calibration
+  06  side_by_side_tables
+  07  spectrum_by_variant
+  08  shapes_by_variant
 ```

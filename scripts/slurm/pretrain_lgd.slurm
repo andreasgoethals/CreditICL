@@ -3,10 +3,10 @@
 #  CreditICL — pretraining array, LGD (regression, 999-quantile pinball head)
 #  TARGET: Mindwell — NVIDIA B200 SXM6, 192 GiB VRAM, 24 cores/GPU
 #
-#  One array task = one grid point of config/LGD.yaml.
+#  One array task = one grid point of config/Exp1_LGD.yaml.
 #  Check the grid size BEFORE submitting:
 #
-#      python scripts/pretrain.py --config config/LGD.yaml --list
+#      python scripts/pretrain.py --config config/Exp1_LGD.yaml --list
 #
 #  and set --array to match (default config expands to 48 runs -> 0-47).
 #
@@ -79,7 +79,7 @@ nvidia-smi || true
 echo "=========================================="
 
 # Pre-flight: fail in seconds on a broken env rather than after the queue wait.
-python scripts/smoke_test.py --task lgd --steps 2 || {
+python -m src.utils.smoke_test --task lgd --steps 2 || {
     echo "PREFLIGHT FAILED: LGD smoke test. Not starting the real run." >&2
     exit 1
 }
@@ -88,7 +88,7 @@ python scripts/smoke_test.py --task lgd --steps 2 || {
 # then draws its original-prior share from the SAME files, so a difference between
 # arms cannot be luck of the draw. Set PRIOR_SOURCE=generate to build them live.
 python -u scripts/pretrain.py \
-    --config config/LGD.yaml \
+    --config config/Exp1_LGD.yaml \
     --index "${SLURM_ARRAY_TASK_ID}" \
     --prior-source "${PRIOR_SOURCE:-pool}"
 

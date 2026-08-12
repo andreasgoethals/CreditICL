@@ -34,6 +34,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -177,7 +178,10 @@ def load_variants_or_generate(
 
     from src.visualize.prior_plots import sample_tasks
 
-    cfg = config or f"config/{task.upper()}.yaml"
+    # Exp1's config, because all three experiments on a track name the SAME prior_file — so
+    # any of them describes the prior these figures visualise, and Exp1 is the one that is
+    # never a template. Exp2/Exp3 still hold `FILL_FROM_EXP1` and would refuse to load.
+    cfg = config or f"config/Exp1_{task.upper()}.yaml"
     print(f"no pools found for {task} — generating {n} datasets per arm live from {cfg}")
     original, _ = sample_tasks(cfg, n=n, credit_fraction=0.0, seed=seed)
     ours, _ = sample_tasks(cfg, n=n, credit_fraction=1.0, seed=seed)
@@ -189,7 +193,7 @@ def _require_variants(loaded: dict[str, list[SyntheticTask]]) -> None:
     if not loaded:
         raise ValueError(
             "no variants to plot. Either generate a pool:\n"
-            "  python scripts/generate_prior.py --config config/LGD.yaml --variant original --all\n"
+            "  python scripts/generate_prior.py --config config/Exp1_LGD.yaml --variant original --all\n"
             "or copy one from the cluster:\n"
             "  bash scripts/transfer/fetch_prior_sample.sh\n"
             "or use load_variants_or_generate(), which falls back to live generation."
@@ -329,35 +333,68 @@ def plot_base_rate_by_variant(loaded: dict[str, list[SyntheticTask]], real_refer
     return fig
 
 
-def plot_target_shapes_by_variant(loaded: dict[str, list[SyntheticTask]], n_per: int = 10):
+def shape_pages(n_per: int = 10) -> int:
+    """How many figures `plot_target_shapes_by_variant` needs for `n_per` draws.
+
+    Exposed so a notebook can loop over pages without knowing the page size, which is a
+    property of A4 and lives in `style`.
+    """
+    return max(1, len(style.paginate(list(range(n_per)))))
+
+
+def plot_target_shapes_by_variant(
+    loaded: dict[str, list[SyntheticTask]], n_per: int = 10, page: int = 1
+):
     """One row of target histograms per variant — the visual gist, side by side.
 
     This is the compromise that replaces one-notebook-per-variant: not 100 panels for
-    one variant, but 10 for each of them, on the same figure, so differences in shape
+    one variant, but a handful for each of them, on the same figure, so differences in shape
     are seen rather than remembered.
+
+    PAGINATED, because `grid_figsize` only guarantees the grid fits the page WIDTH. Ten panels
+    across A4's 160 mm is 0.63 in each — page-correct and unreadable, and making the figure
+    taller cannot help because the constraint is horizontal. So the answer is the one a journal
+    uses: `n_per=10` becomes two figures of five, each captioned "(page N of M)". Ask
+    `shape_pages(n_per)` for the count and call this once per page.
     """
     _require_variants(loaded)
     style.apply()
-    n_var = len(loaded)
-    fig, axes = plt.subplots(n_var, n_per, figsize=style.grid_figsize(n_per, n_var, panel_ratio=1.1), squeeze=False)
+    pages = style.paginate(list(range(n_per)))
+    n_pages = max(1, len(pages))
+    if not 1 <= page <= n_pages:
+        raise ValueError(f"page {page} out of range; {n_pages} page(s) for n_per={n_per}")
+    columns = pages[page - 1]
+    n_var, n_cols = len(loaded), len(columns)
+    fig, axes = plt.subplots(
+        n_var, n_cols,
+        figsize=style.grid_figsize(n_cols, n_var, panel_ratio=1.1), squeeze=False,
+    )
     for r, (variant, tasks) in enumerate(loaded.items()):
         colour = variant_color(variant, r)
-        for c in range(n_per):
+        for c, draw in enumerate(columns):
             ax = axes[r][c]
             ax.set_xticks([])
             ax.set_yticks([])
             ax.grid(visible=False)
-            if c >= len(tasks):
+            # `draw` indexes the FULL set of draws, not this page — so page 2 shows draws
+            # 5..9 rather than repeating 0..4 with different data.
+            if draw >= len(tasks):
                 ax.axis("off")
                 continue
-            ax.hist(tasks[c].y.numpy(), bins=25, color=colour)
+            ax.hist(tasks[draw].y.numpy(), bins=25, color=colour)
             for sp in ax.spines.values():
                 sp.set_linewidth(0.4)
                 sp.set_color(style.GRID)
-        axes[r][0].set_ylabel(variant, fontsize=9, color=style.INK, rotation=0,
-                              ha="right", va="center", labelpad=8)
-    fig.suptitle("Target shapes, one row per variant")
-    style.figure_note(fig, "Same random draw for each row, so rows are comparable.")
+        axes[r][0].set_ylabel(
+            variant, fontsize=mpl.rcParams["xtick.labelsize"], color=style.INK,
+            rotation=0, ha="right", va="center", labelpad=8,
+        )
+    fig.suptitle(f"Target shapes, one row per variant{style.page_suffix(page, n_pages)}")
+    style.figure_note(
+        fig,
+        f"Draws {columns[0] + 1}-{columns[-1] + 1} of {n_per}. "
+        f"Same draw index per row, so rows are comparable.",
+    )
     return fig
 
 

@@ -54,14 +54,39 @@ def describe_strategies() -> str:
     )
 
 
+#: The three stacks, under every name they go by. Upstream `TabICL` calls them
+#: `col_embedder` / `row_interactor` / `icl_predictor`; the vendored NanoTabICL fallback calls
+#: them `col_blocks` / `row_blocks` / `icl_blocks`. Resolved by lookup rather than hard-coded,
+#: because hard-coding one set made `icl_only` raise AttributeError on the other — which is
+#: exactly the arm Exp3 needs, and it would have failed only after the job had queued.
+_STACK_NAMES = {
+    "col": ("col_embedder", "col_blocks"),
+    "row": ("row_interactor", "row_blocks"),
+    "icl": ("icl_predictor", "icl_blocks"),
+}
+
+
+def _stack(model: nn.Module, which: str) -> nn.Module:
+    """One of the three stacks, whatever the architecture calls it."""
+    for name in _STACK_NAMES[which]:
+        found = getattr(model, name, None)
+        if found is not None:
+            return found
+    raise AttributeError(
+        f"cannot find the {which!r} stack on {type(model).__name__}. Tried "
+        f"{_STACK_NAMES[which]}. Freezing needs to know which submodule is which, so add "
+        f"this architecture's name to _STACK_NAMES rather than guessing."
+    )
+
+
 def _frozen_block_lists(model: nn.Module, strategy: str) -> list[nn.Module]:
     """Which block stacks to freeze, mirroring TabICL's `_frozen_submodules`."""
     if strategy in ("scratch", "full"):
         return []
     if strategy == "icl_only":
-        return [model.col_blocks, model.row_blocks]
+        return [_stack(model, "col"), _stack(model, "row")]
     if strategy == "head_only":
-        return [model.col_blocks, model.row_blocks, model.icl_blocks]
+        return [_stack(model, "col"), _stack(model, "row"), _stack(model, "icl")]
     raise ValueError(f"unknown strategy {strategy!r}; expected one of {STRATEGIES}")
 
 

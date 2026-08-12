@@ -2,10 +2,10 @@
 # =============================================================================
 #  CreditICL — submit the WHOLE pipeline as one dependency chain.
 #
-#      DRY_RUN=1 bash scripts/submit_pipeline.sh lgd   # validate, queue nothing
-#      bash scripts/submit_pipeline.sh lgd
-#      bash scripts/submit_pipeline.sh pd
-#      bash scripts/submit_pipeline.sh both
+#      DRY_RUN=1 bash scripts/slurm/submit_pipeline.sh lgd   # validate, queue nothing
+#      bash scripts/slurm/submit_pipeline.sh lgd
+#      bash scripts/slurm/submit_pipeline.sh pd
+#      bash scripts/slurm/submit_pipeline.sh both
 #
 #  You run this once and then log out. Slurm holds each stage until the previous
 #  one finishes successfully (`--dependency=afterok`), so nothing needs babysitting
@@ -116,7 +116,7 @@ submit_one_task() {
 case "$WHICH" in
     lgd|pd) submit_one_task "$WHICH" ;;
     both)   submit_one_task lgd; submit_one_task pd ;;
-    *) echo "usage: bash scripts/submit_pipeline.sh [lgd|pd|both]" >&2; exit 2 ;;
+    *) echo "usage: bash scripts/slurm/submit_pipeline.sh [lgd|pd|both]" >&2; exit 2 ;;
 esac
 
 cat <<'EOF'
