@@ -5,6 +5,26 @@ reason is not obvious.
 
 ---
 
+## 13-08-2026 (night)
+
+The second out-of-domain fetch worked — 25 classification + 25 regression — and exposed three
+more bugs, one of them latent.
+
+- **The credit filter ran AFTER the quota check.** `heloc` was skipped as *"quota already full"*,
+  so the exclusion never ran on it: it stayed out of the cache purely because classification
+  happened to be full. With room to spare it would have been cached again and the log would
+  still have read clean. Exclusion is now checked first, always.
+- **Overlapping suites cached the same table twice.** `airfoil_self_noise`,
+  `concrete_compressive_strength`, `physiochemical_protein` and `superconductivity` are in both
+  TabArena and CTR23 under different dataset ids, so 25 "regression" datasets were 21 distinct
+  ones — four tables carrying double weight in the out-of-domain average. Deduplicated by name,
+  seeded from the existing cache so a resumed fetch does not re-add.
+- **`complete` was always False.** It iterated `SUITES` (suite *names*) instead of `KINDS`, so
+  every lookup missed and the fetch warned *"fewer than 25 for at least one task type"* while
+  holding exactly 25 of each. A warning that cries wolf is a warning nobody reads.
+- `setup_venv.sh` pins `setuptools<82`, which torch 2.11 requires — otherwise every subsequent
+  pip install reports a dependency conflict.
+
 ## 13-08-2026 (evening)
 
 The venv built and the smoke test passed, but the out-of-domain fetch had two serious bugs.

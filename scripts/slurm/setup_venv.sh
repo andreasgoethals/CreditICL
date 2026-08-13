@@ -150,7 +150,10 @@ echo "${PYTHON_MODULE}" > "${VENV}/.python_module"
 
 # shellcheck disable=SC1091
 source "${VENV}/bin/activate"
-python -m pip install --quiet --upgrade pip setuptools wheel
+# setuptools<82: torch 2.11 declares that bound, and a bare `--upgrade setuptools` installs
+# 84 and then pip reports a dependency conflict on every subsequent install. Harmless here but
+# it is noise in a log that has to stay readable.
+python -m pip install --quiet --upgrade pip wheel "setuptools<82"
 echo "      pip: $(python -m pip --version)"
 
 # --- 3. torch FIRST, from the CUDA index ------------------------------------

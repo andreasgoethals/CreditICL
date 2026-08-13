@@ -397,3 +397,63 @@ def test_the_fetcher_does_not_pass_a_path_to_savez():
     assert "np.savez_compressed(tmp" not in block, (
         "passing the Path back means numpy appends .npz and the rename fails"
     )
+
+
+def test_completeness_is_measured_over_kinds_not_suite_names(ood_cache):
+    """REGRESSION. `complete` iterated SUITES (suite names) instead of KINDS, so every lookup
+    missed and it was ALWAYS False — the fetch warned "fewer than 25 for at least one task type"
+    while holding exactly 25 of each. A warning that cries wolf is a warning nobody reads."""
+    import dataclasses
+    import json as _json
+
+    root = ood_cache.ood_root()
+    entries = []
+    for kind in ood_cache.KINDS:
+        for i in range(ood_cache.N_PER_TASK):
+            e = ood_cache.OODDataset(name=f"{kind}_{i}", openml_id=90000 + len(entries),
+                                     kind=kind, n_rows=100, n_features=4,
+                                     n_classes=2 if kind == "classification" else None)
+            with (root / f"{e.slug}.npz").open("wb") as fh:
+                np.savez_compressed(fh, X=np.zeros((100, 4), dtype=np.float32),
+                                    y=np.zeros(100, dtype=np.float32),
+                                    cat_indices=np.asarray([], dtype=np.int64))
+            entries.append(e)
+    ood_cache.manifest_path().write_text(
+        _json.dumps({"version": ood_cache.OOD_VERSION, "suites": list(ood_cache.SUITES),
+                     "datasets": [dataclasses.asdict(e) for e in entries]}),
+        encoding="utf-8",
+    )
+    status = ood_cache.ood_status()
+    assert status["by_kind"] == dict.fromkeys(ood_cache.KINDS, ood_cache.N_PER_TASK)
+    assert status["complete"] is True, "a full cache must report complete"
+
+
+def test_our_own_datasets_are_excluded_before_the_quota_is_checked():
+    """ORDERING BUG, caught on the second real fetch. `heloc` — one of our LGD datasets — was
+    skipped as "quota already full", so the credit filter never ran on it. It stayed out purely
+    because classification happened to be full; with room to spare it would have been cached
+    again and the log would still have looked clean."""
+    text = pathlib.Path(ood.__file__).read_text(encoding="utf-8")
+    block = text[text.index("def fetch_ood_datasets"):]
+    # Match the STATEMENTS, not the prose. The first version of this test matched
+    # "quota already full", which also appears in the comment explaining the bug — so it
+    # located the comment and failed on a correct file.
+    credit_at = block.index("if is_credit_like(ds.name):")
+    quota_at = block.index("if chosen_by_kind[kind] >= n_per_task:")
+    assert credit_at < quota_at, (
+        "the exclusion must be checked BEFORE the quota, or whether a dataset of ours leaks in "
+        "depends on how full the quota happens to be"
+    )
+
+
+def test_the_same_dataset_is_not_cached_twice_from_two_suites():
+    """The suites overlap: `airfoil_self_noise`, `concrete_compressive_strength`,
+    `physiochemical_protein` and `superconductivity` are in both TabArena and CTR23 under
+    different dataset ids. The second real fetch cached 25 regression datasets that were only 21
+    distinct ones, so four tables carried double weight in the out-of-domain average."""
+    text = pathlib.Path(ood.__file__).read_text(encoding="utf-8")
+    block = text[text.index("def fetch_ood_datasets"):]
+    assert "seen_names" in block
+    assert "already cached from another suite" in block
+    # and the set must be seeded from disk, or a resumed fetch re-adds what is already there
+    assert "for d in existing.values()" in block

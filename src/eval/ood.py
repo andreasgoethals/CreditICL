@@ -297,6 +297,9 @@ def fetch_ood_datasets(
     # Quota PER KIND, filled across every suite. Both kinds have to be covered or half the
     # project has no out-of-domain evidence, and no single suite covers both reliably.
     chosen_by_kind: dict[str, int] = dict.fromkeys(KINDS, 0)
+    # Names already taken, so overlapping suites cannot cache the same table twice. Seeded from
+    # the existing cache so a resumed fetch does not re-add what is already there.
+    seen_names: set[str] = {d.name.strip().lower() for d in existing.values()}
     for suite_name in SUITES:
         if all(chosen_by_kind[k] >= n_per_task for k in KINDS):
             log.info("[ood] every kind is full — stopping before %s", suite_name)
@@ -336,6 +339,27 @@ def fetch_ood_datasets(
 
             # THE KIND COMES FROM THE TASK. Deriving it from which suite list the name sat in
             # silently turned `diamonds`' price into thousands of arbitrary class codes.
+            # EXCLUSION FIRST, BEFORE THE QUOTA. Ordering these the other way round made the
+            # filter's behaviour depend on luck: on the first good fetch `heloc` — one of our
+            # own LGD datasets — was skipped as "quota already full", so the credit check never
+            # ran on it. It stayed out because classification happened to be full. With room to
+            # spare it would have been cached again, and the log would still have looked fine.
+            if is_credit_like(ds.name):
+                log.info("[ood] SKIP %s — credit-like or one of ours, so not out-of-domain",
+                         ds.name)
+                continue
+
+            # DEDUPE BY NAME. The suites overlap: `airfoil_self_noise`,
+            # `concrete_compressive_strength`, `physiochemical_protein` and `superconductivity`
+            # all appear in both TabArena and CTR23 under different dataset ids, so the first
+            # good fetch cached 25 "regression" datasets that were only 21 distinct ones. A
+            # duplicate is counted twice in the out-of-domain average, which quietly weights
+            # one table double.
+            slug_name = ds.name.strip().lower()
+            if slug_name in seen_names:
+                log.info("[ood] SKIP %s — already cached from another suite", ds.name)
+                continue
+
             kind = task_kind(task)
             if kind is None:
                 log.info("[ood] SKIP %s — task type %r is neither classification nor "
@@ -345,13 +369,10 @@ def fetch_ood_datasets(
                 log.info("[ood] SKIP %s — %s quota already full", ds.name, kind)
                 continue
 
-            if is_credit_like(ds.name):
-                log.info("[ood] SKIP %s — credit-like, so not out-of-domain", ds.name)
-                continue
-
             if ds.dataset_id in existing:
                 kept.append(existing[ds.dataset_id])
                 chosen_by_kind[existing[ds.dataset_id].kind] += 1
+                seen_names.add(slug_name)
                 continue
 
             log.info("[ood]   downloading %s (id=%s, %s) ...", ds.name, ds.dataset_id, kind)
@@ -428,6 +449,7 @@ def fetch_ood_datasets(
             tmp.replace(out)
             kept.append(entry)
             chosen_by_kind[kind] += 1
+            seen_names.add(slug_name)
             added_here += 1
             log.info("[ood] cached %-28s %6d x %-4d (%s)",
                      entry.name, entry.n_rows, entry.n_features, kind)
@@ -470,5 +492,9 @@ def ood_status() -> dict[str, Any]:
         "by_kind": {k: len(v) for k, v in by_kind.items()},
         "names": by_kind,
         "suites": SUITES,
-        "complete": all(len(by_kind.get(k, [])) >= N_PER_TASK for k in SUITES),
+        # Over KINDS, not SUITES. Iterating the suite NAMES made every lookup miss, so
+        # `complete` was always False and the fetch warned "fewer than 25 for at least one task
+        # type" while holding exactly 25 of each — a warning that cried wolf is a warning
+        # nobody reads.
+        "complete": all(len(by_kind.get(k, [])) >= N_PER_TASK for k in KINDS),
     }
