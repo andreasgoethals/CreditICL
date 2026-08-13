@@ -16,8 +16,48 @@
 CONDA_ENV="${CONDA_ENV:-CreditICL}"
 
 # ---------------------------------------------------------------------------
-# An active virtualenv SHADOWS conda and wins silently. `#!/bin/bash -l` sources
-# ~/.bashrc; if that auto-activates a venv, its bin/ sits ahead of the conda
+# THE PROJECT VENV COMES FIRST, if it exists.
+#
+# `scripts/slurm/setup_venv.sh` builds `$VSC_DATA/CreditICL/.venv` from
+# pyproject.toml, which makes pyproject the single source of truth for what is
+# installed. When that venv is present it is what we want — so we activate it
+# deliberately and return, rather than treating it as something to neutralise.
+#
+# The Lmod module MUST be loaded too: `.venv/bin/python` is a thin link to the
+# module's interpreter, and without the module its shared library is missing and
+# the venv fails in a way that reads like a corrupt install.
+#
+# This ordering is also what makes shell auto-activation safe. A venv activated
+# by ~/.bashrc used to SHADOW conda silently — `conda activate` reported success
+# while `python` still resolved to the venv, which is a failure CreditPFN spent
+# real time on. Now the venv is the intended environment, so the two agree.
+# ---------------------------------------------------------------------------
+_PROJECT_VENV="${PROJECT_VENV:-${VSC_DATA:-}/CreditICL/.venv}"
+if [[ -x "${_PROJECT_VENV}/bin/python" ]]; then
+    module load "${PYTHON_MODULE:-Python/3.12.3-GCCcore-13.3.0}" 2>/dev/null || true
+    # shellcheck disable=SC1091
+    source "${_PROJECT_VENV}/bin/activate"
+    hash -r 2>/dev/null || true
+    echo "  [activate] project venv: $(command -v python) ($(python -V 2>&1))" >&2
+    _missing=""
+    for _pkg in numpy torch sklearn yaml pandas pyarrow src; do
+        python -c "import ${_pkg}" >/dev/null 2>&1 || _missing="${_missing} ${_pkg}"
+    done
+    if [[ -n "${_missing}" ]]; then
+        echo "  [activate] venv is INCOMPLETE, missing:${_missing}" >&2
+        echo "  [activate] rebuild it on a LOGIN node:" >&2
+        echo "               cd \$VSC_DATA/CreditICL" >&2
+        echo "               bash scripts/slurm/setup_venv.sh" >&2
+        exit 1
+    fi
+    echo "  [activate] venv complete — skipping conda" >&2
+    return 0 2>/dev/null || exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# No project venv, so fall back to conda. An UNRELATED active virtualenv shadows
+# conda and wins silently: `#!/bin/bash -l` sources ~/.bashrc, and if that
+# auto-activates some other project's venv, its bin/ sits ahead of the conda
 # env's on PATH. `conda activate` then reports success while `python` and `pip`
 # still resolve to the VENV. CreditPFN hit exactly this. Neutralise it first.
 # ---------------------------------------------------------------------------

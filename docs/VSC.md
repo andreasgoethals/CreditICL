@@ -216,6 +216,78 @@ not backed up and is purged.
 
 ## 5. Python environment on VSC
 
+**One command, once:**
+
+```bash
+cd $VSC_DATA/CreditICL && bash scripts/slurm/setup_venv.sh
+```
+
+On a **login node** — compute nodes have no outbound internet, so pip cannot reach PyPI there.
+It builds `$VSC_DATA/CreditICL/.venv` from `pyproject.toml`, installs torch from the CUDA index
+first, then `pip install -e ".[dev,eval]"`, then verifies every import *and* that our model
+matches the released TabICLv2 checkpoints. Idempotent; `--recreate` starts over.
+
+### Auto-activate it when you `cd` into the repo
+
+Add this to `~/.bashrc` **once**. It activates the venv on entering the repo and deactivates it
+on leaving, so you can never again install into a sibling project's environment by accident:
+
+```bash
+# --- CreditICL: auto-activate the project venv -----------------------------
+_crediticl_auto_venv() {
+    local repo="${VSC_DATA}/CreditICL"
+    local venv="${repo}/.venv"
+    case "$PWD/" in
+        "$repo"/*)
+            if [[ -x "$venv/bin/python" && "${VIRTUAL_ENV:-}" != "$venv" ]]; then
+                module load Python/3.12.3-GCCcore-13.3.0 2>/dev/null
+                source "$venv/bin/activate"
+            fi
+            ;;
+        *)
+            # Only deactivate OUR venv. Someone else's stays alone.
+            if [[ "${VIRTUAL_ENV:-}" == "$venv" ]]; then
+                deactivate 2>/dev/null
+            fi
+            ;;
+    esac
+}
+PROMPT_COMMAND="_crediticl_auto_venv${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+```
+
+Then `source ~/.bashrc`, or open a new shell.
+
+**`PROMPT_COMMAND`, not an overridden `cd`.** It fires before every prompt, so it also works
+after `pushd`, a subshell, or landing in the directory from a symlink — all of which an
+overridden `cd` misses.
+
+**The module load is not optional.** `.venv/bin/python` is a thin link to the Lmod
+interpreter; without the module its shared library is absent and the venv fails in a way that
+reads like a corrupt install rather than a missing module.
+
+**Why one venv per project at all.** Packages were being installed into
+`TabPFNCredit/tabpfncreditvenv`, so `pip install` reported *"already satisfied"* for things
+CreditICL had never had, and the two projects could silently disagree about the torch version
+a result was produced with.
+
+### Jobs need none of this
+
+`scripts/slurm/_activate_env.sh` finds `$VSC_DATA/CreditICL/.venv` itself, loads the module,
+and verifies the imports. `~/.bashrc` is **not reliably sourced in a batch job**, so a job must
+never depend on the hook above — which is why the activator does the work explicitly.
+
+Historically that activator expected a **conda** env, and warned that an auto-activated venv
+would shadow conda silently. It now prefers the project venv and falls back to conda, so the
+hook above and the job path agree instead of fighting.
+
+### Why the venv lives on `$VSC_DATA`
+
+A venv with torch is ~5–8 GB across **tens of thousands of small files**. Project storage
+(`/lustre1/...`) has a **low inode budget** — it is sized for few big files — so a venv there
+exhausts inodes long before space. `$VSC_DATA` is 75 GiB and handles the file count.
+
+---
+
 There is **no PyTorch module** in the VSC documentation — the string does
 not appear. We install torch ourselves into a venv.
 

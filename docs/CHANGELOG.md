@@ -5,6 +5,24 @@ reason is not obvious.
 
 ---
 
+## 13-08-2026 (later)
+
+- **`scripts/slurm/setup_venv.sh`** — one command builds this project's own venv on the VSC
+  from `pyproject.toml`, so pyproject is the single source of truth for what is installed.
+  Installs torch from the CUDA index **first** (otherwise `pip install -e .` satisfies the
+  dependency with a CPU-only wheel that never announces itself), then `.[dev,eval]`, then
+  verifies every import and that our model still matches the released checkpoints. Idempotent.
+- **`_activate_env.sh` now prefers the project venv**, falling back to conda. It previously
+  expected conda and *warned that an auto-activated venv would shadow it silently* — so the
+  shell hook and the job path were on a collision course. They agree now.
+- **`docs/VSC.md` §5 rewritten** with the auto-activation hook for `~/.bashrc`. Uses
+  `PROMPT_COMMAND` rather than overriding `cd`, so it also fires after `pushd`, a subshell, or
+  arriving via a symlink; deactivates only *our* venv on leaving. Verified: the hook parses and
+  toggles correctly.
+- Recorded why the venv goes on `$VSC_DATA` and not project storage: ~5–8 GB across tens of
+  thousands of small files, and project storage has a **low inode budget** — it would run out
+  of inodes long before space.
+
 ## 13-08-2026
 
 Three bugs the first cluster attempt exposed, none of which could fail locally.
