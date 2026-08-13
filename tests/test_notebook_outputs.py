@@ -399,3 +399,76 @@ def test_the_shell_hook_is_a_real_file_not_a_paste_from_the_docs():
     assert "deactivate" in text
     doc = (ROOT / "docs" / "VSC.md").read_text(encoding="utf-8")
     assert "shell_hook.sh --install" in doc, "the docs must point at the installer"
+
+
+# -- a figure is the plot; the caption explains it -----------------------------
+
+
+def test_no_figure_carries_prose():
+    """THE RULE FOR A PAPER: the figure carries data, axis labels and at most a short heading.
+    Interpretation goes in the caption and the body text, where it can be edited without
+    re-rendering. `style.figure_note` was the mechanism for prose-in-figure and every call is
+    gone; keeping it out is what this test is for."""
+    offenders = []
+    for module in sorted((ROOT / "src" / "visualize").glob("*.py")):
+        if module.name == "style.py":
+            continue
+        for n, line in enumerate(module.read_text(encoding="utf-8").splitlines(), 1):
+            if "style.figure_note(" in line and not line.lstrip().startswith("#"):
+                offenders.append(f"{module.name}:{n}")
+    assert not offenders, (
+        f"prose in a figure: {offenders}. Put it in the caption, or in a markdown cell above "
+        f"the figure in the notebook."
+    )
+
+
+def test_no_figure_heading_is_a_sentence():
+    """A heading is a label, not a claim. "Real PD datasets are imbalanced; the original prior
+    is not" wrapped to three bold lines and ate a third of the figure."""
+    import re as _re
+
+    def visible_length(literal: str) -> int:
+        """Length of what a READER sees. An f-string's `{...}` expressions are source, not
+        text — `f"Target shapes{style.page_suffix(page, n_pages)}"` renders to 27 characters
+        while its source is 46, and measuring the source failed a heading that was fine."""
+        return len(_re.sub(r"\{[^}]*\}", "", literal.strip('f').strip('"')))
+
+    long_headings = []
+    for module in sorted((ROOT / "src" / "visualize").glob("*_plots.py")):
+        text = module.read_text(encoding="utf-8")
+        patterns = (r"style\.title\([^,]+,\s*(f?\"[^\"]{0,200}\")", r"suptitle\(\s*(f?\"[^\"]{0,200}\")")
+        for pattern in patterns:
+            for call in _re.finditer(pattern, text):
+                if visible_length(call.group(1)) > 42:
+                    long_headings.append(f"{module.name}: {call.group(1)!r}")
+    assert not long_headings, f"headings too long for a figure: {long_headings}"
+
+
+def test_every_dataset_is_shown_not_just_the_largest():
+    """`plot_feature_correlations` took the 6 largest and dropped the rest, so a figure claiming
+    to describe "real credit data" showed 6 of 14 datasets. It paginates now."""
+    from src.visualize import data_plots
+
+    assert hasattr(data_plots, "correlation_pages")
+    fake = {f"{i:04d}.d{i}": type("D", (), {"n_rows": 100 - i, "n_features": 4})() for i in range(14)}
+    assert data_plots.correlation_pages(fake, per_page=6) == 3
+
+
+def test_reference_markers_are_not_the_same_colour_as_the_data():
+    """Orange stars over orange dots are invisible, which is what the LGD boundary-mass figure
+    did. `style.STAR` appears nowhere else in the palette."""
+    assert style.STAR != style.REAL
+    assert style.STAR not in style.SERIES
+    assert style.STAR not in (style.CREDIT, style.ORIGINAL, style.WARN)
+
+
+def test_the_row_cap_samples_randomly_not_from_the_head():
+    """It reported `algorithmwatch`'s default rate as 49.5% against a true 37.8%: the rows are
+    not shuffled on disk, so the first 20,000 encode whatever the file's ordering encodes."""
+    import inspect
+
+    from src.visualize import summaries
+
+    source = inspect.getsource(summaries._RowCapped)
+    assert "default_rng" in source and "choice" in source, "the cap must subsample randomly"
+    assert "idx.sort()" in source, "row order must be preserved for cohort-style plots"

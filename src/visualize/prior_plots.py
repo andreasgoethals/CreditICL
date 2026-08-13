@@ -90,8 +90,7 @@ def plot_boundary_mass(tasks: list[Any], real_reference: dict[str, tuple[float, 
     ax1.set_xlabel("mass at the low boundary (full recovery)")
     ax1.set_ylabel("mass at the high boundary (total loss)")
     ax1.grid(axis="x")
-    style.title(ax1, "Where the boundary mass sits",
-                "The cloud is what we generate; the stars are what we must cover")
+    style.title(ax1, "Mass at 0 vs at 1")
     ax1.legend(loc="upper right")
 
     total = at_min + at_max
@@ -101,8 +100,7 @@ def plot_boundary_mass(tasks: list[Any], real_reference: dict[str, tuple[float, 
                  fontsize=9, color=style.INK, xytext=(6, 0), textcoords="offset points")
     ax2.set_xlabel("total boundary mass")
     ax2.set_ylabel("number of tasks")
-    style.title(ax2, "Total boundary mass",
-                "A spread, not a spike — the prior samples a family")
+    style.title(ax2, "Total boundary mass")
     return fig
 
 
@@ -130,13 +128,13 @@ def plot_table_shapes(tasks: list[Any]):
         (distinct, "distinct target values / rows", "low = effectively discrete"),
     ]
     fig, axes = plt.subplots(1, 3, figsize=style.figsize(style.WIDTH_FULL, 0.32))
-    for ax, (data, label, hint) in zip(axes, panels):
+    for ax, (data, label, _hint) in zip(axes, panels):
         ax.hist(data, bins=25, color=style.CREDIT)
         ax.axvline(float(np.median(data)), color=style.INK, lw=1.5, ls="--")
         ax.set_xlabel(label)
         ax.set_ylabel("number of tasks")
-        style.title(ax, f"median {np.median(data):.3g}", hint)
-    fig.suptitle("Shape of the generated tables")
+        style.title(ax, f"median {np.median(data):.3g}")
+    fig.suptitle("Generated table shapes")
     return fig
 
 
@@ -174,10 +172,7 @@ def plot_correlation_spectrum(tasks: list[Any]):
     ax.set_xlabel("eigenvalue rank (normalised)")
     ax.set_ylabel("eigenvalue / largest")
     ax.grid(axis="x")
-    style.title(
-        ax, f"Correlation spectrum, {len(spectra)} tasks",
-        "Fast decay = strong shared structure; flat = near-independent features",
-    )
+    style.title(ax, f"Correlation spectrum, {len(spectra)} tasks")
     return fig
 
 
@@ -209,14 +204,10 @@ def plot_feature_target_relation(tasks: list[Any], n_show: int = 8):
         # the censoring, and that is the thing worth seeing in this plot.
         for edge in (float(y.min()), float(y.max())):
             ax.axhline(edge, color=style.REAL, lw=0.7, ls=":", alpha=0.6)
-        style.title(ax, f"feature {j}", f"r = {corr[j]:+.2f}")
+        style.title(ax, f"feature {j}")
         ax.set_xticks([])
         ax.set_ylabel("target")
-    fig.suptitle("Target vs its most correlated feature")
-    style.figure_note(
-        fig, "Flat bands on the dotted lines are the boundary atoms. A clean trend, a "
-        "step from a threshold rule, and a cloud are all things the prior should produce."
-    )
+    fig.suptitle("Target vs strongest feature")
     return fig
 
 
@@ -242,24 +233,16 @@ def compare_priors(config_path: str, n: int = 100, seed: int = 0):
         axes[row, 0].hist(pooled, bins=60, color=colour)
         axes[row, 0].set_ylabel("count")
         axes[row, 0].set_xlabel("target value")
-        in_unit = float(((pooled >= 0) & (pooled <= 1)).mean())
-        style.title(axes[row, 0], f"{label} — pooled target",
-                    f"{in_unit:.0%} of values inside [0, 1]")
+        style.title(axes[row, 0], f"{label} — pooled target")
 
         stats = [target_stats(t.y) for t in tasks]
         total = np.array([s["frac_at_min"] + s["frac_at_max"] for s in stats])
         axes[row, 1].hist(total, bins=25, color=colour)
         axes[row, 1].set_xlabel("total boundary mass")
         axes[row, 1].set_ylabel("number of tasks")
-        with_atoms = float((total > 0.01).mean())
-        style.title(axes[row, 1], f"{label} — boundary mass",
-                    f"mean {total.mean():.3f}; {with_atoms:.0%} of tasks have any")
+        style.title(axes[row, 1], f"{label} — boundary mass")
 
-    fig.suptitle(f"{task.upper()}: what changes when we swap the prior")
-    style.figure_note(
-        fig, "Top row is the control (TabICL unchanged); bottom row is ours. "
-        "The difference in the right-hand column is the mechanism this project adds."
-    )
+    fig.suptitle(f"{task.upper()} prior comparison")
 
     def _summary(tasks, info):
         stats = [target_stats(t.y) for t in tasks]

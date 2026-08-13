@@ -5,6 +5,41 @@ reason is not obvious.
 
 ---
 
+## 14-08-2026 — figures rebuilt for the paper
+
+**New rule, applied everywhere: a figure carries data, axis labels and at most a short heading.**
+Interpretation lives in the caption and the body text, where it can be edited without
+re-rendering. Removed 10 `style.figure_note` calls, 21 title subtitles and 17 sentence-length
+headings; two tests keep them out.
+
+Explanations moved into **22 "How to read it" markdown cells** in the notebooks, above the
+figure they describe.
+
+Specific fixes:
+
+- **`plot_lgd_targets` was unreadable.** Each panel had a wrapping two-line title, they
+  collided with each other and the suptitle, and matplotlib gave up — *"axes sizes collapsed to
+  zero"*. Now the dataset name only, shared axes, 7 panels laid out properly.
+- **`plot_pd_base_rates`: log scale removed.** It was justified as showing two orders of
+  magnitude; the rates run 6%–40%, inside one. Value labels moved inside the bars so the 40%
+  label no longer sits on the 50% reference line, and the annotation is "TabICL prior" instead
+  of a wrapped sentence.
+- **`plot_base_rate_by_variant` rebuilt as two panels.** One axis could not hold both a
+  histogram and 14 real datasets: names smeared, then a rug made them invisible and put its
+  label across the bars, then the 50% line ran through the legend. The real datasets now have
+  their **own strip** sharing the x-axis, so nothing can overlap by construction.
+- **Reference markers are magenta (`style.STAR`), not orange.** Orange stars over the orange
+  credit series were invisible. Dots also shrank and the stars moved on top.
+- **`plot_feature_correlations` paginates** — it showed the 6 largest of 14 datasets while
+  claiming to describe "real credit data". All of them now, 6 per page.
+- `plot_shapes_by_variant`: one figure-level legend instead of two colliding per-axes ones.
+- `plot_default_clustering`: "independent" label moved out of the violins; duplicate "real"
+  legend entry removed.
+- **The row cap was biasing every statistic.** `load_real_datasets` took the *first* 20,000
+  rows, and the rows are not shuffled — `algorithmwatch`'s default rate read **49.5%** against
+  a true **37.8%**. Now a seeded random subsample: error down to 0.6pp. It also dropped
+  `cat_indices`, which broke any plot needing it for large datasets only.
+
 ## 13-08-2026 (night)
 
 The second out-of-domain fetch worked — 25 classification + 25 regression — and exposed three

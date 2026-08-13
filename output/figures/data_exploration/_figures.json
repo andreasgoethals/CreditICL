@@ -37,14 +37,32 @@
   },
   {
     "index": 7,
-    "stem": "07_feature_correlations_lgd",
-    "name": "feature_correlations_lgd",
-    "caption": "Pearson correlation matrices between features for the six largest datasets of the task, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel subtitles give the number of columns retained and the mean absolute off- diagonal correlation."
+    "stem": "07_feature_correlations_lgd_p1",
+    "name": "feature_correlations_lgd_p1",
+    "caption": "Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. LGD datasets, page 1 of 2."
   },
   {
     "index": 8,
-    "stem": "08_feature_correlations_pd",
-    "name": "feature_correlations_pd",
-    "caption": "Pearson correlation matrices between features for the six largest datasets of the task, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel subtitles give the number of columns retained and the mean absolute off- diagonal correlation."
+    "stem": "08_feature_correlations_lgd_p2",
+    "name": "feature_correlations_lgd_p2",
+    "caption": "Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. LGD datasets, page 2 of 2."
+  },
+  {
+    "index": 9,
+    "stem": "09_feature_correlations_pd_p1",
+    "name": "feature_correlations_pd_p1",
+    "caption": "Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. PD datasets, page 1 of 3."
+  },
+  {
+    "index": 10,
+    "stem": "10_feature_correlations_pd_p2",
+    "name": "feature_correlations_pd_p2",
+    "caption": "Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. PD datasets, page 2 of 3."
+  },
+  {
+    "index": 11,
+    "stem": "11_feature_correlations_pd_p3",
+    "name": "feature_correlations_pd_p3",
+    "caption": "Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. PD datasets, page 3 of 3."
   }
 ]

@@ -174,6 +174,11 @@ CREDIT = "#2b6cb0"
 ORIGINAL = "#94a3b8"
 #: Real credit data, when overlaid as a reference. Warm, so it reads as "measured".
 REAL = "#c2410c"
+#: MARKERS for real datasets drawn ON TOP of coloured data — stars, reference points.
+#: Deliberately NOT `REAL`: orange stars over orange dots are invisible, which is exactly what
+#: happened in the LGD boundary-mass figure. Magenta appears nowhere else in the palette, so a
+#: star can never be mistaken for a data point whatever colour the series behind it takes.
+STAR = "#e6007e"
 #: For "this is wrong / out of range" annotations.
 WARN = "#b91c1c"
 #: Neutral ink for text, axes and annotations.

@@ -298,38 +298,76 @@ def plot_boundary_mass_by_variant(loaded: dict[str, list[SyntheticTask]], real_r
     ax1.set_xlabel("total boundary mass")
     ax1.set_ylabel("number of tasks")
     ax1.legend()
-    style.title(ax1, "Boundary mass by variant",
-                "Dotted red lines are the real datasets' values")
+    style.title(ax1, "Total boundary mass")
 
     ax2.set_xlabel("mass at the low boundary")
     ax2.set_ylabel("mass at the high boundary")
     ax2.grid(axis="x")
     ax2.legend()
-    style.title(ax2, "Which corner of the space each variant occupies",
-                "Stars are real credit datasets — the cloud should cover them")
+    style.title(ax2, "Mass at 0 vs at 1")
     return fig
 
 
 def plot_base_rate_by_variant(loaded: dict[str, list[SyntheticTask]], real_reference=None):
-    """Base-rate distribution per variant. The PD counterpart of boundary mass."""
+    """Base-rate distribution per variant, with the real datasets on their OWN strip.
+
+    TWO PANELS SHARING THE X AXIS, because one axis could not hold both. Every previous
+    attempt collided: 14 rotated dataset names smeared into each other; replacing them with a
+    thin rug made the real data almost invisible AND put its summary label across the
+    histogram bars; and the 50% reference line ran through the legend.
+    None of that is fixable by nudging positions — the histogram needs the vertical space and
+    the real datasets need somewhere that is not the histogram. So they get a strip of their
+    own, and nothing can overlap by construction.
+    """
     _require_variants(loaded)
     style.apply()
-    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.50))
+    has_real = bool(real_reference)
+    fig, axes = plt.subplots(
+        2 if has_real else 1, 1,
+        figsize=style.figsize(style.WIDTH_FULL, 0.52),
+        sharex=True,
+        # The strip needs only enough height for one row of dots.
+        gridspec_kw={"height_ratios": [5, 1]} if has_real else None,
+        squeeze=False,
+    )
+    ax = axes[0][0]
+
     for i, (variant, tasks) in enumerate(loaded.items()):
         rates = np.array([float((t.y > 0.5).float().mean()) for t in tasks])
-        ax.hist(rates, bins=30, histtype="step", lw=2.2, color=variant_color(variant, i),
-                label=f"{variant} (mean {rates.mean():.3f})")
-    if real_reference:
-        for name, rate in real_reference.items():
-            ax.axvline(rate, color=style.REAL, lw=1, ls=":", alpha=0.75)
-            ax.annotate(name, (rate, ax.get_ylim()[1] * 0.95), rotation=90, fontsize=7.5,
-                        color=style.REAL, ha="right", va="top")
-    ax.axvline(0.5, color=style.MUTED, lw=1.5, ls="--")
-    ax.set_xlabel("positive (default) rate")
-    ax.set_ylabel("number of tasks")
-    ax.legend()
-    style.title(ax, "Base rate by variant",
-                "Dashed grey = balance; dotted red = real datasets, all well left of it")
+        ax.hist(rates, bins=30, histtype="step", lw=2.0, color=variant_color(variant, i),
+                label=f"{variant}  (mean {rates.mean():.0%})")
+    ax.axvline(0.5, color=style.MUTED, lw=1.2, ls="--", zorder=1)
+    ax.annotate("balance", (0.5, 1.0), xycoords=("data", "axes fraction"), fontsize=6.5,
+                color=style.MUTED, ha="center", va="bottom")
+    ax.set_ylabel("tasks")
+    # Legend OUTSIDE the axes, above it. Inside, it either sat on the bars or on the 50% line
+    # depending on where the data happened to fall — which is a bug that reappears with new
+    # data rather than one you can fix once.
+    ax.legend(loc="lower left", bbox_to_anchor=(0.0, 1.02), ncol=max(1, len(loaded)),
+              fontsize=7, frameon=False)
+
+    if has_real:
+        strip = axes[1][0]
+        rates = np.asarray(list(real_reference.values()), dtype=float)
+        strip.scatter(rates, np.zeros_like(rates), marker="|", s=260, linewidths=1.4,
+                      color=style.STAR, clip_on=False)
+        strip.set_ylim(-0.5, 0.5)
+        strip.set_yticks([0])
+        # The row is labelled on the AXIS, so no floating text can drift onto anything.
+        strip.set_yticklabels(["real"], fontsize=7, color=style.STAR)
+        strip.set_xlabel("positive (default) rate")
+        strip.grid(visible=False)
+        for side in ("left", "right", "top"):
+            strip.spines[side].set_visible(False)
+        strip.annotate(f"{rates.min():.0%}-{rates.max():.0%}",
+                       (rates.max(), 0), xytext=(6, 0), textcoords="offset points",
+                       fontsize=6.5, color=style.STAR, va="center", ha="left")
+    else:
+        ax.set_xlabel("positive (default) rate")
+
+    # NO heading. The legend already occupies the space above the axes, and a title there
+    # collides with it — as it did. The caption names the figure, which is the policy anyway:
+    # a heading that repeats the caption is ink for nothing.
     return fig
 
 
@@ -389,12 +427,7 @@ def plot_target_shapes_by_variant(
             variant, fontsize=mpl.rcParams["xtick.labelsize"], color=style.INK,
             rotation=0, ha="right", va="center", labelpad=8,
         )
-    fig.suptitle(f"Target shapes, one row per variant{style.page_suffix(page, n_pages)}")
-    style.figure_note(
-        fig,
-        f"Draws {columns[0] + 1}-{columns[-1] + 1} of {n_per}. "
-        f"Same draw index per row, so rows are comparable.",
-    )
+    fig.suptitle(f"Target shapes{style.page_suffix(page, n_pages)}")
     return fig
 
 
@@ -429,8 +462,7 @@ def plot_spectrum_by_variant(loaded: dict[str, list[SyntheticTask]], n_curves: i
     ax.set_ylabel("eigenvalue / largest")
     ax.grid(axis="x")
     ax.legend()
-    style.title(ax, "Correlation spectrum by variant",
-                "Bold lines are medians; overlapping spectra = similar dependence structure")
+    style.title(ax, "Correlation spectrum")
     return fig
 
 
@@ -511,9 +543,13 @@ def plot_shapes_by_variant(loaded: dict[str, list[SyntheticTask]]):
                      color=colour, label=variant)
     axes[0].set_xlabel("rows per task")
     axes[1].set_xlabel("features per task")
-    for ax in axes:
-        ax.set_ylabel("number of tasks")
-        ax.legend()
-    style.title(axes[0], "Rows", "should MATCH across variants")
-    style.title(axes[1], "Features", "a difference here would be a confound, not a finding")
+    axes[0].set_ylabel("number of tasks")
+    # ONE legend, on the figure, below both panels. Two per-axes legends each carried
+    # "original (live)" and "credit (live)" — long labels that overlapped the histograms and
+    # each other, and said the same thing twice.
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=len(labels), fontsize=7,
+               frameon=False, bbox_to_anchor=(0.5, -0.02))
+    style.title(axes[0], "Rows")
+    style.title(axes[1], "Features")
     return fig

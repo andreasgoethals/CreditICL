@@ -85,15 +85,18 @@ so it cannot see leakage spread across several columns.
 5. Missingness is mostly pre-imputed away here, so do NOT tune the prior's
    missingness rate to these numbers — they measure the upstream pipeline.
 
-data_exploration: 8 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\data_exploration
+data_exploration: 11 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\data_exploration
   01  lgd_targets
   02  boundary_mass_ranking
   03  pd_base_rates
   04  shapes
   05  type_mix
   06  missingness
-  07  feature_correlations_lgd
-  08  feature_correlations_pd
+  07  feature_correlations_lgd_p1
+  08  feature_correlations_lgd_p2
+  09  feature_correlations_pd_p1
+  10  feature_correlations_pd_p2
+  11  feature_correlations_pd_p3
 ```
 
 ---
@@ -108,7 +111,7 @@ source = live
 FOCUS (detail plots) = credit (live)
 real LGD datasets loaded: 7
 reference: measured from 7 real LGD datasets
-real-data difficulty: {'heloc': 0.46, 'loss2': 0.39, 'axa': 0.173, 'base_model': 0.27, 'base_modelisation': -4.763, 'lgd_freddie': 0.21, 'lgd_lendingclub': 0.699}
+real-data difficulty: {'heloc': 0.08, 'loss2': 0.39, 'axa': 0.173, 'base_model': 0.27, 'base_modelisation': -4.763, 'lgd_freddie': 0.21, 'lgd_lendingclub': 0.699}
 
 ==============================================================================
 PRIOR SUMMARY — LGD
@@ -165,10 +168,10 @@ Distance from 7 real datasets (total variation, 0 = identical).
 Lower is better. This is the ranking Exp1 exists to refine with training.
 
   variant                         mean    best   worst
-  credit (live)                  0.365   0.160   0.475
-  original (live)                0.405   0.148   0.637
+  credit (live)                  0.362   0.160   0.454
+  original (live)                0.410   0.148   0.637
 
-Closest to real data: credit (live) (mean 0.365).
+Closest to real data: credit (live) (mean 0.362).
 A CAVEAT THAT MATTERS: looking like real data is not the same as training a better
 model. This ranking says which priors are worth the compute; Exp1's training runs are
 what decide which one actually helps.
@@ -198,7 +201,7 @@ source = live
 FOCUS (detail plots) = credit (live)
 real PD datasets loaded: 14
 reference: measured from 14 real PD datasets
-real-data difficulty: {'gmsc': 0.858, 'taiwan_creditcard': 0.789, 'vehicle_loan': 0.587, 'lendingclub': 0.636, 'myhom': 0.58, 'hackerearth': 0.749, 'cobranded': 0.82, 'german': 0.806, 'bank_status': 0.739, 'thomas': 0.639, 'loan_default': 0.674, 'home_credit': 0.702, 'hmeq': 0.899, 'algorithmwatch': 0.667}
+real-data difficulty: {'gmsc': 0.856, 'taiwan_creditcard': 0.771, 'vehicle_loan': 0.587, 'lendingclub': 0.636, 'myhom': 0.58, 'hackerearth': 0.734, 'cobranded': 0.802, 'german': 0.806, 'bank_status': 0.719, 'thomas': 0.639, 'loan_default': 0.661, 'home_credit': 0.696, 'hmeq': 0.899, 'algorithmwatch': 0.642}
 
 ==============================================================================
 PRIOR SUMMARY — PD
@@ -249,10 +252,10 @@ Distance from 14 real datasets (total variation, 0 = identical).
 Lower is better. This is the ranking Exp1 exists to refine with training.
 
   variant                         mean    best   worst
-  credit (live)                  0.090   0.011   0.309
-  original (live)                0.287   0.017   0.448
+  credit (live)                  0.085   0.014   0.214
+  original (live)                0.290   0.112   0.446
 
-Closest to real data: credit (live) (mean 0.090).
+Closest to real data: credit (live) (mean 0.085).
 A CAVEAT THAT MATTERS: looking like real data is not the same as training a better
 model. This ranking says which priors are worth the compute; Exp1's training runs are
 what decide which one actually helps.

@@ -139,10 +139,7 @@ def plot_prior_realism_ranking(
     ax.grid(visible=False, axis="y")
     # Subtitle deliberately short. A long one wraps to three bold lines and eats a third of a
     # 2.2 in figure; the detail belongs in the note underneath, where it costs one grey line.
-    style.title(ax, "Which prior looks most like real credit data?", "Lower is better")
-    style.figure_note(
-        fig, "Diamond = mean over the real datasets, dots = one per dataset. Total variation "
-             "on pooled targets, 40 fixed bins.")
+    style.title(ax, "Distance from real targets")
     return fig
 
 
@@ -198,11 +195,7 @@ def plot_mechanism_decomposition(tasks: list[Any], bins: int = 40):
         # costs a third of the height in a three-panel row.
         style.title(ax, name.replace("_", " "))
     axes[0][0].set_ylabel("share of rows")
-    fig.suptitle("Where the boundary atoms come from")
-    counts_note = ", ".join(f"{k}: {len(v)}" for k, v in groups.items())
-    style.figure_note(
-        fig, f"Targets pooled per mechanism ({counts_note}). Mass at 0 and 1 is a consequence "
-             f"of the loss story, not a parameter.")
+    fig.suptitle("Target by loss mechanism")
     return fig
 
 
@@ -280,17 +273,23 @@ def plot_default_clustering(
                 real_ratios.append(np.std(rates) / max(np.sqrt(base * (1 - base) / per), 1e-12))
         if real_ratios:
             ax_spread.scatter(
-                np.full(len(real_ratios), len(rows)), real_ratios, marker="*", s=70,
-                color=style.REAL, zorder=4, label="real datasets",
+                np.full(len(real_ratios), len(rows)), real_ratios, marker="*", s=90,
+                color=style.STAR, zorder=5, label="real",
             )
     ax_spread.axhline(1.0, color=style.MUTED, linestyle="--", linewidth=0.9)
-    ax_spread.annotate("independent rows", (0.02, 1.0), xycoords=("axes fraction", "data"),
-                       fontsize=7, color=style.MUTED, va="bottom")
+    # OUTSIDE the plotting area, in the right margin. At x=0.02 the label sat on top of the
+    # first violin and was unreadable against a filled shape; `clip_on=False` past the right
+    # edge puts it where nothing is ever drawn.
+    ax_spread.annotate(" independent", (1.0, 1.0), xycoords=("axes fraction", "data"),
+                       fontsize=6.5, color=style.MUTED, va="center", ha="left",
+                       annotation_clip=False)
     labels = [r[0] for r in rows] + (["real"] if real else [])
     ax_spread.set_xticks(range(len(labels)))
     ax_spread.set_xticklabels(labels, rotation=20, ha="right")
-    ax_spread.set_ylabel("cohort spread / chance")
-    style.title(ax_spread, "Do defaults cluster?", "Above 1 = waves, not coin flips")
+    # No y-label: the heading already says "Cohort spread / chance", and saying it twice in a
+    # figure this small is a third of the left margin for nothing.
+    ax_spread.set_ylabel("")
+    style.title(ax_spread, "Cohort spread / chance")
 
     # RIGHT: one concrete example per variant, so the abstraction is grounded.
     for i, (name, tasks) in enumerate(variants.items()):
@@ -300,15 +299,22 @@ def plot_default_clustering(
         rates = cohort_rates(np.asarray(pick.y))
         ax_example.plot(np.arange(1, rates.size + 1), rates, marker="o", markersize=3,
                         color=style.SERIES[i % len(style.SERIES)], label=name)
+    _labelled: set[str] = set()
     for y in list(_real_targets("pd", real).values())[:2]:
         rates = cohort_rates(y)
-        ax_example.plot(np.arange(1, rates.size + 1), rates, marker="*", markersize=6,
-                        color=style.REAL, linestyle=":", label="real")
+        # Label ONCE. Plotting two real datasets each with `label="real"` put "real" in the
+        # legend twice, which reads as two different things.
+        ax_example.plot(np.arange(1, rates.size + 1), rates, marker="*", markersize=7,
+                        color=style.STAR, linestyle=":",
+                        label="real" if "real" not in _labelled else None)
+        _labelled.add("real")
     ax_example.set_xlabel("cohort")
     ax_example.set_ylabel("default rate")
-    ax_example.legend(loc="best", fontsize=7)
-    style.title(ax_example, "One dataset each", "Flat = independent; jagged = shared shocks")
-    style.figure_note(fig, f"Cohorts are {n_cohorts} contiguous blocks of rows.")
+    # White background: `legend.frameon` is off project-wide, so an unbacked legend floated
+    # over the data and the reference line behind it.
+    ax_example.legend(loc="best", fontsize=7, frameon=True, framealpha=0.9,
+                      edgecolor="none", facecolor="white")
+    style.title(ax_example, "Example datasets")
     return fig
 
 
@@ -389,11 +395,7 @@ def plot_difficulty_calibration(
     ax.set_xticks(positions)
     ax.set_xticklabels(list(scores_per_variant), rotation=20, ha="right")
     ax.set_ylabel("R²" if task == "lgd" else "ROC AUC")
-    style.title(ax, "Is the synthetic task the right difficulty?",
-                "Shaded band = real credit data")
-    style.figure_note(
-        fig, "One point per synthetic dataset, bar = median. Small ExtraTrees on a 70/30 "
-             "split — the same family as TabICL's own predictability filter.")
+    style.title(ax, "Task difficulty")
     return fig
 
 
@@ -493,10 +495,7 @@ def plot_side_by_side_tables(
             sp.set_color(colour)
             sp.set_linewidth(1.2)
         style.title(ax, label, f"{X.shape[1]} features + target")
-    fig.suptitle("What the model actually sees")
-    style.figure_note(fig, f"First {n_rows} rows. Each feature min-max normalised within its "
-                           f"own column, so shade shows relative value, not units. The rule "
-                           f"separates the target from the features.")
+    fig.suptitle("One table each")
     return fig
 
 
@@ -533,13 +532,14 @@ def plot_boundary_mass_sources(
                for s in (target_stats(t.y) for t in variants[name])]
         if pts:
             xs, ys = zip(*pts)
-            ax.scatter(xs, ys, s=26, color=colour, alpha=0.75, linewidths=0, zorder=3)
-        # Stars are the REFERENCE, so they are drawn smaller and behind. At s=80 they buried
-        # the synthetic points completely, which inverted the figure: the subject vanished
-        # under its own yardstick.
+            ax.scatter(xs, ys, s=14, color=colour, alpha=0.6, linewidths=0, zorder=2)
+        # STARS ON TOP, IN MAGENTA. Two separate visibility failures were stacked here: at
+        # s=55 behind s=26 dots the stars were buried, and `style.REAL` is orange — the same
+        # hue as the credit variant's own points, so where they overlapped nothing was
+        # distinguishable. `style.STAR` appears nowhere else in the palette.
         for rx, ry in real_points:
-            ax.scatter([rx], [ry], marker="*", s=55, color=style.REAL, zorder=2,
-                       edgecolors="white", linewidths=0.5)
+            ax.scatter([rx], [ry], marker="*", s=90, color=style.STAR, zorder=5,
+                       edgecolors="white", linewidths=0.7)
         # The line where the two atoms are equal. Above it a book is loss-heavy, below it
         # recovery-heavy, and which side a prior sits on is the readable fact.
         ax.plot([0, 1], [0, 1], color=style.MUTED, linewidth=0.8, linestyle=":", zorder=1)
@@ -548,8 +548,5 @@ def plot_boundary_mass_sources(
         ax.set_xlabel("mass at 0 (full recovery)")
         style.title(ax, name)
     axes[0][0].set_ylabel("mass at 1 (total loss)")
-    fig.suptitle("Which boundary does the mass sit on?")
-    counts = ", ".join(f"{k}: {len(v)}" for k, v in variants.items())
-    style.figure_note(fig, f"One point per synthetic dataset ({counts}); stars are the real "
-                           f"LGD datasets. The dotted line is equal mass at both ends.")
+    fig.suptitle("Mass at 0 vs at 1")
     return fig

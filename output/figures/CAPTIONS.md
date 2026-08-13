@@ -36,13 +36,25 @@ Share of columns that are categorical, per dataset, ordered by share. Colour den
 
 Share of cells that are missing, per dataset, ordered by share, measured after preprocessing. Colour denotes task.
 
-**07_feature_correlations_lgd** — `feature_correlations_lgd`
+**07_feature_correlations_lgd_p1** — `feature_correlations_lgd_p1`
 
-Pearson correlation matrices between features for the six largest datasets of the task, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel subtitles give the number of columns retained and the mean absolute off- diagonal correlation.
+Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. LGD datasets, page 1 of 2.
 
-**08_feature_correlations_pd** — `feature_correlations_pd`
+**08_feature_correlations_lgd_p2** — `feature_correlations_lgd_p2`
 
-Pearson correlation matrices between features for the six largest datasets of the task, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel subtitles give the number of columns retained and the mean absolute off- diagonal correlation.
+Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. LGD datasets, page 2 of 2.
+
+**09_feature_correlations_pd_p1** — `feature_correlations_pd_p1`
+
+Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. PD datasets, page 1 of 3.
+
+**10_feature_correlations_pd_p2** — `feature_correlations_pd_p2`
+
+Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. PD datasets, page 2 of 3.
+
+**11_feature_correlations_pd_p3** — `feature_correlations_pd_p3`
+
+Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. PD datasets, page 3 of 3.
 
 ## prior_visualisation_lgd
 

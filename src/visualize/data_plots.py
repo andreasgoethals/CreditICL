@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -99,39 +100,57 @@ def summary_table(datasets: dict[str, Any], task: str) -> pd.DataFrame:
 
 
 def plot_lgd_targets(datasets: dict[str, Any], ncols: int = 4):
-    """One target histogram per LGD dataset, with the boundary mass called out.
+    """One target histogram per LGD dataset. The figure only — the caption explains it.
 
-    This is the figure that motivates the project. Look at how much of the mass sits
-    in the two end bars compared with the middle — and then compare with the same
-    plot for the original prior in `prior_visualisation.ipynb`, which has none.
+    REWRITTEN because it was unreadable. Each panel carried a two-line title
+    ("axa" / "34% of rows at a boundary") which wrapped, collided with the panel above and
+    with the suptitle, and matplotlib gave up: "axes sizes collapsed to zero". The boundary
+    percentages are the subject of `plot_boundary_mass_ranking`, so repeating them here bought
+    nothing and cost the figure its legibility.
+
+    Now: dataset name only, shared axes, and nothing else drawn.
     """
     style.apply()
     items = sorted(datasets.items(), key=lambda kv: -kv[1].n_rows)
     nrows = int(np.ceil(len(items) / ncols))
-    fig, axes = plt.subplots(nrows, ncols, figsize=style.grid_figsize(ncols, nrows, panel_ratio=0.82), squeeze=False)
+    fig, axes = plt.subplots(
+        nrows, ncols,
+        figsize=style.grid_figsize(ncols, nrows, panel_ratio=0.90),
+        squeeze=False, sharex=True, sharey=False,
+    )
     flat = axes.ravel()
 
     for ax, (slug, ds) in zip(flat, items):
         y = np.asarray(ds.y, dtype=float)
         st = target_stats(y)
-        ax.hist(y, bins=40, color=style.REAL, alpha=0.85)
-        # Mark the boundaries explicitly; in a 40-bin histogram an exact atom at 0
-        # and a cluster near 0.02 look identical, and only one of them is the point.
+        ax.hist(y, bins=40, color=style.REAL, alpha=0.9)
+        # Mark the boundaries explicitly; in a 40-bin histogram an exact atom at 0 and a
+        # cluster near 0.02 look identical, and only one of them is the point.
         for edge, frac in ((y.min(), st["frac_at_min"]), (y.max(), st["frac_at_max"])):
             if frac > 0.01:
-                ax.axvline(edge, color=style.WARN, lw=1.4, ls="--", alpha=0.8)
-        boundary = st["frac_at_min"] + st["frac_at_max"]
-        style.title(ax, slug.split(".", 1)[-1], f"{boundary:.0%} of rows at a boundary")
+                ax.axvline(edge, color=style.WARN, lw=1.0, ls="--", alpha=0.85)
+        # The NAME, one line, nothing else. `set_title` directly rather than `style.title`,
+        # because a wrapped two-line title is what broke this figure.
+        ax.set_title(slug.split(".", 1)[-1], fontsize=mpl.rcParams["xtick.labelsize"],
+                     loc="left", pad=3)
         ax.set_yticks([])
-        ax.set_xlabel("LGD")
+        ax.set_xlim(-0.02, 1.02)
+        ax.set_xticks([0.0, 0.5, 1.0])
     for ax in flat[len(items):]:
         ax.axis("off")
-
-    fig.suptitle("Real LGD targets: the mass at the edges is the whole problem")
-    style.figure_note(
-        fig, "Dashed red lines mark exact atoms at the minimum and maximum. "
-        "A model that cannot place probability exactly there cannot be calibrated here."
-    )
+    # Axis label once, on the bottom-left panel only. Repeating "LGD" seven times is seven
+    # times the ink for the same information.
+    for ax in axes[-1]:
+        if ax.axison:
+            ax.set_xlabel("LGD")
+    # The last row may be short (7 datasets in a 4x2 grid), which leaves the panel above an
+    # "off" cell with no visible tick labels. Restore them there.
+    for col in range(ncols):
+        for row in range(nrows - 1, -1, -1):
+            if axes[row][col].axison:
+                axes[row][col].set_xlabel("LGD")
+                axes[row][col].tick_params(labelbottom=True)
+                break
     return fig
 
 
@@ -164,10 +183,7 @@ def plot_boundary_mass_ranking(datasets: dict[str, Any]):
     ax.grid(axis="x")
     ax.grid(axis="y", visible=False)
     ax.legend(loc="lower right")
-    style.title(
-        ax, "How much boundary mass each LGD dataset has",
-        "The prior has to produce this range, not one representative value",
-    )
+    style.title(ax, "Boundary mass per dataset")
     return fig
 
 
@@ -177,10 +193,11 @@ def plot_boundary_mass_ranking(datasets: dict[str, Any]):
 
 
 def plot_pd_base_rates(datasets: dict[str, Any]):
-    """Default rate per dataset on a log axis, against the prior's balanced default.
+    """Default rate per dataset, against the prior's balance point.
 
-    Log axis because the rates span two orders of magnitude; on a linear axis every
-    dataset below 5% collapses into the same sliver and the variation disappears.
+    LINEAR, not log. The log axis was justified as showing two orders of magnitude, but the
+    rates actually run 6%-40% — well inside one order — so it bought nothing and cost the
+    reader tick labels like `6 x 10^-2`.
     """
     style.apply()
     rows = sorted(
@@ -191,23 +208,27 @@ def plot_pd_base_rates(datasets: dict[str, Any]):
     names = [r[0] for r in rows]
     rates = np.array([r[1] for r in rows])
 
-    fig, ax = plt.subplots(figsize=style.row_figsize(len(rows), per_row=0.20, base=1.2))
+    fig, ax = plt.subplots(figsize=style.row_figsize(len(rows), per_row=0.20, base=1.0))
     ypos = np.arange(len(rows))
     ax.barh(ypos, rates, color=style.TASK_COLOR["pd"], alpha=0.9)
-    ax.axvline(0.5, color=style.ORIGINAL, lw=2, ls="--")
-    ax.text(0.52, len(rows) - 0.5, "TabICL's prior\nsits near here", fontsize=9,
-            color=style.MUTED, va="top")
+    ax.axvline(0.5, color=style.ORIGINAL, lw=1.4, ls="--")
+    # Two words, rotated along the line it labels. "TabICL's prior sits near here" wrapped to
+    # two lines, sat over the top bar's value, and said in six words what two say.
+    ax.text(0.5, len(rows) - 0.5, " TabICL prior", fontsize=7, color=style.MUTED,
+            va="top", ha="left", rotation=90, rotation_mode="anchor")
+    # Value labels INSIDE the bar when there is room, outside when there is not. Placed
+    # outside at `r * 1.08` they drifted right as the rate grew and the 40% label landed on
+    # top of the 50% reference line.
     for i, r in enumerate(rates):
-        ax.text(r * 1.08, i, f"{r:.1%}", va="center", fontsize=9, color=style.MUTED)
-    ax.set_xscale("log")
+        inside = r > 0.12
+        ax.text(r - 0.01 if inside else r + 0.01, i, f"{r:.1%}",
+                va="center", ha="right" if inside else "left", fontsize=7,
+                color="white" if inside else style.MUTED)
     ax.set_yticks(ypos, names)
-    ax.set_xlabel("default rate (log scale)")
+    ax.set_xlim(0, 0.56)
+    ax.set_xlabel("default rate")
     ax.grid(axis="x")
     ax.grid(axis="y", visible=False)
-    style.title(
-        ax, "Real PD datasets are imbalanced; the original prior is not",
-        "Two orders of magnitude of variation, all of it below the prior's balance point",
-    )
     return fig
 
 
@@ -239,10 +260,7 @@ def plot_shapes(datasets_by_task: dict[str, dict[str, Any]]):
     ax.set_ylabel("features")
     ax.grid(axis="x")
     ax.legend(title="task")
-    style.title(
-        ax, "Dataset shapes",
-        "The prior's n_rows_range and n_features_range should cover this cloud",
-    )
+    style.title(ax, "Dataset shapes")
     return fig
 
 
@@ -273,8 +291,7 @@ def plot_type_mix(datasets_by_task: dict[str, dict[str, Any]]):
     ax.grid(axis="x")
     ax.grid(axis="y", visible=False)
     ax.legend(handles=style.legend_patches({t.upper(): c for t, c in style.TASK_COLOR.items()}))
-    style.title(ax, "How categorical is real credit data?",
-                "Evidence for the prior's categorical fraction")
+    style.title(ax, "Categorical share")
     return fig
 
 
@@ -303,24 +320,42 @@ def plot_missingness(datasets_by_task: dict[str, dict[str, Any]]):
     ax.set_xlabel("share of cells missing")
     ax.grid(axis="x")
     ax.grid(axis="y", visible=False)
-    n_zero = int((vals == 0).sum())
-    style.title(
-        ax, "Missing values in the processed datasets",
-        f"{n_zero} of {len(vals)} have none left — many were imputed before we got them",
-    )
+    style.title(ax, "Missing values in the processed datasets")
     return fig
 
 
-def plot_feature_correlations(datasets: dict[str, Any], n_show: int = 6):
-    """Correlation heatmaps for a few datasets.
+def correlation_pages(datasets: dict[str, Any], per_page: int = 6) -> int:
+    """How many figures `plot_feature_correlations` needs to show EVERY dataset."""
+    return max(1, int(np.ceil(len(datasets) / max(per_page, 1))))
 
-    O'Prior's argument is that a prior's *feature dependence structure* is what
-    transfers. So it matters what real credit data looks like: strong blocks of
-    correlated features (several measures of the same balance), not independent
-    columns. If our DAGs produced independent features they would be wrong here.
+
+def plot_feature_correlations(
+    datasets: dict[str, Any], n_show: int | None = None, per_page: int = 6, page: int = 1
+):
+    """Correlation heatmaps — PAGINATED so every dataset is included.
+
+    O'Prior's argument is that a prior's *feature dependence structure* is what transfers. So
+    it matters what real credit data looks like: strong blocks of correlated features (several
+    measures of the same balance), not independent columns. If our DAGs produced independent
+    features they would be wrong here.
+
+    Previously it took the `n_show` largest and silently dropped the rest — a figure that
+    claims to describe "real credit data" while showing 6 of 14 datasets. Six panels per page
+    keeps each one big enough to read a block structure in; call `correlation_pages()` for the
+    count and loop.
+
+    `n_show` is still accepted so old calls do not break: it caps the total considered.
     """
     style.apply()
-    items = sorted(datasets.items(), key=lambda kv: -kv[1].n_rows)[:n_show]
+    items = sorted(datasets.items(), key=lambda kv: -kv[1].n_rows)
+    if n_show is not None:
+        items = items[:n_show]
+    pages = style.paginate(items, per_page=per_page)
+    n_pages = max(1, len(pages))
+    if not 1 <= page <= n_pages:
+        raise ValueError(f"page {page} out of range; {n_pages} page(s) for {len(items)} datasets")
+    items = pages[page - 1]
+
     ncols = min(3, len(items))
     nrows = int(np.ceil(len(items) / ncols))
     fig, axes = plt.subplots(nrows, ncols, figsize=style.grid_figsize(ncols, nrows, panel_ratio=0.95), squeeze=False)
@@ -345,11 +380,7 @@ def plot_feature_correlations(datasets: dict[str, Any], n_show: int = 6):
     for ax in flat[len(items):]:
         ax.axis("off")
     fig.colorbar(im, ax=axes, shrink=0.7, label="correlation")
-    fig.suptitle("Feature dependence in real credit data")
-    style.figure_note(
-        fig, "Blocks of red are groups of features measuring the same thing. "
-        "A prior producing independent columns would not reproduce this."
-    )
+    fig.suptitle("Feature correlations")
     return fig
 
 

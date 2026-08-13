@@ -296,19 +296,47 @@ def load_real_datasets(task: str, max_rows: int = 20_000) -> dict[str, Any]:
             ds = load_processed(task, name)
         except Exception:  # noqa: BLE001 — one missing dataset must not lose the rest
             continue
-        if max_rows and getattr(ds, "n_rows", 0) > max_rows:
-            import numpy as np
-
-            class _Capped:
-                X = np.asarray(ds.X)[:max_rows]
-                y = np.asarray(ds.y)[:max_rows]
-                n_rows = max_rows
-                n_features = getattr(ds, "n_features", None)
-
-            out[name] = _Capped()
-        else:
-            out[name] = ds
+        out[name] = _cap_rows(ds, max_rows) if max_rows else ds
     return out
+
+
+class _RowCapped:
+    """A row-limited VIEW of a dataset that keeps every other attribute.
+
+    The first version copied only `X`, `y`, `n_rows` and `n_features`, so `cat_indices` and
+    `feature_names` disappeared and any plot that used them raised `AttributeError` — but only
+    for datasets big enough to be capped, which is why it survived a full notebook run.
+    Delegating unknown attributes to the original means adding a field to `ProcessedDataset`
+    cannot break this again.
+    """
+
+    def __init__(self, source: Any, max_rows: int, seed: int = 0) -> None:
+        import numpy as np
+
+        self._source = source
+        X = np.asarray(source.X)
+        y = np.asarray(source.y)
+        # A RANDOM subsample, not the head. Taking `[:max_rows]` reported
+        # `algorithmwatch`'s default rate as 49.5% against a true 37.8% — the rows are not
+        # shuffled on disk, so the first 20,000 are not representative, and every statistic
+        # drawn from them was quietly wrong by whatever the ordering happened to encode.
+        # Fixed seed, so the figure is identical between runs.
+        if len(y) > max_rows:
+            idx = np.random.default_rng(seed).choice(len(y), size=max_rows, replace=False)
+            idx.sort()   # keep the original row order, so cohort-style plots still make sense
+            X, y = X[idx], y[idx]
+        self.X, self.y = X, y
+        self.n_rows = int(self.X.shape[0])
+        self.n_features = int(getattr(source, "n_features", self.X.shape[1]))
+
+    def __getattr__(self, item: str) -> Any:
+        # Only reached for attributes not set above, so `cat_indices`, `feature_names` and
+        # anything added later come through unchanged.
+        return getattr(self._source, item)
+
+
+def _cap_rows(ds: Any, max_rows: int) -> Any:
+    return _RowCapped(ds, max_rows) if getattr(ds, "n_rows", 0) > max_rows else ds
 
 
 def real_difficulty(task: str, real: dict[str, Any]) -> dict[str, float]:
