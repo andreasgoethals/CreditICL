@@ -5,6 +5,28 @@ reason is not obvious.
 
 ---
 
+## 13-08-2026 (evening)
+
+The venv built and the smoke test passed, but the out-of-domain fetch had two serious bugs.
+
+- **`heloc` — one of our OWN LGD datasets — was cached as out-of-domain.** A dataset we select
+  priors on cannot also be the evidence that generality survived. The keyword filter also missed
+  `loss2`, `axa`, `base_model`, `base_modelisation` and `hackerearth`. Fixed by **deriving** the
+  exclusion list from `data/raw/` (`our_dataset_names()`) instead of hand-maintaining names, so
+  adding a dataset cannot silently reopen the hole.
+- **Continuous targets were coded into thousands of classes.** `SUITES` was
+  `{kind: [suites]}`, so every task inherited the kind of the list it sat in. TabArena carries
+  both kinds, so `diamonds` (price), `houses`, `airfoil_self_noise` and `miami_housing` were
+  cached as classification with their targets pushed through
+  `.astype("category").cat.codes`. `SUITES` is now flat and `task_kind(task)` asks the task,
+  with quotas per kind filled across suites, plus a belt-and-braces reject of any
+  "classification" target with >100 classes.
+- **`OOD_VERSION` → 2**, which retires the 50-dataset cache from the first fetch. Neither bug is
+  repairable in place.
+- **Zero regression datasets were cached** — every regression suite alias 404'd. Fixing the
+  bucketing means TabArena's regression tasks now land correctly, and CTR23's numeric study id
+  is listed alongside its alias.
+
 ## 13-08-2026 (later still)
 
 The venv setup failed on the first attempt; two bugs, both mine.

@@ -93,40 +93,111 @@ def test_genuinely_unrelated_datasets_are_kept(name):
     assert not ood.is_credit_like(name), f"{name} was filtered out but is fine"
 
 
-def test_the_suites_are_named_not_hardcoded_ids():
-    """Suite NAMES are verifiable; dataset ids written from memory are not. The ids must
-    come from the API at fetch time and be pinned into the manifest."""
-    for kind, names in ood.SUITES.items():
-        assert isinstance(names, list) and names, kind
-        for name in names:
-            assert isinstance(name, str) and not name.isdigit(), f"{name} looks like an id"
+def test_the_suites_are_named_not_hardcoded_dataset_ids():
+    """Suite NAMES (and suite ids) are verifiable; DATASET ids written from memory are not. The
+    dataset ids must come from the API at fetch time and be pinned into the manifest."""
+    assert isinstance(ood.SUITES, tuple) and ood.SUITES
+    for name in ood.SUITES:
+        assert isinstance(name, str) and name
     text = pathlib.Path(ood.__file__).read_text(encoding="utf-8")
     assert "NEVER hard-coded" in text or "never hard-coded" in text.lower()
 
 
-def test_both_task_kinds_are_covered_by_several_suites():
-    """A mean over one suite is one suite's opinion, and the out-of-domain average is the
-    number that would catch a prior which buys credit performance by destroying generality.
-    Both kinds are needed because LGD is regression and PD is classification."""
-    assert set(ood.SUITES) == {"classification", "regression"}
-    for kind, names in ood.SUITES.items():
-        assert len(names) >= 2, f"{kind} rests on a single suite: {names}"
-
-
 def test_the_suites_tabiclv2_reports_on_are_included():
-    """TabICLv2 evaluates on TabArena and TALENT. Including them is what lets our numbers be
-    put beside the model we started from; O'Prior's CC18 stays so the control also stays
-    comparable with the closest prior work."""
-    flat = " ".join(n.lower() for names in ood.SUITES.values() for n in names)
+    """TabICLv2 evaluates on TabArena and TALENT. Including them lets our numbers be put beside
+    the model we started from; O'Prior's CC18 stays so the control also stays comparable with
+    the closest prior work. CTR23 is the regression counterpart."""
+    flat = " ".join(n.lower() for n in ood.SUITES)
     for expected in ("cc18", "ctr23", "tabarena", "talent"):
         assert expected in flat, f"{expected} is missing from SUITES"
+
+
+def test_both_kinds_are_declared():
+    """LGD is regression and PD is classification, so a cache with only one kind leaves half
+    the project with no out-of-domain evidence. The FIRST real fetch produced exactly that:
+    50 classification datasets and zero regression ones."""
+    assert set(ood.KINDS) == {"classification", "regression"}
 
 
 def test_the_out_of_domain_sample_is_large_enough_to_average():
     """10 datasets was one suite's worth and too noisy to detect a real regression."""
     assert ood.N_PER_SUITE >= 20
-    total = sum(len(v) for v in ood.SUITES.values()) * ood.N_PER_SUITE
-    assert total >= 100, f"only {total} out-of-domain datasets across both kinds"
+
+
+# -- the kind comes from the TASK, never from the suite ------------------------
+
+
+class _FakeTask:
+    def __init__(self, task_type=None, task_type_id=None):
+        self.task_type = task_type
+        self.task_type_id = task_type_id
+
+
+@pytest.mark.parametrize(
+    "task,expected",
+    [
+        (_FakeTask("Supervised Classification"), "classification"),
+        (_FakeTask("Supervised Regression"), "regression"),
+        (_FakeTask(None, 1), "classification"),
+        (_FakeTask(None, 2), "regression"),
+        (_FakeTask("Clustering"), None),
+        (_FakeTask(), None),
+    ],
+)
+def test_task_kind_is_read_from_the_task(task, expected):
+    """THE FIX FOR A DATA-CORRUPTION BUG. Suites were listed under a kind, so every task
+    inherited it. TabArena carries both, so `diamonds` (price), `houses` and
+    `airfoil_self_noise` had their CONTINUOUS targets run through
+    `.astype("category").cat.codes` — thousands of arbitrary classes, cached as if valid."""
+    assert ood.task_kind(task) == expected
+
+
+def test_task_kind_handles_an_enum_like_type():
+    """Newer OpenML clients expose a TaskType enum, older ones a plain string."""
+    enum_like = type("TaskType", (), {"name": "SUPERVISED_REGRESSION"})()
+    assert ood.task_kind(_FakeTask(enum_like)) == "regression"
+
+
+def test_the_fetcher_asks_the_task_and_guards_against_too_many_classes():
+    """Belt and braces: even if a task claims classification, a target with hundreds of levels
+    is a regression target and coding it would be meaningless."""
+    text = pathlib.Path(ood.__file__).read_text(encoding="utf-8")
+    block = text[text.index("def fetch_ood_datasets"):]
+    assert "kind = task_kind(task)" in block, "the kind must come from the task"
+    assert "n_classes > 100" in block, "a mislabelled regression target must be rejected"
+
+
+def test_a_regression_target_that_is_not_numeric_is_skipped():
+    """Coercing a label into a number would silently invent a regression problem."""
+    import pandas as pd
+
+    assert ood.pd_to_float(pd.Series(["a", "b", "c"])) is None
+    numeric = ood.pd_to_float(pd.Series([1.5, 2.5]))
+    assert numeric is not None and numeric.dtype == np.float32
+
+
+# -- our own datasets must never be out-of-domain -----------------------------
+
+
+def test_every_dataset_we_evaluate_on_is_filtered_from_the_out_of_domain_set():
+    """THE WORST CONTAMINATION, and it happened: `heloc` is `0001.heloc` in data/raw/lgd AND it
+    was cached as out-of-domain on the first real fetch. A dataset we select priors on cannot
+    also be the evidence that generality survived."""
+    from src.data.discovery import list_datasets
+
+    leaked = []
+    for task in ("lgd", "pd"):
+        for slug in list_datasets(task):
+            name = slug.split(".", 1)[-1]
+            if not ood.is_credit_like(name):
+                leaked.append(f"{task}/{name}")
+    assert not leaked, f"our own datasets would pass as out-of-domain: {leaked}"
+
+
+@pytest.mark.parametrize("name", ["heloc", "HELOC", "Is-this-a-good-customer", "churn",
+                                  "fico_score", "delinquency", "borrower_data"])
+def test_credit_scoring_under_a_disguised_name_is_still_filtered(name):
+    assert ood.is_credit_like(name), f"{name} should have been filtered out"
 
 
 def test_an_unresolvable_suite_does_not_abort_the_fetch():
