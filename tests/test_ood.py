@@ -297,3 +297,32 @@ def test_ood_results_go_to_their_own_tree():
     assert results_dir("ood", "eval").parts[-2:] == ("ood", "eval")
     with pytest.raises(ValueError, match="results namespace"):
         results_dir("not_a_namespace", "eval")
+
+
+def test_the_cache_is_written_atomically_and_with_the_right_name(tmp_path):
+    """REGRESSION, from the first cluster fetch. `np.savez_compressed` given a PATH whose name
+    does not end in `.npz` silently APPENDS the extension, so writing to `x.npz.tmp` produced
+    `x.npz.tmp.npz` and the rename then raised FileNotFoundError on the very first dataset.
+    Passing an open handle suppresses the renaming."""
+    import numpy as np
+
+    out = tmp_path / "3.kr-vs-kp.npz"
+    tmp = out.with_suffix(".npz.tmp")
+    with tmp.open("wb") as fh:
+        np.savez_compressed(fh, X=np.zeros((2, 2)), y=np.zeros(2))
+    assert tmp.is_file(), "the handle form must write exactly the name it was given"
+    assert not (tmp_path / "3.kr-vs-kp.npz.tmp.npz").exists()
+    tmp.replace(out)
+    assert out.is_file() and np.load(out)["X"].shape == (2, 2)
+
+
+def test_the_fetcher_does_not_pass_a_path_to_savez():
+    """The bug is invisible in review unless you know numpy renames, so pin the fix in place."""
+    import pathlib
+
+    text = pathlib.Path(ood.__file__).read_text(encoding="utf-8")
+    block = text[text.index("def fetch_ood_datasets"):]
+    assert "with tmp.open(\"wb\") as fh:" in block
+    assert "np.savez_compressed(tmp" not in block, (
+        "passing the Path back means numpy appends .npz and the rename fails"
+    )

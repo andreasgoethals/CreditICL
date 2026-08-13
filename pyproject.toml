@@ -189,6 +189,11 @@ extend-exclude = [
     # extraction, and any real change would make our arms incomparable to the
     # reference architecture.
     "src/models/nanotabiclv2.py",
+    # VENDORED VERBATIM from the pinned TabICL dump by src/utils/vendor_muon logic in
+    # src/train/_muon_vendored.py. Reformatting it would be undone on re-extraction, and a
+    # real change would make our optimizer differ from the one that trained the released
+    # checkpoints — which is the entire reason it is vendored rather than reimplemented.
+    "src/train/_muon_vendored.py",
     # The faculty template's own sample script. Left exactly as shipped so the
     # template stays a usable reference; its ASCII-art docstring trips W605.
     "docs/templates/example_script.py",

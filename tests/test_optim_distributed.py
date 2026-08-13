@@ -266,3 +266,52 @@ def test_hms_formats_readably():
     assert _hms(605) == "10m 05s"
     assert _hms(11_072) == "3h 04m"
     assert _hms(-5) == "0s", "a negative ETA must not print nonsense"
+
+
+# -- Muon must resolve on the cluster, not only on a new torch -----------------
+
+
+def test_muon_resolves_without_torch_or_any_pip_package(monkeypatch):
+    """REGRESSION, from the first cluster smoke test. VSC runs torch 2.8 — no
+    `torch.optim.Muon` — and the published `tabicl` wheel does not ship the training package,
+    so every run died at optimizer construction with ImportError. Upstream's own Muon is now
+    vendored from the pinned dump as the last resort."""
+    import sys
+
+    import torch
+
+    from src.train import optim
+
+    monkeypatch.delattr(torch.optim, "Muon", raising=False)
+    monkeypatch.setitem(sys.modules, "muon", None)
+    monkeypatch.setitem(sys.modules, "pytorch_optimizer", None)
+    cls = optim._resolve_muon()
+    assert cls.__module__.endswith("_muon_vendored"), cls.__module__
+
+
+def test_the_vendored_muon_is_upstreams_and_says_so():
+    """Vendored VERBATIM, so it is the optimizer that produced the released checkpoints rather
+    than a second implementation that ought to agree. A hand-written Muon would be subtly wrong
+    in a way that degrades every arm equally and invisibly."""
+    import pathlib
+
+    from src.train import _muon_vendored
+
+    text = pathlib.Path(_muon_vendored.__file__).read_text(encoding="utf-8")
+    assert "DO NOT EDIT" in text
+    assert "tfm-library" in text, "the provenance must be recorded in the file"
+    # The details that are easy to get wrong, and which we therefore did not write.
+    assert "zeropower_via_newtonschulz5" in text
+    assert "adjust_lr_wd_for_muon" in text
+
+
+def test_torch_muon_still_wins_when_it_exists():
+    """The vendored copy is a FALLBACK. A maintained implementation should be preferred where
+    one is available, so a newer torch on the cluster silently upgrades us."""
+    import torch
+
+    from src.train import optim
+
+    if not hasattr(torch.optim, "Muon"):
+        pytest.skip("this torch has no built-in Muon")
+    assert optim._resolve_muon() is torch.optim.Muon

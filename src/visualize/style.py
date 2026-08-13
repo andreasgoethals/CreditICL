@@ -315,8 +315,19 @@ def title(ax: Any, headline: str, subtitle: str | None = None) -> None:
 
 
 def figure_note(fig: Any, text: str) -> None:
-    """A line under the whole figure — what to look for, in words."""
-    fig.supxlabel(text, fontsize=mpl.rcParams["font.size"] * 0.85, color=MUTED)
+    """A line under the whole figure — what to look for, in words.
+
+    WRAPPED to the figure width. `supxlabel` does not wrap and is centred, so a note longer
+    than the page ran off BOTH edges and lost its first and last words — the failure is
+    symmetric, which makes it easy to miss when skimming.
+    """
+    import textwrap
+
+    width_in = fig.get_size_inches()[0]
+    size = mpl.rcParams["font.size"] * 0.85
+    # Same characters-per-inch estimate as the title wrapper, at the note's smaller size.
+    chars = max(40, int(width_in * _TITLE_CHARS_PER_INCH * (10.0 / max(size, 1e-6))))
+    fig.supxlabel("\n".join(textwrap.wrap(text, chars)), fontsize=size, color=MUTED)
 
 
 def legend_patches(labels: dict[str, str]) -> list[Any]:

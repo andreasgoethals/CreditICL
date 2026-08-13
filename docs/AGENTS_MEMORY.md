@@ -51,6 +51,24 @@ afterwards — a job that dies at the walltime never comes back to write its own
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
 
+### 12-08-2026 — Three things the first cluster attempt found in ten minutes
+- **Tried:** the documented first-run sequence on wICE — `fetch_ood`, then the smoke test.
+- **Result:** (1) `fetch_ood` died on the FIRST dataset with `FileNotFoundError` on
+  `3.kr-vs-kp.npz.tmp`; (2) the smoke test died at optimizer construction with
+  `ModuleNotFoundError: pytorch_optimizer`; (3) a notebook cell that ran locally would have
+  crashed with `unhashable type: 'dict'`.
+- **Why:** (1) `np.savez_compressed` given a PATH not ending in `.npz` silently **appends** the
+  extension, so it wrote `...npz.tmp.npz` and the rename found nothing. (2) VSC runs torch 2.8
+  — no `torch.optim.Muon` — and the published `tabicl` wheel does not ship its training
+  package, so there was no Muon at all. (3) a `{{...}}` left over from a `.format()` template
+  is **valid Python** (a set containing a dict) until it executes.
+- **Instead:** write through an open handle; vendor upstream's Muon from the pinned dump
+  (`src/train/_muon_vendored.py`) so no pip package is needed and it is the exact optimizer
+  that trained the released checkpoints; and `test_every_notebook_cell_compiles` now compiles
+  every cell. **The lesson that generalises: none of the three could fail locally.** Local had
+  a newer torch, a warm cache and a different notebook on disk. Run the documented sequence on
+  the cluster before believing it works.
+
 ### 11-08-2026 — Vendoring NanoTabICL instead of TabICL itself
 - **Tried:** built the model from `NanoTabICL.txt` (665 lines) because it is small and readable,
   then tried to load the released TabICLv2 checkpoint into it for the warm-start experiment.

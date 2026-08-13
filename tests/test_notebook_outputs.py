@@ -347,3 +347,36 @@ def test_scripts_folder_holds_only_experiments():
     utilities = {"clean_run.py", "run_notebooks.py", "vendor_model.py", "update_tfm_library.py"}
     present = {p.name for p in (ROOT / "scripts").glob("*.py")} & utilities
     assert not present, f"utilities belong in src/utils/, not scripts/: {sorted(present)}"
+
+
+def test_every_notebook_cell_compiles():
+    """REGRESSION. A `{{...}}` left over from a `.format()` template shipped in the LGD
+    notebook, reached the cluster, and only failed at RUN time with `unhashable type: 'dict'`
+    — because `{{k: v}}` is valid Python (a set containing a dict) right up until it executes.
+
+    Compiling every cell is cheap and would have caught it before the commit. Magics are
+    stripped, exactly as `run_notebooks` strips them.
+    """
+    for name in NOTEBOOKS:
+        nb = json.loads((ROOT / "notebooks" / f"{name}.ipynb").read_text(encoding="utf-8"))
+        for i, cell in enumerate(c for c in nb["cells"] if c["cell_type"] == "code"):
+            source = "".join(cell["source"])
+            clean = "\n".join(
+                "" if line.lstrip().startswith(("%", "!")) else line
+                for line in source.split("\n")
+            )
+            try:
+                compile(clean, f"{name}#cell{i}", "exec")
+            except SyntaxError as exc:
+                raise AssertionError(f"{name} cell {i} does not compile: {exc}") from exc
+
+
+def test_no_notebook_carries_doubled_braces():
+    """The specific shape of the bug above. `{{` only ever appears in a notebook because a
+    `.format()` template was written out without being formatted, and it is invisible in review
+    because the cell still parses."""
+    for name in NOTEBOOKS:
+        code = _code(name)
+        assert "{{" not in code and "}}" not in code, (
+            f"{name} contains doubled braces — a .format() template leaked into the notebook"
+        )

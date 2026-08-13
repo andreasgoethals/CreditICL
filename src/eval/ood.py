@@ -291,7 +291,17 @@ def fetch_ood_datasets(
                 )
                 out = root / f"{entry.slug}.npz"
                 tmp = out.with_suffix(".npz.tmp")
-                np.savez_compressed(tmp, X=X_arr, y=y_arr, cat_indices=np.asarray(cat_idx, dtype=np.int64))
+                # WRITE THROUGH AN OPEN HANDLE, not a path. Given a path whose name does not
+                # end in `.npz`, `np.savez_compressed` silently APPENDS the extension — so
+                # `3.kr-vs-kp.npz.tmp` became `3.kr-vs-kp.npz.tmp.npz` and the rename below
+                # then failed with FileNotFoundError on the very first dataset. Passing a file
+                # object suppresses the renaming entirely.
+                with tmp.open("wb") as fh:
+                    np.savez_compressed(
+                        fh, X=X_arr, y=y_arr, cat_indices=np.asarray(cat_idx, dtype=np.int64)
+                    )
+                # Rename LAST, so a download killed halfway leaves a `.tmp` that no reader
+                # picks up rather than a truncated `.npz` that looks complete.
                 tmp.replace(out)
                 kept.append(entry)
                 chosen += 1

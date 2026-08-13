@@ -5,6 +5,38 @@ reason is not obvious.
 
 ---
 
+## 13-08-2026
+
+Three bugs the first cluster attempt exposed, none of which could fail locally.
+
+- **`fetch_ood` died on the first dataset.** `np.savez_compressed` given a *path* that does not
+  end in `.npz` silently **appends** the extension, so the atomic write produced
+  `x.npz.tmp.npz` and the rename raised `FileNotFoundError`. Now written through an open
+  handle, which suppresses the renaming.
+- **No Muon on the cluster.** VSC runs torch 2.8 (no `torch.optim.Muon`) and the published
+  `tabicl` wheel does not ship its training package, so every run died at optimizer
+  construction. Upstream's own Muon is now vendored from the pinned dump
+  (`src/train/_muon_vendored.py`) — no new dependency, and it is the exact optimizer that
+  trained the released checkpoints rather than a second implementation that ought to agree.
+  `torch.optim.Muon` still wins when the installed torch has it.
+- **A `{{...}}` left over from a `.format()` template shipped in the LGD notebook** and reached
+  the cluster. It is *valid Python* — a set containing a dict — until it executes, so nothing
+  caught it. `test_every_notebook_cell_compiles` now compiles every cell of every notebook.
+
+Figures, after rendering and actually looking at each one:
+
+- **Titles no longer eat a third of the figure.** Long subtitles wrapped to three bold lines;
+  they are short now and the detail moved to the note. `style.figure_note` **wraps** — a note
+  longer than the page ran off *both* edges and lost its first and last words.
+- **Mechanism decomposition:** atom labels sat directly on the spikes they labelled; they now
+  have headroom above the bars.
+- **Difficulty calibration:** the "real credit data" label ran off the right edge; median bars
+  dwarfed the points they summarised; `R^2` renders as R².
+- **Boundary sources:** the reference stars were drawn at s=80 over s=13 data points, so the
+  subject vanished under its own yardstick. Sizes swapped.
+- **Side-by-side tables:** row labels repeated the target values that were already the last
+  column; they are row numbers now, and the coloured frame closes on all four sides.
+
 ## 12-08-2026 (evening)
 
 - **The released TabICLv2 checkpoints now load with `strict=True`: 347/347 tensors for the

@@ -120,12 +120,16 @@ def plot_prior_realism_ranking(
     ypos = np.arange(len(rows))
     for i, (_, mean_d, per_real) in enumerate(rows):
         values = list(per_real.values())
-        # Every real dataset as a light dot, so the SPREAD is visible: a prior that matches one
+        # A guide line per row. Without it the eye cannot carry a dot at x=0.6 back to its
+        # label three rows up, which is the one thing this chart is for.
+        ax.plot([min(values), max(values)], [i, i], color=style.GRID, linewidth=3.0,
+                solid_capstyle="round", zorder=1)
+        # Every real dataset as a dot, so the SPREAD is visible: a prior that matches one
         # dataset and misses six is not a good prior, and a mean alone would hide that.
-        ax.scatter(values, np.full(len(values), i), s=14, color=style.MUTED, alpha=0.55,
+        ax.scatter(values, np.full(len(values), i), s=18, color=style.MUTED, alpha=0.85,
                    zorder=2, linewidths=0)
-        ax.scatter([mean_d], [i], s=52, color=style.CREDIT, zorder=3, marker="D",
-                   edgecolors="white", linewidths=0.6)
+        ax.scatter([mean_d], [i], s=58, color=style.CREDIT, zorder=3, marker="D",
+                   edgecolors="white", linewidths=0.8)
     ax.set_yticks(ypos)
     ax.set_yticklabels(labels)
     ax.invert_yaxis()
@@ -133,9 +137,12 @@ def plot_prior_realism_ranking(
     ax.set_xlim(left=0)
     ax.grid(visible=True, axis="x")
     ax.grid(visible=False, axis="y")
-    style.title(ax, "Which prior looks most like real credit data?",
-                "Diamond = mean over real datasets; dots = one per dataset. Lower is better.")
-    style.figure_note(fig, "Distances computed on pooled targets per variant, 40 fixed bins.")
+    # Subtitle deliberately short. A long one wraps to three bold lines and eats a third of a
+    # 2.2 in figure; the detail belongs in the note underneath, where it costs one grey line.
+    style.title(ax, "Which prior looks most like real credit data?", "Lower is better")
+    style.figure_note(
+        fig, "Diamond = mean over the real datasets, dots = one per dataset. Total variation "
+             "on pooled targets, 40 fixed bins.")
     return fig
 
 
@@ -177,20 +184,25 @@ def plot_mechanism_decomposition(tasks: list[Any], bins: int = 40):
                color=style.SERIES[i % len(style.SERIES)], linewidth=0)
         stats = target_stats(pooled)
         at0, at1 = stats["frac_at_min"], stats["frac_at_max"]
-        # Annotate the two atoms, because they are the point and a bar chart makes a 20% spike
-        # at the very edge easy to miss.
-        ax.annotate(f"{at0:.0%}\nat 0", (0.02, counts.max() * 0.92), fontsize=7,
-                    color=style.INK, ha="left", va="top")
-        ax.annotate(f"{at1:.0%}\nat 1", (0.98, counts.max() * 0.92), fontsize=7,
-                    color=style.INK, ha="right", va="top")
-        ax.set_xlim(-0.02, 1.02)
+        # Annotate the two atoms ABOVE the bars, not on them. At the boundary the bar reaches
+        # the top of the axis, so text at 92% of the height sat directly on the spike it was
+        # labelling. Headroom is added first so the labels have somewhere to live.
+        ax.set_ylim(0, counts.max() * 1.28)
+        ax.annotate(f"{at0:.0%} at 0", (0.0, counts.max() * 1.06), fontsize=7,
+                    color=style.INK, ha="left", va="bottom")
+        ax.annotate(f"{at1:.0%} at 1", (1.0, counts.max() * 1.06), fontsize=7,
+                    color=style.INK, ha="right", va="bottom")
+        ax.set_xlim(-0.03, 1.03)
         ax.set_xlabel("LGD")
-        style.title(ax, name.replace("_", " "), f"{len(groups[name])} datasets")
+        # Just the name. "N datasets" is bookkeeping, and giving every panel a second bold line
+        # costs a third of the height in a three-panel row.
+        style.title(ax, name.replace("_", " "))
     axes[0][0].set_ylabel("share of rows")
     fig.suptitle("Where the boundary atoms come from")
+    counts_note = ", ".join(f"{k}: {len(v)}" for k, v in groups.items())
     style.figure_note(
-        fig, "Targets pooled per mechanism. Mass at 0 and 1 is a consequence of the loss "
-             "story, not a parameter.")
+        fig, f"Targets pooled per mechanism ({counts_note}). Mass at 0 and 1 is a consequence "
+             f"of the loss story, not a parameter.")
     return fig
 
 
@@ -337,11 +349,13 @@ def plot_difficulty_calibration(
     positions = np.arange(len(scores_per_variant))
     for i, (_name, scores) in enumerate(scores_per_variant.items()):
         colour = style.SERIES[i % len(style.SERIES)]
-        jitter = (np.random.default_rng(i).random(len(scores)) - 0.5) * 0.28
-        ax.scatter(np.full(len(scores), i) + jitter, scores, s=12, color=colour, alpha=0.5,
-                   linewidths=0, zorder=2)
-        ax.plot([i - 0.22, i + 0.22], [np.median(scores)] * 2, color=style.INK, linewidth=1.4,
-                zorder=3)
+        jitter = (np.random.default_rng(i).random(len(scores)) - 0.5) * 0.30
+        ax.scatter(np.full(len(scores), i) + jitter, scores, s=16, color=colour, alpha=0.75,
+                   linewidths=0, zorder=3)
+        # Median bar no wider than the jitter it summarises. A bar spanning the whole column
+        # dwarfed the points and read as the subject rather than the summary.
+        ax.plot([i - 0.17, i + 0.17], [np.median(scores)] * 2, color=style.INK, linewidth=1.6,
+                zorder=4, solid_capstyle="butt")
 
     if real_scores:
         values = np.asarray(list(real_scores.values()), dtype=float)
@@ -353,8 +367,13 @@ def plot_difficulty_calibration(
         ax.axhspan(lo, hi, color=style.REAL, alpha=0.12, zorder=1)
         ax.axhline(float(np.median(values)), color=style.REAL, linestyle="--", linewidth=1.0,
                    zorder=3)
-        ax.annotate("real credit data", (0.99, hi), xycoords=("axes fraction", "data"),
-                    ha="right", va="bottom", fontsize=7, color=style.REAL)
+        # Anchored INSIDE the axes. At x=0.99 with ha="right" the text ran off the right edge
+        # of the figure, because `constrained_layout` sizes to the axes and not to an
+        # annotation hanging outside them.
+        ax.annotate("real credit data", (0.985, hi), xycoords=("axes fraction", "data"),
+                    ha="right", va="bottom", fontsize=7, color=style.REAL,
+                    annotation_clip=False,
+                    bbox=dict(facecolor="white", edgecolor="none", pad=1.0, alpha=0.85))
         n_out = int(np.sum((values < lo) | (values > hi)))
         if n_out:
             ax.annotate(f"{n_out} real dataset(s) outside the band",
@@ -369,12 +388,12 @@ def plot_difficulty_calibration(
 
     ax.set_xticks(positions)
     ax.set_xticklabels(list(scores_per_variant), rotation=20, ha="right")
-    ax.set_ylabel("R^2" if task == "lgd" else "ROC AUC")
+    ax.set_ylabel("R²" if task == "lgd" else "ROC AUC")
     style.title(ax, "Is the synthetic task the right difficulty?",
-                "Bars = median. The shaded band is where real credit data sits.")
+                "Shaded band = real credit data")
     style.figure_note(
-        fig, "Small ExtraTrees, 70/30 split per synthetic dataset — the same family as "
-             "TabICL's own predictability filter.")
+        fig, "One point per synthetic dataset, bar = median. Small ExtraTrees on a 70/30 "
+             "split — the same family as TabICL's own predictability filter.")
     return fig
 
 
@@ -459,17 +478,25 @@ def plot_side_by_side_tables(
         ax.set_xticks(list(range(X.shape[1])) + [X.shape[1]])
         ax.set_xticklabels([f"f{c}" for c in range(X.shape[1])] + ["y"],
                            fontsize=mpl.rcParams["xtick.labelsize"] * 0.85)
+        # Row NUMBERS, not target values. The target is already the last column, so printing
+        # it again down the side said the same thing twice and invited the reader to think the
+        # left-hand numbers were a different quantity.
         ax.set_yticks(range(len(y)))
-        ax.set_yticklabels([f"{v:.2f}" for v in y],
+        ax.set_yticklabels([str(r + 1) for r in range(len(y))],
                            fontsize=mpl.rcParams["ytick.labelsize"] * 0.85)
+        ax.set_ylabel("row", fontsize=mpl.rcParams["ytick.labelsize"])
         ax.grid(visible=False)
+        # All four spines, so the coloured frame closes. The project style hides top and right,
+        # which left these panels framed on two sides and looking unfinished.
         for sp in ax.spines.values():
+            sp.set_visible(True)
             sp.set_color(colour)
             sp.set_linewidth(1.2)
-        style.title(ax, label, f"{n_rows} rows, {X.shape[1]} features, target on the right")
+        style.title(ax, label, f"{X.shape[1]} features + target")
     fig.suptitle("What the model actually sees")
-    style.figure_note(fig, "Each feature rank-normalised within its own column; shade shows "
-                           "relative value, not units.")
+    style.figure_note(fig, f"First {n_rows} rows. Each feature min-max normalised within its "
+                           f"own column, so shade shows relative value, not units. The rule "
+                           f"separates the target from the features.")
     return fig
 
 
@@ -506,19 +533,23 @@ def plot_boundary_mass_sources(
                for s in (target_stats(t.y) for t in variants[name])]
         if pts:
             xs, ys = zip(*pts)
-            ax.scatter(xs, ys, s=13, color=colour, alpha=0.55, linewidths=0, zorder=2)
+            ax.scatter(xs, ys, s=26, color=colour, alpha=0.75, linewidths=0, zorder=3)
+        # Stars are the REFERENCE, so they are drawn smaller and behind. At s=80 they buried
+        # the synthetic points completely, which inverted the figure: the subject vanished
+        # under its own yardstick.
         for rx, ry in real_points:
-            ax.scatter([rx], [ry], marker="*", s=80, color=style.REAL, zorder=4,
-                       edgecolors="white", linewidths=0.4)
+            ax.scatter([rx], [ry], marker="*", s=55, color=style.REAL, zorder=2,
+                       edgecolors="white", linewidths=0.5)
         # The line where the two atoms are equal. Above it a book is loss-heavy, below it
         # recovery-heavy, and which side a prior sits on is the readable fact.
         ax.plot([0, 1], [0, 1], color=style.MUTED, linewidth=0.8, linestyle=":", zorder=1)
         ax.set_xlim(-0.02, 1.02)
         ax.set_ylim(-0.02, 1.02)
         ax.set_xlabel("mass at 0 (full recovery)")
-        style.title(ax, name, f"{len(variants[name])} datasets")
+        style.title(ax, name)
     axes[0][0].set_ylabel("mass at 1 (total loss)")
     fig.suptitle("Which boundary does the mass sit on?")
-    style.figure_note(fig, "Stars are the real LGD datasets. The dotted line is equal mass at "
-                           "both ends.")
+    counts = ", ".join(f"{k}: {len(v)}" for k, v in variants.items())
+    style.figure_note(fig, f"One point per synthetic dataset ({counts}); stars are the real "
+                           f"LGD datasets. The dotted line is equal mass at both ends.")
     return fig

@@ -169,14 +169,17 @@ def _resolve_muon():
         from pytorch_optimizer import Muon  # Schaipp's collection, cited by the paper
 
         return Muon
-    except ImportError as exc:
-        raise ImportError(
-            "optimizer='muon' needs a Muon implementation and none was found.\n"
-            "Either upgrade torch (>=2.9 ships torch.optim.Muon) or install one:\n"
-            "    pip install -e '.[muon]'\n"
-            "Or set train.optimizer: adamw, which is fully supported and is held "
-            "fixed across arms so the prior contrast is unaffected."
-        ) from exc
+    except ImportError:
+        pass
+    # UPSTREAM'S OWN, vendored from the pinned dump. This is the branch the cluster takes:
+    # VSC runs torch 2.8 (no `torch.optim.Muon`) and the published `tabicl` wheel does not
+    # ship the training package, so before this existed every cluster run died at optimizer
+    # construction. It is also the strictly better fallback — the exact optimizer that
+    # produced the released TabICLv2 checkpoints, rather than a second implementation that
+    # merely ought to agree.
+    from ._muon_vendored import Muon as VendoredMuon
+
+    return VendoredMuon
 
 
 def _cosine_with_restarts_lambda(
