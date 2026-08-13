@@ -51,6 +51,24 @@ afterwards — a job that dies at the walltime never comes back to write its own
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
 
+### 13-08-2026 — `module --force purge`, and pinning a Python module by name
+- **Tried:** `setup_venv.sh` opened with `module --force purge` and then
+  `module load Python/3.12.3-GCCcore-13.3.0`.
+- **Result:** Lmod: *"These module(s) or extension(s) exist but cannot be loaded as
+  requested"* — on login-1, while the same module had worked on login-2.
+- **Why:** two causes stacked. (1) The `cluster/*` modules on VSC are **sticky** and set up the
+  architecture-specific `MODULEPATH`; `--force purge` removes them too, collapsing the tree so
+  a module that exists cannot be resolved. (2) Module trees are **per-architecture**
+  (`/apps/leuven/rocky9/<arch>/<toolchain>/…`), so a name present on skylake can be absent on
+  another login node.
+- **Instead:** plain `module purge`, then **discover** — try the preferred pins, else
+  `module -t avail Python/3.12 Python/3.11` and take the newest in range. The chosen name is
+  written to `.python_module` beside the venv so activation reloads exactly the interpreter the
+  venv was built on. The venv is also arch-suffixed (`.venv-$VSC_ARCH_LOCAL`), which the
+  project's own `docs/VSC.md` had already required and the first version ignored.
+- **Cheap check that would have caught it:** `module -t avail Python` on the node in question,
+  before writing any name into a script.
+
 ### 12-08-2026 — Three things the first cluster attempt found in ten minutes
 - **Tried:** the documented first-run sequence on wICE — `fetch_ood`, then the smoke test.
 - **Result:** (1) `fetch_ood` died on the FIRST dataset with `FileNotFoundError` on

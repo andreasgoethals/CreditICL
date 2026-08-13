@@ -236,17 +236,28 @@ on leaving, so you can never again install into a sibling project's environment 
 # --- CreditICL: auto-activate the project venv -----------------------------
 _crediticl_auto_venv() {
     local repo="${VSC_DATA}/CreditICL"
-    local venv="${repo}/.venv"
+    local venv="${repo}/.venv-${VSC_ARCH_LOCAL:-generic}"
+    # Fall back to any venv in the repo, so this keeps working on a login node
+    # whose $VSC_ARCH_LOCAL differs from the one that built it.
+    if [[ ! -x "$venv/bin/python" ]]; then
+        local found
+        for found in "$repo"/.venv-* "$repo/.venv"; do
+            [[ -x "$found/bin/python" ]] && { venv="$found"; break; }
+        done
+    fi
     case "$PWD/" in
         "$repo"/*)
             if [[ -x "$venv/bin/python" && "${VIRTUAL_ENV:-}" != "$venv" ]]; then
-                module load Python/3.12.3-GCCcore-13.3.0 2>/dev/null
+                # The module that BUILT this venv, recorded by setup_venv.sh.
+                local mod
+                mod="$(cat "$venv/.python_module" 2>/dev/null)"
+                [[ -n "$mod" ]] && module load "$mod" 2>/dev/null
                 source "$venv/bin/activate"
             fi
             ;;
         *)
             # Only deactivate OUR venv. Someone else's stays alone.
-            if [[ "${VIRTUAL_ENV:-}" == "$venv" ]]; then
+            if [[ -n "${VIRTUAL_ENV:-}" && "${VIRTUAL_ENV}" == "$repo"/* ]]; then
                 deactivate 2>/dev/null
             fi
             ;;
@@ -261,9 +272,17 @@ Then `source ~/.bashrc`, or open a new shell.
 after `pushd`, a subshell, or landing in the directory from a symlink — all of which an
 overridden `cd` misses.
 
-**The module load is not optional.** `.venv/bin/python` is a thin link to the Lmod
-interpreter; without the module its shared library is absent and the venv fails in a way that
-reads like a corrupt install rather than a missing module.
+**The module load is not optional, and the name is read from disk.**
+`.venv/bin/python` is a thin link to the Lmod interpreter; without the module its shared
+library is absent and the venv fails in a way that reads like a corrupt install. The module
+name is read from `.python_module` beside the venv rather than hard-coded, because module trees
+on VSC are **per-architecture** — the first version of this pinned
+`Python/3.12.3-GCCcore-13.3.0`, which exists on skylake and made Lmod report *"exist but cannot
+be loaded as requested"* on a login node with a different tree.
+
+**Never `module --force purge`.** The `cluster/*` modules are *sticky* and set up the
+architecture-specific `MODULEPATH`; force-purging removes them too, which collapses the tree so
+that even a module that genuinely exists cannot be loaded.
 
 **Why one venv per project at all.** Packages were being installed into
 `TabPFNCredit/tabpfncreditvenv`, so `pip install` reported *"already satisfied"* for things

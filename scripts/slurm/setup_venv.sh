@@ -28,13 +28,28 @@ set -euo pipefail
 # handles the file count fine.
 # ---------------------------------------------------------------------------
 REPO="${VSC_DATA}/CreditICL"
-VENV="${REPO}/.venv"
 
-# The Python module the venv is BUILT ON. It must be loaded whenever the venv is
-# used, because `.venv/bin/python` is a thin link to this interpreter — without
-# the module its shared library is gone and the venv fails cryptically.
-# Kept in one place; `_activate_env.sh` reads the same value.
-PYTHON_MODULE="Python/3.12.3-GCCcore-13.3.0"
+# ---------------------------------------------------------------------------
+# ONE VENV PER MICROARCHITECTURE, suffixed with $VSC_ARCH_LOCAL.
+#
+# wICE (Icelake / Sapphire Rapids / Zen4) and Mindwell (Granite Rapids / Turin)
+# are DIFFERENT microarchitectures, and the module tree itself is arch-specific
+# (`/apps/leuven/rocky9/<arch>/<toolchain>/...`). A venv built on one is not
+# reliably usable on another, and compiled wheels are the reason. Suffixing is
+# the convention VSC's own documentation gives, and it means building on two
+# login nodes produces two venvs instead of one corrupted one.
+# ---------------------------------------------------------------------------
+VENV="${REPO}/.venv-${VSC_ARCH_LOCAL:-generic}"
+
+# Preferred Python modules, best first. DISCOVERED rather than hard-coded: the
+# first attempt at this pinned `Python/3.12.3-GCCcore-13.3.0`, which exists on
+# skylake but not on every login node's tree, and Lmod then reports
+# "exist but cannot be loaded as requested" — which reads like a broken module
+# rather than the wrong architecture. The project needs >=3.11,<3.13.
+PYTHON_MODULE_PREFS=(
+    "Python/3.12.3-GCCcore-13.3.0"
+    "Python/3.11.3-GCCcore-12.3.0"
+)
 
 # torch's CUDA build must match the driver. cu128 is what the working environment
 # on this cluster already uses (torch 2.8.0+cu128), so it is the verified choice
@@ -49,7 +64,7 @@ echo "=============================================================="
 echo " CreditICL — VSC environment setup"
 echo " repo   : ${REPO}"
 echo " venv   : ${VENV}"
-echo " module : ${PYTHON_MODULE}"
+echo " arch   : ${VSC_ARCH_LOCAL:-unset}   host: $(hostname)"
 echo "=============================================================="
 
 if [[ ! -f "${REPO}/pyproject.toml" ]]; then
@@ -61,9 +76,58 @@ fi
 cd "${REPO}"
 
 # --- 1. the interpreter -----------------------------------------------------
-module --force purge 2>/dev/null || true
-module load "${PYTHON_MODULE}"
-echo "[1/5] python module loaded: $(python3 -V)"
+# `module purge`, NEVER `--force purge`. On VSC the `cluster/*` modules are
+# STICKY and set up the architecture-specific MODULEPATH; force-purging removes
+# them too, which collapses the module tree so that even a module that exists
+# reports "exist but cannot be loaded as requested". That is exactly how the
+# first version of this script failed.
+module purge 2>/dev/null || true
+
+_load_python() {
+    local candidate
+    # 1. The preferred pins, in order.
+    for candidate in "${PYTHON_MODULE_PREFS[@]}"; do
+        if module load "${candidate}" 2>/dev/null; then
+            PYTHON_MODULE="${candidate}"
+            return 0
+        fi
+    done
+    # 2. Anything this node actually offers in range. `module -t avail` writes to
+    #    stderr and gives one name per line; `sort -V -r` puts the newest first.
+    echo "      preferred modules unavailable here — discovering ..." >&2
+    for candidate in $(module -t avail Python/3.12 Python/3.11 2>&1 \
+                       | grep -E '^Python/3\.1[12]' | sed 's:/$::' | sort -V -r); do
+        if module load "${candidate}" 2>/dev/null; then
+            PYTHON_MODULE="${candidate}"
+            echo "      discovered: ${candidate}" >&2
+            return 0
+        fi
+    done
+    return 1
+}
+
+if ! _load_python; then
+    cat >&2 <<EOF
+ERROR: could not load a Python 3.11 or 3.12 module on this node.
+
+  host: $(hostname)   arch: ${VSC_ARCH_LOCAL:-unset}
+
+  See what this node offers, and what a module needs, with:
+      module -t avail Python
+      module spider Python/3.12.3-GCCcore-13.3.0
+
+  Module trees are per-architecture on VSC, so a module present on one login
+  node can be absent on another. If a usable version shows up in the list
+  above, add it to PYTHON_MODULE_PREFS at the top of this script.
+EOF
+    exit 1
+fi
+echo "[1/5] python module: ${PYTHON_MODULE} -> $(python3 -V 2>&1)"
+
+# The venv is a thin link to THIS interpreter, so record which module built it.
+# Without that record, a later shell can activate the venv under a different
+# module and get a missing-libpython failure that reads like a corrupt install.
+mkdir -p "${VENV%/*}"
 
 # --- 2. the venv ------------------------------------------------------------
 if [[ "${RECREATE}" == "1" && -d "${VENV}" ]]; then
@@ -79,6 +143,11 @@ else
     python3 -m venv "${VENV}"
     echo "[2/5] venv created"
 fi
+# The module that built this venv, written beside it. `_activate_env.sh` and the
+# ~/.bashrc hook read this instead of hard-coding a module name, so the venv and
+# its interpreter can never drift apart.
+echo "${PYTHON_MODULE}" > "${VENV}/.python_module"
+
 # shellcheck disable=SC1091
 source "${VENV}/bin/activate"
 python -m pip install --quiet --upgrade pip setuptools wheel

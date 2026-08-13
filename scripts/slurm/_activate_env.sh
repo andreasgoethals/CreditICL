@@ -32,9 +32,30 @@ CONDA_ENV="${CONDA_ENV:-CreditICL}"
 # while `python` still resolved to the venv, which is a failure CreditPFN spent
 # real time on. Now the venv is the intended environment, so the two agree.
 # ---------------------------------------------------------------------------
-_PROJECT_VENV="${PROJECT_VENV:-${VSC_DATA:-}/CreditICL/.venv}"
-if [[ -x "${_PROJECT_VENV}/bin/python" ]]; then
-    module load "${PYTHON_MODULE:-Python/3.12.3-GCCcore-13.3.0}" 2>/dev/null || true
+# ARCH-SUFFIXED, and discovered rather than assumed. wICE and Mindwell are different
+# microarchitectures with different module trees, so `setup_venv.sh` builds
+# `.venv-$VSC_ARCH_LOCAL`. Prefer this node's arch; fall back to any venv present, because
+# one built on a compatible arch still beats no environment at all.
+_PROJECT_VENV="${PROJECT_VENV:-}"
+if [[ -z "${_PROJECT_VENV}" ]]; then
+    _repo="${VSC_DATA:-}/CreditICL"
+    for _candidate in "${_repo}/.venv-${VSC_ARCH_LOCAL:-generic}" "${_repo}/.venv" \
+                      "${_repo}"/.venv-*; do
+        if [[ -x "${_candidate}/bin/python" ]]; then
+            _PROJECT_VENV="${_candidate}"
+            break
+        fi
+    done
+fi
+if [[ -n "${_PROJECT_VENV}" && -x "${_PROJECT_VENV}/bin/python" ]]; then
+    # The module that BUILT this venv, recorded by setup_venv.sh. Reading it beats
+    # hard-coding a name that may not exist on this node's tree.
+    _py_module="$(cat "${_PROJECT_VENV}/.python_module" 2>/dev/null || true)"
+    module purge 2>/dev/null || true
+    if [[ -n "${_py_module}" ]]; then
+        module load "${_py_module}" 2>/dev/null \
+            || echo "  [activate] WARNING: module ${_py_module} did not load" >&2
+    fi
     # shellcheck disable=SC1091
     source "${_PROJECT_VENV}/bin/activate"
     hash -r 2>/dev/null || true

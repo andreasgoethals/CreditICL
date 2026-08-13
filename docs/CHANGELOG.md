@@ -5,7 +5,29 @@ reason is not obvious.
 
 ---
 
-## 13-08-2026 (later)
+## 13-08-2026 (later still)
+
+The venv setup failed on the first attempt; two bugs, both mine.
+
+- **`module --force purge` collapsed the module tree.** The `cluster/*` modules on VSC are
+  *sticky* and set up the architecture-specific `MODULEPATH`, so force-purging them made Lmod
+  report *"exist but cannot be loaded as requested"* for a module that genuinely exists. Now a
+  plain `module purge`.
+- **The Python module is discovered, not pinned.** Module trees are **per-architecture**, so
+  `Python/3.12.3-GCCcore-13.3.0` resolves on one login node and not another. The script tries
+  the preferred pins, then falls back to `module -t avail` and takes the newest 3.11/3.12 the
+  node actually offers, and fails with the exact diagnostic commands if none exists. Verified
+  against a simulated Lmod that refuses both pins.
+- **The venv is arch-suffixed** — `.venv-$VSC_ARCH_LOCAL` — which `docs/VSC.md` already required
+  ("one venv per microarchitecture") and the first version ignored. wICE and Mindwell are
+  different microarchitectures and a venv built on one is not reliably usable on the other.
+- **The chosen module name is written to `.python_module`** beside the venv, and both
+  `_activate_env.sh` and the `~/.bashrc` hook read it instead of hard-coding a name, so the venv
+  and its interpreter cannot drift apart.
+- The hook was re-verified end to end: activates on entry, deactivates on exit, and falls back
+  to whatever venv exists when `$VSC_ARCH_LOCAL` differs from the one that built it.
+
+## 13-08-2026 (earlier)
 
 - **`scripts/slurm/setup_venv.sh`** — one command builds this project's own venv on the VSC
   from `pyproject.toml`, so pyproject is the single source of truth for what is installed.
