@@ -229,8 +229,40 @@ matches the released TabICLv2 checkpoints. Idempotent; `--recreate` starts over.
 
 ### Auto-activate it when you `cd` into the repo
 
-Add this to `~/.bashrc` **once**. It activates the venv on entering the repo and deactivates it
-on leaving, so you can never again install into a sibling project's environment by accident:
+**Two commands, once:**
+
+```bash
+bash scripts/slurm/shell_hook.sh --install
+```
+
+```bash
+source ~/.bashrc
+```
+
+That appends **one line** to `~/.bashrc` which sources
+[`scripts/slurm/shell_hook.sh`](../scripts/slurm/shell_hook.sh). The hook itself lives in the
+repo, so `git pull` keeps it current and `~/.bashrc` never needs editing again. Re-running
+`--install` is safe; `--uninstall` removes it (with a backup) and `--status` shows what is wired
+up and which venvs exist.
+
+Check it took:
+
+```bash
+cd $VSC_DATA/CreditICL && python -c "import sys; print(sys.prefix)"
+```
+
+It must print a path ending in `.venv-<arch>`. If it prints another project's venv, the hook is
+not registered — run `bash scripts/slurm/shell_hook.sh --status`.
+
+The hook also **stands down an already-active venv from another project** before taking over.
+That mattered in practice: `TabPFNCredit/tabpfncreditvenv` was active and kept winning the PATH
+race, so `pip install` reported *"already satisfied"* for packages CreditICL had never had.
+
+<details>
+<summary>What the hook does, if you want to read it rather than install it</summary>
+
+The same code as `scripts/slurm/shell_hook.sh`. Prefer installing the file — a copy pasted into
+`~/.bashrc` stops receiving fixes.
 
 ```bash
 # --- CreditICL: auto-activate the project venv -----------------------------
@@ -266,7 +298,7 @@ _crediticl_auto_venv() {
 PROMPT_COMMAND="_crediticl_auto_venv${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
 ```
 
-Then `source ~/.bashrc`, or open a new shell.
+</details>
 
 **`PROMPT_COMMAND`, not an overridden `cd`.** It fires before every prompt, so it also works
 after `pushd`, a subshell, or landing in the directory from a symlink — all of which an

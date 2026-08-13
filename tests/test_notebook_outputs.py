@@ -380,3 +380,22 @@ def test_no_notebook_carries_doubled_braces():
         assert "{{" not in code and "}}" not in code, (
             f"{name} contains doubled braces — a .format() template leaked into the notebook"
         )
+
+
+def test_the_shell_hook_is_a_real_file_not_a_paste_from_the_docs():
+    """A 25-line function pasted into `~/.bashrc` over SSH is error-prone AND stops receiving
+    fixes. The hook is a file in the repo with a one-command installer, so `git pull` updates it
+    and `~/.bashrc` carries a single line."""
+    hook = ROOT / "scripts" / "slurm" / "shell_hook.sh"
+    assert hook.is_file(), "scripts/slurm/shell_hook.sh is missing"
+    text = hook.read_text(encoding="utf-8")
+    for flag in ("--install", "--uninstall", "--status"):
+        assert flag in text, f"{flag} is not handled"
+    # It must be safe to SOURCE as well as run: the installer body has to be guarded.
+    assert 'if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then' in text, (
+        "the installer must not run when the file is sourced"
+    )
+    # And it must stand down another project's venv, which is what actually went wrong.
+    assert "deactivate" in text
+    doc = (ROOT / "docs" / "VSC.md").read_text(encoding="utf-8")
+    assert "shell_hook.sh --install" in doc, "the docs must point at the installer"
