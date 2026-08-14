@@ -57,10 +57,30 @@ def test_matching_compute_with_a_slow_end_to_end_points_at_the_prior(tmp_path):
     assert "END TO END" in out
 
 
-def test_two_files_are_required(tmp_path):
+def test_one_file_still_prints_its_numbers(tmp_path):
+    """A comparison needs two, but one column answers "did the benchmark even work?" —
+    which is the next question when a job has just finished."""
     a = _write(tmp_path, "a.json", FAST, matmul=40.0, e2e=6.9, ceiling=16.7)
     r = subprocess.run(
         [sys.executable, "-m", "src.utils.compare_gpubench", str(a)],
         capture_output=True, text=True, cwd=ROOT, timeout=120,
     )
     assert r.returncode == 2, "one file cannot answer a comparison question"
+    assert "Only ONE result" in r.stderr
+    assert "40.0" in r.stdout, "the single card's numbers must still be shown"
+
+
+def test_an_unexpanded_glob_says_the_files_do_not_exist_yet(tmp_path):
+    """The shell passes a pattern through literally when nothing matches, so the argument
+    count is 1. Reporting that as "need at least two JSON files" sent the reader looking for
+    a second card when in fact NEITHER had finished."""
+    r = subprocess.run(
+        [sys.executable, "-m", "src.utils.compare_gpubench",
+         str(tmp_path / "gpubench_*.json")],
+        capture_output=True, text=True, cwd=ROOT, timeout=120,
+    )
+    assert r.returncode == 2
+    assert "No benchmark results matched" in r.stderr
+    assert "still queued or running" in r.stderr
+    assert "squeue" in r.stderr, "tell the reader how to check"
+    assert "need at least two" not in r.stderr, "the misleading message must be gone"

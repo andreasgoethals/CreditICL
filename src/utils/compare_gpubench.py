@@ -37,20 +37,49 @@ def _dig(d: dict[str, Any], dotted: str) -> Any:
 
 
 def main(argv: list[str]) -> int:
-    paths = [Path(p) for p in argv[1:]]
-    if len(paths) < 2:
-        print(__doc__)
-        print(f"need at least two JSON files, got {len(paths)}", file=sys.stderr)
+    raw = argv[1:]
+
+    # AN UNEXPANDED GLOB IS NOT A FILE. When no file matches, the shell passes the pattern
+    # through literally, so the argument count is 1 and the honest message is "nothing
+    # matched yet" — not "give me two files", which is what it used to say while the jobs
+    # were still queued.
+    unexpanded = [a for a in raw if any(c in a for c in "*?[") and not Path(a).exists()]
+    if unexpanded:
+        print("No benchmark results matched:", file=sys.stderr)
+        for a in unexpanded:
+            print(f"    {a}", file=sys.stderr)
+        print(
+            "\nThe pattern came back unexpanded, which means the files do not exist yet.\n"
+            "The jobs are probably still queued or running. Check with:\n"
+            "    squeue --clusters=mindwell -u $USER\n"
+            "    sacct --clusters=mindwell -u $USER --starttime=today \\\n"
+            "        --format=JobID%18,JobName%22,State,ExitCode,Elapsed\n"
+            "and if a job has finished but wrote no JSON, read its log:\n"
+            "    ls -t $VSC_DATA/CreditICL/output/logs/gpubench_*.out | head -2",
+            file=sys.stderr,
+        )
         return 2
+
+    paths = [Path(p) for p in raw]
+    missing = [p for p in paths if not p.is_file()]
+    if missing:
+        for p in missing:
+            print(f"missing: {p}", file=sys.stderr)
+        return 1
 
     runs = []
     for p in paths:
-        if not p.is_file():
-            print(f"missing: {p}", file=sys.stderr)
-            return 1
         data = json.loads(p.read_text(encoding="utf-8"))
         info = data.get("device_info") or {}
         runs.append((info.get("gpu", p.stem), data, info))
+
+    if len(runs) < 2:
+        # One card still gets a table. The comparison is the point, but a single column
+        # answers "did the benchmark actually work?", which is the next question anyway.
+        print("Only ONE result so far — this cannot answer the comparison question.\n"
+              "Printing it alone so you can see the benchmark ran; submit the other card:\n"
+              "    bash scripts/slurm/submit.sh b200 pd scripts/slurm/benchmark.slurm\n",
+              file=sys.stderr)
 
     width = max(len(r[0]) for r in runs) + 2
     print("=" * (30 + width * len(runs)))
@@ -81,11 +110,13 @@ def main(argv: list[str]) -> int:
               f"compiled_for={info.get('compiled_for')}{note}")
 
     print()
-    print("  matmul/attention differ      -> the CARD or the wheel. Change hardware.")
-    print("  those match, model differs   -> a kernel this model needs is missing there.")
-    print("  all match, END TO END differs-> the GPU was never the problem; the prior is,")
-    print("                                  and only more CPU cores will help.")
-    return 0
+    if len(runs) >= 2:
+        print("  matmul/attention differ      -> the CARD or the wheel. Change hardware.")
+        print("  those match, model differs   -> a kernel this model needs is missing there.")
+        print("  all match, END TO END differs-> the GPU was never the problem; the prior is,")
+        print("                                  and only more CPU cores will help.")
+        return 0
+    return 2
 
 
 if __name__ == "__main__":

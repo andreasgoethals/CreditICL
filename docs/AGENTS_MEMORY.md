@@ -45,6 +45,20 @@ distinct cause each time: unknown baseline → no checkpoint → **loader built 
 built upstream TabICL**. Staging checkpoint directory still not writable. Full write-up in
 [`RUNS.md`](RUNS.md).
 
+### 14-08-2026 — One staging directory was mode 0500, and every run silently rerouted
+- **Tried:** writing checkpoints to `/lustre1/project/stg_00211/CreditICL/checkpoints`.
+- **Result:** `[Errno 13] Permission denied` on every arm of every run, for days. Each one
+  fell back to `$VSC_DATA` and finished, so nothing ever failed — which is why it survived.
+- **Why:** the directory was **`dr-x------ vsc38338:lp_andreas`** — mode 0500. Owned by us,
+  but with no write bit and no group access, while every sibling was `drwxrws--- … SETGID`.
+  Something created it from a read-only source; a `cp`/`rsync` out of a HuggingFace cache
+  does exactly this, since those files are 444. **The fix was `chmod u+rwx,g+rwxs`.**
+- **Instead:** `scripts/check_storage.py`, run before submitting. It writes a real probe file
+  (`os.access` lies on Lustre) and prints owner/group/mode for every level, which is what
+  turned "permission denied" into "one directory is 0500" in a single screen.
+  **A fallback that always works hides the fault it is compensating for** — `$VSC_DATA` is
+  75 GiB and Exp1 is 96 arms, so the fallback would have failed exactly when it mattered.
+
 ### 14-08-2026 — Two claims I made from reading code, one of which was wrong
 - **Tried:** asserting from the source that a 10-wide head would spread probability mass over
   eight absent classes, so Brier and calibration must be wrong.

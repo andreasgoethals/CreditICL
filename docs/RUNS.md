@@ -18,11 +18,18 @@ Related, and deliberately separate:
 
 ## The workflow
 
-**1. Before submitting.** Read this file and `AGENTS_MEMORY.md`. Then:
+**1. Before submitting.** Read this file and `AGENTS_MEMORY.md`. Then, locally:
 
 ```powershell
 .CreditICL\Scripts\python.exe -m src.utils.smoke_test --task lgd --steps 3
 .CreditICL\Scripts\python.exe -m pytest -q
+```
+
+And **on the login node**, because a run that cannot write where it thinks it can will
+silently reroute to `$VSC_DATA` and only fail once the 75 GiB quota is gone:
+
+```bash
+python scripts/check_storage.py
 ```
 
 **2. Submit**, and **immediately add a stub entry here** with the date, the config and the job

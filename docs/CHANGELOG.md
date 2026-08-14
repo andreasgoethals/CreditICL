@@ -5,6 +5,24 @@ reason is not obvious.
 
 ---
 
+## 14-08-2026 (night, last) — storage fixed, and two flaws in the doctor itself
+
+- **The staging `checkpoints/` directory was mode `0500`** (`dr-x------`), owned by us but with
+  no write bit, while every sibling was `drwxrws--- SETGID`. Fixed on the cluster with
+  `chmod u+rwx,g+rwxs`; `check_storage.py --fix` now does it. Runs no longer reroute to
+  `$VSC_DATA`.
+- **`check_storage.py` no longer probes a made-up `prior_cache/<name>` subdirectory** — it
+  tested a path no run uses, and `--fix` then created it, leaving a stray directory on project
+  storage. It checks the cache root instead.
+- **A missing directory is no longer reported as broken** when its parent is writable: the
+  pipeline creates it on first use, and flagging it sent the reader chmod-ing a path that was
+  always going to work.
+- **`compare_gpubench` recognises an unexpanded glob.** The shell passes the pattern through
+  literally when nothing matches, so "need at least two JSON files, got 1" appeared while
+  *neither* job had finished. It now says the files do not exist yet and prints the `squeue`
+  and `sacct` commands to check. One result also prints its own column rather than nothing.
+- `check_storage.py` added to the pre-submission checklist in `RUNS.md`.
+
 ## 14-08-2026 (night, later) — quantile crossing, and a storage doctor
 
 - **`enforce_monotonic_quantiles`** in `src/train/loop.py`, applied at every LGD decode point

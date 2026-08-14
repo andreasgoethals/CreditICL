@@ -98,7 +98,10 @@ def main() -> int:
         ("checkpoints  <- the one that failed", Path(checkpoints_dir())),
         ("processed data", Path(processed_dir())),
         ("results", Path(results_dir("pd", "eval"))),
-        ("prior cache", Path(prior_cache_dir("probe"))),
+        # `.parent`: `prior_cache_dir(name)` returns a per-cache SUBdirectory, so passing a
+        # made-up name would test a path no run ever uses — and `--fix` would then create it,
+        # leaving a stray directory on project storage. Test the cache root itself.
+        ("prior cache", Path(prior_cache_dir("probe")).parent),
         ("logs", Path(logs_dir())),
         ("manifests", Path(manifests_dir())),
     ]
@@ -117,18 +120,18 @@ def main() -> int:
             print(f"  {marker} {str(parent):<58} {_describe(parent)}")
 
         if not path.exists():
-            print("  MISSING")
-            if args.fix:
-                try:
-                    path.mkdir(parents=True, exist_ok=True)
-                    print(f"  created {path}")
-                except OSError as exc:
-                    print(f"  could NOT create: {exc}")
-                    broken.append(path)
-                    continue
-            else:
-                broken.append(path)
+            # A directory that does not exist yet is NOT a problem — the pipeline creates it
+            # on first use. What matters is whether the nearest existing ancestor will let it.
+            # Reporting "missing" as "cannot be written" would send you chmod-ing a path that
+            # was always going to work.
+            ancestor = next((p for p in path.parents if p.exists()), path.anchor and Path("/"))
+            ok_parent, why_parent = _can_write(Path(ancestor))
+            if ok_parent:
+                print(f"  MISSING — fine, {ancestor} is writable and it will be created")
                 continue
+            print(f"  MISSING, and its parent {ancestor} refuses: {why_parent}")
+            broken.append(Path(ancestor))
+            continue
 
         ok, why = _can_write(path)
         print(f"  WRITE   {'OK' if ok else 'FAILED — ' + why}")
