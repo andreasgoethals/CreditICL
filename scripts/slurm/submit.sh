@@ -49,6 +49,13 @@ set -euo pipefail
 
 ACCOUNT="${ACCOUNT:-lp_verbekelab}"
 
+# ONE HOUR by default, not four. Billing is on ACTUAL walltime (the VSC docs are explicit:
+# "if this job finishes in 2.5 hours ... the user will be charged" for 150 minutes), so a
+# generous limit does not cost credits directly. But the REQUESTED limit is what the scheduler
+# backfills against — a short job slots into gaps a long one cannot — and it is what
+# `sam-quote` reports, which is the number you actually look at before submitting.
+# A 1,500-step debug run does not need four hours. Override with WALLTIME=HH:MM:SS.
+
 usage() {
     sed -n '2,48p' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
@@ -65,20 +72,20 @@ case "${TARGET}" in
         # FREE, and a full GPU. 16h ceiling. The 8-core cap is the trade: the prior
         # generator gets fewer workers, so a step is slower — but it starts now.
         OPTS=(--clusters=mindwell --partition=interactive
-              --gpus-per-node=1 --cpus-per-task=8 --mem=30G --time=04:00:00)
+              --gpus-per-node=1 --cpus-per-task=8 --mem=30G --time=${WALLTIME:-01:00:00})
         ;;
     b200)
         # 24 GPUs and 24 cores/GPU: the most of both. The production target.
         OPTS=(--clusters=mindwell --partition=gpu_b200
-              --gpus-per-node=1 --cpus-per-task=24 --mem=180G --time=04:00:00)
+              --gpus-per-node=1 --cpus-per-task=24 --mem=180G --time=${WALLTIME:-01:00:00})
         ;;
     a100)
         OPTS=(--clusters=wice --partition=gpu_a100
-              --gpus-per-node=1 --cpus-per-task=18 --mem=120G --time=04:00:00)
+              --gpus-per-node=1 --cpus-per-task=18 --mem=120G --time=${WALLTIME:-01:00:00})
         ;;
     h100)
         OPTS=(--clusters=wice --partition=gpu_h100
-              --gpus-per-node=1 --cpus-per-task=16 --mem=180G --time=04:00:00)
+              --gpus-per-node=1 --cpus-per-task=16 --mem=180G --time=${WALLTIME:-01:00:00})
         ;;
     dbg1h)
         # One node, one hour, and Slurm allows only ONE queued job here at a time —
@@ -98,21 +105,68 @@ if [[ ! -f "${SCRIPT}" ]]; then
     exit 1
 fi
 
+# THE CONFIG, ON SCREEN. `CONFIG` is an env var read inside the job script, so leaving it
+# unset silently submits the LGD default — which is how a run intended as PD went out as a
+# SECOND LGD job, with nothing in the output to say so until the log appeared.
+CONFIG_IN_USE="${CONFIG:-config/Exp1_LGD.yaml (default — set CONFIG= to change)}"
 echo "target : ${TARGET}"
 echo "script : ${SCRIPT}"
+echo "CONFIG : ${CONFIG_IN_USE}"
 echo "sbatch : --account=${ACCOUNT} ${OPTS[*]} $*"
+
+# `--export=ALL` in the job script propagates the submitting environment, but only what is
+# EXPORTED. `CONFIG=... bash submit.sh` sets it for THIS shell, not for sbatch's environment,
+# so it has to be exported here or the job would not see it at all.
+[[ -n "${CONFIG:-}" ]] && export CONFIG
 
 if [[ -n "${DRY_RUN:-}" ]]; then
     echo "(DRY_RUN set — nothing submitted)"
     exit 0
 fi
-
-# `sam-quote` first, so the credit cost is on screen BEFORE the job is queued.
-# Skipped for the free partition, where the answer is always zero.
+# `sam-quote` first, so the credit cost is on screen BEFORE the job is queued. It assumes the
+# WORST case — that the job runs to its full time limit — while billing is on actual walltime
+# (VSC docs: "if this job finishes in 2.5 hours ... the user will be charged" for 150 minutes).
+# So treat the number as a ceiling, not a forecast. Skipped for `free`, where it is always zero.
 if [[ "${TARGET}" != "free" ]] && command -v sam-quote >/dev/null 2>&1; then
-    echo "--- cost estimate (worst case: runs to the full time limit) ---"
+    echo "--- cost ceiling if it runs the full ${WALLTIME:-01:00:00} (billing is on ACTUAL time) ---"
     sam-quote sbatch --account="${ACCOUNT}" "${OPTS[@]}" "$@" "${SCRIPT}" || true
-    echo "---------------------------------------------------------------"
+    echo "-----------------------------------------------------------------------------------"
 fi
 
-sbatch --account="${ACCOUNT}" "${OPTS[@]}" "$@" "${SCRIPT}"
+# Capture the outcome so a QOS rejection can be explained rather than just echoed. Slurm's own
+# message ("job submit limit, user's size and/or time limits") does not say WHICH limit was hit,
+# and the fix differs per partition.
+set +e
+OUT="$(sbatch --account="${ACCOUNT}" "${OPTS[@]}" "$@" "${SCRIPT}" 2>&1)"
+RC=$?
+set -e
+echo "${OUT}"
+
+if [[ ${RC} -ne 0 ]] && grep -qi "QOSMaxSubmitJobPerUserLimit\|job submit limit" <<<"${OUT}"; then
+    case "${TARGET}" in
+        free)  QOS=interactive ;;
+        dbg1h) QOS=debug ;;
+        *)     QOS=normal ;;
+    esac
+    cat >&2 <<EOF
+
+  ---------------------------------------------------------------------------
+  That is a QUEUE-LENGTH limit, not a resource one. Each partition has a QoS
+  capping how many jobs one user may have queued at once, and an ARRAY counts
+  as several. The '${TARGET}' target sits on the '${QOS}' QoS.
+
+  See the actual numbers with:
+      sacctmgr show qos debug,interactive,long,normal \
+          format=Name%20,MaxSubmitJobsPerUser%15,MaxTRESPerUser%30
+
+  Options, cheapest first:
+    * wait for the queued array to finish, then resubmit;
+    * use a different QoS - 'b200' and 'a100' are on 'normal', a separate
+      allowance from 'interactive':
+          bash scripts/slurm/submit.sh b200 ${SCRIPT}
+    * submit fewer arms at once:
+          bash scripts/slurm/submit.sh ${TARGET} ${SCRIPT} --array=0-1
+  ---------------------------------------------------------------------------
+EOF
+fi
+exit ${RC}

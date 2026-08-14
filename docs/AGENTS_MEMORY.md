@@ -51,6 +51,30 @@ afterwards — a job that dies at the walltime never comes back to write its own
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
 
+### 14-08-2026 — `CONFIG=` in front of a wrapper script does not reach the job
+- **Tried:** `CONFIG=config/Exp1_PD.yaml bash scripts/slurm/submit.sh free ...`, then
+  `bash scripts/slurm/submit.sh b200 ...` for the same PD run.
+- **Result:** the first was rejected by a QoS limit; the second submitted a **second LGD run**.
+  Nothing on screen said which config either job carried, so it looked like a PD job had gone
+  out when none had.
+- **Why:** `VAR=x bash script.sh` sets the variable for *that shell*, not for `sbatch`'s
+  environment, so `--export=ALL` inside the job script had nothing to propagate. And
+  `submit.sh` printed the partition and resources but never the config.
+- **Instead:** `submit.sh` now prints `CONFIG :` on every submission — with
+  `(default — set CONFIG= to change)` spelled out when it is unset — and exports it so the job
+  actually receives it. **Print every input that changes what a job does**, not just the ones
+  that were passed as flags.
+
+### 14-08-2026 — Queue limits are per-QoS, and an array counts as several jobs
+- **Tried:** submitting an LGD 4-task array and a PD 4-task array to Mindwell `interactive`.
+- **Result:** the second was refused with `QOSMaxSubmitJobPerUserLimit`.
+- **Why:** each partition group has a QoS (`interactive`, `debug`, `long`, `normal`) capping
+  how many jobs one user may have queued. The first array had already used the allowance.
+- **Instead:** send the second job to a partition on a *different* QoS (`b200`/`a100` are on
+  `normal`), or submit fewer arms with `--array=0-1`, or wait. The real numbers come from
+  `sacctmgr show qos debug,interactive,long,normal format=Name%20,MaxSubmitJobsPerUser%15`.
+  `submit.sh` now prints this when it sees the rejection.
+
 ### 13-08-2026 — `module --force purge`, and pinning a Python module by name
 - **Tried:** `setup_venv.sh` opened with `module --force purge` and then
   `module load Python/3.12.3-GCCcore-13.3.0`.

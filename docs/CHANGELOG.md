@@ -5,6 +5,23 @@ reason is not obvious.
 
 ---
 
+## 14-08-2026 (evening) — three fixes from the first Mindwell submission
+
+- **`submit.sh` now prints and exports `CONFIG`.** `CONFIG=... bash submit.sh` sets the variable
+  for the calling shell, not for `sbatch`'s environment, so the job never saw it — and nothing
+  on screen said which config was being submitted. A run intended as PD went out as a **second
+  LGD job** with no visible sign. It now prints `CONFIG :` on every submission, saying
+  `(default — set CONFIG= to change)` when unset.
+- **Debug walltime 4 h → 1 h.** Billing is on *actual* walltime, so a generous limit costs
+  nothing directly — but the requested limit is what the scheduler backfills against and what
+  `sam-quote` reports, and 1,500 steps does not need four hours. It cut the quoted ceiling from
+  489,600 credits to a quarter of that. Override with `WALLTIME=`.
+- **A QoS rejection is now explained.** `QOSMaxSubmitJobPerUserLimit` does not say which limit
+  was hit; `submit.sh` names the QoS, gives the `sacctmgr` query, and lists the three ways out
+  (wait, different QoS, fewer arms).
+- The `sam-quote` banner now says the number is a **ceiling if it runs the full limit**, since
+  the docs are explicit that charging follows actual time.
+
 ## 14-08-2026 (later) — cluster targets, read out of the VSC docs
 
 The first debug submission sat in `gpu_a100` behind `Reason: Priority` and never started.

@@ -17,9 +17,9 @@
 #  Pick the indices from the grid listing before submitting:
 #      python scripts/pretrain.py --config config/Exp1_LGD.yaml --list
 #
-#  WALLTIME IS 4 HOURS, not 72. A debug run that sits in the queue for a day
-#  teaches nothing; a short one gets scheduled sooner and the failure modes it
-#  finds are the same ones.
+#  WALLTIME IS 1 HOUR, not 72. A debug run that sits in the queue for a day
+#  teaches nothing; a short one backfills into gaps a long one cannot, and the
+#  failure modes it finds are the same. 1,500 steps finishes well inside it.
 # =============================================================================
 
 #SBATCH --job-name=crediticl-debug-exp1
@@ -39,7 +39,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=30G
-#SBATCH --time=04:00:00
+#SBATCH --time=01:00:00
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
 # Propagate the submission env, or a cross-cluster sbatch can hit Slurm's
