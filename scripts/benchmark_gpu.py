@@ -1,0 +1,359 @@
+"""Why is this GPU slow? Separate "the chip is slow" from "the data pipeline stalls".
+
+    python scripts/benchmark_gpu.py                    # everything, ~2 minutes
+    python scripts/benchmark_gpu.py --skip-prior       # no CPU prior work, GPU only
+    python scripts/benchmark_gpu.py --steps 30 --json out.json
+
+WHY THIS EXISTS. On 14-08-2026 the same PD configuration ran at 0.5 steps/s on a B200 and
+6.9 steps/s on a free RTX 5000 Ada — 12x slower on hardware costing 26,250 credits an hour,
+at 3 % GPU utilisation. Utilisation that low means the GPU is *waiting*, but it does not say
+what for, and the two candidate explanations need opposite fixes:
+
+    the chip is slow here    -> stop using it; a wrong-architecture wheel or a JIT fallback
+    the data pipeline stalls -> the GPU is fine and the prior generator is the problem
+
+So this measures the layers separately, on whatever card it is run on:
+
+    1. raw matmul            pure compute, no model, no data. TFLOP/s.
+    2. attention             the shape TabICL actually runs, still no data.
+    3. model forward         the real network, synthetic tensors already on the GPU.
+    4. model fwd+bwd         adds the backward pass and the optimiser step.
+    5. prior generation      CPU only, one worker, no GPU at all. datasets/s.
+    6. end-to-end            the real DataLoader feeding real steps.
+
+Read it as a ladder. If 1-4 are healthy and 6 is slow, the GPU is fine and the prior is
+starving it. If 1 is already slow, the card or the wheel is wrong and no amount of
+`num_workers` will help.
+
+Run it on BOTH cards and compare the same row:
+
+    bash scripts/slurm/submit.sh free  lgd scripts/slurm/benchmark.slurm
+    bash scripts/slurm/submit.sh b200  lgd scripts/slurm/benchmark.slurm
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+
+def _sync(torch: Any) -> None:
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+
+def _time(fn, n: int, warmup: int, torch: Any) -> float:
+    """Median seconds per call, warmed up and synchronised.
+
+    Median, not mean: a single scheduler hiccup or a lazy JIT compile in the first timed
+    call would otherwise dominate, and on a machine we suspect of a JIT fallback that is
+    exactly the number we must not report.
+    """
+    for _ in range(warmup):
+        fn()
+    _sync(torch)
+    times = []
+    for _ in range(n):
+        t0 = time.perf_counter()
+        fn()
+        _sync(torch)
+        times.append(time.perf_counter() - t0)
+    times.sort()
+    return times[len(times) // 2]
+
+
+def describe_device(torch: Any) -> dict[str, Any]:
+    """Everything that could plausibly explain a slow card, recorded before any timing."""
+    info: dict[str, Any] = {
+        "torch": torch.__version__,
+        "cuda_available": torch.cuda.is_available(),
+    }
+    if not torch.cuda.is_available():
+        return info
+    props = torch.cuda.get_device_properties(0)
+    cap = f"{props.major}.{props.minor}"
+    info.update(
+        gpu=props.name,
+        capability=cap,
+        memory_gb=round(props.total_memory / 1024**3, 1),
+        multi_processors=props.multi_processor_count,
+        cuda=torch.version.cuda,
+        cudnn=torch.backends.cudnn.version(),
+        # THE LINE THAT MATTERS MOST. If the installed wheel carries no kernels for this
+        # card's architecture, CUDA falls back to JIT-compiling PTX, which is legal, silent,
+        # and slow. A capability missing from this list is the first thing to suspect.
+        compiled_for=torch.cuda.get_arch_list(),
+        has_kernels_for_this_card=f"sm_{props.major}{props.minor}" in torch.cuda.get_arch_list(),
+    )
+    return info
+
+
+def bench_matmul(torch: Any, device: str, n: int, warmup: int) -> dict[str, float]:
+    """Pure compute. Nothing here touches our code, so a bad number is the machine."""
+    out = {}
+    for size, dtype in ((4096, torch.float32), (4096, torch.bfloat16)):
+        a = torch.randn(size, size, device=device, dtype=dtype)
+        b = torch.randn(size, size, device=device, dtype=dtype)
+        # Bound as defaults, not captured: a late-binding closure over the loop variables
+        # would time the LAST dtype under every label — the classic version of this bug, and
+        # here it would silently report fp32 numbers as bf16.
+        sec = _time(lambda x=a, w=b: x @ w, n, warmup, torch)
+        # one matmul is 2*N^3 floating-point operations
+        out[f"matmul_{size}_{str(dtype).split('.')[-1]}_tflops"] = round(
+            2 * size**3 / sec / 1e12, 2
+        )
+    return out
+
+
+def bench_attention(torch: Any, device: str, n: int, warmup: int) -> dict[str, float]:
+    """Scaled dot-product attention at TabICL's own shape (128-dim, 8 heads, 1024 rows)."""
+    import torch.nn.functional as F
+
+    b, h, s, d = 4, 8, 1024, 16
+    q, k, v = (torch.randn(b, h, s, d, device=device, dtype=torch.bfloat16) for _ in range(3))
+    sec = _time(lambda: F.scaled_dot_product_attention(q, k, v), n, warmup, torch)
+    return {"attention_1024_ms": round(sec * 1000, 3)}
+
+
+def bench_model(torch: Any, device: str, task: str, n: int, warmup: int) -> dict[str, Any]:
+    """The real network on synthetic tensors ALREADY ON THE GPU — no data pipeline at all.
+
+    This is the pivotal row. If it matches across two cards but the end-to-end step does not,
+    the model is fine and the prior generator is the bottleneck.
+    """
+    from src.models.architecture import build_model, is_available
+
+    if not is_available("tabicl"):
+        return {"error": "upstream tabicl not installed"}
+
+    model = build_model(task, architecture="tabicl").to(device)
+    rows, feats, train_size = 1024, 40, 768
+    X = torch.randn(1, rows, feats, device=device)
+    y = (
+        torch.rand(1, train_size, device=device)
+        if task == "lgd"
+        else (torch.rand(1, train_size, device=device) > 0.7).float()
+    )
+
+    model.eval()
+    with torch.no_grad():
+        fwd = _time(lambda: model(X, y), n, warmup, torch)
+
+    model.train()
+    opt = torch.optim.SGD(model.parameters(), lr=1e-6)
+
+    def step():
+        opt.zero_grad(set_to_none=True)
+        out = model(X, y)
+        out.float().square().mean().backward()
+        opt.step()
+
+    both = _time(step, max(3, n // 2), warmup, torch)
+    return {
+        "params": sum(p.numel() for p in model.parameters()),
+        "forward_ms": round(fwd * 1000, 2),
+        "forward_backward_ms": round(both * 1000, 2),
+        "max_steps_per_s_if_data_were_free": round(1.0 / both, 2),
+    }
+
+
+def _prior_cfg(task: str) -> dict[str, Any]:
+    """The prior block from this task's real Exp1 config, with the sweep grid removed."""
+    import yaml
+
+    cfg_path = ROOT / "config" / f"Exp1_{'LGD' if task == 'lgd' else 'PD'}.yaml"
+    cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    prior_cfg = dict(cfg.get("prior") or {})
+    prior_cfg.pop("grid", None)
+    return prior_cfg
+
+
+def bench_prior(task: str, n_batches: int, batch_size: int) -> dict[str, Any]:
+    """CPU only, ONE worker, no GPU. How fast can a single process make datasets?
+
+    Multiply by `num_workers` for a ceiling on `datasets_per_s`. If that ceiling sits below
+    what training achieved, the prior is the bottleneck and a faster GPU changes nothing.
+    """
+    from src.prior.dataset import build_loader
+
+    try:
+        loader = build_loader(_prior_cfg(task), task, batch_size, seed=0, num_workers=0)
+        it = iter(loader)
+        next(it)  # discard the first: it carries all the one-off setup
+        t0 = time.perf_counter()
+        for _ in range(n_batches):
+            next(it)
+        sec = time.perf_counter() - t0
+    except Exception as exc:  # noqa: BLE001 — a benchmark must not fail the diagnosis
+        return {"error": f"{type(exc).__name__}: {exc}"}
+    made = n_batches * batch_size
+    return {
+        "datasets": made,
+        "seconds": round(sec, 2),
+        "datasets_per_s_one_worker": round(made / sec, 2) if sec else None,
+        "s_per_dataset_one_worker": round(sec / made, 4) if made else None,
+    }
+
+
+def bench_end_to_end(
+    torch: Any, device: str, task: str, n_steps: int, workers: int, batch_size: int
+) -> dict[str, Any]:
+    """The real thing: real DataLoader, real workers, real optimiser steps.
+
+    This is the number the training log reports. Comparing it against
+    `max_steps_per_s_if_data_were_free` is the whole point of the script — if the ceiling is
+    high and this is low, the GPU spent the run waiting.
+    """
+    from src.models.architecture import build_model, is_available
+    from src.prior.dataset import build_loader
+
+    if not is_available("tabicl"):
+        return {"error": "upstream tabicl not installed"}
+    try:
+        model = build_model(task, architecture="tabicl").to(device)
+        model.train()
+        opt = torch.optim.SGD(model.parameters(), lr=1e-6)
+        loader = build_loader(_prior_cfg(task), task, batch_size, seed=0, num_workers=workers)
+
+        it = iter(loader)
+        next(it)  # worker start-up is not part of the steady state
+        _sync(torch)
+        t0 = time.perf_counter()
+        done = 0
+        for _ in range(n_steps):
+            X, y, train_size = next(it)
+            X = X.to(device, non_blocking=True)
+            y = y.to(device, non_blocking=True)
+            opt.zero_grad(set_to_none=True)
+            out = model(X, y[:, :train_size])
+            out.float().square().mean().backward()
+            opt.step()
+            done += 1
+        _sync(torch)
+        sec = time.perf_counter() - t0
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"{type(exc).__name__}: {exc}"}
+    return {
+        "workers": workers,
+        "steps": done,
+        "seconds": round(sec, 2),
+        "steps_per_s": round(done / sec, 3) if sec else None,
+        "datasets_per_s": round(done * batch_size / sec, 2) if sec else None,
+    }
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument("--task", choices=("lgd", "pd"), default="pd")
+    ap.add_argument("--steps", type=int, default=20, help="timed repetitions per measurement")
+    ap.add_argument("--warmup", type=int, default=5)
+    ap.add_argument("--prior-batches", type=int, default=10)
+    ap.add_argument("--batch-size", type=int, default=4, help="datasets per step, as in training")
+    ap.add_argument("--workers", type=int, default=None,
+                    help="for the end-to-end row; defaults to $SLURM_CPUS_PER_TASK - 1")
+    ap.add_argument("--skip-prior", action="store_true", help="GPU rows only")
+    ap.add_argument("--skip-model", action="store_true", help="raw compute rows only")
+    ap.add_argument("--skip-end-to-end", action="store_true")
+    ap.add_argument("--json", default=None, help="also write the results here")
+    args = ap.parse_args()
+
+    import torch
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    results: dict[str, Any] = {"device_info": describe_device(torch), "task": args.task}
+
+    print("=" * 74)
+    print(" GPU DIAGNOSTIC — is the chip slow, or is it waiting for data?")
+    print("=" * 74)
+    for k, v in results["device_info"].items():
+        print(f"  {k:28s} {v}")
+    if results["device_info"].get("has_kernels_for_this_card") is False:
+        print("\n  *** THIS WHEEL HAS NO KERNELS FOR THIS CARD. CUDA will JIT-compile PTX,")
+        print("      which is silent and slow. This alone can explain everything below. ***")
+    print()
+
+    print("--- 1/2. raw compute (no model, no data) " + "-" * 32)
+    results["matmul"] = bench_matmul(torch, device, args.steps, args.warmup)
+    results["attention"] = bench_attention(torch, device, args.steps, args.warmup)
+    for k, v in {**results["matmul"], **results["attention"]}.items():
+        print(f"  {k:44s} {v}")
+    print()
+
+    if not args.skip_model:
+        print("--- 3/4. the real model, tensors already on the GPU " + "-" * 22)
+        results["model"] = bench_model(torch, device, args.task, args.steps, args.warmup)
+        for k, v in results["model"].items():
+            print(f"  {k:44s} {v}")
+        print()
+
+    if not args.skip_prior:
+        print("--- 5. prior generation (CPU, ONE worker, no GPU) " + "-" * 24)
+        results["prior"] = bench_prior(args.task, args.prior_batches, args.batch_size)
+        for k, v in results["prior"].items():
+            print(f"  {k:44s} {v}")
+        print()
+
+    if not args.skip_end_to_end:
+        import os
+
+        workers = args.workers
+        if workers is None:
+            workers = max(0, int(os.environ.get("SLURM_CPUS_PER_TASK", 4)) - 1)
+        print(f"--- 6. end to end, {workers} workers (what the training log reports) " + "-" * 8)
+        results["end_to_end"] = bench_end_to_end(
+            torch, device, args.task, max(10, args.steps), workers, args.batch_size
+        )
+        for k, v in results["end_to_end"].items():
+            print(f"  {k:44s} {v}")
+        print()
+
+    # -- the reading -----------------------------------------------------------
+    print("=" * 74)
+    model = results.get("model") or {}
+    prior = results.get("prior") or {}
+    ceiling = model.get("max_steps_per_s_if_data_were_free")
+    if ceiling:
+        print(f"  GPU ceiling with free data      : {ceiling} steps/s")
+    if prior.get("datasets_per_s_one_worker"):
+        per_worker = prior["datasets_per_s_one_worker"]
+        print(f"  Prior, one worker               : {per_worker} datasets/s")
+        for w in (7, 23):
+            print(f"    x{w:2d} workers -> {per_worker * w / args.batch_size:6.2f} steps/s "
+                  f"({args.batch_size} datasets/step)")
+    e2e = (results.get("end_to_end") or {}).get("steps_per_s")
+    if e2e:
+        print(f"  Measured end to end             : {e2e} steps/s")
+        if ceiling:
+            pct = 100.0 * e2e / ceiling
+            print(f"  -> reaching {pct:.0f}% of what this GPU could do with free data")
+            if pct < 40:
+                print("     STARVED: the GPU is idle most of the time. More cores, not a")
+                print("     bigger GPU.")
+            else:
+                print("     COMPUTE-BOUND: the GPU is the limit, so a faster card would help.")
+    print()
+    print("  HOW TO READ IT: run this on both cards and compare row by row.")
+    print("    matmul/attention differ    -> the CARD or the wheel. Change hardware.")
+    print("    those match, model differs -> a kernel this model needs is missing here.")
+    print("    all match, training differs-> the GPU was never the problem; it is the")
+    print("                                  prior, and only more cores will help.")
+    print("=" * 74)
+
+    if args.json:
+        Path(args.json).write_text(json.dumps(results, indent=2), encoding="utf-8")
+        print(f"wrote {args.json}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

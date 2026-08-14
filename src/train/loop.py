@@ -328,8 +328,13 @@ class Trainer:
         architecture = self.cfg.get("architecture", DEFAULT)
         if self.regression:
             mcfg.setdefault("num_quantiles", self.num_quantiles)
-        else:
-            mcfg.setdefault("max_classes", int(self.cfg.get("prior", {}).get("n_classes", 2)))
+        # `max_classes` IS NOT SET FROM THE PRIOR. It is part of the architecture, and the
+        # architecture is TabICLv2's, unchanged — every one of upstream's classifier stage
+        # scripts passes `--max_classes 10`. This line used to force it to `prior.n_classes`
+        # (2), which made a 27,538,938-parameter model where upstream's is 27,552,258: a
+        # different network, so "same architecture as TabICLv2" stopped being true and Exp3
+        # could not warm-start from the released checkpoint (4 head tensors mismatched).
+        # A binary task simply uses the first two of the ten logits — see `_loss_for`.
         return build_model(self.task, architecture=architecture, **mcfg)
 
     def maybe_resume(self) -> None:
@@ -390,7 +395,16 @@ class Trainer:
                 loss = pinball_loss(pred, y_test, self.num_quantiles)
                 extra = {}
             else:
-                flat = pred.flatten(end_dim=-2)
+                # UPSTREAM'S RULE, verbatim from `_compute_batch_loss` in the pinned TabICL
+                # dump: the head is `max_classes` wide (10, per every classifier stage script)
+                # and the loss uses only the first `n_classes` columns —
+                #     n_classes = int(batch.y_train.max().item()) + 1
+                #     logits_used = logits[..., :n_classes].reshape(-1, n_classes)
+                # Taking the softmax over all 10 instead would spread probability mass across
+                # eight classes the data never contains, so the two-class probabilities would
+                # not sum to 1 and every calibration metric would be wrong.
+                n_classes = max(2, int(y_train.max().item()) + 1)
+                flat = pred[..., :n_classes].flatten(end_dim=-2)
                 true = y_test.long().flatten()
                 loss = F.cross_entropy(flat, true)
                 with torch.no_grad():

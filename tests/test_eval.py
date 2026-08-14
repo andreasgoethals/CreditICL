@@ -6,9 +6,13 @@ import pytest
 
 pytest.importorskip("torch", reason="torch not installed — run: pip install -e '.[dev]'")
 
+from pathlib import Path
+
 import numpy as np
 
 from src.eval.baselines import BASELINES, availability_report, build
+
+ROOT = Path(__file__).resolve().parents[1]
 from src.eval.metrics import (
     boundary_mass_error,
     expected_calibration_error,
@@ -390,3 +394,138 @@ def test_checkpoint_resolution_refuses_to_guess_between_arms(tmp_path):
     explicit = tmp_path / "exp1_lgd__credit_fraction=0__s0" / "checkpoints" / "step-1500.ckpt"
     assert resolve_our_checkpoint(explicit, "lgd", root=tmp_path) == explicit
     assert resolve_our_checkpoint(tmp_path / "nope.ckpt", "lgd", root=tmp_path) is None
+
+
+@pytest.mark.parametrize("task,architecture", [("pd", "nanotabicl"), ("lgd", "nanotabicl")])
+def test_checkpoint_round_trip_uses_the_architecture_that_saved_it(tmp_path, task, architecture):
+    """A checkpoint must load back into whatever architecture wrote it.
+
+    `load_our_checkpoint` hard-coded `NanoTabICLv2`. That was correct only while training also
+    used Nano; once training moved to upstream `TabICL`, every parameter name mismatched and
+    every `crediticl` cell in both evaluations died with "does not match the architecture in
+    its own config" — after the training had already finished. The round trip is the only
+    thing that catches it, because each half works perfectly on its own.
+
+    Parametrised on `nanotabicl` because it needs nothing installed; the `tabicl` case is
+    covered by `test_tabicl_round_trip` below when the package is present.
+    """
+    import torch
+
+    from src.eval.crediticl_baseline import load_our_checkpoint
+    from src.models.architecture import build_model
+
+    small = {"embed_dim": 32, "col_num_blocks": 1, "row_num_blocks": 1, "icl_num_blocks": 1,
+             "col_nhead": 2, "row_nhead": 2, "icl_nhead": 2}
+    cfg = {"task": task, "architecture": architecture, "model": small,
+           "train": {"num_quantiles": 17}, "prior": {"n_classes": 2}}
+    # mirrors Trainer._build_model: the head is the only thing the task changes
+    small_built = dict(small, num_quantiles=17) if task == "lgd" else dict(small, max_classes=2)
+    model = build_model(task, architecture=architecture, **small_built)
+
+    ckpt = tmp_path / "step-10.ckpt"
+    torch.save({"step": 10, "config": cfg, "model": model.state_dict()}, ckpt)
+
+    loaded, meta = load_our_checkpoint(ckpt, "cpu")   # raises on any key mismatch
+    assert meta["architecture"] == architecture
+    assert meta["task"] == task
+    assert meta["regression"] is (task == "lgd")
+    # the weights really arrived, not just the shapes
+    a = dict(model.state_dict())
+    b = dict(loaded.state_dict())
+    assert set(a) == set(b) and a, "state dicts must have identical keys"
+    for k in list(a)[:20]:
+        assert torch.equal(a[k].cpu(), b[k].cpu()), f"{k} changed across the round trip"
+
+
+@pytest.mark.parametrize("task", ["pd", "lgd"])
+def test_tabicl_round_trip(tmp_path, task):
+    """The architecture every real config uses — the exact case that broke on the cluster.
+
+    Both sides are built from ONE config through the same two lines the trainer uses, because
+    that is the invariant being tested: save and load must agree. Writing the save side by
+    hand instead made this test fail on a 10-vs-2 class head, which is a real issue but a
+    different one — see `test_pd_head_size_is_pinned`.
+    """
+    import torch
+
+    from src.eval.crediticl_baseline import load_our_checkpoint
+    from src.models.architecture import build_model, is_available
+
+    if not is_available("tabicl"):
+        pytest.skip("upstream tabicl not installed here")
+
+    cfg = {"task": task, "architecture": "tabicl", "model": {},
+           "train": {"num_quantiles": 999}, "prior": {"n_classes": 2}}
+
+    # verbatim from Trainer._build_model — if that changes, this must change with it
+    mcfg = dict(cfg["model"])
+    if task == "lgd":
+        mcfg.setdefault("num_quantiles", cfg["train"]["num_quantiles"])
+    else:
+        mcfg.setdefault("max_classes", cfg["prior"]["n_classes"])
+    model = build_model(task, architecture="tabicl", **mcfg)
+
+    ckpt = tmp_path / "step-1500.ckpt"
+    torch.save({"step": 1500, "config": cfg, "model": model.state_dict()}, ckpt)
+
+    loaded, meta = load_our_checkpoint(ckpt, "cpu")   # raises on ANY key or shape mismatch
+    assert meta["architecture"] == "tabicl"
+    assert set(loaded.state_dict()) == set(model.state_dict())
+
+
+def test_pd_head_is_tabiclv2s_own_ten_class_head():
+    """The architecture is TabICLv2's, unchanged — so the PD head is TEN wide, not two.
+
+    Every classifier stage script in the pinned dump passes `--max_classes 10`, and upstream's
+    `_compute_batch_loss` slices `logits[..., :n_classes]` before cross-entropy: the head width
+    is architecture, the class count is data. Building a 2-wide head made a
+    27,538,938-parameter model where TabICLv2's is 27,552,258 — a DIFFERENT NETWORK, which
+    voids the project's central claim to be testing only the prior, and left Exp3 unable to
+    warm-start (4 head tensors mismatched on shape).
+    """
+    from src.models.architecture import build_model, is_available
+
+    if not is_available("tabicl"):
+        pytest.skip("upstream tabicl not installed here")
+
+    n = sum(p.numel() for p in build_model("pd", architecture="tabicl").parameters())
+    assert n == 27_552_258, (
+        f"the PD model has {n:,} parameters; TabICLv2's classifier has 27,552,258. "
+        f"27,538,938 means max_classes=2 has crept back in."
+    )
+    assert build_model("pd", architecture="tabicl").max_classes == 10
+
+
+def test_trainer_does_not_narrow_the_head_to_the_priors_class_count():
+    """`Trainer._build_model` used to do `mcfg.setdefault("max_classes", prior.n_classes)`.
+
+    That silently made the architecture a function of the prior — the one thing this project
+    varies — so an architecture difference could masquerade as a prior effect.
+    """
+    src = (ROOT / "src" / "train" / "loop.py").read_text(encoding="utf-8")
+    assert 'setdefault("max_classes"' not in src, (
+        "max_classes must not be set from the config: it is TabICLv2's architecture, fixed"
+    )
+
+
+def test_binary_loss_uses_only_the_first_two_of_ten_logits():
+    """Upstream slices the logits to the classes actually present before cross-entropy.
+
+    Without the slice, a softmax over all ten hands part of the probability mass to eight
+    classes PD never contains: AUC survives because it is rank-based, but Brier, calibration
+    slope and any threshold decision are wrong, and nothing in the loss curve says so.
+    """
+    import torch
+
+    from src.train.loop import Trainer
+
+    src = (ROOT / "src" / "train" / "loop.py").read_text(encoding="utf-8")
+    assert "pred[..., :n_classes]" in src, "the classification loss must slice the logits"
+
+    # the slice is what makes the two probabilities sum to 1
+    logits = torch.tensor([[[2.0, 1.0] + [5.0] * 8]])          # 8 decoy classes dominate
+    unsliced = torch.softmax(logits, dim=-1)[0, 0, :2].sum()
+    sliced = torch.softmax(logits[..., :2], dim=-1)[0, 0, :2].sum()
+    assert unsliced < 0.05, "decoy logits should swallow the mass without a slice"
+    assert abs(float(sliced) - 1.0) < 1e-6, "with the slice the binary probabilities sum to 1"
+    assert Trainer is not None

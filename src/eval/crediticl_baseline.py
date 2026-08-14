@@ -48,13 +48,21 @@ DEFAULT_CONTEXT_ROWS = 1024
 def load_our_checkpoint(
     path: str | Path, device: str = "cpu"
 ) -> tuple[torch.nn.Module, dict[str, Any]]:
-    """Rebuild a NanoTabICLv2 from one of our checkpoints.
+    """Rebuild one of our checkpoints into the architecture that produced it.
 
-    The architecture comes from the config stored *inside* the checkpoint, not from the
-    current YAML. If someone edits `config/Exp1_LGD.yaml` after training, rebuilding from the
-    edited file would produce a shape mismatch — or worse, a silent mis-load.
+    THIS GOES THROUGH `src.models.architecture.build_model` — the same entry point the trainer
+    uses — and reads `architecture:` from the config stored *inside* the checkpoint. It used to
+    hard-code `NanoTabICLv2`, which was correct only while training also used Nano. After
+    training moved to upstream `TabICL`, every single parameter name mismatched and every
+    `crediticl` cell died with "does not match the architecture in its own config"
+    (`missing=['row_cls_tokens', 'x_embed.weight', …]` — Nano's names —
+    `unexpected=['col_embedder.in_linear.weight', …]` — upstream's).
+
+    The architecture comes from the checkpoint and never from the current YAML: editing
+    `config/Exp1_LGD.yaml` after training would otherwise produce a shape mismatch, or worse a
+    silent mis-load.
     """
-    from src.models.nanotabiclv2 import NanoTabICLv2
+    from src.models.architecture import DEFAULT, build_model
 
     path = Path(path)
     if not path.is_file():
@@ -67,12 +75,15 @@ def load_our_checkpoint(
     regression = task == "lgd"
     num_quantiles = int((cfg.get("train") or {}).get("num_quantiles", 999))
     n_classes = int((cfg.get("prior") or {}).get("n_classes", 2))
+    architecture = cfg.get("architecture", DEFAULT)
 
-    model = NanoTabICLv2(
-        max_classes=0 if regression else n_classes,
-        out_dim=num_quantiles if regression else n_classes,
-        **mcfg,
-    )
+    # Mirrors Trainer._build_model exactly. Any divergence here is a mis-load waiting to
+    # happen, so the two must be read together.
+    if regression:
+        mcfg.setdefault("num_quantiles", num_quantiles)
+    else:
+        mcfg.setdefault("max_classes", n_classes)
+    model = build_model(task, architecture=architecture, **mcfg)
     state = payload.get("model") or payload.get("state_dict")
     if state is None:
         raise KeyError(f"{path} has no model weights (keys: {sorted(payload)})")
@@ -82,7 +93,8 @@ def load_our_checkpoint(
     missing, unexpected = model.load_state_dict(state, strict=False)
     if missing or unexpected:
         raise RuntimeError(
-            f"checkpoint {path.name} does not match the architecture in its own config.\n"
+            f"checkpoint {path.name} does not match architecture={architecture!r}, which is "
+            f"what its own config records.\n"
             f"missing={list(missing)[:5]} unexpected={list(unexpected)[:5]}\n"
             f"Loading it non-strictly would score a partly-random model as if it were "
             f"trained, so this is fatal rather than a warning."
@@ -93,6 +105,10 @@ def load_our_checkpoint(
         "checkpoint": str(path),
         "step": payload.get("step"),
         "task": task,
+        "architecture": architecture,
+        # How many of the head's `max_classes` logits are real for this task. PD is binary,
+        # so 2 of the architecture's 10 — see `predict_proba`.
+        "n_classes": n_classes,
         "regression": regression,
         "num_quantiles": num_quantiles,
         "run_name": cfg.get("_run_name"),
@@ -238,7 +254,14 @@ class CreditICLBaseline(Baseline):
                 point = q[:, q.shape[1] // 2]
                 preds.append(point.float().cpu().numpy())
             else:
-                prob = torch.softmax(q.float(), dim=-1)[:, 1]
+                # SLICE TO THE CLASSES PRESENT, then normalise. The head is `max_classes`
+                # wide — 10, TabICLv2's own — and upstream's `_compute_batch_loss` uses only
+                # `logits[..., :n_classes]`. Softmaxing all ten would give away part of the
+                # mass to eight classes PD never contains, so this would not be a calibrated
+                # P(default): AUC would survive (it is rank-based) but Brier, calibration
+                # slope and every threshold decision would be silently wrong.
+                n_classes = self.meta["n_classes"]
+                prob = torch.softmax(q[..., :n_classes].float(), dim=-1)[:, 1]
                 preds.append(prob.cpu().numpy())
 
         out_arr = np.concatenate(preds)

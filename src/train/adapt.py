@@ -134,15 +134,18 @@ def trainable_parameters(model: nn.Module) -> list[nn.Parameter]:
 
 
 def load_pretrained(model: nn.Module, ckpt_path: str | Path, *, strict: bool = False) -> dict[str, Any]:
-    """Load pretrained weights into NanoTabICLv2.
+    """Load pretrained weights into the model built by `src.models.architecture`.
 
-    IMPORTANT AND UNVERIFIED. The released TabICLv2 checkpoints in `checkpoints/`
-    come from the *full* implementation, whose module names differ from
-    NanoTabICL's (`col_embedder` / `row_interactor` / `icl_predictor` versus
-    `col_blocks` / `row_blocks` / `icl_blocks`). Whether the tensors line up after
-    renaming has **not been tested** — the NanoTabICL README points you at the
-    main repository for pretrained weights and notes a RoPE change that
-    "permutes the neurons", so incompatibility is a real possibility.
+    THE COMPATIBILITY QUESTION IS SETTLED, in the direction that matters. With
+    `architecture: tabicl` — every real config — the released TabICLv2 checkpoints load
+    **exactly**: 347/347 tensors for the regressor (with `bias_free_ln=True`) and 391/391
+    for the classifier. Warm-starting Exp3 works.
+
+    It is settled the other way too: with `architecture: nanotabicl`, **zero** of its 390
+    names match the released checkpoint's 347, because the reimplementation renames every
+    module (`col_blocks` / `row_blocks` / `icl_blocks` against upstream's `col_embedder` /
+    `row_interactor` / `icl_predictor`). That is why Nano is a smoke-test fallback only and
+    must never produce a result.
 
     This function therefore reports exactly what matched and what did not, and
     **raises** when almost nothing matched, rather than quietly training a
@@ -183,9 +186,10 @@ def load_pretrained(model: nn.Module, ckpt_path: str | Path, *, strict: bool = F
         raise RuntimeError(
             "Refusing to continue: only "
             f"{report['matched']}/{len(own)} tensors matched between {ckpt_path} and "
-            "NanoTabICLv2.\n"
-            "The released TabICLv2 checkpoints use different module names, so they are "
-            "probably not loadable here without a key mapping.\n"
+            "the model in memory.\n"
+            "With architecture='tabicl' the released checkpoints match exactly (347/347 "
+            "regressor, 391/391 classifier), so a near-zero match almost always means the "
+            "model was built as 'nanotabicl', whose module names differ throughout.\n"
             "Options: (a) use init.strategy='scratch', which needs no checkpoint; "
             "(b) write an explicit key mapping and verify a forward pass reproduces "
             "the full model's output; (c) pretrain your own base checkpoint with this "

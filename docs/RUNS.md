@@ -148,7 +148,81 @@ The one thing to do differently.
 
 ## Runs
 
-## 14-08-2026 — Exp1 debug, LGD + PD — pipeline runs end to end; our own model scored nothing
+## 14-08-2026 (afternoon) — Exp1 debug, PD on the FREE GPU — **the B200 is the bottleneck**
+
+**Submitted** 14-08-2026 14:56 | **jobs** 11517006/07/09/10 (PD, 4 arms) | **cluster** mindwell
+`interactive`, node `l11i31`, NVIDIA RTX 5000 Ada 32 GiB | **preprocessing run first**
+
+Submitted to split the confound left open by the morning run, where PD-vs-LGD and B200-vs-RTX
+changed together. **Same PD config, same prior, different GPU.**
+
+### Results — the confound is resolved
+
+| | GPU | steps/s | GPU util | 1,500 steps |
+|---|---|---|---|---|
+| PD, this run | RTX 5000 Ada (**free**) | **4.4 – 6.9** | **65 – 75 %** | ~3–6 min |
+| PD, this morning | B200 (26,250 credits/h) | 0.48 – 0.56 | 1.7 – 4.1 % | ~44–51 min |
+
+**It is the hardware, not the task.** Identical PD configuration, ~12× faster on a free GPU that
+costs nothing, with GPU utilisation an order of magnitude higher. The B200 conclusion from this
+morning stands, and the "PD's prior is expensive" hypothesis is dead.
+
+- **Preprocessing worked** — `all datasets ready`, 7/7 LGD and 14/14 PD, cached on `/lustre1`.
+- **First real credit number from our own model**: `german` ROC-AUC **0.718**, PR-AUC **0.514**
+  at step 1,250 of 1,500 from scratch. Not a result — 1,500 of 12,500 steps — but the
+  measurement chain now works end to end.
+- **Learning** loss 0.636 → ~0.109, accuracy 0.614 → 0.87.
+- **The checkpoint is now passed**: `scoring our checkpoint: …/step-1500.ckpt`, and the eval log
+  confirms `[eval] crediticl checkpoint: …`. Both of this morning's evaluation bugs are gone.
+
+### Bugs and anomalies
+1. **`crediticl` still scored nothing — third distinct cause.** `RuntimeError: checkpoint
+   step-1500.ckpt does not match the architecture in its own config`, with
+   `missing=['row_cls_tokens', 'x_embed.weight', …]` and
+   `unexpected=['col_embedder.in_linear.weight', …]`. **`load_our_checkpoint` hard-coded
+   `NanoTabICLv2`** while training builds upstream `TabICL` — the evaluation path was never
+   migrated. All 14 credit datasets and all 25 out-of-domain cells failed.
+2. **A NaN target in the second real dataset discarded every measurement after it.** One `try`
+   wrapped both loops, so `ValueError: Input contains NaN.` on `0010.thomas` cost the remaining
+   two credit datasets *and* all eight out-of-domain suites. The row holds one dataset and an
+   error string — which is why this run's progress CSV has **no `ood__` columns at all**, while
+   this morning's had eight. It looked like a smaller measurement; it was a masked failure.
+3. **`/lustre1/…/checkpoints` still not writable** (`Errno 13`) — unchanged, still needs fixing
+   before the 96-arm run.
+4. **PD is trained with a 2-class head, the released TabICLv2 classifier has 10.** Found while
+   writing the round-trip test, and confirmed by parameter count: 27,538,938 against
+   27,552,258, a difference of exactly 13,320 — the four head tensors. `Trainer._build_model`
+   sets `max_classes` from `prior.n_classes`, overriding `build_model`'s upstream default of 10.
+   Exp1 and Exp2 are self-consistent, but **Exp3's PD warm start cannot load the released
+   checkpoint.** Left unchanged deliberately: it is a decision about the experiment.
+
+### Interpretation
+- **What the numbers show:** the B200 is the wrong machine for this workload, at 3 % utilisation
+  and 12× the wall-clock of a free GPU. The free interactive partition is both faster *and*
+  free, and its only real cost is that an array runs serially there (`QOSMaxCpuPerUserLimit`).
+- **What we think explains the B200:** unresolved. Blackwell is new and `torch 2.11.0+cu128`
+  reports `gpu_capability: 10.0`, so a kernel-coverage or JIT-fallback problem is plausible but
+  **unverified** — nothing in the log names it, and I am not going to assert it from the timing
+  alone.
+- **What would test it:** a single matmul-and-attention microbenchmark on both cards, which
+  separates "the GPU is slow" from "the data pipeline stalls on that node".
+
+### Next
+Rerun on `free` with the architecture fix so `crediticl` finally scores.
+
+**`max_classes` is now resolved, not open:** the head is TabICLv2's own 10, and the loss slices
+to the classes present, per upstream's `_compute_batch_loss`. **Every checkpoint before
+15-08-2026 is a 2-class model and is not comparable to anything trained after** — they are
+different networks. Discard them rather than mixing.
+
+The B200 question has a script now: `scripts/benchmark_gpu.py` via
+`scripts/slurm/benchmark.slurm`, run on both cards and diffed with
+`python -m src.utils.compare_gpubench`. It reports `torch.cuda.get_arch_list()`, so if the
+wheel carries no `sm_100` kernels the answer will be on the first screen.
+
+---
+
+## 14-08-2026 (morning) — Exp1 debug, LGD + PD — pipeline runs end to end; our own model scored nothing
 
 **Submitted** 14-08-2026 10:43 | **jobs** 11516954 (LGD, array 0–3), 11516956 (PD, array 0–3)
 **Cluster** mindwell — LGD on `interactive` (RTX 5000 Ada), PD on `gpu_b200` (B200 183 GiB)

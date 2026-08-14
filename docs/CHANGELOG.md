@@ -5,6 +5,45 @@ reason is not obvious.
 
 ---
 
+## 14-08-2026 (late night) — PD now uses TabICLv2's OWN head, and a GPU diagnostic
+
+- **`max_classes` is no longer set from the prior.** `Trainer._build_model` forced it to
+  `prior.n_classes` (2), making a 27,538,938-parameter network where TabICLv2's classifier is
+  27,552,258 — a *different architecture*, which voids the project's claim to be varying only
+  the prior, and left Exp3 unable to warm-start. Now 10, as in every one of upstream's
+  classifier stage scripts.
+- **The classification loss slices the logits**, exactly as upstream's `_compute_batch_loss`
+  does (`logits[..., :n_classes]` where `n_classes = y_train.max()+1`). Same slice added to
+  both prediction paths: without it a softmax over ten logits gives part of the probability
+  mass to eight classes PD never contains, so AUC survives but Brier, calibration slope and
+  every threshold decision are wrong.
+- **`scripts/benchmark_gpu.py`** — six-rung ladder from raw matmul to a real training step,
+  separating "this chip is slow" from "the prior is starving it". Reports
+  `torch.cuda.get_arch_list()` and whether the wheel has kernels for the card at all, which is
+  the leading suspect for the B200.
+- **`src/utils/compare_gpubench.py`** and **`scripts/slurm/benchmark.slurm`** — run it on two
+  cards, diff row by row, and the tool names which layer diverges.
+
+## 14-08-2026 (later) — the evaluation path was still on the old architecture
+
+- **`load_our_checkpoint` now rebuilds through `src.models.architecture.build_model`**, reading
+  `architecture:` from the checkpoint's own config. It hard-coded `NanoTabICLv2`, so once
+  training moved to upstream `TabICL` every parameter name mismatched and every `crediticl`
+  cell died — the third distinct cause in a row for the same symptom.
+- **Round-trip test** (`build_model` → save → `load_our_checkpoint` → identical keys and equal
+  weights), both tasks, both architectures. That seam had no test at all.
+- **`test_pd_head_size_is_pinned`** records that our PD head is 2-class (27,538,938 params) while
+  the released classifier is 10-class (27,552,258), so **Exp3's PD warm start cannot load the
+  released checkpoint**. Deliberately not changed — that is a decision about the experiment.
+- **Progress measurement isolates each dataset.** One `try` wrapped both loops, so a NaN target
+  in the second real dataset discarded the other two *and* all eight out-of-domain suites. Adds
+  `n_errors`, per-dataset error text, `n_dropped_nonfinite_target`, and `pred_nonfinite_frac`
+  rather than letting sklearn raise a message naming neither the dataset nor which side the NaN
+  was on.
+- **`adapt.py` docstrings corrected** — they still said released-checkpoint compatibility was
+  "IMPORTANT AND UNVERIFIED" and probably broken, which this project has since measured as
+  347/347 and 391/391 exact.
+
 ## 14-08-2026 (night) — three bugs found by reading the first real run's output
 
 - **`--checkpoint` on both evaluation entry points**, and `debug_exp1.slurm` passes the arm's own

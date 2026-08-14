@@ -37,9 +37,56 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 | 14-08-2026 | 11516954 — Exp1 debug LGD, `interactive` | 3/4 arms OK; task 3 deferred for maintenance | **6.6 steps/s, 69 % GPU**, loss 0.339→0.127 |
 | 14-08-2026 | 11516956 — Exp1 debug PD, `gpu_b200` | 4/4 arms OK, **but 12× slower on better hardware** | **0.5 steps/s, 3 % GPU — starved**; loss 0.618→0.171, acc 0.95 |
 
-Both 14-08 runs: `crediticl` scored **nothing** (no checkpoint passed), credit datasets not
-preprocessed on the cluster, staging checkpoint directory not writable. Full write-up in
+| 14-08-2026 | 11517006–10 — Exp1 debug PD, `interactive` | **Confound split: the B200 is the bottleneck** | Same PD config **12× faster on the FREE GPU**: 6.9 vs 0.5 steps/s, 69 % vs 3 % util |
+
+The 14-08 afternoon run also gave the **first real credit number from our own model** —
+`german` ROC-AUC 0.718 at step 1,250 — but `crediticl` still failed everywhere, on a *third*
+distinct cause each time: unknown baseline → no checkpoint → **loader built Nano while training
+built upstream TabICL**. Staging checkpoint directory still not writable. Full write-up in
 [`RUNS.md`](RUNS.md).
+
+### 14-08-2026 — The architecture was quietly made a function of the prior
+- **Tried:** nothing — this was found while writing a round-trip test, not from a run.
+- **Result:** PD trained a **27,538,938**-parameter model where TabICLv2's classifier is
+  **27,552,258**. `Trainer._build_model` did
+  `mcfg.setdefault("max_classes", prior.n_classes)`, so the head width came from the PRIOR —
+  the one thing this project varies. The difference is exactly 13,320, the four head tensors.
+- **Why:** `max_classes` reads like a data property (how many classes are there?) and is
+  actually an architecture property (how wide is the head?). Upstream settles it: every
+  classifier stage script passes `--max_classes 10`, and `_compute_batch_loss` slices
+  `logits[..., :n_classes]` before cross-entropy. **Head width is architecture, class count is
+  data.**
+- **Instead:** `max_classes` is never set from config; the loss and both prediction paths slice
+  to the classes actually present. Two tests pin it — the parameter count, and the absence of
+  the `setdefault`. **An architecture that depends on the independent variable makes every
+  result unattributable**, and nothing in a loss curve would ever show it.
+
+### 14-08-2026 — Three bugs in a row between training and evaluation, each hidden by the last
+- **Tried:** evaluating our own checkpoints, three submissions running.
+- **Result:** `crediticl` scored nothing all three times, with a *different* error each time —
+  (1) `unknown baseline`, (2) `needs checkpoint=<path>`, (3) `does not match the architecture`.
+  Each fix revealed the next, and every failure was masked by `|| echo WARNING` so the job
+  still reported success.
+- **Why:** the training→evaluation seam had no end-to-end test. Registration, checkpoint
+  resolution, and architecture reconstruction were each fine in isolation; nothing checked that
+  a checkpoint written by the trainer could be read back by the evaluator.
+- **Instead:** a **round-trip test** — build via `build_model`, save, `load_our_checkpoint`,
+  assert identical keys and equal weights, for both tasks and both architectures. That single
+  test would have caught bug 3 immediately and is the only kind that can.
+  **When two halves of a pipeline are written separately, test the seam, not the halves.**
+
+### 14-08-2026 — A NaN in dataset 2 discarded datasets 3, 4 and all eight OOD suites
+- **Tried:** reading the progress curve from the PD-on-free run.
+- **Result:** one real dataset in the CSV and an `error` cell reading `ValueError: Input contains
+  NaN.` — no `ood__` columns at all, where the previous run had eight. It read as a smaller
+  measurement rather than a failure.
+- **Why:** a single `try` wrapped BOTH the real-dataset and out-of-domain loops, so the first
+  exception skipped everything remaining. sklearn's message names neither the dataset nor
+  whether the NaN was in the label or the prediction.
+- **Instead:** per-dataset isolation, `n_errors` in the row, every error logged with its
+  dataset name, non-finite targets dropped and counted, and non-finite *predictions* reported
+  as `pred_nonfinite_frac` rather than raising. **An `except` around a loop converts one
+  failure into total data loss — put it inside.**
 
 **The table starts empty on purpose, and that is not the same as "nothing has run".** Submission
 attempts were made on wICE before 11-08-2026 and their logs were read to fix the bugs recorded

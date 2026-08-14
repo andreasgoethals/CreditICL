@@ -143,6 +143,21 @@ class ProgressTracker:
 
         Xc, yc = X[ctx_idx], y[ctx_idx]
         Xt, yt = X[test_idx], y[test_idx]
+
+        # A NON-FINITE TARGET CANNOT BE SCORED, AND IS NOT THE SAME AS A BROKEN MODEL.
+        # sklearn raises the same "Input contains NaN." for a NaN label and a NaN prediction,
+        # which is why the 14-08-2026 run said only that and nothing about which dataset or
+        # which side. Features are imputed just below; targets cannot be — an invented label
+        # is a fabricated measurement — so those rows are dropped and counted instead.
+        keep_ctx = np.isfinite(yc)
+        keep_test = np.isfinite(yt)
+        dropped = int((~keep_test).sum())
+        if not keep_ctx.all():
+            Xc, yc = Xc[keep_ctx], yc[keep_ctx]
+        if dropped:
+            Xt, yt = Xt[keep_test], yt[keep_test]
+        if len(yt) < 8 or len(yc) < 8:
+            return {"skipped_nonfinite_target": 1.0}
         # Impute from the CONTEXT only; using test statistics would leak.
         med = np.nan_to_num(np.nanmedian(Xc, axis=0))
         Xc = np.where(np.isfinite(Xc), Xc, med)
@@ -167,13 +182,28 @@ class ProgressTracker:
         from scipy.special import softmax
         from sklearn.metrics import average_precision_score, roc_auc_score
 
-        prob = softmax(q, axis=-1)[:, 1]
+        # SLICE TO THE CLASSES THE DATA ACTUALLY HAS, then normalise — upstream's rule from
+        # `_compute_batch_loss`. The head is 10 wide; a softmax over all ten would hand part
+        # of the probability mass to eight classes that never occur, so `prob` would not be a
+        # calibrated P(default) and both AUCs would be computed on the wrong quantity.
+        n_classes = max(2, int(np.nanmax(yc)) + 1)
+        prob = softmax(q[..., :n_classes], axis=-1)[:, 1]
         if len(np.unique(yt)) < 2:
             return {}
-        return {
+        # A non-finite PREDICTION is a model failure, not a data problem. Report it as one
+        # rather than letting sklearn raise a message that names neither.
+        if not np.isfinite(prob).all():
+            return {
+                "pred_nonfinite_frac": round(float(np.mean(~np.isfinite(prob))), 6),
+                "n_dropped_nonfinite_target": float(dropped),
+            }
+        out = {
             "roc_auc": float(roc_auc_score(yt, prob)),
             "pr_auc": float(average_precision_score(yt, prob)),
         }
+        if dropped:
+            out["n_dropped_nonfinite_target"] = float(dropped)
+        return out
 
     def record(self, model, *, step: int, datasets_seen: int, train_loss: float,
                elapsed_s: float) -> dict[str, Any]:
@@ -193,36 +223,51 @@ class ProgressTracker:
         }
         rng = np.random.default_rng(self.cfg.seed)
 
+        # ONE DATASET MUST NOT COST ALL THE OTHERS. A single `try` around both loops meant
+        # that on 14-08-2026 a NaN target in the SECOND real dataset discarded the remaining
+        # two AND all eight out-of-domain suites: the row held one dataset and an `error`
+        # string, and the run looked like the progress curve barely worked. Each dataset is
+        # now isolated, so a failure costs its own columns and nothing else.
+        errors: list[str] = []
         try:
             for slug, ds in self._real_datasets():
                 short = slug.split(".", 1)[-1]
-                for k, v in self._score(model, np.asarray(ds.X, np.float32),
-                                        np.asarray(ds.y, np.float32), rng).items():
-                    row[f"real__{short}__{k}"] = round(v, 6)
+                try:
+                    for k, v in self._score(model, np.asarray(ds.X, np.float32),
+                                            np.asarray(ds.y, np.float32), rng).items():
+                        row[f"real__{short}__{k}"] = round(v, 6)
+                except Exception as exc:  # noqa: BLE001 — one dataset, one failure
+                    errors.append(f"real/{short}: {type(exc).__name__}: {exc}")
 
             from src.eval.ood import load_ood_dataset
 
             for entry in self._ood_datasets():
                 try:
                     Xo, yo, _ = load_ood_dataset(entry)
-                except Exception:  # noqa: BLE001 — a missing OOD file is not fatal
-                    continue
-                if self.task == "lgd":
-                    # OOD regression targets have arbitrary scales; the model predicts in
-                    # [0,1], so min-max the target the same way the OOD runner does.
-                    lo, hi = float(np.min(yo)), float(np.max(yo))
-                    if hi - lo < 1e-12:
-                        continue
-                    yo = ((yo - lo) / (hi - lo)).astype(np.float32)
-                elif len(np.unique(yo)) > 2:
-                    yo = (yo == np.bincount(yo.astype(int)).argmax()).astype(np.float32)
-                for k, v in self._score(model, np.asarray(Xo, np.float32),
-                                        np.asarray(yo, np.float32), rng).items():
-                    row[f"ood__{entry.name}__{k}"] = round(v, 6)
+                    if self.task == "lgd":
+                        # OOD regression targets have arbitrary scales; the model predicts in
+                        # [0,1], so min-max the target the same way the OOD runner does.
+                        lo, hi = float(np.min(yo)), float(np.max(yo))
+                        if hi - lo < 1e-12:
+                            continue
+                        yo = ((yo - lo) / (hi - lo)).astype(np.float32)
+                    elif len(np.unique(yo)) > 2:
+                        yo = (yo == np.bincount(yo.astype(int)).argmax()).astype(np.float32)
+                    for k, v in self._score(model, np.asarray(Xo, np.float32),
+                                            np.asarray(yo, np.float32), rng).items():
+                        row[f"ood__{entry.name}__{k}"] = round(v, 6)
+                except Exception as exc:  # noqa: BLE001 — a missing OOD file is not fatal
+                    errors.append(f"ood/{entry.name}: {type(exc).__name__}: {exc}")
 
         except Exception as exc:  # noqa: BLE001 — a diagnostic must never kill training
-            row["error"] = f"{type(exc).__name__}: {exc}"
-            log.warning("[progress] measurement failed (training continues): %s", row["error"])
+            errors.append(f"{type(exc).__name__}: {exc}")
+
+        if errors:
+            # Truncated in the CSV cell, but every one goes to the log.
+            row["error"] = " | ".join(errors[:4])
+            row["n_errors"] = len(errors)
+            for e in errors:
+                log.warning("[progress] skipped (training continues): %s", e)
 
         row["progress_eval_seconds"] = round(time.time() - started, 2)
         self._append(row)
