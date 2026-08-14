@@ -39,6 +39,13 @@ def main() -> int:
     ap.add_argument("--max-steps", type=int, default=None, help="override train.max_steps (for smoke tests)")
     ap.add_argument("--device", default=None, help="cuda | cpu (default: cuda if available)")
     ap.add_argument(
+        "--num-workers", type=int, default=None,
+        help="override train.num_workers. THE BINDING CONSTRAINT for this project: TabICL's "
+             "prior is generated on the CPU, so throughput is set by cores, not by the GPU. "
+             "The SLURM scripts pass $SLURM_CPUS_PER_TASK-1 so one config runs correctly on "
+             "an 8-core interactive node and a 24-core B200 node alike.",
+    )
+    ap.add_argument(
         "--prior-source",
         choices=["generate", "pool"],
         default=None,
@@ -72,6 +79,10 @@ def main() -> int:
     run = runs[index]
     if args.max_steps is not None:
         run.setdefault("train", {})["max_steps"] = args.max_steps
+    if args.num_workers is not None:
+        # Asking for more workers than the allocation has does not speed anything up; it
+        # oversubscribes the cores and the dataloader spends its time context-switching.
+        run.setdefault("train", {})["num_workers"] = max(0, args.num_workers)
     if args.prior_source is not None:
         run.setdefault("prior", {}).setdefault("pool", {})["source"] = args.prior_source
 

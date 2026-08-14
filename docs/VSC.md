@@ -97,6 +97,43 @@ partitioning is in use there.
 
 ---
 
+## 2a. Which partition to submit to — the inventory
+
+Read out of `tfm-library/repositories/VSC Documentation.txt`. **GPU count is queue length**, and
+**cores per GPU is our actual bottleneck**, because TabICL generates its prior on the CPU
+(`--prior_device cpu` in upstream's own stage scripts).
+
+| target | cluster | partition | **GPUs** | **cores/GPU** | mem/GPU | credits/GPU-h | max walltime |
+|---|---|---|---|---|---|---|---|
+| `free` | mindwell | `interactive` | 4 × RTX 5000 Ada 32 GiB | 8 | ~32 G | **none** | 16 h |
+| `b200` | mindwell | `gpu_b200` | **24** × B200 192 GiB | **24** | 194400 M | 26,250 | 72 h |
+| `a100` | wICE | `gpu_a100` | 16 × A100 80 GiB | 18 | 126000 M | 8,500 | 72 h |
+| `h100` | wICE | `gpu_h100` | 20 × H100 80 GiB | 16 | 187200 M | 34,167 | 72 h |
+| `dbg1h` | wICE | `gpu_a100_debug` | **1** × A100 80 GiB | 18 | 126000 M | — | **1 h** |
+
+```bash
+bash scripts/slurm/submit.sh --list          # the table above, from the shell
+bash scripts/slurm/submit.sh free scripts/slurm/debug_exp1.slurm
+```
+
+**`gpu_a100` has the fewest GPUs of any GPU partition available to us.** The first debug
+submission sat there behind `Reason: Priority` and never started.
+
+**`gpu_b200` is the best production target on both axes**: the most GPUs (24, so the shortest
+queue) *and* the most cores per GPU (24, which is what feeds the prior generator). Note this
+inverts the naive ranking — `gpu_h100` is the fastest chip but has the **fewest cores per GPU**
+(16) and costs 4× a B200 credit-for-credit, so it is the worst choice for this workload.
+
+**`interactive` costs no credits**, and on Mindwell it is a *full* GPU rather than wICE's MIG
+slice. 8 cores is the trade, which is ample for a 1,500-step debug run.
+
+**`gpu_a100_debug`** takes ≤ 1 h and Slurm allows only **one queued job at a time**, so a
+4-task array cannot use it. Single-arm checks only.
+
+**Job scripts must not hard-code any of this.** `#SBATCH` directives are defaults;
+`submit.sh` overrides them on the command line, and the job reads `$SLURM_CPUS_PER_TASK` to set
+`num_workers` so one script is correct on 8 cores and on 24.
+
 ## 2b. Our actual account and cluster setup
 
 Confirmed from the sibling **CreditPFN** project, which already runs on this

@@ -5,6 +5,41 @@ reason is not obvious.
 
 ---
 
+## 14-08-2026 (later) — cluster targets, read out of the VSC docs
+
+The first debug submission sat in `gpu_a100` behind `Reason: Priority` and never started.
+Reading the hardware inventory in `tfm-library/repositories/VSC Documentation.txt` says why,
+and that we had picked the worst partition available.
+
+- **`gpu_a100` has 16 GPUs — the FEWEST of any GPU partition we can use.** `gpu_h100` has 20,
+  and Mindwell's `gpu_b200` has **24**.
+- **Cores per GPU is our real bottleneck**, not GPU speed: TabICL generates its prior on the
+  **CPU** (`--prior_device cpu` in upstream's own stage scripts). The documented limits are
+  B200 **24**, A100 18, H100 **16**. So `gpu_h100` is the worst fit for this workload despite
+  being the fastest chip — fewest cores *and* 4× the credit cost — and **`gpu_b200` is the best
+  on both axes**, most GPUs and most cores.
+- **Mindwell `interactive` costs no credits** and gives a *full* RTX 5000 Ada (32 GiB) for up to
+  16 h — wICE's interactive partition gives a MIG slice instead. Ample for a 1,500-step debug
+  run, and it is not queueing behind production training.
+- `gpu_a100_debug` exists (1 node, full A100, ≤ 1 h) but Slurm allows **one queued job at a
+  time**, so a 4-task array cannot use it.
+
+Changes:
+
+- **`scripts/slurm/submit.sh`** — `submit.sh <target> <script>` with `free|b200|a100|h100|dbg1h`,
+  each carrying the documented core and memory budget for that partition. `--list` prints the
+  inventory; `DRY_RUN=1` shows the command; non-free targets run `sam-quote` first so the credit
+  cost is on screen before anything queues.
+- **`debug_exp1.slurm` now defaults to the free target**, so a bare `sbatch` also lands somewhere
+  that starts. Command-line options override `#SBATCH`, which is what lets one script serve
+  every partition.
+- **`num_workers` comes from `$SLURM_CPUS_PER_TASK`**, via a new `pretrain.py --num-workers`.
+  A fixed 12 oversubscribes an 8-core allocation and wastes half of a 24-core one.
+- **The debug job evaluated the wrong task.** It hard-coded `--task lgd`, so
+  `CONFIG=config/Exp1_PD.yaml` would have trained PD and evaluated LGD — passing, while
+  measuring something else. Task and out-of-domain kind now follow the config.
+- `docs/VSC.md` §2a carries the inventory table.
+
 ## 14-08-2026 — figures rebuilt for the paper
 
 **New rule, applied everywhere: a figure carries data, axis labels and at most a short heading.**

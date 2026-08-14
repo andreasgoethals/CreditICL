@@ -472,3 +472,48 @@ def test_the_row_cap_samples_randomly_not_from_the_head():
     source = inspect.getsource(summaries._RowCapped)
     assert "default_rng" in source and "choice" in source, "the cap must subsample randomly"
     assert "idx.sort()" in source, "row order must be preserved for cohort-style plots"
+
+
+# -- cluster targets -----------------------------------------------------------
+
+
+def test_no_job_script_hard_codes_the_most_contended_partition():
+    """`gpu_a100` has 16 GPUs — the fewest available to us — and the first debug submission sat
+    there behind "Reason: Priority" without starting. Defaults point at the free partition;
+    `submit.sh` chooses anything else on the command line, which overrides `#SBATCH`."""
+    debug = (ROOT / "scripts" / "slurm" / "debug_exp1.slurm").read_text(encoding="utf-8")
+    active = [ln for ln in debug.splitlines() if ln.startswith("#SBATCH --partition")]
+    assert active == ["#SBATCH --partition=interactive"], active
+
+
+def test_the_submitter_knows_every_target_and_its_core_budget():
+    """Cores per GPU is the real constraint — TabICL generates its prior on the CPU — and the
+    VSC limits differ per partition (8 / 18 / 16 / 24). Requesting more than the limit earns a
+    warning and requesting fewer wastes the allocation."""
+    text = (ROOT / "scripts" / "slurm" / "submit.sh").read_text(encoding="utf-8")
+    for target in ("free", "b200", "a100", "h100", "dbg1h"):
+        assert f"{target})" in text, f"submit.sh does not handle {target}"
+    # The documented per-GPU core limits, from the VSC docs.
+    for partition, cores in (("interactive", 8), ("gpu_b200", 24), ("gpu_a100", 18),
+                             ("gpu_h100", 16)):
+        block = text[text.index(f"--partition={partition}"):]
+        assert f"--cpus-per-task={cores}" in block[:200], (
+            f"{partition} should request {cores} cores per GPU"
+        )
+
+
+def test_the_job_takes_its_worker_count_from_the_allocation():
+    """One script runs on 8 cores and on 24. A fixed `num_workers` oversubscribes the small
+    allocation and leaves half the big one idle."""
+    debug = (ROOT / "scripts" / "slurm" / "debug_exp1.slurm").read_text(encoding="utf-8")
+    assert "SLURM_CPUS_PER_TASK" in debug
+    assert "--num-workers" in debug
+
+
+def test_the_debug_job_evaluates_the_task_it_trained():
+    """It hard-coded `--task lgd`, so a `CONFIG=config/Exp1_PD.yaml` run would have trained PD
+    and evaluated LGD — passing, while measuring the wrong thing."""
+    debug = (ROOT / "scripts" / "slurm" / "debug_exp1.slurm").read_text(encoding="utf-8")
+    assert "--task lgd" not in debug
+    assert '--task "$TASK"' in debug
+    assert "*_PD.yaml) TASK=pd" in debug

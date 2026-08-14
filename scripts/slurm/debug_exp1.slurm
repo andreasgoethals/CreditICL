@@ -23,14 +23,22 @@
 # =============================================================================
 
 #SBATCH --job-name=crediticl-debug-exp1
-#SBATCH --clusters=wice
+# DEFAULTS = the FREE target. `scripts/slurm/submit.sh` overrides these on the
+# command line for a different partition, and command-line options win over
+# `#SBATCH` directives.
+#
+# NOT gpu_a100. That partition has 16 GPUs — the fewest available to us — and the
+# first debug submission sat there behind "Reason: Priority" without ever starting.
+# Mindwell's interactive partition costs NO credits, gives a full RTX 5000 Ada
+# (32 GiB), allows 16 h, and is not competing with production training runs.
+#SBATCH --clusters=mindwell
 #SBATCH --account=lp_verbekelab
-#SBATCH --partition=gpu_a100
+#SBATCH --partition=interactive
 #SBATCH --gpus-per-node=1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=18
-#SBATCH --mem=100G
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=30G
 #SBATCH --time=04:00:00
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
@@ -100,11 +108,21 @@ echo
 DEBUG_STEPS="${DEBUG_STEPS:-1500}"
 echo "DEBUG: overriding max_steps to ${DEBUG_STEPS} (config says 12500)"
 
+# WORKERS FROM THE ALLOCATION, not from the config. This script runs on partitions with
+# 8 cores (mindwell interactive) through 24 (gpu_b200), and the config's fixed 12 is wrong
+# on both: it oversubscribes the small one and wastes half the big one. TabICL generates
+# its prior on the CPU, so this is the setting that actually decides throughput.
+# One core is left for the main process and the GPU feed.
+WORKERS="${WORKERS:-$(( ${SLURM_CPUS_PER_TASK:-4} - 1 ))}"
+[ "$WORKERS" -lt 0 ] && WORKERS=0
+echo "DEBUG: num_workers=${WORKERS} (from SLURM_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-unset})"
+
 # `--resume auto` so a job killed at the walltime can be resubmitted unchanged.
 python scripts/pretrain.py \
     --config "$CONFIG" \
     --index "$INDEX" \
     --max-steps "$DEBUG_STEPS" \
+    --num-workers "$WORKERS" \
     --resume auto
 
 STATUS=$?
@@ -118,9 +136,18 @@ if [ "$STATUS" -eq 0 ]; then
     # `crediticl` is the baseline that scores OUR checkpoints — it discovers them under
     # checkpoints/ on project storage. `tabiclv2` is the released model, included so the debug
     # run also proves the comparison TABLE builds, not only that our model scores.
+    # Task and out-of-domain KIND follow the config. Hard-coding `lgd` meant a
+    # `CONFIG=config/Exp1_PD.yaml` run trained PD and then evaluated LGD — which would have
+    # "passed" while measuring the wrong thing entirely.
+    case "$CONFIG" in
+        *_PD.yaml) TASK=pd;  OOD_KIND=classification ;;
+        *)         TASK=lgd; OOD_KIND=regression ;;
+    esac
+    echo "evaluating as task=${TASK}, out-of-domain kind=${OOD_KIND}"
+
     echo "=== evaluating on the real credit datasets ==="
     python scripts/evaluate.py \
-        --task lgd \
+        --task "$TASK" \
         --models crediticl,tabiclv2 \
         --seeds 0 \
         --tag "debug_${SLURM_JOB_ID}_t${SLURM_ARRAY_TASK_ID}" || \
@@ -130,7 +157,7 @@ if [ "$STATUS" -eq 0 ]; then
     python scripts/evaluate_ood.py \
         --models crediticl,tabiclv2 \
         --seeds 0 \
-        --kinds regression \
+        --kinds "$OOD_KIND" \
         --tag "debug_${SLURM_JOB_ID}_t${SLURM_ARRAY_TASK_ID}" || \
         echo "WARNING: out-of-domain evaluation failed (fetch the cache on a login node first)"
 fi
