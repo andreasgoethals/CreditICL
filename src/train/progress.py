@@ -172,8 +172,11 @@ class ProgressTracker:
 
         if self.task == "lgd":
             from src.eval.metrics import lgd_metrics
-            from src.train.loop import quantile_levels
+            from src.train.loop import enforce_monotonic_quantiles, quantile_levels
 
+            # Sort first: column Q//2 is the median only if the row is ordered, and coverage,
+            # PIT and CRPS all assume it. See `enforce_monotonic_quantiles`.
+            q = enforce_monotonic_quantiles(q)
             levels = quantile_levels(q.shape[1]).numpy()
             point = np.clip(q[:, q.shape[1] // 2], 0.0, 1.0)
             m = lgd_metrics(yt, point, quantiles=np.clip(q, 0.0, 1.0), levels=levels)
@@ -182,11 +185,9 @@ class ProgressTracker:
         from scipy.special import softmax
         from sklearn.metrics import average_precision_score, roc_auc_score
 
-        # SLICE TO THE CLASSES THE DATA ACTUALLY HAS, then normalise — upstream's rule from
-        # `_compute_batch_loss`. The head is 10 wide; a softmax over all ten would hand part
-        # of the probability mass to eight classes that never occur, so `prob` would not be a
-        # calibrated P(default) and both AUCs would be computed on the wrong quantity.
-        n_classes = max(2, int(np.nanmax(yc)) + 1)
+        # Defensive slice, matching upstream. MEASURED: a no-op with `tabicl`, whose forward
+        # already returns exactly the classes present in the context.
+        n_classes = min(max(2, int(np.nanmax(yc)) + 1), q.shape[-1])
         prob = softmax(q[..., :n_classes], axis=-1)[:, 1]
         if len(np.unique(yt)) < 2:
             return {}

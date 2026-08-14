@@ -524,3 +524,52 @@ def test_parameter_count_is_close_to_the_released_checkpoint():
         f"ours {ours:,} vs released {released:,} — more than 0.1% apart, so the vendored "
         f"architecture has drifted from the published one"
     )
+
+
+# --- quantile crossing -------------------------------------------------------
+
+
+def test_quantile_crossing_is_fixed_before_anything_reads_the_grid():
+    """A quantile head predicts each level independently, so nothing stops q_0.4 > q_0.6.
+
+    Measured on an untrained TabICL LGD model: the raw rows are NOT monotone. Every quantity
+    we read off the predictive assumes they are — the "median" is column Q//2, coverage counts
+    truths falling between columns, PIT and CRPS integrate across them. Upstream fixes this
+    with `enforce_monotonicity(..., method="sort")` inside `QuantileDistribution`; we did not,
+    so all four were quietly wrong on any crossed row.
+    """
+    import numpy as np
+    import torch
+
+    from src.train.loop import enforce_monotonic_quantiles
+
+    crossed = np.array([[0.9, 0.1, 0.5], [0.2, 0.8, 0.4]])
+    fixed = enforce_monotonic_quantiles(crossed)
+    assert np.all(np.diff(fixed, axis=-1) >= 0), "must be non-decreasing"
+    # sorting is a permutation within each row: the values are the same, the order is not
+    assert np.allclose(np.sort(crossed, axis=-1), fixed)
+    # the median column is now genuinely the median
+    assert fixed[0, 1] == pytest.approx(0.5)
+    assert fixed[1, 1] == pytest.approx(0.4)
+
+    t = enforce_monotonic_quantiles(torch.tensor(crossed))
+    assert isinstance(t, torch.Tensor), "torch in, torch out"
+    assert torch.all(torch.diff(t, dim=-1) >= 0)
+
+    # cummax is upstream's other named option and drags the row to its running maximum
+    cm = enforce_monotonic_quantiles(crossed, method="cummax")
+    assert np.all(np.diff(cm, axis=-1) >= 0)
+    assert cm[0].tolist() == [0.9, 0.9, 0.9], "cummax distorts — that is why sort is default"
+
+    with pytest.raises(ValueError, match="unknown method"):
+        enforce_monotonic_quantiles(crossed, method="isotonic")
+
+
+def test_the_training_loss_does_not_sort():
+    """Pinball is evaluated per level independently, exactly as upstream trains it. Sorting
+    inside the loss would change the gradient, so the fix belongs at decode time only."""
+    src = (Path(__file__).resolve().parents[1] / "src" / "train" / "loop.py").read_text(
+        encoding="utf-8"
+    )
+    loss_fn = src[src.index("def pinball_loss") : src.index("class Trainer")]
+    assert "enforce_monotonic" not in loss_fn and "sort" not in loss_fn

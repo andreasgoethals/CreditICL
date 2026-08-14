@@ -5,6 +5,28 @@ reason is not obvious.
 
 ---
 
+## 14-08-2026 (night, later) — quantile crossing, and a storage doctor
+
+- **`enforce_monotonic_quantiles`** in `src/train/loop.py`, applied at every LGD decode point
+  (`predict`, `predict_quantiles`, and the progress scorer). A quantile head predicts each
+  level independently, so `q_0.4 > q_0.6` happens — measured on an untrained TabICL LGD model,
+  the raw rows are not monotone. Column `Q//2` is the median only once crossing is fixed, and
+  coverage, PIT and CRPS all read the grid as ordered. Upstream does this inside
+  `QuantileDistribution` (`enforce_monotonicity(..., method="sort")`); we did not.
+  **Not** applied to the pinball loss — that is evaluated per level, as upstream trains it.
+- **`scripts/check_storage.py`** — writes a real probe file into every directory the pipeline
+  uses, walks the owner/group/mode of each level, and prints the exact `chmod`/`mv` to run.
+  `--fix` repairs what it safely can.
+- **Correction to the previous entry.** The logit slice is a **no-op** with `tabicl`:
+  `forward` already returns exactly the classes present in `y_train` (measured — a 10-wide
+  head with binary y returns 2 columns). Probability mass was never leaking, so Brier and
+  calibration were **not** wrong. The slice stays as a guard, matching upstream, and
+  `test_forward_width_follows_the_data_not_the_head` pins the behaviour it depends on.
+  The `max_classes` architecture fix is unaffected and still stands.
+- `0010.thomas` has **no NaN** in features or targets, and an untrained model produces no NaN
+  on it. The `Input contains NaN` came from the trained weights at step 1,250, not the data;
+  `pred_nonfinite_frac` will now say so instead of aborting the measurement.
+
 ## 14-08-2026 (late night) — PD now uses TabICLv2's OWN head, and a GPU diagnostic
 
 - **`max_classes` is no longer set from the prior.** `Trainer._build_model` forced it to

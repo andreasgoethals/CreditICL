@@ -251,16 +251,21 @@ class CreditICLBaseline(Baseline):
                 # 999 quantiles -> a point prediction. The MEDIAN, not the mean: for a
                 # bimodal LGD predictive the mean lands in the empty middle where no
                 # loan actually sits, which is the failure mode this project is about.
+                # Sorted first — a quantile head predicts each level independently, so
+                # column Q//2 is the median only once crossing is fixed.
+                from src.train.loop import enforce_monotonic_quantiles
+
+                q = enforce_monotonic_quantiles(q)
                 point = q[:, q.shape[1] // 2]
                 preds.append(point.float().cpu().numpy())
             else:
-                # SLICE TO THE CLASSES PRESENT, then normalise. The head is `max_classes`
-                # wide — 10, TabICLv2's own — and upstream's `_compute_batch_loss` uses only
-                # `logits[..., :n_classes]`. Softmaxing all ten would give away part of the
-                # mass to eight classes PD never contains, so this would not be a calibrated
-                # P(default): AUC would survive (it is rank-based) but Brier, calibration
-                # slope and every threshold decision would be silently wrong.
-                n_classes = self.meta["n_classes"]
+                # Defensive slice, matching upstream's `_compute_batch_loss`. MEASURED: with
+                # `tabicl` this is a no-op, because `forward` already returns exactly the
+                # classes present in the context (a 10-wide head with binary y returns 2
+                # columns). Kept so that a change in that convention becomes a shape error
+                # here rather than a softmax quietly spreading P(default) over classes the
+                # data never contained.
+                n_classes = min(self.meta["n_classes"], q.shape[-1])
                 prob = torch.softmax(q[..., :n_classes].float(), dim=-1)[:, 1]
                 preds.append(prob.cpu().numpy())
 
@@ -297,7 +302,12 @@ class CreditICLBaseline(Baseline):
                 raise RuntimeError(f"expected {len(block)} query rows, got {out.shape[1]}")
             rows.append(out[0].float().cpu().numpy())
 
-        quants = np.clip(np.concatenate(rows, axis=0), 0.0, 1.0)
+        from src.train.loop import enforce_monotonic_quantiles
+
+        # Sort BEFORE clipping: clipping cannot introduce crossing, and sorting a clipped row
+        # is the same row, but doing it in this order keeps the two operations independent.
+        # Pinball, CRPS, coverage and PIT all read this grid as ordered.
+        quants = np.clip(enforce_monotonic_quantiles(np.concatenate(rows, axis=0)), 0.0, 1.0)
         levels = quantile_levels(int(self.meta["num_quantiles"])).numpy()
         return quants, levels
 

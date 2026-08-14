@@ -99,6 +99,40 @@ def quantile_levels(num_quantiles: int, device=None, dtype=None) -> torch.Tensor
     return torch.linspace(0.0, 1.0, num_quantiles + 2, device=device, dtype=dtype)[1:-1]
 
 
+def enforce_monotonic_quantiles(quantiles: Any, method: str = "sort") -> Any:
+    """Fix quantile crossing along the last axis. Accepts a Tensor or an ndarray.
+
+    A quantile head predicts each level independently, so nothing stops it from returning
+    q_0.4 > q_0.6. Upstream fixes this — `enforce_monotonicity(quantiles, method="sort")`,
+    applied inside `QuantileDistribution` before the quantiles are used for anything — and we
+    did not, which is why it is here.
+
+    It matters more than it looks. Every quantity we read off the predictive assumes the grid
+    is sorted: the "median" is column Q//2 and is only the median if the row is ordered;
+    coverage counts how many truths fall between two columns; PIT and CRPS integrate across
+    them. On a crossed row all four are quietly wrong, and none of them looks wrong.
+
+    `sort` is upstream's default. `cummax` is offered because it is the other cheap option
+    and upstream names it, but it drags the whole row up to its running maximum and so
+    distorts the distribution; prefer `sort` unless there is a reason.
+
+    NOT applied to the training loss: pinball is evaluated per level independently, exactly as
+    upstream trains it, and sorting there would change the gradient.
+    """
+    if method not in ("sort", "cummax"):
+        raise ValueError(f"unknown method {method!r}; use 'sort' or 'cummax'")
+    if isinstance(quantiles, torch.Tensor):
+        if method == "cummax":
+            return torch.cummax(quantiles, dim=-1).values
+        return torch.sort(quantiles, dim=-1).values
+    import numpy as _np
+
+    arr = _np.asarray(quantiles)
+    if method == "cummax":
+        return _np.maximum.accumulate(arr, axis=-1)
+    return _np.sort(arr, axis=-1)
+
+
 def pinball_loss(pred: torch.Tensor, target: torch.Tensor, num_quantiles: int) -> torch.Tensor:
     """pred: (B, n_test, Q); target: (B, n_test)."""
     alphas = quantile_levels(num_quantiles, device=pred.device, dtype=pred.dtype).view(1, 1, -1)
@@ -395,14 +429,16 @@ class Trainer:
                 loss = pinball_loss(pred, y_test, self.num_quantiles)
                 extra = {}
             else:
-                # UPSTREAM'S RULE, verbatim from `_compute_batch_loss` in the pinned TabICL
-                # dump: the head is `max_classes` wide (10, per every classifier stage script)
-                # and the loss uses only the first `n_classes` columns —
+                # Upstream's `_compute_batch_loss` does exactly this:
                 #     n_classes = int(batch.y_train.max().item()) + 1
                 #     logits_used = logits[..., :n_classes].reshape(-1, n_classes)
-                # Taking the softmax over all 10 instead would spread probability mass across
-                # eight classes the data never contains, so the two-class probabilities would
-                # not sum to 1 and every calibration metric would be wrong.
+                #
+                # MEASURED, so nobody has to guess: with `tabicl` this slice is a NO-OP.
+                # `TabICL.forward` already returns `n_classes` columns, taken from `y_train`
+                # — a 10-wide head with binary y returns (B, test, 2), and with 5 classes it
+                # returns (B, test, 5). The slice is kept because upstream keeps it and it
+                # costs nothing: it is the only thing standing between us and a silent
+                # mis-shaped loss if that convention ever changes.
                 n_classes = max(2, int(y_train.max().item()) + 1)
                 flat = pred[..., :n_classes].flatten(end_dim=-2)
                 true = y_test.long().flatten()

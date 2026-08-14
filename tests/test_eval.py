@@ -11,8 +11,6 @@ from pathlib import Path
 import numpy as np
 
 from src.eval.baselines import BASELINES, availability_report, build
-
-ROOT = Path(__file__).resolve().parents[1]
 from src.eval.metrics import (
     boundary_mass_error,
     expected_calibration_error,
@@ -22,6 +20,8 @@ from src.eval.metrics import (
     recall_at_top_k,
 )
 from src.eval.runner import make_split
+
+ROOT = Path(__file__).resolve().parents[1]
 
 # --- metrics: LGD ------------------------------------------------------------
 
@@ -508,24 +508,41 @@ def test_trainer_does_not_narrow_the_head_to_the_priors_class_count():
     )
 
 
-def test_binary_loss_uses_only_the_first_two_of_ten_logits():
-    """Upstream slices the logits to the classes actually present before cross-entropy.
+def test_forward_width_follows_the_data_not_the_head():
+    """MEASURED, because it decides whether the logit slice matters.
 
-    Without the slice, a softmax over all ten hands part of the probability mass to eight
-    classes PD never contains: AUC survives because it is rank-based, but Brier, calibration
-    slope and any threshold decision are wrong, and nothing in the loss curve says so.
+    `TabICL.forward` returns exactly the classes present in `y_train`, not `max_classes`: a
+    10-wide head with binary y returns 2 columns, with 5 classes it returns 5. So the
+    `logits[..., :n_classes]` slice — which upstream also does — is a NO-OP here, and there
+    was never any probability mass leaking to classes the data does not contain.
+
+    The slice stays because upstream keeps it and it costs nothing. This test is what makes
+    that a measured statement rather than an assumption, and it will fail loudly if the
+    convention ever changes.
     """
     import torch
 
-    from src.train.loop import Trainer
+    from src.models.architecture import build_model, is_available
 
+    if not is_available("tabicl"):
+        pytest.skip("upstream tabicl not installed here")
+
+    torch.manual_seed(0)
+    model = build_model("pd", architecture="tabicl").eval()
+    assert model.max_classes == 10
+
+    X = torch.randn(1, 300, 8)
+    for k in (2, 3, 5):
+        y = torch.randint(0, k, (1, 200)).float()
+        with torch.no_grad():
+            out = model(X, y)
+        assert out.shape[-1] == k, (
+            f"forward returned {out.shape[-1]} columns for {k} classes. If this is now "
+            f"{model.max_classes}, the slice in Trainer._loss_for is load-bearing again."
+        )
+
+
+def test_the_classification_loss_still_slices():
+    """Kept even though it is a no-op today: it is the guard for the case above changing."""
     src = (ROOT / "src" / "train" / "loop.py").read_text(encoding="utf-8")
     assert "pred[..., :n_classes]" in src, "the classification loss must slice the logits"
-
-    # the slice is what makes the two probabilities sum to 1
-    logits = torch.tensor([[[2.0, 1.0] + [5.0] * 8]])          # 8 decoy classes dominate
-    unsliced = torch.softmax(logits, dim=-1)[0, 0, :2].sum()
-    sliced = torch.softmax(logits[..., :2], dim=-1)[0, 0, :2].sum()
-    assert unsliced < 0.05, "decoy logits should swallow the mass without a slice"
-    assert abs(float(sliced) - 1.0) < 1e-6, "with the slice the binary probabilities sum to 1"
-    assert Trainer is not None

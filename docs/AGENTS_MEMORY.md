@@ -45,6 +45,34 @@ distinct cause each time: unknown baseline → no checkpoint → **loader built 
 built upstream TabICL**. Staging checkpoint directory still not writable. Full write-up in
 [`RUNS.md`](RUNS.md).
 
+### 14-08-2026 — Two claims I made from reading code, one of which was wrong
+- **Tried:** asserting from the source that a 10-wide head would spread probability mass over
+  eight absent classes, so Brier and calibration must be wrong.
+- **Result:** **false.** `TabICL.forward` returns exactly the classes present in `y_train` —
+  a 10-wide head with binary y returns 2 columns, with 5 classes it returns 5. Measured in
+  thirty seconds once I bothered to run it. The slice upstream applies is defensive, not
+  load-bearing, and no calibration metric was ever affected.
+- **Why:** the head is *named* `max_classes` and the parameter count changes with it, so
+  "the output is 10 wide" felt like it followed. It does not; the forward slices internally.
+- **Instead:** `test_forward_width_follows_the_data_not_the_head` measures it. **A shape is
+  one `print` away — never infer one from a constructor argument.** The `max_classes`
+  architecture finding below was independently verified by parameter count and stands.
+
+### 14-08-2026 — Quantile crossing was never fixed at decode time
+- **Tried:** checking whether LGD's near-constant predictions and negative out-of-domain R²
+  were a bug or just 1,500 of 12,500 steps.
+- **Result:** undertraining explains the spread, but a real bug turned up alongside it: the
+  predicted quantile rows are **not monotone**, and nothing sorted them. Confirmed on an
+  untrained model — `np.all(np.diff(q, axis=1) >= 0)` is False.
+- **Why:** a quantile head predicts each level independently; nothing ties q_0.4 below q_0.6.
+  Everything downstream assumes otherwise — the median is column `Q//2`, coverage counts
+  truths between columns, PIT and CRPS integrate across them. All four are wrong on a crossed
+  row and none of them *looks* wrong.
+- **Instead:** `enforce_monotonic_quantiles`, applied at all three decode points, matching
+  upstream's `enforce_monotonicity(..., method="sort")` inside `QuantileDistribution`. NOT in
+  the pinball loss — that is per-level by design. **When the library has a function for
+  something, find out where it is called, not just what it does.**
+
 ### 14-08-2026 — The architecture was quietly made a function of the prior
 - **Tried:** nothing — this was found while writing a round-trip test, not from a run.
 - **Result:** PD trained a **27,538,938**-parameter model where TabICLv2's classifier is
