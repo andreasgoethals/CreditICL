@@ -5,6 +5,17 @@ reason is not obvious.
 
 ---
 
+## 14-08-2026 (late) — the first debug array ran nothing
+
+- **Removed `--resume auto` from `debug_exp1.slurm`.** `pretrain.py` defines no such flag, so
+  argparse exited 2 and all eight jobs finished in under a minute having trained nothing.
+  Resuming is automatic (`trainer.maybe_resume()` is unconditional).
+- **`tests/test_slurm_scripts.py`** — checks every flag the SLURM scripts pass against the
+  argparse options of the script they call, plus `bash -n` on each job script. Nothing else in
+  the project ever reads this layer before the cluster does.
+- **Training now runs under `set +e` in `debug_exp1.slurm`**, so a crash leaves `STATUS`
+  meaningful, skips the evaluation deliberately, and still prints the artefact summary.
+
 ## 14-08-2026 (evening) — three fixes from the first Mindwell submission
 
 - **The config is an argument, not an environment variable**: `submit.sh <where> <track>`, e.g.

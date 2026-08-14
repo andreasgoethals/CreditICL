@@ -67,6 +67,39 @@ fixed, because the fix is one changelog line and the dead end was the hour.
   an environment variable** whenever a value must cross a process boundary, and **print every
   input that changes what a job does**, not just the ones passed as flags.
 
+### 14-08-2026 — A flag the job script passes but the Python script does not define
+- **Tried:** the first real debug array — 4 LGD arms on `interactive`, 4 PD arms on `gpu_b200`.
+- **Result:** **all eight finished in 21–60 seconds** and the dashboard showed them as
+  *Completed*. Nothing trained. 1,500 steps cannot run in 21 seconds; that is torch's import
+  time and nothing else.
+- **Why:** `debug_exp1.slurm` called `pretrain.py … --resume auto`, and `pretrain.py` defines no
+  `--resume`. argparse prints a usage message and exits 2 before any of its own code runs.
+  Resuming was **already automatic** — `trainer.maybe_resume()` is called unconditionally — so
+  the flag was describing behaviour that needed no flag. Nothing catches this: the job scripts
+  are shell text, so no import, linter, or test touched them.
+- **Instead:** flag removed, and `tests/test_slurm_scripts.py` now parses every
+  `python scripts/*.py` call in `scripts/slurm/` and checks each flag against that script's
+  `add_argument` calls. Verified by reintroducing the bug and watching the test fail.
+  **A very short "successful" job is a failed job** — check walltime against what the work
+  should plausibly take before believing a green status.
+- **Second bug found in the same block:** the training call ran under `set -e`, so a crash
+  killed the script outright — `STATUS=$?` was dead code, the `if [ "$STATUS" -eq 0 ]`
+  evaluation guard could never be false, and the artefact summary at the end (most useful
+  exactly when a run has just failed) never printed. Now wrapped in `set +e` / `set -e`.
+
+### 14-08-2026 — There are TWO separate QoS limits, and the second one is on CPUs
+- **Tried:** a 4-arm array on Mindwell `interactive` at `--cpus-per-task=8`, after the
+  job-count limit below had already been worked around.
+- **Result:** it was accepted, but only `_0` ran — `_[1-3]` sat on `QOSMaxCpuPerUserLimit`.
+- **Why:** `QOSMaxSubmitJobPerUserLimit` caps how many jobs you may *queue*;
+  `QOSMaxCpuPerUserLimit` caps how many cores you may *use at once*. On `interactive` the
+  second cap is reached by a single 8-core task, so an array there is serial no matter how
+  many GPUs the partition has.
+- **Instead:** expect an N-arm array on `free` to take N × walltime end to end — acceptable,
+  since it is free. When several arms must finish together, use `b200`, which is on the
+  `normal` QoS and ran all four concurrently on one node. Both caps come from
+  `sacctmgr show qos interactive,normal format=Name%20,MaxSubmitJobsPerUser%15,MaxTRESPerUser%30`.
+
 ### 14-08-2026 — Queue limits are per-QoS, and an array counts as several jobs
 - **Tried:** submitting an LGD 4-task array and a PD 4-task array to Mindwell `interactive`.
 - **Result:** the second was refused with `QOSMaxSubmitJobPerUserLimit`.

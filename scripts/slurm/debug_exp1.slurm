@@ -121,17 +121,28 @@ WORKERS="${WORKERS:-$(( ${SLURM_CPUS_PER_TASK:-4} - 1 ))}"
 [ "$WORKERS" -lt 0 ] && WORKERS=0
 echo "DEBUG: num_workers=${WORKERS} (from SLURM_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-unset})"
 
-# `--resume auto` so a job killed at the walltime can be resubmitted unchanged.
+# RESUMING IS AUTOMATIC — there is no flag. `pretrain.py` calls `trainer.maybe_resume()`
+# unconditionally, which picks up the latest checkpoint in the run's own directory if one
+# exists and starts at step 0 if not. A job killed at the walltime is resumed by resubmitting
+# the same command. Passing a `--resume auto` that the parser does not define made argparse
+# exit 2 before a single step ran; see docs/AGENTS_MEMORY.md.
+#
+# `set +e` around the call so a crash does NOT abort the script: STATUS is what the evaluation
+# below is gated on, and the artefact summary at the end is most useful precisely when training
+# has failed. Under `set -e` the script would die here and print none of it.
+set +e
 python scripts/pretrain.py \
     --config "$CONFIG" \
     --index "$INDEX" \
     --max-steps "$DEBUG_STEPS" \
-    --num-workers "$WORKERS" \
-    --resume auto
-
+    --num-workers "$WORKERS"
 STATUS=$?
+set -e
 echo
 echo "training exited with ${STATUS} at $(date -Is)"
+if [ "$STATUS" -ne 0 ]; then
+    echo "TRAINING FAILED — the evaluation below is SKIPPED. The traceback is above."
+fi
 
 # --- evaluate the checkpoint this arm just produced -------------------------
 # The debug run is only useful if it proves the WHOLE chain works, and evaluation

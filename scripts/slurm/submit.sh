@@ -93,6 +93,12 @@ case "${TARGET}" in
     free)
         # FREE, and a full GPU. 16h ceiling. The 8-core cap is the trade: the prior
         # generator gets fewer workers, so a step is slower — but it starts now.
+        #
+        # AN ARRAY RUNS **SERIALLY** HERE. The interactive QoS caps total CPUs per user, and
+        # 8 cpus-per-task exhausts it with ONE task: on 14-08-2026 a 4-arm array showed
+        # `11516936_0` running and `11516936_[1-3]` pending on `QOSMaxCpuPerUserLimit`. So a
+        # 4-arm debug array takes up to 4x the walltime end to end. That is fine for a debug
+        # run and free, but do not expect four results in an hour — use `b200` for that.
         OPTS=(--clusters=mindwell --partition=interactive
               --gpus-per-node=1 --cpus-per-task=8 --mem=30G --time=${WALLTIME:-01:00:00})
         ;;
