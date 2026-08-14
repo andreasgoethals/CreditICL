@@ -7,11 +7,12 @@ reason is not obvious.
 
 ## 14-08-2026 (evening) — three fixes from the first Mindwell submission
 
-- **`submit.sh` now prints and exports `CONFIG`.** `CONFIG=... bash submit.sh` sets the variable
-  for the calling shell, not for `sbatch`'s environment, so the job never saw it — and nothing
-  on screen said which config was being submitted. A run intended as PD went out as a **second
-  LGD job** with no visible sign. It now prints `CONFIG :` on every submission, saying
-  `(default — set CONFIG= to change)` when unset.
+- **The config is an argument, not an environment variable**: `submit.sh <where> <track>`, e.g.
+  `submit.sh free lgd`. `sbatch [opts] script args…` passes trailing arguments to the job script,
+  which reads `CONFIG="${1:-…}"`. The old `CONFIG=… bash submit.sh` set the variable for the
+  calling shell, not `sbatch`'s environment, so a run meant as PD went out as a **second LGD
+  job** with nothing on screen to say so. `where / track / config / script` are now all printed
+  before submission, and an unknown track is refused.
 - **Debug walltime 4 h → 1 h.** Billing is on *actual* walltime, so a generous limit costs
   nothing directly — but the requested limit is what the scheduler backfills against and what
   `sam-quote` reports, and 1,500 steps does not need four hours. It cut the quoted ceiling from

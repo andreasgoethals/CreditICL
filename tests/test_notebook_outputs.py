@@ -517,3 +517,19 @@ def test_the_debug_job_evaluates_the_task_it_trained():
     assert "--task lgd" not in debug
     assert '--task "$TASK"' in debug
     assert "*_PD.yaml) TASK=pd" in debug
+
+
+def test_the_job_config_is_an_argument_not_an_environment_variable():
+    """`CONFIG=x bash submit.sh` sets the variable for the CALLING shell, not for sbatch's
+    environment — so the job never received it, and a run intended as PD went out as a second
+    LGD job with nothing on screen to say so. `sbatch [opts] script args...` passes trailing
+    arguments straight to the script, which needs no plumbing and cannot be lost."""
+    job = (ROOT / "scripts" / "slurm" / "debug_exp1.slurm").read_text(encoding="utf-8")
+    assert 'CONFIG="${1:-config/Exp1_LGD.yaml}"' in job, "the config must be argument 1"
+    assert 'CONFIG="${CONFIG:-' not in job, "the env-var form is what broke"
+
+    sub = (ROOT / "scripts" / "slurm" / "submit.sh").read_text(encoding="utf-8")
+    assert 'TRACK="${2:-lgd}"' in sub, "submit.sh must take the track as an argument"
+    # and every input that changes what runs must be printed before submitting
+    for label in ('echo "where', 'echo "track', 'echo "config', 'echo "script'):
+        assert label in sub, f"{label} is not reported before submission"

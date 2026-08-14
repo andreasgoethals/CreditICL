@@ -113,8 +113,17 @@ Read out of `tfm-library/repositories/VSC Documentation.txt`. **GPU count is que
 
 ```bash
 bash scripts/slurm/submit.sh --list          # the table above, from the shell
-bash scripts/slurm/submit.sh free scripts/slurm/debug_exp1.slurm
+bash scripts/slurm/submit.sh free lgd        # <where> <track>
+bash scripts/slurm/submit.sh b200 pd
 ```
+
+**The track is an argument, never an environment variable.** `sbatch [options] script args…`
+passes trailing arguments straight to the job script, so `submit.sh` hands it the config path
+and the job reads it as `$1`. The earlier `CONFIG=… bash submit.sh` form was broken in a way
+that is easy to miss: it sets the variable for the *calling* shell, not for `sbatch`'s
+environment, so the job never saw it and a run meant as PD went out as a second LGD job.
+`submit.sh` now prints `where / track / config / script` before submitting, and refuses a track
+it does not recognise.
 
 **`gpu_a100` has the fewest GPUs of any GPU partition available to us.** The first debug
 submission sat there behind `Reason: Priority` and never started.

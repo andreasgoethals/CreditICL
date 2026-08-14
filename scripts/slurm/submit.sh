@@ -2,12 +2,19 @@
 # =============================================================================
 #  Submit a CreditICL job to the RIGHT partition, without editing any script.
 #
-#      bash scripts/slurm/submit.sh free   scripts/slurm/debug_exp1.slurm
-#      bash scripts/slurm/submit.sh b200   scripts/slurm/debug_exp1.slurm
-#      bash scripts/slurm/submit.sh a100   scripts/slurm/debug_exp1.slurm
+#      bash scripts/slurm/submit.sh <where> <track> [job-script]
 #
-#      bash scripts/slurm/submit.sh --list          # show the inventory and exit
-#      DRY_RUN=1 bash scripts/slurm/submit.sh free scripts/slurm/debug_exp1.slurm
+#      bash scripts/slurm/submit.sh free lgd      # LGD debug, free partition
+#      bash scripts/slurm/submit.sh b200 pd       # PD debug, B200
+#
+#      bash scripts/slurm/submit.sh --list        # show the inventory and exit
+#      DRY_RUN=1 bash scripts/slurm/submit.sh free lgd     # print, submit nothing
+#
+#  TRACK is `lgd` or `pd`, and becomes the job script's first argument. It used to
+#  be a `CONFIG=` environment variable, which was wrong twice over: `CONFIG=x bash
+#  submit.sh` sets it for the CALLING shell and not for sbatch's environment, so the
+#  job never received it — and nothing on screen said which config had been sent, so
+#  a run intended as PD went out as a second LGD job unnoticed.
 #
 #  Command-line options override `#SBATCH` directives, which is what lets one job
 #  script serve every target: the script carries safe defaults, this chooses the
@@ -64,8 +71,23 @@ usage() {
 [[ "${1:-}" == "--list" || "${1:-}" == "-l" || -z "${1:-}" ]] && usage 0
 
 TARGET="$1"
-SCRIPT="${2:-scripts/slurm/debug_exp1.slurm}"
-shift 2 2>/dev/null || shift 1
+TRACK="${2:-lgd}"
+SCRIPT="${3:-scripts/slurm/debug_exp1.slurm}"
+shift 3 2>/dev/null || shift $#
+
+case "${TRACK}" in
+    lgd|LGD) CONFIG="config/Exp1_LGD.yaml" ;;
+    pd|PD)   CONFIG="config/Exp1_PD.yaml"  ;;
+    config/*|*.yaml) CONFIG="${TRACK}" ;;   # an explicit path still works
+    *)
+        echo "unknown track '${TRACK}' — expected 'lgd', 'pd', or a config path" >&2
+        exit 2
+        ;;
+esac
+if [[ ! -f "${CONFIG}" ]]; then
+    echo "ERROR: no config at ${CONFIG}" >&2
+    exit 1
+fi
 
 case "${TARGET}" in
     free)
@@ -105,19 +127,12 @@ if [[ ! -f "${SCRIPT}" ]]; then
     exit 1
 fi
 
-# THE CONFIG, ON SCREEN. `CONFIG` is an env var read inside the job script, so leaving it
-# unset silently submits the LGD default — which is how a run intended as PD went out as a
-# SECOND LGD job, with nothing in the output to say so until the log appeared.
-CONFIG_IN_USE="${CONFIG:-config/Exp1_LGD.yaml (default — set CONFIG= to change)}"
-echo "target : ${TARGET}"
+# EVERY input that changes what the job does, on screen before it is submitted.
+echo "where  : ${TARGET}"
+echo "track  : ${TRACK}"
+echo "config : ${CONFIG}"
 echo "script : ${SCRIPT}"
-echo "CONFIG : ${CONFIG_IN_USE}"
-echo "sbatch : --account=${ACCOUNT} ${OPTS[*]} $*"
-
-# `--export=ALL` in the job script propagates the submitting environment, but only what is
-# EXPORTED. `CONFIG=... bash submit.sh` sets it for THIS shell, not for sbatch's environment,
-# so it has to be exported here or the job would not see it at all.
-[[ -n "${CONFIG:-}" ]] && export CONFIG
+echo "sbatch : --account=${ACCOUNT} ${OPTS[*]} ${SCRIPT} ${CONFIG} $*"
 
 if [[ -n "${DRY_RUN:-}" ]]; then
     echo "(DRY_RUN set — nothing submitted)"
@@ -129,7 +144,7 @@ fi
 # So treat the number as a ceiling, not a forecast. Skipped for `free`, where it is always zero.
 if [[ "${TARGET}" != "free" ]] && command -v sam-quote >/dev/null 2>&1; then
     echo "--- cost ceiling if it runs the full ${WALLTIME:-01:00:00} (billing is on ACTUAL time) ---"
-    sam-quote sbatch --account="${ACCOUNT}" "${OPTS[@]}" "$@" "${SCRIPT}" || true
+    sam-quote sbatch --account="${ACCOUNT}" "${OPTS[@]}" "${SCRIPT}" "${CONFIG}" "$@" || true
     echo "-----------------------------------------------------------------------------------"
 fi
 
@@ -137,7 +152,7 @@ fi
 # message ("job submit limit, user's size and/or time limits") does not say WHICH limit was hit,
 # and the fix differs per partition.
 set +e
-OUT="$(sbatch --account="${ACCOUNT}" "${OPTS[@]}" "$@" "${SCRIPT}" 2>&1)"
+OUT="$(sbatch --account="${ACCOUNT}" "${OPTS[@]}" "${SCRIPT}" "${CONFIG}" "$@" 2>&1)"
 RC=$?
 set -e
 echo "${OUT}"
@@ -163,9 +178,9 @@ if [[ ${RC} -ne 0 ]] && grep -qi "QOSMaxSubmitJobPerUserLimit\|job submit limit"
     * wait for the queued array to finish, then resubmit;
     * use a different QoS - 'b200' and 'a100' are on 'normal', a separate
       allowance from 'interactive':
-          bash scripts/slurm/submit.sh b200 ${SCRIPT}
+          bash scripts/slurm/submit.sh b200 ${TRACK}
     * submit fewer arms at once:
-          bash scripts/slurm/submit.sh ${TARGET} ${SCRIPT} --array=0-1
+          bash scripts/slurm/submit.sh ${TARGET} ${TRACK} '' --array=0-1
   ---------------------------------------------------------------------------
 EOF
 fi

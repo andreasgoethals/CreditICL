@@ -61,7 +61,11 @@ source scripts/slurm/_activate_env.sh
 # --- which arm is this? -----------------------------------------------------
 # TASK -> grid index. Read the mapping from `--list` and edit if the grid changes:
 # a hard-coded index that silently points at a different arm is worse than a crash.
-CONFIG="${CONFIG:-config/Exp1_LGD.yaml}"
+# THE CONFIG IS ARGUMENT 1, not an environment variable. `sbatch [options] script args...`
+# passes trailing arguments straight to the script, so this needs no `--export` plumbing and
+# cannot be silently lost. `CONFIG=x bash submit.sh` set the variable for the CALLING shell,
+# not for sbatch's environment, so the job never saw it.
+CONFIG="${1:-config/Exp1_LGD.yaml}"
 # Resolved from `--list` against config/Exp1_LGD.yaml on 12-08-2026, all at seed 0:
 #   0  cf=0.0  mechanism   the control: original prior only
 #   3  cf=0.3  mechanism   our loss-mechanism path at the highest mix

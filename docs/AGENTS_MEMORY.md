@@ -60,10 +60,12 @@ fixed, because the fix is one changelog line and the dead end was the hour.
 - **Why:** `VAR=x bash script.sh` sets the variable for *that shell*, not for `sbatch`'s
   environment, so `--export=ALL` inside the job script had nothing to propagate. And
   `submit.sh` printed the partition and resources but never the config.
-- **Instead:** `submit.sh` now prints `CONFIG :` on every submission — with
-  `(default — set CONFIG= to change)` spelled out when it is unset — and exports it so the job
-  actually receives it. **Print every input that changes what a job does**, not just the ones
-  that were passed as flags.
+- **Instead:** the env var is gone. `sbatch [options] script args…` passes trailing arguments
+  straight to the job script, so `submit.sh <where> <track>` resolves the track to a config path
+  and passes it as `$1`; the job reads `CONFIG="${1:-config/Exp1_LGD.yaml}"`. An unrecognised
+  track is refused rather than defaulting. Two lessons, both general: **prefer an argument over
+  an environment variable** whenever a value must cross a process boundary, and **print every
+  input that changes what a job does**, not just the ones passed as flags.
 
 ### 14-08-2026 — Queue limits are per-QoS, and an array counts as several jobs
 - **Tried:** submitting an LGD 4-task array and a PD 4-task array to Mindwell `interactive`.
