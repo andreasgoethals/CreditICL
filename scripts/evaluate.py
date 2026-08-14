@@ -28,6 +28,7 @@ if str(ROOT) not in sys.path:
 
 from src.eval.baselines import DEFAULT_BASELINES, availability_report  # noqa: E402
 from src.eval.crediticl_baseline import register_or_warn as register_crediticl  # noqa: E402
+from src.eval.crediticl_baseline import resolve_our_checkpoint  # noqa: E402
 from src.eval.runner import EvalConfig, run, summarise  # noqa: E402
 from src.utils.logging_setup import log_environment, log_section, setup_logging  # noqa: E402
 from src.utils.paths import describe, logs_dir, results_dir  # noqa: E402
@@ -42,6 +43,12 @@ def main() -> int:
     ap.add_argument("--test-size", type=float, default=0.2)
     ap.add_argument("--split", default="random", choices=("random", "temporal"))
     ap.add_argument("--tag", default=None, help="suffix for the output filenames")
+    ap.add_argument(
+        "--checkpoint", default=None,
+        help="path to one of OUR step-*.ckpt files, required by --models crediticl. "
+             "Omit it and the single checkpoint matching --task is used; with several, "
+             "the run refuses to guess rather than scoring an arbitrary arm.",
+    )
     args = ap.parse_args()
 
     tasks = ["pd", "lgd"] if args.task == "both" else [args.task]
@@ -63,14 +70,25 @@ def main() -> int:
         log.info("baseline %-10s %s", name, "available" if ok else f"UNAVAILABLE — {err}")
 
     exit_code = 0
+    models = args.models.split(",")
     for task in tasks:
+        # Registering `crediticl` only makes the NAME resolvable. It also needs a checkpoint,
+        # and passing none is why every one of its cells failed on 14-08-2026 while the run
+        # still reported "25/50 cells OK".
+        model_kwargs = {}
+        if "crediticl" in models:
+            ckpt = resolve_our_checkpoint(args.checkpoint, task, log)
+            if ckpt is not None:
+                model_kwargs["crediticl"] = {"checkpoint": str(ckpt)}
+
         cfg = EvalConfig(
             task=task,
             datasets=args.datasets.split(",") if args.datasets else None,
-            models=args.models.split(","),
+            models=models,
             seeds=[int(s) for s in args.seeds.split(",")],
             test_size=args.test_size,
             split=args.split,
+            model_kwargs=model_kwargs,
         )
         df = run(cfg)
 

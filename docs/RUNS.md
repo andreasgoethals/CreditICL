@@ -148,8 +148,90 @@ The one thing to do differently.
 
 ## Runs
 
-_No run has been written up yet._
+## 14-08-2026 — Exp1 debug, LGD + PD — pipeline runs end to end; our own model scored nothing
+
+**Submitted** 14-08-2026 10:43 | **jobs** 11516954 (LGD, array 0–3), 11516956 (PD, array 0–3)
+**Cluster** mindwell — LGD on `interactive` (RTX 5000 Ada), PD on `gpu_b200` (B200 183 GiB)
+**Commit** e0c8750, with the `crediticl` registration fix pulled mid-run | **walltime** 1 h requested
+**torch** 2.11.0+cu128, CUDA 12.8, driver 595.71.05, python 3.12.3
+
+Preceded by jobs 11516936/11516938 at 10:30, which **all exited 2 in 21–60 s**: the job script
+passed `--resume auto`, a flag `pretrain.py` does not define. See **Dead ends**.
+
+### Configuration
+- `config/Exp1_LGD.yaml` and `config/Exp1_PD.yaml`, arms 0/3/11/1 of 96
+- **Budget** 1,500 steps × 4 datasets = 6,000 datasets — `--max-steps` overriding the config's
+  12,500. **This is a plumbing test, not an experiment.**
+- **Init** scratch. LGD 28,544,991 params; PD 27,538,938. All trainable.
+- `prior source: GENERATE`, `amp=True`
+
+### Results
+Seven of eight arms completed 1,500 steps. LGD array task 3 never started — `ReqNodeNotAvail,
+Reserved for maintenance`, deferred to 15-08 02:20, not a fault.
+
+| arm | GPU | steps/s | mean GPU util | wall | final train loss |
+|---|---|---|---|---|---|
+| LGD cf=0.0 (control) | RTX 5000 Ada | 6.62 | 69.0 % | 222 s | 0.127 |
+| LGD cf=0.3 mechanism | RTX 5000 Ada | 4.95 | 70.7 % | 302 s | — |
+| LGD cf=0.3 quantile | RTX 5000 Ada | 5.15 | 65.9 % | 299 s | — |
+| PD cf=0.0 (control) | B200 | 0.56 | **3.5 %** | 2,633 s | 0.171 (acc 0.95) |
+| PD cf=0.1 mechanism | B200 | 0.48 | **3.5 %** | 3,041 s | — |
+| PD cf=0.3 mechanism | B200 | 0.51 | **1.7 %** | 2,867 s | — |
+| PD cf=0.3 quantile | B200 | 0.51 | **4.1 %** | 2,874 s | — |
+
+- **Learning works.** PD loss 0.618 → 0.171, accuracy 0.649 → 0.95 over 1,500 steps. LGD loss
+  0.339 → 0.127. Gradients reach all three stacks (`col≈5e-2`, `row≈5.6e-2`, `icl≈5.5e-3`).
+- **The prior mixer works.** `prior check @500` reports `sources={'base': 16, 'credit': 0}` at
+  cf=0.0 and `{'base': 12, 'credit': 4}` at cf=0.1 — exactly the requested 1-in-10 rounded to a
+  16-dataset sample. Boundary mass 0.0513 on LGD; PD base rate 0.4230 under `balanced`.
+- **Progress curve** one row per arm. `progress.every_datasets` is 5,000 and the debug budget is
+  6,000, so only step 1,250 was ever reached. Not a bug, but it means there is no curve.
+- **Out-of-domain** only `tabiclv2` was scored: **25 of 50 cells OK**, the other 25 being every
+  `crediticl` cell. See Bugs.
+- **Files** `output/logs/debug_exp1_task*_115169*.out`, `output/manifests/*__{progress,telemetry}.csv`
+
+### Bugs and anomalies
+1. **The B200 ran at 1.7–4.1 % GPU utilisation and was 12× slower per step than the free RTX
+   5000 Ada.** CPU sat at 9–14 % of 24 cores with `num_workers=23`, so neither the GPU nor the
+   CPU was busy. Our own telemetry caught it (`WARNING mean GPU utilisation 3% — the run is
+   probably STARVED`) but its advice — raise `num_workers` — is wrong here, since 23 of 24 cores
+   were already allocated. **Confounded:** PD-vs-LGD and B200-vs-RTX changed together, so this
+   run cannot say which caused it. Resolving that is the first thing the next run must do.
+2. **`crediticl` scored nothing, anywhere.** Two distinct causes, both visible in the logs:
+   `unknown baseline 'crediticl'` at 10:48 (no production caller ever invoked `register()`),
+   then `needs checkpoint=<path>` at 11:33 after the registration fix was pulled mid-run — the
+   evaluation never passed a checkpoint path. **Every number in this run is about `tabiclv2`.**
+3. **The real credit datasets were not preprocessed on the cluster**, so the progress-time
+   evaluation logged `0001.gmsc … not in the processed cache` for all 14 PD datasets. The final
+   evaluation calls `ensure_processed()` and got further; the progress-time one does not.
+4. **Three out-of-domain regression datasets reported `constant_prediction=1.0` when the model
+   had emitted NaN** (`Another-Dataset-on-used-Fiat-500`, `miami_housing`,
+   `physiochemical_protein`). `np.var` of an all-NaN array is NaN, fails `> EPS`, and falls into
+   the constant branch — a numerical blow-up reported as a modelling quirk.
+5. **`/lustre1/project/stg_00211/CreditICL/checkpoints` is not writable** (`Errno 13`), so every
+   arm fell back to `$VSC_DATA`, which has a **75 GiB quota**. Eight 1,500-step arms produced
+   3.0 GB. The real Exp1 is 96 arms at 12,500 steps.
+6. LGD out-of-domain R² is negative on most datasets (−0.46 to −0.83) and predictions are
+   near-constant. At 1,500 of 12,500 steps from scratch this is expected, and is recorded only
+   so it is not mistaken for a finding later.
+
+### Interpretation
+- **What the numbers show:** the pipeline runs end to end — prior generation, mixing, training,
+  checkpointing, progress evaluation and both final evaluations all execute, and the model
+  learns. They show nothing about whether a credit prior helps, and were never going to.
+- **What we think explains the B200 result:** the GPU is waiting on data, and the CPU is not
+  saturated either, which rules out "not enough workers" and points at latency inside dataset
+  generation — a serial section, or per-dataset work that does not parallelise. PD's prior
+  rejects 41 % of candidates (`filter_rejection=0.41`) against LGD's 27 %, which costs
+  regeneration but cannot explain a 12× gap on its own.
+- **What would test it:** run one PD arm on the free RTX 5000 Ada and one LGD arm on the B200.
+  Two jobs, an hour, and the confound is gone. Until then, do not conclude the B200 is slow.
+
+### Next
+Split the confound, and re-run with the checkpoint now passed so `crediticl` actually scores.
+
+---
 
 Submission attempts were made on wICE before 11-08-2026; their logs were read and the bugs they
 exposed are recorded under **Dead ends** in [`AGENTS_MEMORY.md`](AGENTS_MEMORY.md), but no
-write-up was kept and the logs are gone. **The first entry here will be the first Exp1 run.**
+write-up was kept and the logs are gone.

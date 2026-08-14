@@ -5,6 +5,20 @@ reason is not obvious.
 
 ---
 
+## 14-08-2026 (night) — three bugs found by reading the first real run's output
+
+- **`--checkpoint` on both evaluation entry points**, and `debug_exp1.slurm` passes the arm's own
+  checkpoint (read from `--dry-run`, so it cannot drift from where training wrote). Registering
+  `crediticl` only makes the name resolvable; with no checkpoint every one of its cells failed
+  while the run still reported "25/50 cells OK".
+- **`resolve_our_checkpoint()`** — explicit path wins, otherwise the single checkpoint matching
+  the task; **refuses to guess** between arms rather than scoring an arbitrary one.
+- **NaN predictions are no longer reported as `constant_prediction`.** `np.var` of an all-NaN
+  array is NaN, fails `> EPS`, and fell into the constant branch — so a numerical blow-up on
+  three out-of-domain datasets read as a modelling quirk. New `pred_nonfinite_frac` and
+  `nan_predictions`.
+- First entry in [`RUNS.md`](RUNS.md) and the first three rows in the runs table.
+
 ## 14-08-2026 (late) — the first debug array ran nothing
 
 - **Removed `--resume auto` from `debug_exp1.slurm`.** `pretrain.py` defines no such flag, so

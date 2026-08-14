@@ -313,6 +313,53 @@ def register_or_warn(log: Any = None) -> bool:
         return False
 
 
+def resolve_our_checkpoint(
+    explicit: str | Path | None,
+    task: str,
+    log: Any = None,
+    root: str | Path | None = None,
+) -> Path | None:
+    """Which of our checkpoints should `--models crediticl` score?
+
+    Registering the baseline is not enough to evaluate anything: it also needs a checkpoint,
+    and on 14-08-2026 no caller passed one, so every `crediticl` cell in both evaluations
+    failed with "needs checkpoint=<path>" while `tabiclv2` scored normally. The run looked
+    half-successful (25/50 cells OK) and contained nothing about OUR model.
+
+    An explicit path wins. Otherwise pick the single checkpoint belonging to `task`, and
+    REFUSE to choose when there are several — scoring an arbitrary arm of a 96-run sweep
+    would produce a number that looks like a result.
+    """
+    warn = (log.warning if log is not None else get_logger().warning)
+    info = (log.info if log is not None else get_logger().info)
+
+    if explicit is not None:
+        path = Path(explicit)
+        if not path.is_file():
+            warn("checkpoint %s does not exist — 'crediticl' cannot be scored", path)
+            return None
+        info("[eval] crediticl checkpoint: %s", path)
+        return path
+
+    # Run directories are named `exp1_<task>__…`, so the task is in the path.
+    candidates = [p for p in find_our_checkpoints(root) if f"_{task}__" in str(p)]
+    if not candidates:
+        warn(
+            "no checkpoint for task=%r found under the checkpoints tree, so 'crediticl' "
+            "will be SKIPPED. Pass --checkpoint <path to a step-*.ckpt>.", task,
+        )
+        return None
+    if len(candidates) > 1:
+        warn(
+            "found %d checkpoints for task=%r and will NOT guess which one is meant. "
+            "Pass --checkpoint explicitly. Candidates:\n  %s",
+            len(candidates), task, "\n  ".join(str(p) for p in candidates),
+        )
+        return None
+    info("[eval] crediticl checkpoint (auto-discovered): %s", candidates[0])
+    return candidates[0]
+
+
 def find_our_checkpoints(root: str | Path | None = None) -> list[Path]:
     """Every `step-*.ckpt` under the checkpoints tree, newest step per run directory.
 

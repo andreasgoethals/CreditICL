@@ -95,6 +95,16 @@ def lgd_metrics(
     y_true = np.asarray(y_true, dtype=float).ravel()
     y_pred = np.asarray(y_pred, dtype=float).ravel()
 
+    # NON-FINITE PREDICTIONS ARE A FAILURE, AND MUST NOT BE DISGUISED AS ONE.
+    # Every metric below silently evaluates to NaN on a NaN input, and `np.var` of an
+    # all-NaN array is NaN, which fails the `> EPS` test further down and lands in the
+    # CONSTANT-prediction branch. On 14-08-2026 three out-of-domain datasets were reported
+    # as `constant_prediction=1.0` when the model had in fact emitted NaN — a numerical
+    # blow-up reported as a modelling quirk. Record the fraction explicitly so the two are
+    # never confused again.
+    nonfinite = ~np.isfinite(y_pred)
+    nonfinite_frac = float(np.mean(nonfinite)) if y_pred.size else 0.0
+
     resid = y_true - y_pred
     ss_res = float(np.sum(resid**2))
     ss_tot = float(np.sum((y_true - y_true.mean()) ** 2))
@@ -123,8 +133,14 @@ def lgd_metrics(
     # `calibration_slope` regresses truth on prediction. 1.0 is calibrated; below 1 means the
     # model is over-confident at the extremes (predicting 0.9 when the truth averages 0.7),
     # which is the characteristic failure on a bounded target and invisible in RMSE.
+    out["pred_nonfinite_frac"] = nonfinite_frac
     var_pred = float(np.var(y_pred))
-    if var_pred > EPS:
+    if nonfinite_frac > 0.0:
+        # NOT a constant prediction — a broken one. Kept separate so a sweep can be filtered
+        # on it, and so `constant_prediction` keeps meaning what its name says.
+        out["calibration_slope"] = float("nan")
+        out["nan_predictions"] = 1.0
+    elif var_pred > EPS:
         out["calibration_slope"] = float(np.cov(y_true, y_pred)[0, 1] / var_pred)
     else:
         # A model that outputs one value for everything. Not an error worth raising, but it

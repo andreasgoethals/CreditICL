@@ -95,14 +95,22 @@ def test_job_scripts_only_ask_for_models_that_exist():
     from src.eval import baselines
     from src.eval.crediticl_baseline import register_or_warn
 
-    register_or_warn()  # exactly what the entry points do
-    requested = _requested_models()
-    assert requested, "no --models found in the SLURM scripts — regex broken?"
-    unknown = requested - set(baselines.BASELINES)
-    assert not unknown, (
-        f"the SLURM scripts ask for {sorted(unknown)}, which no entry point registers. "
-        f"Registered: {sorted(baselines.BASELINES)}"
-    )
+    # BASELINES is module-level state, so registering into it leaks across the whole test
+    # session — `test_all_baselines_registered` asserts on the exact set and fails from a
+    # dozen files away. Restore it.
+    before = dict(baselines.BASELINES)
+    try:
+        register_or_warn()  # exactly what the entry points do
+        requested = _requested_models()
+        assert requested, "no --models found in the SLURM scripts — regex broken?"
+        unknown = requested - set(baselines.BASELINES)
+        assert not unknown, (
+            f"the SLURM scripts ask for {sorted(unknown)}, which no entry point registers. "
+            f"Registered: {sorted(baselines.BASELINES)}"
+        )
+    finally:
+        baselines.BASELINES.clear()
+        baselines.BASELINES.update(before)
 
 
 @pytest.mark.parametrize("entry", ["evaluate.py", "evaluate_ood.py"])
@@ -140,3 +148,19 @@ def test_training_failure_does_not_abort_the_debug_script():
         "the training call must run with `set +e` so STATUS can be inspected"
     )
     assert "STATUS=$?\nset -e" in text, "`set -e` must be restored immediately after"
+
+
+def test_debug_job_passes_its_own_checkpoint_to_the_evaluation():
+    """Registering the baseline only makes the NAME resolvable; it also needs a checkpoint.
+
+    On 14-08-2026 none was passed, so every `crediticl` cell failed with "needs
+    checkpoint=<path>" while the run reported "25/50 cells OK" and contained nothing at all
+    about our own model — the only model the experiment is about.
+    """
+    text = (SLURM / "debug_exp1.slurm").read_text(encoding="utf-8")
+    assert "--dry-run" in text and "CKPT_DIR=" in text, (
+        "the job must read the checkpoint directory from --dry-run so it cannot drift "
+        "from the directory training actually wrote to"
+    )
+    assert '"${CKPT_ARG[@]}"' in text, "the resolved checkpoint must reach both evaluations"
+    assert text.count('"${CKPT_ARG[@]}"') >= 2, "credit AND out-of-domain evaluation need it"

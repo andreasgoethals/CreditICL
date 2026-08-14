@@ -36,6 +36,15 @@ def main() -> int:
     ap.add_argument("--reference", default=None,
                     help="model to report deltas against, e.g. the control checkpoint")
     ap.add_argument("--tag", default=None)
+    ap.add_argument(
+        "--checkpoint", default=None,
+        help="path to one of OUR step-*.ckpt files, required by --models crediticl",
+    )
+    ap.add_argument(
+        "--task", choices=("pd", "lgd"), default=None,
+        help="which of our checkpoints to score. Required with --models crediticl and no "
+             "--checkpoint: a regression checkpoint cannot score classification datasets.",
+    )
     args = ap.parse_args()
 
     log, _, log_path = setup_logging("evaluate_ood", logs_dir(), console=True)
@@ -46,17 +55,32 @@ def main() -> int:
     # meant the out-of-domain check silently ran WITHOUT our own model, which is the only
     # model the check exists to interrogate.
     from src.eval.crediticl_baseline import register_or_warn as register_crediticl
+    from src.eval.crediticl_baseline import resolve_our_checkpoint
 
     register_crediticl(log)
 
     from src.eval.ood_runner import OODEvalConfig, ood_text_summary, run_ood, summarise_ood
 
+    models = [m.strip() for m in args.models.split(",") if m.strip()]
+    kinds = [k.strip() for k in args.kinds.split(",") if k.strip()]
+
+    # Registration alone leaves `crediticl` unable to score anything — it needs a checkpoint.
+    # The task defaults from the kinds being scored, since the two are tied: a regression
+    # (LGD) checkpoint has no class head and cannot touch a classification dataset.
+    model_kwargs: dict[str, dict[str, object]] = {}
+    if "crediticl" in models:
+        task = args.task or ("pd" if kinds == ["classification"] else "lgd")
+        ckpt = resolve_our_checkpoint(args.checkpoint, task, log)
+        if ckpt is not None:
+            model_kwargs["crediticl"] = {"checkpoint": str(ckpt)}
+
     cfg = OODEvalConfig(
-        models=[m.strip() for m in args.models.split(",") if m.strip()],
+        models=models,
         seeds=[int(s) for s in args.seeds.split(",") if s.strip()],
-        kinds=[k.strip() for k in args.kinds.split(",") if k.strip()],
+        kinds=kinds,
         test_size=args.test_size,
         max_rows=args.max_rows,
+        model_kwargs=model_kwargs,
     )
     df = run_ood(cfg)
 

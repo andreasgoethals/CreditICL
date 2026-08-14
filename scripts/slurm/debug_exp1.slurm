@@ -160,17 +160,39 @@ if [ "$STATUS" -eq 0 ]; then
     esac
     echo "evaluating as task=${TASK}, out-of-domain kind=${OOD_KIND}"
 
+    # THIS ARM'S OWN CHECKPOINT. `--models crediticl` needs a path: registering the baseline
+    # only makes the NAME resolvable, and with no checkpoint every one of its cells failed
+    # while the run still printed "25/50 cells OK". Auto-discovery deliberately refuses to
+    # choose once several arms exist, which is every run after the first — so the job, which
+    # knows exactly which arm it just trained, passes the path itself.
+    # The directory comes from `--dry-run`, so it cannot drift from what training used.
+    CKPT_DIR="$(python scripts/pretrain.py --config "$CONFIG" --index "$INDEX" --dry-run \
+        | sed -n 's/^checkpoints *: *//p')"
+    CKPT="$(ls -1 "${CKPT_DIR}"/step-*.ckpt 2>/dev/null | sort -t- -k2 -n | tail -1)"
+    if [ -z "$CKPT" ]; then
+        echo "WARNING: no checkpoint under ${CKPT_DIR} — 'crediticl' cannot be scored"
+        MODELS=tabiclv2
+        CKPT_ARG=()
+    else
+        echo "scoring our checkpoint: ${CKPT}"
+        MODELS=crediticl,tabiclv2
+        CKPT_ARG=(--checkpoint "$CKPT")
+    fi
+
     echo "=== evaluating on the real credit datasets ==="
     python scripts/evaluate.py \
         --task "$TASK" \
-        --models crediticl,tabiclv2 \
+        --models "$MODELS" \
+        "${CKPT_ARG[@]}" \
         --seeds 0 \
         --tag "debug_${SLURM_JOB_ID}_t${SLURM_ARRAY_TASK_ID}" || \
         echo "WARNING: credit evaluation failed — see the traceback above"
 
     echo "=== evaluating out-of-domain ==="
     python scripts/evaluate_ood.py \
-        --models crediticl,tabiclv2 \
+        --models "$MODELS" \
+        "${CKPT_ARG[@]}" \
+        --task "$TASK" \
         --seeds 0 \
         --kinds "$OOD_KIND" \
         --tag "debug_${SLURM_JOB_ID}_t${SLURM_ARRAY_TASK_ID}" || \

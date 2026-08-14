@@ -345,3 +345,48 @@ def test_the_progress_tracker_records_both_credit_and_out_of_domain():
     source = inspect.getsource(progress)
     assert "_ood_datasets" in source and "list_ood_datasets" in source
     assert "n_ood" in source
+
+
+def test_nan_predictions_are_not_reported_as_constant_predictions():
+    """`np.var` of an all-NaN array is NaN, which fails `> EPS` and lands in the CONSTANT
+    branch — so a numerical blow-up was reported as a modelling quirk. Three out-of-domain
+    datasets did exactly this on 14-08-2026."""
+    import numpy as np
+
+    from src.eval.metrics import lgd_metrics
+
+    y_true = np.linspace(0.0, 1.0, 50)
+    broken = lgd_metrics(y_true, np.full(50, np.nan))
+    assert broken["pred_nonfinite_frac"] == 1.0
+    assert broken.get("nan_predictions") == 1.0
+    assert "constant_prediction" not in broken, "a NaN prediction is not a constant one"
+
+    # a genuinely constant prediction still reports as constant, and as finite
+    const = lgd_metrics(y_true, np.full(50, 0.3))
+    assert const.get("constant_prediction") == 1.0
+    assert const["pred_nonfinite_frac"] == 0.0
+    assert "nan_predictions" not in const
+
+    # and an ordinary prediction flags neither
+    ok = lgd_metrics(y_true, y_true * 0.8 + 0.05)
+    assert ok["pred_nonfinite_frac"] == 0.0
+    assert "nan_predictions" not in ok and "constant_prediction" not in ok
+
+
+def test_checkpoint_resolution_refuses_to_guess_between_arms(tmp_path):
+    """Auto-discovery must not pick an arbitrary arm of a 96-run sweep: the number it
+    produced would look exactly like a result."""
+    from src.eval.crediticl_baseline import resolve_our_checkpoint
+
+    for arm in ("exp1_lgd__credit_fraction=0__s0", "exp1_lgd__credit_fraction=0p3__s0"):
+        d = tmp_path / arm / "checkpoints"
+        d.mkdir(parents=True)
+        (d / "step-1500.ckpt").write_bytes(b"")
+
+    assert resolve_our_checkpoint(None, "lgd", root=tmp_path) is None, "must refuse two arms"
+    assert resolve_our_checkpoint(None, "pd", root=tmp_path) is None, "no pd checkpoint exists"
+
+    # an explicit path always wins, and a missing one is refused rather than invented
+    explicit = tmp_path / "exp1_lgd__credit_fraction=0__s0" / "checkpoints" / "step-1500.ckpt"
+    assert resolve_our_checkpoint(explicit, "lgd", root=tmp_path) == explicit
+    assert resolve_our_checkpoint(tmp_path / "nope.ckpt", "lgd", root=tmp_path) is None

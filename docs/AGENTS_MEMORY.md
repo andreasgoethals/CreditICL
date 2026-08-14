@@ -33,7 +33,13 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
-| | | | |
+| 14-08-2026 | 11516936/11516938 — Exp1 debug, 8 arms | **All failed, exit 2 in 21–60 s** | `--resume auto`, a flag `pretrain.py` never defined |
+| 14-08-2026 | 11516954 — Exp1 debug LGD, `interactive` | 3/4 arms OK; task 3 deferred for maintenance | **6.6 steps/s, 69 % GPU**, loss 0.339→0.127 |
+| 14-08-2026 | 11516956 — Exp1 debug PD, `gpu_b200` | 4/4 arms OK, **but 12× slower on better hardware** | **0.5 steps/s, 3 % GPU — starved**; loss 0.618→0.171, acc 0.95 |
+
+Both 14-08 runs: `crediticl` scored **nothing** (no checkpoint passed), credit datasets not
+preprocessed on the cluster, staging checkpoint directory not writable. Full write-up in
+[`RUNS.md`](RUNS.md).
 
 **The table starts empty on purpose, and that is not the same as "nothing has run".** Submission
 attempts were made on wICE before 11-08-2026 and their logs were read to fix the bugs recorded
