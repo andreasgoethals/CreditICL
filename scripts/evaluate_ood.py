@@ -42,6 +42,13 @@ def main() -> int:
     log_section(log, "CreditICL — OUT-OF-DOMAIN EVALUATION")
     log_environment(log, {"pipeline": "eval_ood", "models": args.models})
 
+    # See scripts/evaluate.py — `crediticl` is registered explicitly, and forgetting it here
+    # meant the out-of-domain check silently ran WITHOUT our own model, which is the only
+    # model the check exists to interrogate.
+    from src.eval.crediticl_baseline import register_or_warn as register_crediticl
+
+    register_crediticl(log)
+
     from src.eval.ood_runner import OODEvalConfig, ood_text_summary, run_ood, summarise_ood
 
     cfg = OODEvalConfig(

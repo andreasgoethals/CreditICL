@@ -87,6 +87,20 @@ fixed, because the fix is one changelog line and the dead end was the hour.
   evaluation guard could never be false, and the artefact summary at the end (most useful
   exactly when a run has just failed) never printed. Now wrapped in `set +e` / `set -e`.
 
+### 14-08-2026 — A registry entry with no production caller
+- **Tried:** found while the rerun trained — checking that the evaluation half of
+  `debug_exp1.slurm` would work, since it had still never executed.
+- **Result:** it would not have. `--models crediticl,tabiclv2` names `crediticl`, which
+  `src/eval/crediticl_baseline.register()` adds to the registry — and the **only caller of
+  `register()` in the whole repository was `tests/test_eval.py`**. In the job it would have
+  raised an unknown-baseline error, swallowed by `|| echo "WARNING: ..."`. The arm would have
+  trained for 40 minutes and scored every model except ours.
+- **Why:** `register()` is explicit by design so a broken checkpoint cannot stop the external
+  baselines. Explicit means forgettable, and a test calling it hides that no one else does.
+- **Instead:** `register_or_warn()`, called by both evaluation entry points, plus a test that
+  every name any SLURM script passes to `--models` resolves against `BASELINES`.
+  **A test that calls the setup itself proves nothing about the production path.**
+
 ### 14-08-2026 — There are TWO separate QoS limits, and the second one is on CPUs
 - **Tried:** a 4-arm array on Mindwell `interactive` at `--cpus-per-task=8`, after the
   job-count limit below had already been worked around.

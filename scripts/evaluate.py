@@ -27,6 +27,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.eval.baselines import DEFAULT_BASELINES, availability_report  # noqa: E402
+from src.eval.crediticl_baseline import register_or_warn as register_crediticl  # noqa: E402
 from src.eval.runner import EvalConfig, run, summarise  # noqa: E402
 from src.utils.logging_setup import log_environment, log_section, setup_logging  # noqa: E402
 from src.utils.paths import describe, logs_dir, results_dir  # noqa: E402
@@ -51,6 +52,13 @@ def main() -> int:
     log_environment(log, {"pipeline": "eval", "split": args.split, "test_size": args.test_size})
     log.info("storage:\n%s", "\n".join(f"    {k} = {v}" for k, v in describe().items()))
     log.info("log file -> %s", log_path)
+
+    # `crediticl` — OUR checkpoints — is added to the registry explicitly rather than at import
+    # time, so a missing training dependency cannot stop the external baselines from running.
+    # THIS CALL HAS TO BE HERE. Nothing in the production path made it, so `--models crediticl`
+    # died with an unknown-baseline error inside a SLURM job that then reported success.
+    register_crediticl(log)
+
     for name, (ok, err) in availability_report().items():
         log.info("baseline %-10s %s", name, "available" if ok else f"UNAVAILABLE — {err}")
 

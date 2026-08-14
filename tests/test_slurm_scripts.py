@@ -74,6 +74,48 @@ def test_job_scripts_only_pass_flags_that_exist(job: Path, target: str, flags: s
     )
 
 
+def _requested_models() -> set[str]:
+    """Every name passed to `--models` anywhere in the SLURM layer."""
+    names: set[str] = set()
+    for job in JOB_SCRIPTS:
+        joined = re.sub(r"\\\s*\n\s*", " ", job.read_text(encoding="utf-8"))
+        for m in re.finditer(r'--models\s+"?([a-z0-9_,]+)"?', joined):
+            names.update(n for n in m.group(1).split(",") if n)
+    return names
+
+
+def test_job_scripts_only_ask_for_models_that_exist():
+    """A flag can exist and its VALUE still be wrong.
+
+    `--models crediticl,tabiclv2` passes the flag check above, but `crediticl` is added to the
+    registry by an explicit `register()` that no production caller made — so the evaluation
+    died with an unknown-baseline error, masked by the job script's `|| echo WARNING`. The
+    training would have finished and our own model would never have been scored.
+    """
+    from src.eval import baselines
+    from src.eval.crediticl_baseline import register_or_warn
+
+    register_or_warn()  # exactly what the entry points do
+    requested = _requested_models()
+    assert requested, "no --models found in the SLURM scripts — regex broken?"
+    unknown = requested - set(baselines.BASELINES)
+    assert not unknown, (
+        f"the SLURM scripts ask for {sorted(unknown)}, which no entry point registers. "
+        f"Registered: {sorted(baselines.BASELINES)}"
+    )
+
+
+@pytest.mark.parametrize("entry", ["evaluate.py", "evaluate_ood.py"])
+def test_evaluation_entry_points_register_our_own_baseline(entry: str):
+    """The registration is explicit by design, which makes it easy to forget — and it was."""
+    text = (ROOT / "scripts" / entry).read_text(encoding="utf-8")
+    assert "register_or_warn" in text, (
+        f"scripts/{entry} never registers the 'crediticl' baseline, so --models crediticl "
+        f"cannot resolve and OUR model is silently left out of its own experiment"
+    )
+    assert "register_crediticl(log)" in text, f"scripts/{entry} imports it but never calls it"
+
+
 def test_every_job_script_is_valid_bash():
     """`bash -n` parses without executing. Catches an unclosed quote or a broken `case`."""
     import shutil

@@ -15,6 +15,11 @@ reason is not obvious.
   the project ever reads this layer before the cluster does.
 - **Training now runs under `set +e` in `debug_exp1.slurm`**, so a crash leaves `STATUS`
   meaningful, skips the evaluation deliberately, and still prints the artefact summary.
+- **`evaluate.py` and `evaluate_ood.py` now register the `crediticl` baseline.** `register()`
+  had no production caller — only a test — so `--models crediticl` could never resolve and our
+  own checkpoints would have been left out of their own experiment, behind the job script's
+  `|| echo WARNING`. Added `register_or_warn()` and a test that every `--models` name the SLURM
+  scripts ask for actually resolves.
 
 ## 14-08-2026 (evening) — three fixes from the first Mindwell submission
 

@@ -292,6 +292,27 @@ def register() -> None:
     get_logger().info("[eval] registered the 'crediticl' baseline (our own checkpoints)")
 
 
+def register_or_warn(log: Any = None) -> bool:
+    """`register()`, but never fatal. Call this from the evaluation ENTRY POINTS.
+
+    Registration is explicit rather than automatic (see `register`), which means it is also
+    easy to forget — and it was: no production caller existed, so `--models crediticl` failed
+    with an unknown-baseline error inside a SLURM job whose exit status still said success.
+    `tests/test_slurm_scripts.py` now checks that every model name the job scripts ask for is
+    actually resolvable.
+
+    Returns True if ours is now available. A failure is logged and swallowed, because the
+    external baselines are still worth having when our own checkpoints cannot be loaded.
+    """
+    warn = (log.warning if log is not None else get_logger().warning)
+    try:
+        register()
+        return True
+    except Exception as exc:  # noqa: BLE001 — never let ours take the others down
+        warn("could not register the 'crediticl' baseline; OUR checkpoints will be SKIPPED: %s", exc)
+        return False
+
+
 def find_our_checkpoints(root: str | Path | None = None) -> list[Path]:
     """Every `step-*.ckpt` under the checkpoints tree, newest step per run directory.
 
