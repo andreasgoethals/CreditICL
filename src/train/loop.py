@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import math
 import time
+from collections import defaultdict
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
@@ -291,6 +292,9 @@ class Trainer:
 
         self.step = 0
         self.datasets_seen = 0
+        # Initialised here as well as in `train`, so `train_step` can be called on its own
+        # from a test or a benchmark without the loop having set it up.
+        self._phase: dict[str, float] = defaultdict(float)
         self.resumed_at: int | None = None
 
         # Learning curve on REAL data. Only rank 0 measures and writes, so a multi-GPU
@@ -387,6 +391,25 @@ class Trainer:
         self.step = int(payload.get("step", 0))
         self.datasets_seen = int(payload.get("extra", {}).get("datasets_seen", 0))
         self.resumed_at = self.step
+
+        # A STALE CHECKPOINT LOOKS EXACTLY LIKE A FINISHED RUN. If the checkpoint is already
+        # at (or past) `max_steps`, the training loop's condition is false immediately: it
+        # writes "finished", reports `elapsed_s: 0.0`, exits 0, and the evaluation then scores
+        # the OLD weights. That happened on 17-08-2026 to all four arms — `clean_run` protects
+        # `checkpoints/`, which was right while our checkpoints fell back to `$VSC_DATA`, and
+        # wrong the moment the staging permission fix let them land in `checkpoints/` for real.
+        if self.step >= self.max_steps:
+            self.log.warning(
+                "=" * 78
+                + "\n  THIS RUN WILL TRAIN NOTHING. The checkpoint in %s is already at step "
+                  "%d and max_steps is %d, so the loop exits immediately and the evaluation "
+                  "scores the OLD weights.\n"
+                  "  If you meant to start fresh, delete that directory first:\n"
+                  "      python -m src.utils.clean_run --clean --checkpoints\n"
+                  "  If you meant to extend the run, raise train.max_steps.\n"
+                + "=" * 78,
+                self.ckpt_dir, self.step, self.max_steps,
+            )
         self.log.warning(
             "RESUMED from %s at step %d. DataLoader worker RNGs are re-seeded on resume, so "
             "the dataset stream differs from an uninterrupted run; step and dataset counts "
@@ -448,6 +471,16 @@ class Trainer:
         return loss, extra
 
     def train_step(self, batch) -> dict[str, float]:
+        # WHERE DOES THE TIME GO? Three explanations for the B200 running training 16x
+        # slower than a benchmark of the same model, prior and loader have now been proposed
+        # and two measured wrong — the card, then the optimiser. This splits the step so the
+        # next run answers it instead of a fourth hypothesis.
+        #
+        # No `cuda.synchronize()` anywhere: it would cost more than it measures. Attribution
+        # is still sound because `float(loss.detach())` below is itself a sync point, so GPU
+        # work lands in `fwd_bwd` rather than leaking into the next phase. `data` is the one
+        # to read first — if it dominates, the GPU is waiting for the prior.
+        t_step = time.perf_counter()
         X, y, train_size = batch
         # Not model.train(): that is recursive and would switch dropout back on
         # inside frozen blocks. Mirrors TabICL's `_set_training_mode`.
@@ -479,6 +512,9 @@ class Trainer:
                 oom += 1
                 continue
 
+        self._phase["fwd_bwd"] += time.perf_counter() - t_step
+        t_tail = time.perf_counter()
+
         if n_micro and oom / n_micro > 0.1:
             raise RuntimeError(
                 f"{oom}/{n_micro} micro-batches OOMed at step {self.step}. "
@@ -497,6 +533,7 @@ class Trainer:
         # ones rather than AMP's scaled copies), and have not been zeroed yet. One line later
         # they are gone and every norm would read 0.0 — which looks like a dead model instead
         # of a mistimed probe.
+        t_telem = time.perf_counter()
         if self.telemetry.due_grad(self.step + 1):
             row = self.telemetry.sample_grads(self.model)
             row.update({"step": self.step + 1, "datasets_seen": self.datasets_seen, "kind": "grad"})
@@ -511,10 +548,18 @@ class Trainer:
                 ),
             )
 
+        # Telemetry is measured separately because `nvidia-smi` is a subprocess, and on a node
+        # with 24 GPUs it enumerates all of them — a plausible reason a B200 node would be
+        # slower here than a 2-GPU one, and cheap to rule in or out.
+        t_opt = time.perf_counter()
+        self._phase["telemetry"] += t_opt - t_telem
+
         self.scaler.step(self.optimizer)
         self.scaler.update()
         self.optimizer.zero_grad(set_to_none=True)
         self.scheduler.step()
+        self._phase["optimizer"] += time.perf_counter() - t_opt
+        self._phase["step_tail"] += (t_telem - t_tail)
 
         self.datasets_seen += int(X.shape[0])
         return totals
@@ -534,9 +579,18 @@ class Trainer:
         started = time.time()
         window: dict[str, float] = {}
         window_n = 0
+        # Wall-clock per phase, accumulated since the last log line and reported as a share
+        # of it. Reset each window so the numbers describe the recent past, not the average
+        # since step 0 — a stall that starts at step 800 must be visible at step 900.
+        self._phase = defaultdict(float)
+        phase_since = time.perf_counter()
 
         while self.step < self.max_steps:
+            # THE DATA WAIT. If this dominates, the GPU is idle waiting for the prior and no
+            # faster card will help; if it is small, the time is inside the step.
+            t_data = time.perf_counter()
             batch = next(it)
+            self._phase["data"] += time.perf_counter() - t_data
             stats = self.train_step(batch)
             self.step += 1
             for k, v in stats.items():
@@ -566,6 +620,34 @@ class Trainer:
                 remaining = self.max_steps - self.step
                 eta_s = remaining / max(steps_per_s, 1e-9)
                 pct = 100.0 * self.step / max(self.max_steps, 1)
+                # WHERE THE TIME WENT, as a share of the window's wall clock. Printed on its
+                # own line so the step line stays readable, and only when there is a window to
+                # divide by.
+                span = time.perf_counter() - phase_since
+                if span > 0 and self._phase:
+                    parts = "  ".join(
+                        f"{name}={100.0 * secs / span:4.1f}%"
+                        for name, secs in sorted(
+                            self._phase.items(), key=lambda kv: -kv[1]
+                        )
+                    )
+                    unaccounted = 100.0 * (span - sum(self._phase.values())) / span
+                    data_pct = 100.0 * self._phase.get("data", 0.0) / span
+                    # The verdict only when there is one. A hint appended unconditionally
+                    # reads as "0% data means the GPU is WAITING", which is the opposite of
+                    # what the number says.
+                    verdict = ""
+                    if data_pct >= 50.0:
+                        verdict = "   <- STARVED: the GPU is waiting for the prior"
+                    elif data_pct < 10.0:
+                        verdict = "   <- compute-bound: the data pipeline is keeping up"
+                    self.log.info(
+                        "phases step %6d  %s  other=%4.1f%%%s",
+                        self.step, parts, unaccounted, verdict,
+                    )
+                self._phase = defaultdict(float)
+                phase_since = time.perf_counter()
+
                 self.log.info(
                     "step %6d/%d [%5.1f%%]  %s  lr=%.3e  %.2f steps/s  "
                     "elapsed %s  eta %s  finishes ~%s  datasets %s",

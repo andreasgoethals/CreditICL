@@ -533,3 +533,35 @@ def test_the_job_config_is_an_argument_not_an_environment_variable():
     # and every input that changes what runs must be printed before submitting
     for label in ('echo "where', 'echo "track', 'echo "config', 'echo "script'):
         assert label in sub, f"{label} is not reported before submission"
+
+
+def test_changelog_is_one_chapter_per_date():
+    """`CHANGELOG.md` says "One chapter per date, DD-MM-YYYY, newest first" in its own header.
+
+    It had drifted to 27 chapters over 12 dates, with invented time-of-day labels —
+    `(evening)`, `(late night)`, `(night, later)` — several of which were simply wrong about
+    the time of day. A file that does not obey the rule written at the top of it is not a
+    reliable record.
+    """
+    import re
+    from datetime import datetime
+
+    text = (ROOT / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
+    headings = re.findall(r"^## (.*)$", text, re.M)
+    assert headings, "no chapters found — has the format changed?"
+
+    dates = []
+    for h in headings:
+        m = re.match(r"^(\d{2}-\d{2}-\d{4})\b", h)
+        assert m, f"chapter heading must start with a DD-MM-YYYY date: {h!r}"
+        assert not re.match(r"^\d{2}-\d{2}-\d{4}\s*\(", h), (
+            f"no time-of-day label on a chapter heading — one chapter per DATE: {h!r}"
+        )
+        dates.append(datetime.strptime(m.group(1), "%d-%m-%Y"))
+
+    dupes = {d for d in dates if dates.count(d) > 1}
+    assert not dupes, (
+        f"{len(dupes)} date(s) have more than one chapter: "
+        f"{sorted(d.strftime('%d-%m-%Y') for d in dupes)}. Merge them."
+    )
+    assert dates == sorted(dates, reverse=True), "chapters must be newest first"

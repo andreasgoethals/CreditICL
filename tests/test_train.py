@@ -605,3 +605,33 @@ def test_the_benchmark_measures_the_optimizer_that_is_actually_configured():
     assert "def bench_optimizers" in bench
     assert '"adamw", "muon"' in bench, "both must be timed, or there is nothing to compare"
     assert "muon_slowdown_vs_adamw" in bench, "the ratio is the number you actually read"
+
+
+def test_the_step_is_split_into_phases_that_sum_to_the_wall_clock():
+    """Three explanations for the B200 running 16x slower than a benchmark of the same model,
+    prior and loader have been proposed, and two were measured wrong — the card, then the
+    optimiser. Both times the cause was inferred from a noticed difference rather than
+    measured. This is the instrument that ends that."""
+    root = Path(__file__).resolve().parents[1]
+    src = (root / "src" / "train" / "loop.py").read_text(encoding="utf-8")
+
+    for phase in ("data", "fwd_bwd", "optimizer", "telemetry"):
+        assert f'self._phase["{phase}"]' in src, f"{phase} is not timed"
+
+    # the data wait must be measured around `next(it)` — that IS the wait
+    i = src.index('self._phase["data"]')
+    assert "next(it)" in src[i - 200 : i], "the data phase must wrap the loader fetch"
+
+    # the verdict must be conditional; an unconditional hint once read
+    # "0% data means the GPU is WAITING", the opposite of the number
+    assert "if data_pct >= 50.0" in src and "elif data_pct < 10.0" in src
+
+
+def test_phase_timing_does_not_synchronise_the_gpu():
+    """A `cuda.synchronize()` per phase would cost more than it measures and would change the
+    very number being measured. Attribution survives without it because `float(loss.detach())`
+    is already a sync point."""
+    root = Path(__file__).resolve().parents[1]
+    src = (root / "src" / "train" / "loop.py").read_text(encoding="utf-8")
+    step = src[src.index("def train_step") : src.index("def _loss_for")]
+    assert "synchronize" not in step

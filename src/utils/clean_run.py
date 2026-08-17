@@ -21,8 +21,13 @@ run" should not silently throw it away.
 LISTS BY DEFAULT. The two mistakes are not symmetric: a listing you meant as a deletion costs one
 more command, and a deletion you meant as a listing costs the run.
 
-NEVER TOUCHES `data/raw/` or `checkpoints/` or `tfm-library/` — the inputs are irreplaceable and
-the weights are either downloaded or a training run to reproduce.
+NEVER TOUCHES `data/raw/` or `tfm-library/`, nor the RELEASED `*.ckpt` weights at the top of
+`checkpoints/` — those are a HuggingFace download and what Exp3 warm-starts from.
+
+`--checkpoints` clears OUR OWN `exp*/` run directories under `checkpoints/`. **Without it a
+rerun resumes from the last one and trains nothing** — it exits 0 in two seconds having scored
+the old weights, which is what happened to all four arms on 17-08-2026. Opt-in, because a
+checkpoint is also the only way to debug the model that produced it.
 
 NOR `prior_cache/ood/`, even under `--prior-cache`. It is the out-of-domain evaluation cache,
 not a prior pool, and **compute nodes have no outbound internet** — so it can only be rebuilt
@@ -55,7 +60,31 @@ def protected_paths() -> list[Path]:
     return [prior_cache_root() / "ood"]
 
 
-def roots(*, processed: bool = False, prior_cache: bool = False) -> list[Path]:
+def run_checkpoint_dirs() -> list[Path]:
+    """OUR trained checkpoints — the `exp*` run directories under `checkpoints/`.
+
+    Separated from the released TabICLv2 `*.ckpt` files, which sit at the top level of the same
+    directory and must never go: they are a HuggingFace download and what Exp3 warm-starts from.
+
+    This exists because of a chain of two fixes. Our checkpoints used to fall back to
+    `$VSC_DATA/output/<run>/checkpoints` (staging was mode 0500), where a normal clean removed
+    them. Fixing the permission sent them to `checkpoints/` for real — which `clean_run`
+    protects — so on 17-08-2026 all four arms found a step-1500 checkpoint from the previous
+    run, resumed at `max_steps`, trained nothing, and reported success.
+    """
+    from src.utils.paths import checkpoints_dir
+
+    base = Path(checkpoints_dir())
+    if not base.is_dir():
+        return []
+    return sorted(
+        p for p in base.iterdir()
+        if p.is_dir() and p.name.startswith(("exp1_", "exp2_", "exp3_"))
+    )
+
+
+def roots(*, processed: bool = False, prior_cache: bool = False,
+          checkpoints: bool = False) -> list[Path]:
     """Every tree to clear. Two `output/` roots on the cluster, one locally, plus the caches.
 
     `results_dir()` is listed separately because on the cluster it is the one part of `output/`
@@ -69,6 +98,8 @@ def roots(*, processed: bool = False, prior_cache: bool = False) -> list[Path]:
         found.append(processed_dir())
     if prior_cache:
         found.append(prior_cache_root())
+    if checkpoints:
+        found.extend(run_checkpoint_dirs())
     return found
 
 
@@ -122,9 +153,14 @@ def main(argv: list[str] | None = None) -> int:
                         help="also clear data/processed/, the preprocessing cache")
     parser.add_argument("--prior-cache", action="store_true",
                         help="also clear the pre-generated synthetic prior pools (GPU-hours each)")
+    parser.add_argument("--checkpoints", action="store_true",
+                        help="also clear OUR trained exp*/ checkpoints. Without this a rerun "
+                             "RESUMES from them and trains nothing. Never touches the released "
+                             "TabICLv2 weights.")
     args = parser.parse_args(argv)
 
-    targets = roots(processed=args.processed, prior_cache=args.prior_cache)
+    targets = roots(processed=args.processed, prior_cache=args.prior_cache,
+                    checkpoints=args.checkpoints)
     total_files = total_bytes = 0
     print("Output from the previous run:\n")
     for root in targets:

@@ -5,7 +5,29 @@ reason is not obvious.
 
 ---
 
-## 17-08-2026 — MUON IS NOT THE CAUSE, and clean_run protects the OOD cache
+## 17-08-2026 — Muon ruled out, per-phase timing, and a rerun that trained nothing
+
+- **`clean_run --checkpoints`** clears OUR `exp*/` run directories under `checkpoints/`, never
+  the released `*.ckpt`. Job 11517891's four arms all found a step-1500 checkpoint from the
+  previous run, resumed at `max_steps`, trained nothing and **exited 0 in two seconds** while
+  the evaluation scored the old weights. Caused by a chain of two of my own fixes: checkpoints
+  used to fall back to `$VSC_DATA` (staging was mode 0500) where a normal clean removed them;
+  fixing the permission sent them to the one directory `clean_run` protects.
+- **The trainer refuses to be silent about it**: resuming at or past `max_steps` now logs
+  `THIS RUN WILL TRAIN NOTHING`, names the checkpoint directory, and gives the fix.
+- **Found: 21 of Exp1's 96 runs are exact duplicates.** At `credit_fraction = 0.0` no credit
+  datasets are generated, so `atom_prob`, `mode` and `target_scaling` cannot matter — 8 lever
+  combinations × 3 seeds collapse to 3 distinct runs. Same seed and same config means
+  bit-identical output, so it is 22 % of the budget for zero information. **Not changed yet**:
+  deduplicating shifts every grid index, and `debug_exp1.slurm` pins 0/3/11/1.
+
+- **`phases step N  data=..%  fwd_bwd=..%  optimizer=..%  telemetry=..%`**, logged every
+  `log_every` steps, with a verdict when the data wait is decisive. Three explanations for the
+  B200 gap have been proposed and two measured wrong; this replaces the fourth guess with a
+  measurement. No `cuda.synchronize()` — `float(loss.detach())` already is one.
+- The `RUNS.md` archive command now uses `--ignore-failed-read`: `output/manifests` does not
+  exist until a run has written one, and plain `tar` exits 1, so the archive meant to protect
+  a run was never created.
 
 - **Correction: Muon costs 1.34× on the RTX 5000 Ada and 1.40× on the B200** — measured by the
   new `bench_optimizers` row, on both cards. It is *not* the 15× the previous entry blamed it
@@ -22,7 +44,7 @@ reason is not obvious.
   `src/utils/clean_run.py` already existed, per `docs/TEMPLATE.md`, and does the same job
   better. Check the template before adding a utility.)*
 
-## 16-08-2026 — the B200 was never the problem; Muon was
+## 16-08-2026 — the B200 was never the problem (Muon suspected, wrongly — see 17-08)
 
 - **`bench_optimizers`** in `scripts/benchmark_gpu.py` — times AdamW against Muon on the real
   model and reports the ratio. This rung was missing, and it was the answer: the first
@@ -52,7 +74,7 @@ reason is not obvious.
 - **`docs/RUNS.md` corrected** — that run was written up as clean from its logs, and `sacct`
   says `OUT_OF_MEMORY`. The OOM killer sends SIGKILL, so the log just stops.
 
-## 14-08-2026 (night, last) — storage fixed, and two flaws in the doctor itself
+## 14-08-2026 — The first cluster runs, and the pipeline debugged end to end
 
 - **The staging `checkpoints/` directory was mode `0500`** (`dr-x------`), owned by us but with
   no write bit, while every sibling was `drwxrws--- SETGID`. Fixed on the cluster with
@@ -69,8 +91,6 @@ reason is not obvious.
   *neither* job had finished. It now says the files do not exist yet and prints the `squeue`
   and `sacct` commands to check. One result also prints its own column rather than nothing.
 - `check_storage.py` added to the pre-submission checklist in `RUNS.md`.
-
-## 14-08-2026 (night, later) — quantile crossing, and a storage doctor
 
 - **`enforce_monotonic_quantiles`** in `src/train/loop.py`, applied at every LGD decode point
   (`predict`, `predict_quantiles`, and the progress scorer). A quantile head predicts each
@@ -92,8 +112,6 @@ reason is not obvious.
   on it. The `Input contains NaN` came from the trained weights at step 1,250, not the data;
   `pred_nonfinite_frac` will now say so instead of aborting the measurement.
 
-## 14-08-2026 (late night) — PD now uses TabICLv2's OWN head, and a GPU diagnostic
-
 - **`max_classes` is no longer set from the prior.** `Trainer._build_model` forced it to
   `prior.n_classes` (2), making a 27,538,938-parameter network where TabICLv2's classifier is
   27,552,258 — a *different architecture*, which voids the project's claim to be varying only
@@ -110,8 +128,6 @@ reason is not obvious.
   the leading suspect for the B200.
 - **`src/utils/compare_gpubench.py`** and **`scripts/slurm/benchmark.slurm`** — run it on two
   cards, diff row by row, and the tool names which layer diverges.
-
-## 14-08-2026 (later) — the evaluation path was still on the old architecture
 
 - **`load_our_checkpoint` now rebuilds through `src.models.architecture.build_model`**, reading
   `architecture:` from the checkpoint's own config. It hard-coded `NanoTabICLv2`, so once
@@ -131,8 +147,6 @@ reason is not obvious.
   "IMPORTANT AND UNVERIFIED" and probably broken, which this project has since measured as
   347/347 and 391/391 exact.
 
-## 14-08-2026 (night) — three bugs found by reading the first real run's output
-
 - **`--checkpoint` on both evaluation entry points**, and `debug_exp1.slurm` passes the arm's own
   checkpoint (read from `--dry-run`, so it cannot drift from where training wrote). Registering
   `crediticl` only makes the name resolvable; with no checkpoint every one of its cells failed
@@ -144,8 +158,6 @@ reason is not obvious.
   three out-of-domain datasets read as a modelling quirk. New `pred_nonfinite_frac` and
   `nan_predictions`.
 - First entry in [`RUNS.md`](RUNS.md) and the first three rows in the runs table.
-
-## 14-08-2026 (late) — the first debug array ran nothing
 
 - **Removed `--resume auto` from `debug_exp1.slurm`.** `pretrain.py` defines no such flag, so
   argparse exited 2 and all eight jobs finished in under a minute having trained nothing.
@@ -160,8 +172,6 @@ reason is not obvious.
   own checkpoints would have been left out of their own experiment, behind the job script's
   `|| echo WARNING`. Added `register_or_warn()` and a test that every `--models` name the SLURM
   scripts ask for actually resolves.
-
-## 14-08-2026 (evening) — three fixes from the first Mindwell submission
 
 - **The config is an argument, not an environment variable**: `submit.sh <where> <track>`, e.g.
   `submit.sh free lgd`. `sbatch [opts] script args…` passes trailing arguments to the job script,
@@ -178,8 +188,6 @@ reason is not obvious.
   (wait, different QoS, fewer arms).
 - The `sam-quote` banner now says the number is a **ceiling if it runs the full limit**, since
   the docs are explicit that charging follows actual time.
-
-## 14-08-2026 (later) — cluster targets, read out of the VSC docs
 
 The first debug submission sat in `gpu_a100` behind `Reason: Priority` and never started.
 Reading the hardware inventory in `tfm-library/repositories/VSC Documentation.txt` says why,
@@ -214,8 +222,6 @@ Changes:
   measuring something else. Task and out-of-domain kind now follow the config.
 - `docs/VSC.md` §2a carries the inventory table.
 
-## 14-08-2026 — figures rebuilt for the paper
-
 **New rule, applied everywhere: a figure carries data, axis labels and at most a short heading.**
 Interpretation lives in the caption and the body text, where it can be edited without
 re-rendering. Removed 10 `style.figure_note` calls, 21 title subtitles and 17 sentence-length
@@ -249,7 +255,7 @@ Specific fixes:
   a true **37.8%**. Now a seeded random subsample: error down to 0.6pp. It also dropped
   `cat_indices`, which broke any plot needing it for large datasets only.
 
-## 13-08-2026 (night)
+## 13-08-2026
 
 The second out-of-domain fetch worked — 25 classification + 25 regression — and exposed three
 more bugs, one of them latent.
@@ -268,8 +274,6 @@ more bugs, one of them latent.
   holding exactly 25 of each. A warning that cries wolf is a warning nobody reads.
 - `setup_venv.sh` pins `setuptools<82`, which torch 2.11 requires — otherwise every subsequent
   pip install reports a dependency conflict.
-
-## 13-08-2026 (evening)
 
 The venv built and the smoke test passed, but the out-of-domain fetch had two serious bugs.
 
@@ -291,8 +295,6 @@ The venv built and the smoke test passed, but the out-of-domain fetch had two se
   bucketing means TabArena's regression tasks now land correctly, and CTR23's numeric study id
   is listed alongside its alias.
 
-## 13-08-2026 (later still)
-
 The venv setup failed on the first attempt; two bugs, both mine.
 
 - **`module --force purge` collapsed the module tree.** The `cluster/*` modules on VSC are
@@ -313,8 +315,6 @@ The venv setup failed on the first attempt; two bugs, both mine.
 - The hook was re-verified end to end: activates on entry, deactivates on exit, and falls back
   to whatever venv exists when `$VSC_ARCH_LOCAL` differs from the one that built it.
 
-## 13-08-2026 (earlier)
-
 - **`scripts/slurm/setup_venv.sh`** — one command builds this project's own venv on the VSC
   from `pyproject.toml`, so pyproject is the single source of truth for what is installed.
   Installs torch from the CUDA index **first** (otherwise `pip install -e .` satisfies the
@@ -330,8 +330,6 @@ The venv setup failed on the first attempt; two bugs, both mine.
 - Recorded why the venv goes on `$VSC_DATA` and not project storage: ~5–8 GB across tens of
   thousands of small files, and project storage has a **low inode budget** — it would run out
   of inodes long before space.
-
-## 13-08-2026
 
 Three bugs the first cluster attempt exposed, none of which could fail locally.
 
@@ -363,7 +361,7 @@ Figures, after rendering and actually looking at each one:
 - **Side-by-side tables:** row labels repeated the target values that were already the last
   column; they are row numbers now, and the coloured frame closes on all four sides.
 
-## 12-08-2026 (evening)
+## 12-08-2026
 
 - **The released TabICLv2 checkpoints now load with `strict=True`: 347/347 tensors for the
   regressor, 391/391 for the classifier.** Exp3's blocker is gone. Our LGD model is
@@ -393,8 +391,6 @@ Figures, after rendering and actually looking at each one:
 - The realism figure's reference band uses the 10th–90th percentile: one real LGD dataset
   scores R² = −4.8 under a contiguous split, and min-max made the band span everything.
 
-## 12-08-2026 (later)
-
 - **One architecture for all three experiments: TabICLv2's own.** `tabicl>=2.0` is now a
   REQUIRED dependency and `src/models/architecture.py` is the single entry point; every config
   carries `architecture: tabicl`. NanoTabICL was a 665-line reimplementation vendored only so
@@ -423,8 +419,6 @@ Figures, after rendering and actually looking at each one:
   identical dev/holdout split across all three experiments, our own checkpoints registered as a
   baseline beside CatBoost and TabPFN, and out-of-domain scored *during* training.
 - `docs/PRIORS.md` cut from 268 to 185 lines.
-
-## 12-08-2026
 
 - **Six config files, one per experiment per track** — `Exp{1,2,3}_{LGD,PD}.yaml`, replacing
   `LGD.yaml`/`PD.yaml`. Exp1 screens the prior grid (96 arms, 50,000 datasets each), Exp2 runs

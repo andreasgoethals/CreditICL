@@ -37,7 +37,10 @@ files with new, but a checkpoint deleted before it was copied is a bug you canno
 the LGD NaN was lost exactly that way.
 
 ```bash
-tar czf ~/crediticl_$(date +%Y%m%d).tar.gz -C "$VSC_DATA/CreditICL" output/logs output/manifests
+# `--ignore-failed-read` + a glob: manifests does not exist until a run has written one, and
+# plain tar exits 1 on a missing path, so the archive that was supposed to protect the run
+# never gets created.
+tar czf ~/crediticl_$(date +%Y%m%d).tar.gz --ignore-failed-read -C "$VSC_DATA/CreditICL" output
 python -m src.utils.clean_run            # LISTS what is there, deletes nothing
 python -m src.utils.clean_run --clean    # delete it
 ```

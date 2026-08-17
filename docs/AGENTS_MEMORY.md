@@ -52,6 +52,19 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
 
+### 17-08-2026 - Two of my own fixes combined into a run that trained nothing
+- **Tried:** rerunning the LGD debug after `clean_run --clean`, to get a checkpoint.
+- **Result:** all four arms `RESUMED from step-1500.ckpt at step 1500`, skipped the loop
+  entirely, logged `elapsed_s: 0.0` and **exited 0** — then evaluated the OLD weights.
+- **Why:** a two-fix chain. Checkpoints used to land in `$VSC_DATA/output/<run>/checkpoints`
+  because staging was mode 0500, and a normal clean removed them. Fixing that permission sent
+  them to `checkpoints/`, which `clean_run` deliberately protects for the released weights.
+  Neither fix was wrong; together they created the gap.
+- **Instead:** `--checkpoints` clears our `exp*/` dirs only, and the trainer now shouts
+  `THIS RUN WILL TRAIN NOTHING` when it resumes at `max_steps`. **When you change WHERE
+  something is written, re-check everything that decides what gets deleted** - and a resume
+  that skips the loop must never look like a completed run.
+
 ### 17-08-2026 - Muon was not the answer either, and I wrote a utility that already existed
 - **Tried:** (a) blaming Muon for the B200 running training 16x slower than its own benchmark;
   (b) writing `scripts/clean_outputs.sh` to clear run output.
