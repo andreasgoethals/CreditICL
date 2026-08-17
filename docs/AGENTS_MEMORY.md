@@ -35,15 +35,34 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 |---|---|---|---|
 | 14-08-2026 | 11516936/11516938 — Exp1 debug, 8 arms | **All failed, exit 2 in 21–60 s** | `--resume auto`, a flag `pretrain.py` never defined |
 | 14-08-2026 | 11516954 — Exp1 debug LGD, `interactive` | 3/4 arms OK; task 3 deferred for maintenance | **6.6 steps/s, 69 % GPU**, loss 0.339→0.127 |
-| 14-08-2026 | 11516956 — Exp1 debug PD, `gpu_b200` | 4/4 arms OK, **but 12× slower on better hardware** | **0.5 steps/s, 3 % GPU — starved**; loss 0.618→0.171, acc 0.95 |
-
-| 14-08-2026 | 11517006–10 — Exp1 debug PD, `interactive` | **Confound split: the B200 is the bottleneck** | Same PD config **12× faster on the FREE GPU**: 6.9 vs 0.5 steps/s, 69 % vs 3 % util |
+| 14-08-2026 | 11516956 — Exp1 debug PD, `gpu_b200` | 4/4 arms OK, 12× slower — **cause was MUON, not the card** | 0.5 steps/s, 3 % GPU; loss 0.618→0.171, acc 0.95 |
+| 14-08-2026 | 11517006–10 — Exp1 debug PD, `interactive` | 6.9 steps/s, **but all 4 arms ended OUT_OF_MEMORY** in the evaluation | First real credit number: `german` ROC-AUC 0.718 |
+| 16-08-2026 | 11517081/82 — GPU benchmark, both cards | **B200 faster on EVERY rung** (7.7× bf16 matmul, 1.8× end to end) | Overturns the 14-08 conclusion; Muon is the slowdown |
+| 16-08-2026 | 11517370–72 + 11517008 — Exp1 debug LGD, `gpu_b200` | `crediticl` **scored at last**; 0.53 steps/s under Muon | **NaN predictions on 3 of 4 LGD datasets — unexplained** |
 
 The 14-08 afternoon run also gave the **first real credit number from our own model** —
 `german` ROC-AUC 0.718 at step 1,250 — but `crediticl` still failed everywhere, on a *third*
 distinct cause each time: unknown baseline → no checkpoint → **loader built Nano while training
 built upstream TabICL**. Staging checkpoint directory still not writable. Full write-up in
 [`RUNS.md`](RUNS.md).
+
+## Dead ends
+
+Anything that cost more than a couple of minutes and did not work — including what you eventually
+fixed, because the fix is one changelog line and the dead end was the hour.
+
+### 14-08-2026 — I called a run clean from its logs; `sacct` said OUT_OF_MEMORY
+- **Tried:** writing up run 11517006 from the `.out` logs and the manifests, which was all
+  that had been uploaded.
+- **Result:** reported as successful. `sacct` later showed **all four arms `OUT_OF_MEMORY`,
+  exit `0:125`.** The logs give no hint: the OOM killer sends SIGKILL, so nothing writes a
+  traceback and the file simply stops mid-evaluation.
+- **Why:** a log that ends without an error looks like a log that finished. It is not the same
+  thing, and only the scheduler knows the difference.
+- **Instead:** **always read `sacct --format=JobID,State,ExitCode,Elapsed` before calling a run
+  clean**, and ask for it alongside the logs. Also: fixing preprocessing is what *caused* this
+  — with no processed datasets the evaluation had skipped them and used almost no memory.
+  **A fix upstream can expose a bug downstream that was never reachable before.**
 
 ### 14-08-2026 — One staging directory was mode 0500, and every run silently rerouted
 - **Tried:** writing checkpoints to `/lustre1/project/stg_00211/CreditICL/checkpoints`.
@@ -141,10 +160,30 @@ afterwards — a job that dies at the walltime never comes back to write its own
 - **Notes** — one line: the headline number, the output path if it is worth finding again, or the
   single thing the run showed. A number here saves re-reading `output/results/`.
 
-## Dead ends
+### 16-08-2026 - The B200 was never slow. Muon was, and only on the B200
+- **Tried:** concluding from two training runs that the B200 was 12x slower than a free
+  RTX 5000 Ada, and telling Andreas to stop paying for it.
+- **Result:** **wrong.** The benchmark has the B200 ahead on every rung - 7.7x on bf16
+  matmul, 1.8x end to end. The training runs differed from the benchmark in exactly one
+  respect: `config/Exp1_*.yaml` sets `optimizer: muon`, and my benchmark used plain SGD.
+  B200 + Muon = 0.53 steps/s; B200 + SGD, same model, prior and loader = 8.14.
+- **Why:** I built a six-rung ladder and left out the rung that mattered, because the
+  optimiser did not feel like part of "is the GPU slow?". Muon's Newton-Schulz iteration is a
+  chain of tiny matmuls per weight matrix per step - latency-bound, so peak FLOPs do not help.
+- **Instead:** `bench_optimizers` times AdamW against Muon on the actual model. **A benchmark
+  must run the CONFIGURED code path, not a simplified stand-in** - the simplification is
+  exactly where the answer hid. Related: `src/train/optim.py`'s docstring still claimed "we
+  use AdamW, not Muon" from before Muon was vendored, so the file documented the wrong
+  optimizer for weeks; a test now ties it to the configs.
 
-Anything that cost more than a couple of minutes and did not work — including what you eventually
-fixed, because the fix is one changelog line and the dead end was the hour.
+### 16-08-2026 - A diagnostic that cried wolf about the healthy card
+- **Tried:** flagging a JIT fallback with `f"sm_{major}{minor}" in torch.cuda.get_arch_list()`.
+- **Result:** printed `*** NO KERNELS FOR THIS CARD` for the RTX 5000 Ada (`sm_89`, list had
+  `sm_86`) - the card that was *fine* - and stayed silent for the B200, the slow one.
+- **Why:** cubins are binary-compatible across MINOR versions within a major architecture, so
+  `sm_86` runs on `sm_89`. The exact-string test does not model that.
+- **Instead:** test the major version. **A false alarm is worse than no alarm**: it points at
+  the wrong suspect with an authoritative voice.
 
 ### 14-08-2026 — `CONFIG=` in front of a wrapper script does not reach the job
 - **Tried:** `CONFIG=config/Exp1_PD.yaml bash scripts/slurm/submit.sh free ...`, then
