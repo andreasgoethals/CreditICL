@@ -23,6 +23,10 @@ more command, and a deletion you meant as a listing costs the run.
 
 NEVER TOUCHES `data/raw/` or `checkpoints/` or `tfm-library/` — the inputs are irreplaceable and
 the weights are either downloaded or a training run to reproduce.
+
+NOR `prior_cache/ood/`, even under `--prior-cache`. It is the out-of-domain evaluation cache,
+not a prior pool, and **compute nodes have no outbound internet** — so it can only be rebuilt
+from a login node with `python -m src.utils.fetch_ood`. See `protected_paths`.
 """
 
 from __future__ import annotations
@@ -35,6 +39,20 @@ from src.utils.paths import outputs_dir, prior_cache_root, processed_dir, result
 #: Tracked so an empty directory survives a clone. Not run output, so never counted or deleted —
 #: removing them would leave a fresh clone with nowhere to write.
 KEEP = frozenset({".gitkeep", ".gitignore"})
+
+
+def protected_paths() -> list[Path]:
+    """Directories `--prior-cache` must step around.
+
+    `prior_cache/ood/` is the out-of-domain evaluation cache — 50 downloaded datasets — and it
+    sits under the prior-cache root only because that is where big things live. It is not a
+    prior pool and clearing it is not part of "clean the last run".
+
+    It also cannot be rebuilt where the deletion usually happens: **compute nodes have no
+    outbound internet**, so `python -m src.utils.fetch_ood` only works from a login node. A
+    sweep that wiped it would find every out-of-domain column empty and would not say why.
+    """
+    return [prior_cache_root() / "ood"]
 
 
 def roots(*, processed: bool = False, prior_cache: bool = False) -> list[Path]:
@@ -54,11 +72,19 @@ def roots(*, processed: bool = False, prior_cache: bool = False) -> list[Path]:
     return found
 
 
+def _is_protected(path: Path, protected: list[Path]) -> bool:
+    return any(path == p or p in path.parents for p in protected)
+
+
 def measure(root: Path) -> tuple[int, int]:
-    """(files, bytes) under a root, ignoring the structure markers."""
+    """(files, bytes) under a root, ignoring the structure markers and protected trees."""
     if not root.is_dir():
         return 0, 0
-    files = [p for p in root.rglob("*") if p.is_file() and p.name not in KEEP]
+    prot = protected_paths()
+    files = [
+        p for p in root.rglob("*")
+        if p.is_file() and p.name not in KEEP and not _is_protected(p, prot)
+    ]
     return len(files), sum(p.stat().st_size for p in files)
 
 
@@ -72,13 +98,16 @@ def wipe(root: Path) -> int:
     """
     if not root.is_dir():
         return 0
+    prot = protected_paths()
     removed = 0
     for path in root.rglob("*"):
-        if path.is_file() and path.name not in KEEP:
+        if path.is_file() and path.name not in KEEP and not _is_protected(path, prot):
             path.unlink()
             removed += 1
     for path in sorted((p for p in root.rglob("*") if p.is_dir()),
                        key=lambda p: len(p.parts), reverse=True):
+        if _is_protected(path, prot):
+            continue
         if not any(path.iterdir()):
             path.rmdir()
     return removed

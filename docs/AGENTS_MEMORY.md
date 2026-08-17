@@ -35,9 +35,10 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 |---|---|---|---|
 | 14-08-2026 | 11516936/11516938 — Exp1 debug, 8 arms | **All failed, exit 2 in 21–60 s** | `--resume auto`, a flag `pretrain.py` never defined |
 | 14-08-2026 | 11516954 — Exp1 debug LGD, `interactive` | 3/4 arms OK; task 3 deferred for maintenance | **6.6 steps/s, 69 % GPU**, loss 0.339→0.127 |
-| 14-08-2026 | 11516956 — Exp1 debug PD, `gpu_b200` | 4/4 arms OK, 12× slower — **cause was MUON, not the card** | 0.5 steps/s, 3 % GPU; loss 0.618→0.171, acc 0.95 |
+| 14-08-2026 | 11516956 — Exp1 debug PD, `gpu_b200` | 4/4 arms OK, 12× slower — **cause STILL UNKNOWN** | 0.5 steps/s, 3 % GPU; loss 0.618→0.171, acc 0.95 |
 | 14-08-2026 | 11517006–10 — Exp1 debug PD, `interactive` | 6.9 steps/s, **but all 4 arms ended OUT_OF_MEMORY** in the evaluation | First real credit number: `german` ROC-AUC 0.718 |
-| 16-08-2026 | 11517081/82 — GPU benchmark, both cards | **B200 faster on EVERY rung** (7.7× bf16 matmul, 1.8× end to end) | Overturns the 14-08 conclusion; Muon is the slowdown |
+| 16-08-2026 | 11517081/82 — GPU benchmark, both cards | **B200 faster on EVERY rung** (7.7× bf16 matmul, 1.8× end to end) | Overturns the 14-08 conclusion. Muon hypothesis raised here |
+| 17-08-2026 | 11517858/59 — GPU benchmark + optimiser row | **Muon is only 1.34–1.40×, on BOTH cards** | Kills the Muon hypothesis too. B200 8.26 steps/s benchmarked vs 0.53 trained — gap unexplained |
 | 16-08-2026 | 11517370–72 + 11517008 — Exp1 debug LGD, `gpu_b200` | `crediticl` **scored at last**; 0.53 steps/s under Muon | **NaN predictions on 3 of 4 LGD datasets — unexplained** |
 
 The 14-08 afternoon run also gave the **first real credit number from our own model** —
@@ -50,6 +51,25 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
+
+### 17-08-2026 - Muon was not the answer either, and I wrote a utility that already existed
+- **Tried:** (a) blaming Muon for the B200 running training 16x slower than its own benchmark;
+  (b) writing `scripts/clean_outputs.sh` to clear run output.
+- **Result:** (a) **wrong again.** The `bench_optimizers` row measures Muon at **1.34x** on the
+  RTX 5000 Ada and **1.40x** on the B200 - and the B200 is FASTER at Muon in absolute terms
+  (62 ms vs 99 ms). It is ahead on every rung. (b) `src/utils/clean_run.py` already existed,
+  mandated by `docs/TEMPLATE.md` and listed there as "filled in". The new script was deleted
+  unused.
+- **Why:** (a) I inferred the cause from the one difference I happened to notice between two
+  runs, instead of measuring it - the same mistake as the B200 conclusion before it, one level
+  down. (b) I did not check the template before adding a utility, which is step 1 of AGENTS.md.
+- **Instead:** the B200 gap is **still open**: benchmark end-to-end 8.26 steps/s, real training
+  0.53, same card, same loader, same worker count. The remaining suspects are inside the
+  trainer - AMP, micro-batching, telemetry, node contention - and the way to settle it is a
+  per-phase timing breakdown in the training loop, not another guess.
+  **Two wrong causes in a row from the same habit: name the difference, then MEASURE it.**
+  And **read `docs/TEMPLATE.md` before writing a utility** - `clean_run.py`, `paths.py` and
+  `run_notebooks.py` are all already there.
 
 ### 14-08-2026 — I called a run clean from its logs; `sacct` said OUT_OF_MEMORY
 - **Tried:** writing up run 11517006 from the `.out` logs and the manifests, which was all

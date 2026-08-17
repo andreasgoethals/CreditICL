@@ -68,3 +68,32 @@ def test_processed_is_opt_in(isolated_output) -> None:
 
     assert processed_dir() not in clean_run.roots()
     assert processed_dir() in clean_run.roots(processed=True)
+
+
+
+def test_clean_run_spares_the_ood_cache_even_with_prior_cache(tmp_path, monkeypatch):
+    """`--prior-cache` clears the prior pools, and the out-of-domain cache happens to live
+    under the same root because that is where big things go. It is not a prior pool.
+
+    It also cannot be rebuilt where the deletion happens: compute nodes have no outbound
+    internet, so `fetch_ood` only works from a login node. A sweep that wiped it would report
+    every out-of-domain column empty and never say why.
+    """
+    from src.utils import clean_run
+
+    pool_root = tmp_path / "prior_cache"
+    (pool_root / "credit_v1").mkdir(parents=True)
+    (pool_root / "credit_v1" / "shard0.npz").write_bytes(b"pool")
+    (pool_root / "ood").mkdir(parents=True)
+    (pool_root / "ood" / "cache.npz").write_bytes(b"downloaded")
+    (pool_root / "ood" / "manifest.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(clean_run, "prior_cache_root", lambda: pool_root)
+
+    n_before, _ = clean_run.measure(pool_root)
+    assert n_before == 1, "the ood cache must not even be COUNTED as deletable"
+
+    clean_run.wipe(pool_root)
+    assert not (pool_root / "credit_v1" / "shard0.npz").exists(), "the pool should go"
+    assert (pool_root / "ood" / "cache.npz").is_file(), "the ood cache must survive"
+    assert (pool_root / "ood" / "manifest.json").is_file()

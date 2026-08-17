@@ -5,6 +5,23 @@ reason is not obvious.
 
 ---
 
+## 17-08-2026 — MUON IS NOT THE CAUSE, and clean_run protects the OOD cache
+
+- **Correction: Muon costs 1.34× on the RTX 5000 Ada and 1.40× on the B200** — measured by the
+  new `bench_optimizers` row, on both cards. It is *not* the 15× the previous entry blamed it
+  for, and the B200 is faster at Muon in absolute terms (62 ms vs 99 ms per step). The B200 is
+  ahead on every rung, including AdamW and Muon. **What real training does to lose 16× on that
+  card is still unexplained** — see `RUNS.md`.
+- **`clean_run.py` now protects `prior_cache/ood/`** even under `--prior-cache`. The
+  out-of-domain cache lives under the prior-cache root only because that is where big things
+  go; it is not a prior pool, and compute nodes have no outbound internet, so wiping it means
+  a trip to a login node. `protected_paths()` + a test.
+- Added a "copy down before clearing" step to the `RUNS.md` checklist: the LGD NaN is
+  currently undiagnosable because the checkpoint was deleted before it was copied.
+- *(A `scripts/clean_outputs.sh` written earlier this session was deleted unused —
+  `src/utils/clean_run.py` already existed, per `docs/TEMPLATE.md`, and does the same job
+  better. Check the template before adding a utility.)*
+
 ## 16-08-2026 — the B200 was never the problem; Muon was
 
 - **`bench_optimizers`** in `scripts/benchmark_gpu.py` — times AdamW against Muon on the real

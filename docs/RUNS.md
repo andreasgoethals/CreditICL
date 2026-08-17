@@ -32,6 +32,20 @@ silently reroute to `$VSC_DATA` and only fail once the 75 GiB quota is gone:
 python scripts/check_storage.py
 ```
 
+**1b. Copy down the last run BEFORE clearing it.** Outputs accumulate and a rerun mixes old
+files with new, but a checkpoint deleted before it was copied is a bug you cannot diagnose —
+the LGD NaN was lost exactly that way.
+
+```bash
+tar czf ~/crediticl_$(date +%Y%m%d).tar.gz -C "$VSC_DATA/CreditICL" output/logs output/manifests
+python -m src.utils.clean_run            # LISTS what is there, deletes nothing
+python -m src.utils.clean_run --clean    # delete it
+```
+
+`clean_run` never touches `data/raw/`, `checkpoints/` or `tfm-library/`, and never
+`prior_cache/ood/` even under `--prior-cache` — compute nodes have no outbound internet, so
+that cache can only be rebuilt from a login node.
+
 **2. Submit**, and **immediately add a stub entry here** with the date, the config and the job
 id — before the run finishes. A job killed at the walltime never comes back to write its own
 entry, and the submission details are exactly what is lost.
@@ -155,7 +169,49 @@ The one thing to do differently.
 
 ## Runs
 
-## 16-08-2026 — GPU benchmark + LGD debug — **it was never the GPU, it is MUON**
+## 17-08-2026 — the optimiser row — **Muon is not the cause either**
+
+**Jobs** 11517858 (`interactive`), 11517859 (`gpu_b200`) — the benchmark rerun with
+`bench_optimizers`, which times the optimiser the configs actually use.
+
+| | RTX 5000 Ada | B200 |
+|---|---|---|
+| AdamW step | 73.5 ms | **44.5 ms** |
+| **Muon step** | 98.7 ms | **62.2 ms** |
+| **Muon / AdamW** | **1.34×** | **1.40×** |
+| end to end (SGD) | 4.50 steps/s | **8.26** |
+
+**Muon costs ~35–40 %, on both cards equally, and the B200 is faster at it in absolute terms.**
+It cannot explain a 12× gap. The 16-08 hypothesis is dead.
+
+**What is left, and it is the real question.** On the B200, the benchmark's end-to-end loop —
+real prior, real DataLoader, 23 workers — runs at **8.26 steps/s**. Real training on the same
+partition runs at **0.53**. A 16× gap, with the optimiser now accounting for at most 1.4× of
+it. Everything the benchmark does *not* do is now suspect:
+
+- **AMP** (`amp=True` in training; the benchmark runs plain fp32)
+- **micro-batching** inside `train_step`
+- **telemetry** — `nvidia-smi` on a node with 24 GPUs may be far slower than on one with 2
+- **node contention** — the two ran hours apart, and CPU is shared
+
+Note the free card shows the opposite sign: real training there (6.6 steps/s) is *faster* than
+its own benchmark (4.50), so none of that machinery is inherently slow. Whatever it is, it is
+specific to the B200 node.
+
+**Next:** a per-phase timing breakdown inside the training loop — data wait, forward, backward,
+optimiser, telemetry — logged every N steps. One run then answers it instead of another
+hypothesis. Do not guess a third time.
+
+Also confirmed: `has_kernels_for_this_card` is now clean for both cards, and `sm_100` is
+shipped, so the B200 was never JIT-falling-back.
+
+---
+
+## 16-08-2026 — GPU benchmark + LGD debug — the evaluation chain works end to end
+
+> **PARTLY SUPERSEDED 17-08-2026.** The heading claimed "it is MUON". Measured, Muon costs
+> 1.34–1.40× on both cards — not the 15× blamed here. See the entry above. The benchmark
+> results and the NaN finding in this entry stand.
 
 **Jobs** 11517081 (benchmark, `interactive`), 11517082 (benchmark, `gpu_b200`),
 11517370/71/72 + 11517008 (Exp1 LGD debug, 4 arms, `gpu_b200`)
