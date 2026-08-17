@@ -203,7 +203,12 @@ class Telemetry:
         *,
         hardware_every: int = 100,
         grad_every: int = 250,
+        micro_batch_size: int | None = None,
     ) -> None:
+        #: Only so the summary can suggest a bigger one when memory is barely touched.
+        #: Gradient accumulation makes the micro-batch mathematically invisible, so raising it
+        #: is free speed — but nothing was telling anyone there was room.
+        self.micro_batch_size = int(micro_batch_size) if micro_batch_size else None
         self.hardware_every = int(hardware_every or 0)
         self.grad_every = int(grad_every or 0)
         self.path = Path(out_dir) / f"{run_name}__telemetry.csv"

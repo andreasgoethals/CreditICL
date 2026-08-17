@@ -39,6 +39,19 @@ def main() -> int:
     ap.add_argument("--max-steps", type=int, default=None, help="override train.max_steps (for smoke tests)")
     ap.add_argument("--device", default=None, help="cuda | cpu (default: cuda if available)")
     ap.add_argument(
+        "--batch-size", type=int, default=None,
+        help="override train.batch_size — datasets per UPDATE. UNLIKE --micro-batch-size this "
+             "CHANGES THE RESULT, so it is not a per-machine knob. It exists so batch size can "
+             "be settled once on the control arm (3 runs) instead of being swept across all 75 "
+             "(150 runs), which would halve the power of the comparison Exp1 actually asks.",
+    )
+    ap.add_argument(
+        "--micro-batch-size", type=int, default=None,
+        help="override train.micro_batch_size — datasets per FORWARD PASS. Gradient "
+             "accumulation makes the update identical regardless, so this changes only speed "
+             "and memory, never the result. Raise it on a big card: a B200 has 183 GiB.",
+    )
+    ap.add_argument(
         "--num-workers", type=int, default=None,
         help="override train.num_workers. THE BINDING CONSTRAINT for this project: TabICL's "
              "prior is generated on the CPU, so throughput is set by cores, not by the GPU. "
@@ -79,6 +92,10 @@ def main() -> int:
     run = runs[index]
     if args.max_steps is not None:
         run.setdefault("train", {})["max_steps"] = args.max_steps
+    if args.batch_size is not None:
+        run.setdefault("train", {})["batch_size"] = args.batch_size
+    if args.micro_batch_size is not None:
+        run.setdefault("train", {})["micro_batch_size"] = args.micro_batch_size
     if args.num_workers is not None:
         # Asking for more workers than the allocation has does not speed anything up; it
         # oversubscribes the cores and the dataloader spends its time context-switching.

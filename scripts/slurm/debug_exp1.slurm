@@ -66,14 +66,16 @@ source scripts/slurm/_activate_env.sh
 # cannot be silently lost. `CONFIG=x bash submit.sh` set the variable for the CALLING shell,
 # not for sbatch's environment, so the job never saw it.
 CONFIG="${1:-config/Exp1_LGD.yaml}"
-# Resolved from `--list` against config/Exp1_LGD.yaml on 12-08-2026, all at seed 0:
+# Resolved from `--list` against config/Exp1_LGD.yaml on 17-08-2026, all at seed 0:
 #   0  cf=0.0  mechanism   the control: original prior only
 #   3  cf=0.3  mechanism   our loss-mechanism path at the highest mix
-#  11  cf=0.3  quantile    our marginal-shaping path
+#   9  cf=0.3  quantile    our marginal-shaping path
 #   1  cf=0.1  mechanism   the mixing path at a low share
 # RE-RESOLVE THESE IF THE SWEEP CHANGES. An index that silently points at a different arm
 # is worse than a crash, which is why the mapping is written out rather than computed.
-ARMS=(0 3 11 1)
+# The quantile arm moved 11 -> 9 on 17-08-2026 when the sweep dropped 21 duplicate control
+# runs (96 -> 75). `test_debug_arms_point_where_the_comments_say` now checks this pairing.
+ARMS=(0 3 9 1)
 INDEX="${ARMS[$SLURM_ARRAY_TASK_ID]}"
 
 LOGDIR="${VSC_DATA}/CreditICL/output/logs"

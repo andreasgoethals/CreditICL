@@ -62,7 +62,12 @@ prior:
   credit_fraction: 0.5 # SWEPT above; this value is only a fallback
   n_rows_range: [512, 1024] # rows per synthetic dataset
   n_features_range: [3, 50] # columns per synthetic dataset
-  max_features: 64 # hard ceiling, leaving room for missingness flags
+  max_features: 100 # upstream's `--max_features 100`, matched.
+  # Was 64. Two reasons to match upstream instead. It is part of what "the same prior, plus
+  # credit structure" means — a narrower feature range is a second, unintended difference. And
+  # real credit tables are far wider than either (base_modelisation has 256 columns), so every
+  # column past the training range is extrapolation; 100 shortens that gap. The column encoder
+  # is a SHARED SET TRANSFORMER, so any width is architecturally fine — see docs/PRIORS.md.
   n_nodes_range: [2, 33] # nodes in the random causal graph
   train_frac_range: [0.3, 0.9] # share of rows given as context
   max_filter_attempts: 40 # retries before giving up on a rejected dataset

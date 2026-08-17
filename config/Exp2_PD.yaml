@@ -50,7 +50,12 @@ prior:
   credit_fraction: FILL_FROM_EXP1 # SWEPT above (control vs winner)
   n_rows_range: [512, 1024] # rows per synthetic dataset
   n_features_range: [3, 50] # columns per synthetic dataset
-  max_features: 64 # hard ceiling, leaving room for missingness flags
+  max_features: 100 # upstream's `--max_features 100`, matched.
+  # Was 64. Two reasons to match upstream instead. It is part of what "the same prior, plus
+  # credit structure" means — a narrower feature range is a second, unintended difference. And
+  # real credit tables are far wider than either (base_modelisation has 256 columns), so every
+  # column past the training range is extrapolation; 100 shortens that gap. The column encoder
+  # is a SHARED SET TRANSFORMER, so any width is architecturally fine — see docs/PRIORS.md.
   n_nodes_range: [2, 33] # nodes in the random causal graph
   train_frac_range: [0.3, 0.9] # share of rows given as context
   n_classes: 2 # binary: default or not
@@ -133,8 +138,18 @@ init:
 # -----------------------------------------------------------------------------
 train:
   max_steps: 100000 # gradient updates
-  batch_size: 4 # datasets per update
-  micro_batch_size: 4 # datasets per forward pass, for gradient accumulation
+  batch_size: 64 # datasets per UPDATE — upstream's `--batch_size 64`, matched.
+  # datasets per FORWARD PASS. Gradient accumulation runs batch_size/micro_batch_size passes
+  # and averages them, so the update is mathematically identical to one batch of 64 while only
+  # micro_batch_size datasets sit in GPU memory at a time. IT DOES NOT CHANGE THE RESULT —
+  # only speed and memory — so it is safe to raise on a bigger card. Override per machine with
+  # `--micro-batch-size`; a B200 has 183 GiB against the A100's 80 and can take 16.
+  #
+  # This used to be batch_size: 4 with no accumulation, i.e. an effective batch SIXTEEN TIMES
+  # smaller than upstream's while using upstream's learning rate (8e-4, tuned for 64). Large
+  # batches tolerate large rates; small ones do not, and that mismatch is the leading suspect
+  # for the NaN predictions.
+  micro_batch_size: 4
 
   optimizer: muon # muon = what TabICLv2 uses | adamw
   muon_lr: 8.0e-4 # Muon's rate; it prefers ~8x AdamW's

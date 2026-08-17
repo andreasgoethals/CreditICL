@@ -52,6 +52,21 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
 
+### 17-08-2026 - How TabICL handles tables wider than it was trained on
+- **Question:** our LGD model returns all-NaN on tables with 52-256 features, having trained
+  on 3-50 with `max_features: 64`. Does upstream do something special at inference?
+- **Answer, from the pinned dump: NO, and it does not need to.** The column encoder is a
+  **shared set transformer** (`_tabicl.py`, "employs a shared set transformer"), which is
+  permutation-equivariant and takes ANY number of columns - width is not an architectural
+  limit. Ensembling permutes features for diversity (`feat_shuffle_method="latin"`); it does
+  **not** subsample them. Upstream simply trains at `--max_features 100` and predicts wider.
+- **So the NaN is numerical, not structural** - an untrained model returns 0 % NaN at 256
+  features, so it comes from learned weights extrapolating far outside their training range.
+- **Instead:** matched `max_features` to upstream's 100, which shortens the gap and removes an
+  unintended deviation. **Check what the reference implementation actually does before
+  assuming a limit is architectural** - "trained on <=64" and "cannot handle >64" are
+  different claims, and only the first was true.
+
 ### 17-08-2026 - Two of my own fixes combined into a run that trained nothing
 - **Tried:** rerunning the LGD debug after `clean_run --clean`, to get a checkpoint.
 - **Result:** all four arms `RESUMED from step-1500.ckpt at step 1500`, skipped the loop

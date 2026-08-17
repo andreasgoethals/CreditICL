@@ -5,7 +5,49 @@ reason is not obvious.
 
 ---
 
-## 17-08-2026 — Muon ruled out, per-phase timing, and a rerun that trained nothing
+## 17-08-2026 — Muon ruled out, 21 duplicate runs removed, batch and features matched to upstream
+
+- **`batch_size: 64`, `micro_batch_size: 4`** — upstream's own `--batch_size 64
+  --micro_batch_size 4`, in Exp1 and Exp2. It was 4 with no accumulation: an effective batch
+  **sixteen times smaller than upstream's**, while using upstream's learning rate of 8e-4,
+  which was tuned for 64. Large batches tolerate large rates; small ones do not, and that
+  mismatch is the leading suspect for the NaN predictions.
+- **`max_features: 100`**, also upstream's. It was 64 — a second unintended difference from
+  "the same prior, plus credit structure", and it widened the extrapolation gap on real credit
+  tables, which run to 256 columns.
+- **`--profile`** on `benchmark_gpu.py` — `torch.profiler` over real steps, top ops by CUDA
+  time, run with AMP and without. Four causes for the B200 gap have now been asserted and all
+  four were wrong; a profile names the kernel instead of inferring it.
+- **The telemetry summary reports memory headroom** and suggests a bigger micro-batch when
+  peak allocation is under half the card. Utilisation says whether the GPU was busy; headroom
+  says whether it was full, and only the second decides the micro-batch. The starvation
+  warning now points at the `phases step` lines instead of always blaming `num_workers` —
+  a high `fwd_bwd=` share means more workers will not help.
+- **`--batch-size` on `pretrain.py`**, so batch size can be settled on the CONTROL ARM (3
+  runs) rather than swept across all 75 (150 runs). Sweeping it would halve the power of the
+  comparison Exp1 actually asks, and at a fixed learning rate it would be confounded anyway —
+  batch size and LR are coupled. A test asserts no `Exp*.yaml` sweeps a batch size or a
+  learning rate: optimisation settings are nuisance parameters, held fixed so the prior is the
+  only thing that varies.
+- **`--micro-batch-size`** on `pretrain.py`, set from the partition by the job script (16 on
+  `gpu_b200`, 4 elsewhere). Gradient accumulation averages `loss / n_micro`, so the update is
+  identical whatever the micro-batch — it is purely speed and memory, and a 183 GiB card
+  should not run the same 4 as an 80 GiB one. A test pins that invariant.
+
+- **The sweep no longer schedules duplicates: Exp1 is 75 runs, not 96.** At
+  `credit_fraction: 0.0` nothing comes from our prior, so `atom_prob`, `mode` and
+  `target_scaling` are dead — the grid was running **eight identical control arms per seed**.
+  Same seed and same effective config is bit-identical output, so those 21 arms were 22 % of
+  the budget for zero information. `effective_fingerprint()` drops `prior.credit` when the
+  fraction is zero and dedupes on what a run will actually do.
+- `debug_exp1.slurm` re-resolved: the quantile arm moved **11 -> 9**.
+  `test_debug_arms_point_where_the_comments_say` now checks each pinned index against the
+  grid, so the mapping cannot silently drift again.
+- **Per-phase timing answered the B200 question halfway**: 98.4 % of a 1.8 s step is inside
+  forward+backward, with data at 0.0 %, optimiser 1.4 %, telemetry 0.0 %. Not starvation, not
+  Muon, not the loader. `bench_model` measured the same fwd+bwd at 43.7 ms — but at batch 1
+  in fp32, where training uses batch 4 with bf16 autocast. **`bench_amp`** now measures both
+  at the real batch size.
 
 - **`clean_run --checkpoints`** clears OUR `exp*/` run directories under `checkpoints/`, never
   the released `*.ckpt`. Job 11517891's four arms all found a step-1500 checkpoint from the
@@ -15,11 +57,6 @@ reason is not obvious.
   fixing the permission sent them to the one directory `clean_run` protects.
 - **The trainer refuses to be silent about it**: resuming at or past `max_steps` now logs
   `THIS RUN WILL TRAIN NOTHING`, names the checkpoint directory, and gives the fix.
-- **Found: 21 of Exp1's 96 runs are exact duplicates.** At `credit_fraction = 0.0` no credit
-  datasets are generated, so `atom_prob`, `mode` and `target_scaling` cannot matter — 8 lever
-  combinations × 3 seeds collapse to 3 distinct runs. Same seed and same config means
-  bit-identical output, so it is 22 % of the budget for zero information. **Not changed yet**:
-  deduplicating shifts every grid index, and `debug_exp1.slurm` pins 0/3/11/1.
 
 - **`phases step N  data=..%  fwd_bwd=..%  optimizer=..%  telemetry=..%`**, logged every
   `log_every` steps, with a verdict when the data wait is decisive. Three explanations for the

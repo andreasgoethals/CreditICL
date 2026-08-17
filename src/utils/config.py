@@ -336,6 +336,28 @@ def run_name(cfg: dict[str, Any]) -> str:
     return name
 
 
+def effective_fingerprint(run: dict[str, Any]) -> str:
+    """A stable key for what a run will ACTUALLY do, ignoring levers that cannot act.
+
+    `credit_fraction: 0.0` is the control arm: no datasets come from our prior, so the whole
+    `prior.credit` subtree — `target.mode`, `target.atom_prob`, `target.target_scaling`, the
+    shift and missingness blocks — is dead. Crossing four levers over it produced **eight
+    identically-behaving control runs per seed**: 24 of Exp1's 96 arms where 3 would do.
+    Same seed and same effective config means bit-identical output, so those 21 extra runs
+    were 22 % of the compute budget for exactly zero information.
+
+    The fingerprint therefore drops `prior.credit` when the fraction is zero, and drops the
+    bookkeeping (`_grid`, `_run_name`) that differs by construction.
+    """
+    probe = copy.deepcopy(run)
+    for key in ("_grid", "_run_name"):
+        probe.pop(key, None)
+    prior = probe.get("prior") or {}
+    if float(prior.get("credit_fraction", 0.0)) == 0.0:
+        prior.pop("credit", None)
+    return json.dumps(probe, sort_keys=True, default=str)
+
+
 def expand_with_seeds(cfg: dict[str, Any]) -> list[dict[str, Any]]:
     """Expand the lever grid, then cross it with the ``seeds`` list.
 
@@ -349,11 +371,20 @@ def expand_with_seeds(cfg: dict[str, Any]) -> list[dict[str, Any]]:
         seeds = [seeds]
 
     runs: list[dict[str, Any]] = []
+    # DROP RUNS THAT WOULD DO THE SAME THING. See `effective_fingerprint`: the control arm
+    # ignores every credit lever, so the grid otherwise schedules eight copies of it per seed.
+    # First occurrence wins, so the surviving control keeps the lowest lever values and the
+    # ordering of the remaining arms is unchanged.
+    seen: set[str] = set()
     for seed in seeds:
         for point in expand_grid(cfg):
             point = copy.deepcopy(point)
             point["seed"] = int(seed)
             point.pop("seeds", None)
+            key = effective_fingerprint(point)
+            if key in seen:
+                continue
+            seen.add(key)
             runs.append(point)
 
     for i, run in enumerate(runs):

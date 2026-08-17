@@ -635,3 +635,79 @@ def test_phase_timing_does_not_synchronise_the_gpu():
     src = (root / "src" / "train" / "loop.py").read_text(encoding="utf-8")
     step = src[src.index("def train_step") : src.index("def _loss_for")]
     assert "synchronize" not in step
+
+
+def test_batch_and_features_match_upstream():
+    """The project's claim is "TabICLv2's architecture and prior, plus credit structure". Every
+    unintended difference weakens that, and two had crept in.
+
+    `batch_size: 4` against upstream's `--batch_size 64` is an effective batch SIXTEEN TIMES
+    smaller — while using upstream's learning rate of 8e-4, which was tuned for 64. Large
+    batches tolerate large rates; small ones do not.
+
+    `max_features: 64` against upstream's `--max_features 100` narrowed the prior's feature
+    range for no stated reason, and widened the extrapolation gap on real credit tables
+    (base_modelisation has 256 columns).
+    """
+    import yaml
+
+    root = Path(__file__).resolve().parents[1]
+    for name in ("Exp1_LGD", "Exp1_PD", "Exp2_LGD", "Exp2_PD"):
+        cfg = yaml.safe_load((root / "config" / f"{name}.yaml").read_text(encoding="utf-8"))
+        assert cfg["train"]["batch_size"] == 64, f"{name}: upstream uses --batch_size 64"
+        assert cfg["prior"]["max_features"] == 100, f"{name}: upstream uses --max_features 100"
+        # accumulation must divide the batch, or the last micro-step is a different size
+        assert cfg["train"]["batch_size"] % cfg["train"]["micro_batch_size"] == 0, (
+            f"{name}: micro_batch_size must divide batch_size"
+        )
+
+
+def test_micro_batch_size_is_a_speed_knob_only():
+    """Gradient accumulation averages `loss / n_micro` per pass, so the update is identical
+    whatever the micro-batch is. That is what makes it safe to set from the hardware — and it
+    must stay true, or a B200 run and an A100 run would not be comparable."""
+    root = Path(__file__).resolve().parents[1]
+    src = (root / "src" / "train" / "loop.py").read_text(encoding="utf-8")
+    assert "self.scaler.scale(loss / n_micro).backward()" in src, (
+        "the per-micro-batch loss must be divided by n_micro, or the effective learning rate "
+        "would scale with the micro-batch and the knob would change results"
+    )
+    # and the override must reach the trainer
+    entry = (root / "scripts" / "pretrain.py").read_text(encoding="utf-8")
+    assert '"--micro-batch-size"' in entry
+    assert '["micro_batch_size"] = args.micro_batch_size' in entry
+
+
+def test_batch_size_and_micro_batch_size_are_different_kinds_of_knob():
+    """One changes the result; the other cannot. Conflating them is how "TabPFN-Wide used 16"
+    became an argument about GPU memory.
+
+    `batch_size` is how many datasets contribute to an update — a scientific choice, held
+    FIXED across arms so a difference in results is attributable to the prior. `micro_batch_size`
+    is how many fit in memory per forward pass; accumulation averages `loss / n_micro`, so the
+    update is identical either way and it is safe to set from the hardware.
+    """
+    root = Path(__file__).resolve().parents[1]
+    entry = (root / "scripts" / "pretrain.py").read_text(encoding="utf-8")
+
+    batch_help = entry[entry.index('"--batch-size"') : entry.index('"--micro-batch-size"')]
+    assert "CHANGES THE RESULT" in batch_help, "the difference must be stated where it is used"
+
+    micro_help = entry[entry.index('"--micro-batch-size"') :][:600]
+    assert "never the result" in micro_help or "identical" in micro_help
+
+
+def test_batch_size_is_not_swept_in_any_experiment():
+    """Sweeping it would double the arm count and halve the power of the comparison Exp1
+    actually asks — and at a fixed learning rate it would be a confounded test anyway, since
+    batch size and LR are coupled. Settle it on the control arm instead."""
+    import yaml
+
+    root = Path(__file__).resolve().parents[1]
+    for cfg_path in sorted((root / "config").glob("Exp*.yaml")):
+        sweep = yaml.safe_load(cfg_path.read_text(encoding="utf-8")).get("sweep") or {}
+        offenders = [k for k in sweep if "batch" in k or k.endswith(".lr")]
+        assert not offenders, (
+            f"{cfg_path.name} sweeps {offenders}. Optimisation settings are nuisance "
+            f"parameters: hold them fixed so the prior is the only thing that varies."
+        )

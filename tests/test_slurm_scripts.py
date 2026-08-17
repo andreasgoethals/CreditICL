@@ -164,3 +164,55 @@ def test_debug_job_passes_its_own_checkpoint_to_the_evaluation():
     )
     assert '"${CKPT_ARG[@]}"' in text, "the resolved checkpoint must reach both evaluations"
     assert text.count('"${CKPT_ARG[@]}"') >= 2, "credit AND out-of-domain evaluation need it"
+
+
+def test_no_two_sweep_arms_do_the_same_thing():
+    """At `credit_fraction: 0.0` no dataset comes from our prior, so every credit lever is
+    dead — and the grid was scheduling EIGHT identical control runs per seed. 24 arms of 96
+    where 3 would do: bit-identical output for 22 % of the compute budget."""
+    from src.utils.config import effective_fingerprint, expand_with_seeds, load
+
+    for name in ("Exp1_LGD.yaml", "Exp1_PD.yaml"):
+        runs = expand_with_seeds(load(ROOT / "config" / name))
+        prints = [effective_fingerprint(r) for r in runs]
+        assert len(prints) == len(set(prints)), f"{name} still schedules duplicate arms"
+
+        controls = [r for r in runs if float(r["prior"].get("credit_fraction", 0)) == 0.0]
+        seeds = {r["seed"] for r in controls}
+        assert len(controls) == len(seeds), (
+            f"{name}: {len(controls)} control arms across {len(seeds)} seeds — "
+            f"one per seed is the most that can differ"
+        )
+
+
+def test_debug_arms_point_where_the_comments_say():
+    """`ARMS` is hard-coded, and the comment above it claims what each index is. Deduplicating
+    the sweep moved the quantile arm from 11 to 9; an index that silently points at a
+    different arm is worse than a crash, so the pairing is checked rather than trusted."""
+    import re
+
+    from src.utils.config import expand_with_seeds, load
+
+    text = (SLURM / "debug_exp1.slurm").read_text(encoding="utf-8")
+    claimed = {
+        int(m.group(1)): (m.group(2), m.group(3))
+        for m in re.finditer(r"^#\s+(\d+)\s+cf=([\d.]+)\s+(mechanism|quantile)\b", text, re.M)
+    }
+    assert claimed, "the ARMS mapping comment is missing or reformatted"
+
+    arms = [int(x) for x in re.search(r"^ARMS=\(([^)]*)\)", text, re.M).group(1).split()]
+    assert set(arms) == set(claimed), f"ARMS={arms} does not match the documented {sorted(claimed)}"
+
+    runs = expand_with_seeds(load(ROOT / "config" / "Exp1_LGD.yaml"))
+    for index, (cf, mode) in claimed.items():
+        assert index < len(runs), f"index {index} is past the end of a {len(runs)}-run sweep"
+        run = runs[index]
+        assert float(run["prior"]["credit_fraction"]) == float(cf), (
+            f"index {index} claims cf={cf}, grid says {run['prior']['credit_fraction']}"
+        )
+        # the control ignores mode entirely, so only check it where it can act
+        if float(cf) > 0:
+            assert run["prior"]["credit"]["target"]["mode"] == mode, (
+                f"index {index} claims {mode}, grid says "
+                f"{run['prior']['credit']['target']['mode']}"
+            )

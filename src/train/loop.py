@@ -330,6 +330,8 @@ class Trainer:
             manifest_dir,
             hardware_every=self.log_hardware_every if self.dist.is_main else 0,
             grad_every=self.log_grad_every if self.dist.is_main else 0,
+            # So the summary can say "peak was 8 % of memory — try a bigger micro-batch".
+            micro_batch_size=self.micro_batch_size,
         )
         # Complements `log_environment()` above rather than repeating it: that one records the
         # run's identity (task, seed, rank, world size), this one records the MACHINE — GPU

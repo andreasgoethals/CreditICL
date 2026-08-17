@@ -37,6 +37,7 @@ import argparse
 import json
 import sys
 import time
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -212,6 +213,125 @@ def bench_prior(task: str, n_batches: int, batch_size: int) -> dict[str, Any]:
     }
 
 
+def bench_amp(torch: Any, device: str, task: str, n: int, batch_size: int) -> dict[str, Any]:
+    """Forward+backward AT THE REAL BATCH SIZE, with and without AMP.
+
+    THE LAST DIFFERENCE between this benchmark and real training. `bench_model` runs batch 1 in
+    fp32 and reported 43.7 ms on the B200; the per-phase timing added to the trainer shows real
+    training spending **98.4 % of a 1.8 s step inside forward+backward** on that same card — 41x
+    more, with data at 0.0 % and the optimiser at 1.4 %. Batch 4 accounts for 4x of it. The
+    remainder is either AMP or nothing, and `train.amp` is `True` with `bfloat16` autocast plus
+    a GradScaler.
+
+    Measured, not assumed: three explanations for the B200 gap have been asserted and all three
+    were wrong.
+    """
+    from src.models.architecture import build_model, is_available
+
+    if not is_available("tabicl"):
+        return {"error": "upstream tabicl not installed"}
+
+    rows, feats, train_size = 1024, 40, 768
+    X = torch.randn(batch_size, rows, feats, device=device)
+    y = (
+        torch.rand(batch_size, train_size, device=device)
+        if task == "lgd"
+        else (torch.rand(batch_size, train_size, device=device) > 0.7).float()
+    )
+    out: dict[str, Any] = {"batch_size": batch_size}
+    for label, amp in (("fp32", False), ("amp_bf16", True)):
+        try:
+            model = build_model(task, architecture="tabicl").to(device)
+            model.train()
+            opt = torch.optim.SGD(model.parameters(), lr=1e-6)
+            scaler = torch.amp.GradScaler("cuda", enabled=amp and device.startswith("cuda"))
+            ctx = (
+                torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+                if amp and device.startswith("cuda")
+                else nullcontext()
+            )
+
+            def step(m=model, o=opt, s=scaler, c=ctx):
+                o.zero_grad(set_to_none=True)
+                with c:
+                    loss = m(X, y).float().square().mean()
+                s.scale(loss).backward()
+                s.step(o)
+                s.update()
+
+            sec = _time(step, max(3, n // 4), 2, torch)
+            out[f"{label}_step_ms"] = round(sec * 1000, 2)
+        except Exception as exc:  # noqa: BLE001
+            out[f"{label}_error"] = f"{type(exc).__name__}: {exc}"
+    a, b = out.get("fp32_step_ms"), out.get("amp_bf16_step_ms")
+    if a and b:
+        out["amp_slowdown_vs_fp32"] = round(b / a, 2)
+    return out
+
+
+def profile_step(torch: Any, device: str, task: str, batch_size: int, amp: bool) -> dict[str, Any]:
+    """Name the kernels. `torch.profiler` on a handful of real training steps, top ops by CUDA
+    time, run once with AMP and once without.
+
+    THE LAST RESORT, and the right one. Four explanations for the B200 running training ~15x
+    slower than a benchmark of the same model, prior, loader and batch have now been asserted
+    — the card, the prior, Muon, the wheel — and every one was wrong, because each was inferred
+    from a difference someone noticed rather than measured. A profile does not have opinions:
+    it says which kernel consumed the time, and if one op dominates on one card and not the
+    other, that is the answer with no inference step in between.
+    """
+    from torch.profiler import ProfilerActivity, profile
+
+    from src.models.architecture import build_model, is_available
+
+    if not is_available("tabicl"):
+        return {"error": "upstream tabicl not installed"}
+    if not device.startswith("cuda"):
+        return {"skipped": "profiling is only meaningful on CUDA"}
+
+    rows, feats, train_size = 1024, 40, 768
+    X = torch.randn(batch_size, rows, feats, device=device)
+    y = (
+        torch.rand(batch_size, train_size, device=device)
+        if task == "lgd"
+        else (torch.rand(batch_size, train_size, device=device) > 0.7).float()
+    )
+    model = build_model(task, architecture="tabicl").to(device)
+    model.train()
+    opt = torch.optim.SGD(model.parameters(), lr=1e-6)
+    ctx = (
+        torch.autocast(device_type="cuda", dtype=torch.bfloat16) if amp else nullcontext()
+    )
+
+    def step():
+        opt.zero_grad(set_to_none=True)
+        with ctx:
+            loss = model(X, y).float().square().mean()
+        loss.backward()
+        opt.step()
+
+    for _ in range(3):          # warm up: the first steps compile and allocate
+        step()
+    torch.cuda.synchronize()
+
+    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+        for _ in range(5):
+            step()
+        torch.cuda.synchronize()
+
+    rank = prof.key_averages().table(sort_by="cuda_time_total", row_limit=12)
+    top = []
+    for ev in sorted(prof.key_averages(), key=lambda e: -e.cuda_time_total)[:12]:
+        top.append({
+            "op": ev.key[:60],
+            "cuda_ms": round(ev.cuda_time_total / 1000.0, 2),
+            "calls": ev.count,
+        })
+    total = sum(e.cuda_time_total for e in prof.key_averages()) / 1000.0
+    return {"amp": amp, "total_cuda_ms_over_5_steps": round(total, 1), "top_ops": top,
+            "table": rank}
+
+
 def bench_optimizers(torch: Any, device: str, task: str, n_steps: int) -> dict[str, Any]:
     """Time one optimiser step per optimiser, on tensors already on the GPU.
 
@@ -323,6 +443,12 @@ def main() -> int:
     ap.add_argument("--skip-prior", action="store_true", help="GPU rows only")
     ap.add_argument("--skip-model", action="store_true", help="raw compute rows only")
     ap.add_argument("--skip-end-to-end", action="store_true")
+    ap.add_argument(
+        "--profile", action="store_true",
+        help="run torch.profiler on real steps and print the top ops by CUDA time, with and "
+             "without AMP. Slow, and the definitive answer when a timing gap has no obvious "
+             "cause: it names the kernel instead of inferring it.",
+    )
     ap.add_argument("--json", default=None, help="also write the results here")
     args = ap.parse_args()
 
@@ -363,6 +489,13 @@ def main() -> int:
         print()
 
     if not args.skip_model:
+        print(f"--- 4a. AMP at the REAL batch size ({args.batch_size}) " + "-" * 26)
+        results["amp"] = bench_amp(torch, device, args.task, args.steps, args.batch_size)
+        for k, v in results["amp"].items():
+            print(f"  {k:44s} {v}")
+        print()
+
+    if not args.skip_model:
         print("--- 4b. OPTIMISER STEP — the row that explains the B200 " + "-" * 18)
         results["optimizers"] = bench_optimizers(torch, device, args.task, args.steps)
         for k, v in results["optimizers"].items():
@@ -382,6 +515,21 @@ def main() -> int:
         for k, v in results["end_to_end"].items():
             print(f"  {k:44s} {v}")
         print()
+
+    if args.profile:
+        for amp in (False, True):
+            label = "AMP bf16" if amp else "fp32"
+            print(f"--- PROFILE, {label}, batch {args.batch_size} " + "-" * 30)
+            res = profile_step(torch, device, args.task, args.batch_size, amp)
+            results[f"profile_{'amp' if amp else 'fp32'}"] = {
+                k: v for k, v in res.items() if k != "table"   # the table is for the log only
+            }
+            if "table" in res:
+                print(res["table"])
+                print(f"  TOTAL CUDA over 5 steps: {res['total_cuda_ms_over_5_steps']} ms")
+            else:
+                print(f"  {res}")
+            print()
 
     # -- the reading -----------------------------------------------------------
     print("=" * 74)
