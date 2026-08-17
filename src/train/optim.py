@@ -4,21 +4,29 @@ The cosine-with-restarts schedule is transcribed from TabICL's
 `train/_optim.py` (`_get_cosine_with_restarts_lr_lambda`), including the
 amplitude decay per cycle and the `lr_end` floor.
 
-**Deviation: AdamW, not Muon.** TabICLv2 credits part of its gain to the Muon
-optimizer, and its reference scripts pass `--muon True`. We use AdamW, which
-upstream also supports (`--muon False`) as a first-class alternative. Reasons:
+**We use MUON**, matching TabICLv2, whose reference scripts pass `--muon True` and which
+credits part of its gain to it. `config/Exp1_*.yaml` sets `optimizer: muon`, and the
+implementation is vendored from the pinned dump rather than reimplemented, so the
+Newton-Schulz iteration count and the `matched_adamw_rms` scaling are upstream's own.
 
-* Muon's correctness depends on details (Newton-Schulz iteration count, the
-  `matched_adamw_rms=0.2` scaling, cautious weight decay) that we cannot verify
-  without the implementation, and a subtly wrong optimizer would degrade every
-  arm *equally and invisibly* — the worst possible failure mode for a controlled
-  comparison.
-* The optimizer is held fixed across arms, so it is not the experimental
-  variable. Absolute performance suffers; the prior contrast does not.
+*(This docstring used to claim the opposite — that we had deviated to AdamW. That was true
+before Muon was vendored and was never updated, so the module described the wrong optimizer
+for weeks. `test_optim_docstring_matches_the_configs` now ties the two together.)*
 
-Note upstream's own caveat about Muon: the released checkpoints were trained
-*without* cautious weight decay even though the paper reports using it, because
-the flag was left unwired. Another reason not to guess at a reimplementation.
+**MUON IS THE REASON THE B200 LOOKED SLOW.** Measured 16-08-2026: with `optimizer: muon`,
+B200 training ran at 0.53 steps/s while the free RTX 5000 Ada ran at 6.6 — but a benchmark of
+the identical model, prior and data loader using plain SGD had the B200 1.8x *faster* end to
+end (8.14 vs 4.50 steps/s). The optimiser was the only difference. Muon orthogonalises every
+weight matrix with a Newton-Schulz iteration — a chain of small matmuls per matrix per step,
+which is latency-bound, not throughput-bound, so a card with 1,392 bf16 TFLOP/s can still lose
+badly. `scripts/benchmark_gpu.py` has a row for it.
+
+AdamW remains available (`optimizer: adamw`), and upstream supports it too (`--muon False`).
+Whichever is chosen is held FIXED across arms, so it is never the experimental variable:
+it changes absolute performance, not the prior contrast.
+
+Note upstream's own caveat: the released checkpoints were trained *without* cautious weight
+decay even though the paper reports using it, because the flag was left unwired.
 """
 
 from __future__ import annotations

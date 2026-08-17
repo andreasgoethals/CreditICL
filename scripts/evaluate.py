@@ -44,6 +44,12 @@ def main() -> int:
     ap.add_argument("--split", default="random", choices=("random", "temporal"))
     ap.add_argument("--tag", default=None, help="suffix for the output filenames")
     ap.add_argument(
+        "--max-rows", type=int, default=None,
+        help="cap rows per dataset before splitting (seeded random subsample). Omit for a "
+             "REAL result. Exists because 0014.algorithmwatch alone is 1.8 GB and four debug "
+             "arms hit OUT_OF_MEMORY on a 30 GB partition; the cap is recorded per row.",
+    )
+    ap.add_argument(
         "--checkpoint", default=None,
         help="path to one of OUR step-*.ckpt files, required by --models crediticl. "
              "Omit it and the single checkpoint matching --task is used; with several, "
@@ -89,6 +95,7 @@ def main() -> int:
             test_size=args.test_size,
             split=args.split,
             model_kwargs=model_kwargs,
+            max_rows=args.max_rows,
         )
         df = run(cfg)
 

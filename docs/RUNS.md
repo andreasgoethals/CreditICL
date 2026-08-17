@@ -155,7 +155,89 @@ The one thing to do differently.
 
 ## Runs
 
+## 16-08-2026 — GPU benchmark + LGD debug — **it was never the GPU, it is MUON**
+
+**Jobs** 11517081 (benchmark, `interactive`), 11517082 (benchmark, `gpu_b200`),
+11517370/71/72 + 11517008 (Exp1 LGD debug, 4 arms, `gpu_b200`)
+
+### The benchmark overturns the previous conclusion
+
+| measurement | RTX 5000 Ada (free) | B200 | |
+|---|---|---|---|
+| matmul fp32 | 36.1 TFLOP/s | **63.2** | B200 1.7× |
+| matmul bf16 | 181 TFLOP/s | **1,392** | B200 **7.7×** |
+| attention 1024 | 0.051 ms | **0.026** | B200 2.0× |
+| model fwd+bwd | 69.3 ms | **44.1** | B200 1.6× |
+| prior, 1 worker | 10.5 ds/s | **15.5** | B200 1.5× |
+| **end to end (SGD)** | 4.50 steps/s | **8.14** | **B200 1.8×** |
+
+**The B200 is faster on every single rung.** The 14-08 conclusion — "the B200 is the
+bottleneck, use the free GPU" — was **wrong**, and wrong because the benchmark used plain SGD
+while `config/Exp1_*.yaml` sets `optimizer: muon`.
+
+| | optimiser | steps/s |
+|---|---|---|
+| B200, real training (11517370) | **muon** | 0.53 |
+| B200, benchmark, same model/prior/loader | SGD | 8.14 |
+
+**Muon costs a factor of ~15 on the B200 and nothing on the RTX 5000 Ada** (which trains at
+6.6 steps/s *with* Muon, above its own 4.5 SGD benchmark). Muon orthogonalises each weight
+matrix with a Newton-Schulz iteration — a chain of small matmuls per matrix per step, which is
+latency-bound rather than throughput-bound, so peak FLOPs do not help.
+
+Also corrected: the benchmark's `has_kernels_for_this_card` flag fired for the RTX 5000 Ada
+(`sm_89` absent from a list containing `sm_86`). Minor versions are binary-compatible within a
+major architecture, so that was a **false alarm on the healthy card** — the test is now on the
+major version. `sm_100` *is* shipped, so the B200 was never JIT-falling-back.
+
+### The evaluation chain now works end to end
+`crediticl` is scored for the first time: `crediticl OK r2=-0.1144 rmse=0.2730
+bnd_err=0.0204` on real LGD data. Registration, checkpoint resolution, architecture
+reconstruction and the row cap all hold.
+
+### Bugs and anomalies
+1. **The LGD model emits 100 % NaN predictions on 3 of 4 real datasets** (`base_modelisation`,
+   `base_model`, `loss2`) and on 5 out-of-domain regression datasets. `axa` — the only one
+   with **zero missing values** and only 2 features — works, and gives sensible numbers
+   (r2 −0.004, coverage 0.71/0.89/0.93, spearman 0.47).
+   **Not the data:** the imputed input contains no non-finite value. **Not the architecture:**
+   an untrained model on the same four datasets returns 0 % NaN. **Not divergence:** weight
+   norms are flat across training (col 61.4→61.7, row 41.7, icl 174→175) and gradient ratios
+   sit at 5e-3–1.5e-2 throughout. **Unexplained — needs the checkpoint to localise.**
+   The new `pred_nonfinite_frac` / `nan_predictions` columns are what made it visible at all;
+   previously it was reported as `constant_prediction`.
+2. The progress curve is still one row per run: `progress.every_datasets` is 5,000 against a
+   6,000-dataset debug budget. Expected, and it disappears at the real 50,000.
+
+### Interpretation
+- **What the numbers show:** the B200 is the better card on every measured axis, and Muon —
+  not the hardware, not the prior — is what made it look 12× slow.
+- **What we think explains it:** Newton-Schulz is a long chain of tiny GPU operations, so it
+  is dominated by launch latency and per-op overhead, which a bigger card does not reduce.
+  **Unverified**: the `bench_optimizers` row added today measures Muon against AdamW directly
+  and will confirm or kill it on the next run.
+- **What would test the NaN:** load the checkpoint and walk the stacks — `col_embedder`,
+  `row_interactor`, `icl_predictor` — to find where the first non-finite value appears.
+
+### Next
+Rerun the benchmark on both cards with the optimiser row. Get one LGD checkpoint down to a
+laptop to localise the NaN. **Exp1 cannot start until the NaN is understood** — it makes 3 of
+4 LGD datasets unscoreable, which is most of the experiment.
+
+---
+
 ## 14-08-2026 (afternoon) — Exp1 debug, PD on the FREE GPU — **the B200 is the bottleneck**
+
+> **SUPERSEDED 16-08-2026.** The conclusion in this heading is wrong; see the entry above.
+> The B200 is faster on every rung of the benchmark. The slowdown was Muon.
+
+> **CORRECTION, added after reading `sacct`.** This entry originally described the run as
+> clean. It was not: **all four arms ended `OUT_OF_MEMORY` (exit `0:125`)**, in the final
+> evaluation, after training and the out-of-domain scoring had finished. The logs alone did
+> not show it — they end mid-evaluation with no traceback, because the OOM killer sends
+> SIGKILL and nothing gets to write a message. **Read `sacct` before calling a run clean; a
+> log that stops is not a log that finished.** Cause and fix in Bugs 5 below. Everything
+> about throughput below is unaffected — training completed on every arm.
 
 **Submitted** 14-08-2026 14:56 | **jobs** 11517006/07/09/10 (PD, 4 arms) | **cluster** mindwell
 `interactive`, node `l11i31`, NVIDIA RTX 5000 Ada 32 GiB | **preprocessing run first**
@@ -196,6 +278,15 @@ morning stands, and the "PD's prior is expensive" hypothesis is dead.
    this morning's had eight. It looked like a smaller measurement; it was a masked failure.
 3. **`/lustre1/…/checkpoints` still not writable** (`Errno 13`) — unchanged, still needs fixing
    before the 96-arm run.
+5. **All four arms were killed by the OOM killer** at the end, on 30 GB. The 14 PD datasets
+   total **2.4 GB** as float32 and `0014.algorithmwatch` alone is 158,700 × 2,986 = **1.8 GB**;
+   the evaluation loads one, splits it and imputes it, making several more full-size copies.
+   It appeared *only now* because it needs the datasets to exist: in the morning run
+   preprocessing had not been done, so the evaluation skipped every credit dataset and used
+   almost no memory. **A bug fixed upstream can reveal one downstream.**
+   Fixed with `EvalConfig.max_rows` — a seeded random subsample taken *before* the split, with
+   `row_cap` and `n_rows_full` recorded per row. The debug job sets 20,000; **the real Exp1
+   must not**, and a test enforces that no config carries it.
 4. **PD is trained with a 2-class head, the released TabICLv2 classifier has 10.** Found while
    writing the round-trip test, and confirmed by parameter count: 27,538,938 against
    27,552,258, a difference of exactly 13,320 — the four head tensors. `Trainer._build_model`

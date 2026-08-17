@@ -5,6 +5,36 @@ reason is not obvious.
 
 ---
 
+## 16-08-2026 — the B200 was never the problem; Muon was
+
+- **`bench_optimizers`** in `scripts/benchmark_gpu.py` — times AdamW against Muon on the real
+  model and reports the ratio. This rung was missing, and it was the answer: the first
+  benchmark used plain SGD and had the B200 **1.8× faster** end to end, while real training
+  with `optimizer: muon` ran at 0.53 steps/s against the free card's 6.6.
+- **`src/train/optim.py` docstring corrected.** It claimed "Deviation: AdamW, not Muon" from
+  before Muon was vendored, while every config sets `optimizer: muon`.
+  `test_optim_docstring_matches_the_configs` now ties the two together.
+- **`has_kernels_for_this_card` tests the MAJOR architecture.** The exact-string test called
+  `sm_89` unsupported against a list containing `sm_86` and printed `NO KERNELS` for the
+  *healthy* card while staying silent for the slow one. Cubins are compatible across minor
+  versions. `exact_arch_shipped` is reported separately.
+- `docs/RUNS.md` — 16-08 entry; the 14-08 "the B200 is the bottleneck" entry marked
+  **SUPERSEDED**. `AGENTS_MEMORY.md` runs table corrected, and its dead-end entries moved into
+  the Dead ends section where earlier edits had stranded them under Runs.
+
+## 15-08-2026 — the evaluation ran out of memory once the data was actually there
+
+- **`EvalConfig.max_rows`** — cap rows per dataset *before* the split, as a seeded random
+  subsample, recording `row_cap` and `n_rows_full` per row. All four arms of job 11517006 were
+  killed by the OOM killer on 30 GB: the 14 PD datasets are 2.4 GB and `0014.algorithmwatch`
+  alone is 1.8 GB, which the loop then copies several times. It only became reachable once
+  preprocessing succeeded — before that the evaluation had no datasets to load.
+- **`--max-rows` on `evaluate.py`**, set to 20,000 by the debug job. **Default is `None`** and a
+  test enforces that no `Exp*.yaml` carries it: a capped evaluation is a plumbing test, not a
+  result.
+- **`docs/RUNS.md` corrected** — that run was written up as clean from its logs, and `sacct`
+  says `OUT_OF_MEMORY`. The OOM killer sends SIGKILL, so the log just stops.
+
 ## 14-08-2026 (night, last) — storage fixed, and two flaws in the doctor itself
 
 - **The staging `checkpoints/` directory was mode `0500`** (`dr-x------`), owned by us but with

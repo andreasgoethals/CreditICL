@@ -179,11 +179,22 @@ if [ "$STATUS" -eq 0 ]; then
         CKPT_ARG=(--checkpoint "$CKPT")
     fi
 
+    # ROW CAP, FOR THE DEBUG RUN ONLY. The 14 PD datasets total 2.4 GB and
+    # `0014.algorithmwatch` alone is 158,700 x 2,986 float32 = 1.8 GB; loading it, splitting
+    # it and imputing it makes several more copies. That is what killed all four arms of job
+    # 11517006 with OUT_OF_MEMORY on this 30 GB partition — and it only appeared once
+    # preprocessing had succeeded, because before that the evaluation had nothing to load.
+    # THE REAL EXP1 MUST NOT SET THIS. A capped evaluation is a plumbing test, not a result;
+    # the cap is recorded in every row so the two can never be confused.
+    DEBUG_EVAL_ROWS="${DEBUG_EVAL_ROWS:-20000}"
+    echo "DEBUG: capping evaluation at ${DEBUG_EVAL_ROWS} rows/dataset (memory, not science)"
+
     echo "=== evaluating on the real credit datasets ==="
     python scripts/evaluate.py \
         --task "$TASK" \
         --models "$MODELS" \
         "${CKPT_ARG[@]}" \
+        --max-rows "$DEBUG_EVAL_ROWS" \
         --seeds 0 \
         --tag "debug_${SLURM_JOB_ID}_t${SLURM_ARRAY_TASK_ID}" || \
         echo "WARNING: credit evaluation failed — see the traceback above"

@@ -51,6 +51,16 @@ class EvalConfig:
     split: str = "random"  # "random" | "temporal" (temporal needs a date column)
     seeds: list[int] = field(default_factory=lambda: [0])
     model_kwargs: dict[str, dict[str, Any]] = field(default_factory=dict)
+    #: Cap rows per dataset before splitting. `None` = use everything, which is what a REAL
+    #: result must do — this exists for debug runs on small-memory partitions.
+    #:
+    #: `0014.algorithmwatch` is 158,700 x 2,986 float32 = **1.8 GB**, and the 14 PD datasets
+    #: total 2.4 GB. Loading one, splitting it, and imputing it makes three more copies, which
+    #: is how four arms hit `OUT_OF_MEMORY` on a 30 GB partition on 14-08-2026 — and only once
+    #: preprocessing had succeeded, because before that the evaluation had nothing to load.
+    #: The subsample is SEEDED AND RANDOM, never the head: taking the head of a sorted file
+    #: misread one dataset's base rate as 49.5% against a true 37.8%.
+    max_rows: int | None = None
 
 
 def make_split(
@@ -107,6 +117,7 @@ def evaluate_one(
     test_size: float = 0.2,
     split: str = "random",
     model_kwargs: dict[str, Any] | None = None,
+    max_rows: int | None = None,
 ) -> dict[str, Any]:
     """Fit one model on one dataset and return one result row."""
     log = get_logger()
@@ -123,6 +134,17 @@ def evaluate_one(
     try:
         ds = load_processed(task, dataset)
         X, y = ds.X, ds.y
+
+        # CAP BEFORE SPLITTING, so no copy of the full array is ever made. Seeded and random,
+        # never the head — see `EvalConfig.max_rows`. `row_cap` goes into the results so a
+        # capped number is never mistaken for a full-data one.
+        if max_rows is not None and len(X) > max_rows:
+            keep = np.random.default_rng(seed).choice(len(X), size=max_rows, replace=False)
+            X, y = X[keep], y[keep]
+            row["row_cap"] = max_rows
+            row["n_rows_full"] = int(ds.n_rows)
+            log.info("[eval] %s capped %d -> %d rows (max_rows)", dataset, ds.n_rows, max_rows)
+
         row.update(
             {
                 "n_rows": ds.n_rows,
@@ -220,6 +242,7 @@ def run(cfg: EvalConfig) -> pd.DataFrame:
                         test_size=cfg.test_size,
                         split=cfg.split,
                         model_kwargs=cfg.model_kwargs.get(model_name, {}),
+                        max_rows=cfg.max_rows,
                     )
                 )
 

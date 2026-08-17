@@ -87,11 +87,20 @@ def describe_device(torch: Any) -> dict[str, Any]:
         multi_processors=props.multi_processor_count,
         cuda=torch.version.cuda,
         cudnn=torch.backends.cudnn.version(),
-        # THE LINE THAT MATTERS MOST. If the installed wheel carries no kernels for this
-        # card's architecture, CUDA falls back to JIT-compiling PTX, which is legal, silent,
-        # and slow. A capability missing from this list is the first thing to suspect.
+        # If the wheel carries no kernels for this card, CUDA JIT-compiles PTX — legal,
+        # silent and slow.
+        #
+        # MINOR VERSIONS ARE BINARY-COMPATIBLE WITHIN A MAJOR ARCHITECTURE. An exact-string
+        # test called `sm_89` (RTX 5000 Ada) unsupported against a list of
+        # sm_75/80/86/90/100/120, and printed a scary "NO KERNELS" banner for the card that
+        # turned out to be *fine* — while the B200, which the same test passed, was the slow
+        # one. A false alarm on a diagnostic is worse than no diagnostic: it sends you at the
+        # wrong suspect. `sm_86` cubins run on `sm_89`, so the test is on the MAJOR version.
         compiled_for=torch.cuda.get_arch_list(),
-        has_kernels_for_this_card=f"sm_{props.major}{props.minor}" in torch.cuda.get_arch_list(),
+        has_kernels_for_this_card=any(
+            a.startswith(f"sm_{props.major}") for a in torch.cuda.get_arch_list()
+        ),
+        exact_arch_shipped=f"sm_{props.major}{props.minor}" in torch.cuda.get_arch_list(),
     )
     return info
 
@@ -203,6 +212,56 @@ def bench_prior(task: str, n_batches: int, batch_size: int) -> dict[str, Any]:
     }
 
 
+def bench_optimizers(torch: Any, device: str, task: str, n_steps: int) -> dict[str, Any]:
+    """Time one optimiser step per optimiser, on tensors already on the GPU.
+
+    THE RUNG THAT WAS MISSING, and it was the answer. The first benchmark used plain SGD and
+    reported the B200 as 1.8x FASTER end to end than the free RTX 5000 Ada — while real
+    training on the same B200 ran at 0.53 steps/s against the free card's 6.6. The only
+    difference was the optimiser: `config/Exp1_*.yaml` sets `optimizer: muon`.
+
+    Muon orthogonalises each weight matrix with a Newton-Schulz iteration — a chain of small
+    matmuls, per matrix, per step. That is latency-bound rather than throughput-bound, so a
+    card with enormous peak FLOPs can still lose badly on it, and no amount of `num_workers`
+    or a faster GPU will help. This row separates it from everything else.
+    """
+    from src.models.architecture import build_model, is_available
+    from src.train.optim import build_optimizer
+
+    if not is_available("tabicl"):
+        return {"error": "upstream tabicl not installed"}
+
+    rows, feats, train_size = 1024, 40, 768
+    X = torch.randn(1, rows, feats, device=device)
+    y = (
+        torch.rand(1, train_size, device=device)
+        if task == "lgd"
+        else (torch.rand(1, train_size, device=device) > 0.7).float()
+    )
+
+    out: dict[str, Any] = {}
+    for name in ("adamw", "muon"):
+        try:
+            model = build_model(task, architecture="tabicl").to(device)
+            model.train()
+            opt = build_optimizer(model, {"optimizer": name, "lr": 1e-4, "muon_lr": 8e-4})
+
+            def step(m=model, o=opt):
+                o.zero_grad(set_to_none=True)
+                m(X, y).float().square().mean().backward()
+                o.step()
+
+            sec = _time(step, max(3, n_steps // 4), 2, torch)
+            out[f"{name}_step_ms"] = round(sec * 1000, 2)
+            out[f"{name}_steps_per_s"] = round(1.0 / sec, 2)
+        except Exception as exc:  # noqa: BLE001 — one optimiser must not sink the report
+            out[f"{name}_error"] = f"{type(exc).__name__}: {exc}"
+    a, m = out.get("adamw_step_ms"), out.get("muon_step_ms")
+    if a and m:
+        out["muon_slowdown_vs_adamw"] = round(m / a, 2)
+    return out
+
+
 def bench_end_to_end(
     torch: Any, device: str, task: str, n_steps: int, workers: int, batch_size: int
 ) -> dict[str, Any]:
@@ -300,6 +359,13 @@ def main() -> int:
         print("--- 5. prior generation (CPU, ONE worker, no GPU) " + "-" * 24)
         results["prior"] = bench_prior(args.task, args.prior_batches, args.batch_size)
         for k, v in results["prior"].items():
+            print(f"  {k:44s} {v}")
+        print()
+
+    if not args.skip_model:
+        print("--- 4b. OPTIMISER STEP — the row that explains the B200 " + "-" * 18)
+        results["optimizers"] = bench_optimizers(torch, device, args.task, args.steps)
+        for k, v in results["optimizers"].items():
             print(f"  {k:44s} {v}")
         print()
 

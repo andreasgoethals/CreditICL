@@ -573,3 +573,35 @@ def test_the_training_loss_does_not_sort():
     )
     loss_fn = src[src.index("def pinball_loss") : src.index("class Trainer")]
     assert "enforce_monotonic" not in loss_fn and "sort" not in loss_fn
+
+
+def test_optim_docstring_matches_the_configs():
+    """The module docstring said "Deviation: AdamW, not Muon" while every config set
+    `optimizer: muon`. It was written before Muon was vendored and never updated, so the file
+    documented the wrong optimizer for weeks — and the optimizer turned out to be the whole
+    explanation for the B200 being 12x slow. A stale docstring is a wrong answer with a
+    citation."""
+    import yaml
+
+    root = Path(__file__).resolve().parents[1]
+    doc = (root / "src" / "train" / "optim.py").read_text(encoding="utf-8")
+    doc = doc[: doc.index('"""', 3)]
+
+    chosen = {
+        yaml.safe_load(p.read_text(encoding="utf-8"))["train"]["optimizer"].lower()
+        for p in (root / "config").glob("Exp*.yaml")
+    }
+    assert len(chosen) == 1, f"configs disagree on the optimizer: {chosen}"
+    name = chosen.pop()
+    assert name.upper() in doc.upper(), f"configs use {name!r}; the docstring never says so"
+    assert "Deviation: AdamW, not Muon" not in doc, "that claim is false while configs use muon"
+
+
+def test_the_benchmark_measures_the_optimizer_that_is_actually_configured():
+    """The first benchmark used plain SGD and concluded the B200 was FASTER, while real
+    training on it was 12x slower. The missing rung was the optimiser."""
+    root = Path(__file__).resolve().parents[1]
+    bench = (root / "scripts" / "benchmark_gpu.py").read_text(encoding="utf-8")
+    assert "def bench_optimizers" in bench
+    assert '"adamw", "muon"' in bench, "both must be timed, or there is nothing to compare"
+    assert "muon_slowdown_vs_adamw" in bench, "the ratio is the number you actually read"

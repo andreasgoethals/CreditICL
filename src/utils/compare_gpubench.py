@@ -22,6 +22,9 @@ ROWS: tuple[tuple[str, str, bool], ...] = (
     ("model.forward_ms", "model forward (ms)", False),
     ("model.forward_backward_ms", "model fwd+bwd (ms)", False),
     ("model.max_steps_per_s_if_data_were_free", "GPU ceiling (steps/s)", True),
+    ("optimizers.adamw_step_ms", "AdamW step (ms)", False),
+    ("optimizers.muon_step_ms", "MUON step (ms)", False),
+    ("optimizers.muon_slowdown_vs_adamw", "Muon / AdamW", False),
     ("prior.datasets_per_s_one_worker", "prior, 1 worker (ds/s)", True),
     ("end_to_end.steps_per_s", "END TO END (steps/s)", True),
 )

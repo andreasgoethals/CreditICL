@@ -546,3 +546,40 @@ def test_the_classification_loss_still_slices():
     """Kept even though it is a no-op today: it is the guard for the case above changing."""
     src = (ROOT / "src" / "train" / "loop.py").read_text(encoding="utf-8")
     assert "pred[..., :n_classes]" in src, "the classification loss must slice the logits"
+
+
+def test_evaluation_row_cap_is_a_random_subsample_and_is_recorded():
+    """Four debug arms died with OUT_OF_MEMORY once preprocessing succeeded: the 14 PD
+    datasets are 2.4 GB and `0014.algorithmwatch` alone is 1.8 GB, which the loop then splits
+    and imputes into several more copies.
+
+    Two things must hold. The cap is a SEEDED RANDOM subsample, never the head — taking the
+    head of a sorted file once misread a base rate as 49.5% against a true 37.8%. And it is
+    recorded in the row, so a capped number can never be mistaken for a full-data one.
+    """
+    src = (ROOT / "src" / "eval" / "runner.py").read_text(encoding="utf-8")
+    cap = src[src.index("if max_rows is not None"):]
+    cap = cap[: cap.index("row.update(")]
+    assert "default_rng(seed).choice" in cap, "must be a seeded random subsample"
+    assert "[:max_rows]" not in cap, "must not take the head"
+    assert 'row["row_cap"]' in cap and 'row["n_rows_full"]' in cap, "the cap must be recorded"
+
+    # capping happens BEFORE the split, or a full-size copy is made anyway and the OOM stands
+    assert src.index("if max_rows is not None") < src.index("train_idx, test_idx = make_split")
+
+
+def test_a_real_result_is_uncapped_by_default():
+    """`max_rows=None` must stay the default: a capped evaluation is a plumbing test."""
+    from src.eval.runner import EvalConfig
+
+    assert EvalConfig(task="pd").max_rows is None
+
+
+def test_the_debug_job_caps_but_the_configs_do_not():
+    """The cap belongs to the debug JOB, not to any experiment config."""
+    job = (ROOT / "scripts" / "slurm" / "debug_exp1.slurm").read_text(encoding="utf-8")
+    assert "--max-rows" in job and "DEBUG_EVAL_ROWS" in job
+    for cfg in (ROOT / "config").glob("Exp*.yaml"):
+        assert "max_rows" not in cfg.read_text(encoding="utf-8"), (
+            f"{cfg.name} must not cap rows — that would silently shrink a real result"
+        )
