@@ -234,7 +234,11 @@ def test_debug_job_sets_the_micro_batch_from_the_partition():
         "a literal backslash-n crept into the script — a heredoc wrote the escape "
         "instead of a line break, and bash -n still accepted it"
     )
-    assert 'gpu_b200)          MICRO=' in text, "the B200 needs its own, larger value"
+    # Upstream's 4. MEASURED: both the 3.5 %-utilisation run and the 88.7 % one used
+    # micro 4 — what fills the GPU is the number of consecutive passes before a
+    # synchronising optimiser step (1 vs 16), not the size of each pass. At 88.7 %
+    # there is ~1.1x left, so deviating from upstream would buy almost nothing.
+    assert 'MICRO="${MICRO:-4}"' in text, "the micro-batch should match upstream's 4"
 
     # every continuation must end the line, or the next flag is swallowed as an argument
     call = text[text.index("python scripts/pretrain.py \\") :]

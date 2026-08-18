@@ -53,6 +53,27 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
 
+### 18-08-2026 - Why upstream's micro-batch is 4, and why "the GPU has room" is not a reason
+- **Tried:** explaining upstream's `--micro_batch_size 4` as a memory limit, then as an
+  artefact of small GPUs, then arguing our 88.7 % utilisation left only ~1.1x to gain.
+- **Result:** all three wrong. From the pinned dump: `micro_batch_size == batch_size_per_gp`
+  in **every** stage - 4/4 at seq 1,024, 1/1 at 10,240 and 1/1 at 60,000 - and
+  `Trainer.validate_micro_batch` **raises**: *"All datasets in the micro batch must have the
+  same sequence length."*
+- **Why:** a micro-batch is stacked into ONE tensor, and datasets share a sequence length only
+  within a GROUP. The micro-batch is therefore bounded by the group size, not by memory.
+  Raising it past the group crashes; raising BOTH changes the data (fewer distinct sequence
+  lengths per update), so it is never a free speed-up. The lever for speed is `batch_size` -
+  more groups per update.
+- **Also wrong:** `nvidia-smi`'s `utilization.gpu` is the **fraction of TIME a kernel was
+  running**, not how much of the chip it used. 88.7 % does not mean 88.7 % of the card, so
+  "only 1.1x left" did not follow from it.
+- **Instead:** the trainer now REFUSES `micro_batch_size > group_size` with upstream's
+  reasoning, and the run card prints both plus the micro-passes per update - which is the
+  number that actually decides whether a big GPU stays busy (1 pass -> 3.5 % utilisation,
+  16 passes -> 88.7 %). **Read the reference implementation's VALIDATION, not just its
+  defaults**: the constraint was written down and I kept theorising instead of looking.
+
 ### 17-08-2026 - Two silent heredoc edits, and `bash -n` accepted both
 - **Tried:** adding `--micro-batch-size` to `debug_exp1.slurm` with a python heredoc.
 - **Result:** it never applied. The first attempt's backslash-continuations did not match the

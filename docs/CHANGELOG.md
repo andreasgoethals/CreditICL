@@ -5,6 +5,20 @@ reason is not obvious.
 
 ---
 
+## 18-08-2026 — the micro-batch rule, a run card, and the first clean end-to-end run
+
+- **The trainer refuses `micro_batch_size > prior.grouping.group_size`.** Upstream keeps
+  `micro_batch_size == batch_size_per_gp` in every stage and `validate_micro_batch` raises when
+  a micro-batch mixes sequence lengths; we had no check. It is **not** a memory rule: datasets
+  share a length only within a group, so the micro-batch is bounded by the group, and raising
+  both changes the DATA rather than buying speed. `batch_size` is the speed lever.
+- **Correction:** `nvidia-smi utilization.gpu` is the fraction of TIME a kernel was running,
+  not how much of the chip was used — so the earlier "88.7 %, only ~1.1x left" did not follow.
+- **A RUN CARD at startup** — architecture, parameters, batch/micro/micro-passes-per-update,
+  optimiser and LR, the full prior configuration, a side-by-side against TabICLv2 stage 1
+  (including the % of their data we see), and an explicit leakage section. The cluster log is
+  the only channel back, so anything answerable at startup is now answered at startup.
+
 ## 17-08-2026 — Muon ruled out, 21 duplicate runs removed, batch and features matched to upstream
 
 - **THE B200 IS SOLVED: batch 4 was too little work to fill it.** 3.5 % GPU utilisation and
@@ -16,11 +30,11 @@ reason is not obvious.
   to 64 silently turned 1,500 steps into 96,000 datasets; job 11518236 was killed at the
   one-hour wall on step 1,422, losing the evaluation and the checkpoint. A test now checks the
   step budget against the configured batch and the measured rate.
-- **`--micro-batch-size` actually reaches the job now** (32 on `gpu_b200`, 16 on A100/H100).
-  Two earlier heredoc edits silently failed to apply — one whose continuations did not match,
-  one that wrote a literal backslash-n — and `bash -n` accepted both, so a run went out at
-  micro_batch_size 4 on a 183 GB card. A test checks the flag, the per-partition values, and
-  every line continuation.
+- **`--micro-batch-size` actually reaches the job now.** Two earlier heredoc edits silently
+  failed to apply — one whose continuations did not match, one that wrote a literal
+  backslash-n — and `bash -n` accepted both. (The per-partition values it originally set were
+  themselves wrong; see 18-08 — the micro-batch is bounded by the prior's group size, so it
+  stays at upstream's 4.)
 
 - **Restored `output/All_Results.md`, `output/figures/CAPTIONS.md` and every `.gitkeep`.**
   Something run locally this session deleted them and a `git add -A` recorded the deletion, so
@@ -52,10 +66,11 @@ reason is not obvious.
   batch size and LR are coupled. A test asserts no `Exp*.yaml` sweeps a batch size or a
   learning rate: optimisation settings are nuisance parameters, held fixed so the prior is the
   only thing that varies.
-- **`--micro-batch-size`** on `pretrain.py`, set from the partition by the job script (16 on
-  `gpu_b200`, 4 elsewhere). Gradient accumulation averages `loss / n_micro`, so the update is
-  identical whatever the micro-batch — it is purely speed and memory, and a 183 GiB card
-  should not run the same 4 as an 80 GiB one. A test pins that invariant.
+- **`--micro-batch-size`** on `pretrain.py`. The claim made here — "purely speed and memory,
+  so raise it on a bigger card" — is **wrong** and was corrected on 18-08: the micro-batch is
+  bounded by `prior.grouping.group_size`, because datasets share a sequence length only within
+  a group. Gradient accumulation does average `loss / n_micro`, so the arithmetic is identical;
+  what is not identical is which datasets can legally be stacked together.
 
 - **The sweep no longer schedules duplicates: Exp1 is 75 runs, not 96.** At
   `credit_fraction: 0.0` nothing comes from our prior, so `atom_prob`, `mode` and

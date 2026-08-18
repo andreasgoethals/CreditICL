@@ -19,7 +19,8 @@
 #
 #  WALLTIME IS 1 HOUR, not 72. A debug run that sits in the queue for a day
 #  teaches nothing; a short one backfills into gaps a long one cannot, and the
-#  failure modes it finds are the same. 1,500 steps finishes well inside it.
+#  failure modes it finds are the same. 600 steps x batch 64 finishes inside it;
+#  1,500 did NOT once batch_size became 64 — job 11518236 died at the wall on step 1,422.
 # =============================================================================
 
 #SBATCH --job-name=crediticl-debug-exp1
@@ -128,6 +129,25 @@ WORKERS="${WORKERS:-$(( ${SLURM_CPUS_PER_TASK:-4} - 1 ))}"
 [ "$WORKERS" -lt 0 ] && WORKERS=0
 echo "DEBUG: num_workers=${WORKERS} (from SLURM_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-unset})"
 
+# MICRO-BATCH: UPSTREAM'S 4, and the measurement says leave it alone.
+#
+# It is tempting to raise this on a 183 GB card — peak memory is 6.6 GB — but the B200 data
+# says the micro-batch was never the problem. BOTH slow and fast runs used micro_batch 4:
+#
+#     batch  4, micro 4  ->  1 pass per sync  ->   3.5 % utilisation,  2.2 datasets/s
+#     batch 64, micro 4  -> 16 passes per sync -> 88.7 % utilisation, 25.6 datasets/s
+#
+# What fills a big GPU is the number of CONSECUTIVE passes before a synchronising optimiser
+# step, not how many datasets each pass carries. Upstream's `--batch_size 64 --micro_batch_size
+# 4` is exactly the good case, and their micro-batch drops to 1 in stages 2 and 3 only because
+# the tables grow to 60,000 rows — it tracks sequence length, not hardware.
+#
+# At 88.7 % there is at most ~1.1x left, so a deviation from upstream would buy almost nothing
+# and cost a difference nobody asked for. Override with MICRO= if a run says otherwise; the
+# telemetry summary prints the headroom.
+MICRO="${MICRO:-4}"
+echo "DEBUG: micro_batch_size=${MICRO} on ${SLURM_JOB_PARTITION:-unknown} (memory/speed only)"
+
 # RESUMING IS AUTOMATIC — there is no flag. `pretrain.py` calls `trainer.maybe_resume()`
 # unconditionally, which picks up the latest checkpoint in the run's own directory if one
 # exists and starts at step 0 if not. A job killed at the walltime is resumed by resubmitting
@@ -137,21 +157,6 @@ echo "DEBUG: num_workers=${WORKERS} (from SLURM_CPUS_PER_TASK=${SLURM_CPUS_PER_T
 # `set +e` around the call so a crash does NOT abort the script: STATUS is what the evaluation
 # below is gated on, and the artefact summary at the end is most useful precisely when training
 # has failed. Under `set -e` the script would die here and print none of it.
-# MICRO-BATCH FROM THE CARD. Datasets per FORWARD PASS — memory and speed only, never the
-# result, because accumulation averages `loss / n_micro` either way.
-#
-# MEASURED 17-08-2026, and this is what resolved the "B200 is slow" mystery. At batch 4 the
-# B200 ran at **3.5 % GPU utilisation** and 2.2 datasets/s; at batch 64 it reached **89 %** and
-# 25.6 datasets/s — 12x the throughput on the same card. A big GPU is starved by small
-# launches: batch 4 meant one short pass then a synchronising optimiser step, so the card
-# idled between steps. The RTX 5000 Ada only ever looked faster because it is small enough to
-# fill at batch 4. Peak memory was 6.6 GB of 183 GB, so bigger launches are still free.
-case "${SLURM_JOB_PARTITION:-}" in
-    gpu_b200)          MICRO="${MICRO:-32}" ;;
-    gpu_a100|gpu_h100) MICRO="${MICRO:-16}" ;;
-    *)                 MICRO="${MICRO:-4}"  ;;
-esac
-echo "DEBUG: micro_batch_size=${MICRO} on ${SLURM_JOB_PARTITION:-unknown} (memory/speed only)"
 
 set +e
 python scripts/pretrain.py \

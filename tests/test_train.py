@@ -711,3 +711,51 @@ def test_batch_size_is_not_swept_in_any_experiment():
             f"{cfg_path.name} sweeps {offenders}. Optimisation settings are nuisance "
             f"parameters: hold them fixed so the prior is the only thing that varies."
         )
+
+
+def test_micro_batch_may_not_exceed_the_prior_group_size():
+    """NOT a memory rule, and this is the part I got wrong twice.
+
+    Datasets share a sequence length only within a GROUP (`prior.grouping.group_size`,
+    upstream's `--batch_size_per_gp`). A micro-batch is stacked into one tensor, so every
+    dataset in it must already agree on length. Upstream RAISES on violation —
+    `validate_micro_batch`: "All datasets in the micro batch must have the same sequence
+    length" — and keeps the two numbers EQUAL in every stage: 4/4 at seq 1,024, then 1/1 at
+    10,240 and 60,000.
+
+    So "the GPU has room, raise the micro-batch" is wrong on its own. We had no check at all.
+    """
+    import tempfile
+
+    import yaml
+
+    root = Path(__file__).resolve().parents[1]
+    cfg = yaml.safe_load((root / "config" / "Exp1_LGD.yaml").read_text(encoding="utf-8"))
+    cfg["_run_name"] = "guard_test"
+    assert cfg["train"]["micro_batch_size"] <= cfg["prior"]["grouping"]["group_size"], (
+        "the shipped config already violates the rule"
+    )
+
+    from src.train.loop import Trainer
+
+    cfg["train"]["micro_batch_size"] = cfg["prior"]["grouping"]["group_size"] + 1
+    with pytest.raises(ValueError, match="group_size"):
+        Trainer(cfg, tempfile.mkdtemp())
+
+
+def test_the_run_card_answers_the_questions_a_reader_would_ask():
+    """Runs happen on the cluster and come back as a folder of logs. Anything not written at
+    startup costs a 20-minute round trip on a shared queue, so the log has to pre-empt it."""
+    root = Path(__file__).resolve().parents[1]
+    src = (root / "src" / "train" / "loop.py").read_text(encoding="utf-8")
+    card = src[src.index("def _log_run_card") : src.index("# -- setup ---")]
+    for needed in (
+        "micro-passes/update",   # the thing that actually fills the GPU
+        "credit_fraction",       # which arm this is
+        "group_size",            # the micro-batch constraint
+        "UPSTREAM COMPARISON",   # every deviation, in one place
+        "LEAKAGE CHECK",         # what is and is not trained on
+        "WE DO NOT RUN THEM",    # the single-stage scope limit
+    ):
+        assert needed in card, f"the run card does not report {needed!r}"
+    assert "_log_run_card()" in src, "the card must actually be called"

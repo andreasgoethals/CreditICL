@@ -175,6 +175,31 @@ class Trainer:
         self.max_steps = int(tcfg.get("max_steps", 10_000))
         self.batch_size = int(tcfg.get("batch_size", 4))
         self.micro_batch_size = int(tcfg.get("micro_batch_size", self.batch_size))
+        # MICRO-BATCH <= GROUP SIZE, and this is NOT a memory rule.
+        #
+        # Datasets only share a sequence length within a GROUP — `prior.grouping.group_size`,
+        # upstream's `--batch_size_per_gp`. A micro-batch is stacked into one tensor, so every
+        # dataset in it must already agree on sequence length and train/test split. Upstream
+        # enforces this and RAISES: `validate_micro_batch` — "All datasets in the micro batch
+        # must have the same sequence length." Its stage scripts keep the two numbers equal in
+        # every stage: 4/4 at seq 1,024, then 1/1 at 10,240 and 60,000.
+        #
+        # So "the GPU has room, raise the micro-batch" is wrong on its own. Raising it past the
+        # group size either crashes or silently mixes lengths; raising BOTH is a change to the
+        # DATA — fewer distinct sequence lengths per update — not a free speed-up. The lever
+        # for speed is `batch_size`: more groups per update, same group size.
+        group_size = int(
+            ((cfg.get("prior") or {}).get("grouping") or {}).get("group_size", 1)
+        )
+        if group_size > 1 and self.micro_batch_size > group_size:
+            raise ValueError(
+                f"micro_batch_size={self.micro_batch_size} exceeds "
+                f"prior.grouping.group_size={group_size}. Datasets share a sequence length only "
+                f"within a group, so a larger micro-batch would stack datasets of different "
+                f"lengths. Upstream keeps micro_batch_size == batch_size_per_gp in every stage. "
+                f"Raise group_size too if you mean to — but that changes the DATA, not just "
+                f"the speed."
+            )
         self.grad_clip = float(tcfg.get("gradient_clipping", 1.0))
         self.num_quantiles = int(tcfg.get("num_quantiles", 999))
         self.log_every = int(tcfg.get("log_every", 50))
@@ -353,6 +378,80 @@ class Trainer:
             self.amp,
             self.num_workers,
         )
+        self._log_run_card()
+
+    def _log_run_card(self) -> None:
+        """Everything about this run that a reader would otherwise have to ask for.
+
+        THE LOG IS THE ONLY CHANNEL. Runs happen on the cluster, the output is downloaded and
+        pasted into a chat, and anything not written here needs another 20-minute round trip on
+        a shared queue. So the rule is: if a question about this run could be answered from
+        state that exists at startup, answer it at startup.
+
+        Grouped so it can be read top-to-bottom: what is being trained, on what data, how the
+        optimisation is set up, how it compares to upstream, and what would constitute leakage.
+        """
+        pcfg = self.cfg.get("prior") or {}
+        tcfg = self.cfg.get("train") or {}
+        gcfg = pcfg.get("grouping") or {}
+        ccfg = pcfg.get("credit") or {}
+        rows = pcfg.get("n_rows_range")
+        feats = pcfg.get("n_features_range")
+
+        lines = [
+            "",
+            "=" * 78,
+            " RUN CARD — everything decided before step 1",
+            "=" * 78,
+            f"  task / regression      : {self.task} / {self.regression}",
+            f"  architecture           : {self.cfg.get('architecture', 'tabicl')}",
+            f"  parameters             : {sum(p.numel() for p in self.model.parameters()):,}",
+            f"  init strategy          : {self.strategy}",
+            "",
+            "  -- OPTIMISATION " + "-" * 60,
+            f"  batch_size             : {self.batch_size}   (datasets per UPDATE)",
+            f"  micro_batch_size       : {self.micro_batch_size}   (datasets per FORWARD PASS)",
+            f"  -> micro-passes/update : {math.ceil(self.batch_size / self.micro_batch_size)}"
+            f"   <- this, not the micro-batch, is what keeps a big GPU busy",
+            f"  optimizer / lr         : {tcfg.get('optimizer')} / lr={tcfg.get('lr')} "
+            f"muon_lr={tcfg.get('muon_lr')}",
+            f"  grad clip / amp        : {self.grad_clip} / {self.amp}",
+            f"  max_steps              : {self.max_steps:,}"
+            f"  -> {self.max_steps * self.batch_size:,} datasets",
+            "",
+            "  -- PRIOR " + "-" * 67,
+            f"  credit_fraction        : {pcfg.get('credit_fraction')}"
+            f"   <- 0.0 means the CONTROL: no dataset from our prior",
+            f"  n_rows_range           : {rows}   n_features_range: {feats}"
+            f"   max_features: {pcfg.get('max_features')}",
+            f"  grouping               : group_size={gcfg.get('group_size')} "
+            f"subgroup_size={gcfg.get('subgroup_size')}"
+            f"   <- micro_batch_size must not exceed group_size",
+            f"  credit target mode     : {((ccfg.get('target') or {}).get('mode'))}"
+            f"   atom_prob={((ccfg.get('target') or {}).get('atom_prob'))}"
+            f"   scaling={((ccfg.get('target') or {}).get('target_scaling'))}",
+            "",
+            "  -- UPSTREAM COMPARISON (TabICLv2 stage 1) " + "-" * 34,
+            f"  batch_size        ours {self.batch_size:>6}   upstream     64",
+            f"  micro_batch_size  ours {self.micro_batch_size:>6}   upstream      4"
+            f"   (== their batch_size_per_gp)",
+            f"  max_features      ours {str(pcfg.get('max_features')):>6}   upstream    100",
+            f"  max rows          ours {str(rows[-1]) if rows else '?':>6}   upstream  1,024"
+            f"   (stage 1; stages 2-3 reach 60,000 — WE DO NOT RUN THEM)",
+            f"  max_steps         ours {self.max_steps:>6}   upstream 500,000"
+            f"   <- we see ~{100 * self.max_steps * self.batch_size / 35_200_000:.2f}% of "
+            f"their data",
+            "",
+            "  -- LEAKAGE CHECK " + "-" * 59,
+            "  training data          : SYNTHETIC ONLY, generated fresh each step",
+            "  real credit data       : NEVER trained on; used for scoring only",
+            f"  progress-eval datasets : {list(self.progress.cfg.datasets) or 'all'}"
+            if self.progress else "  progress eval          : disabled",
+            "  context/query split    : disjoint row indices, drawn per dataset per seed",
+            "=" * 78,
+        ]
+        for line in lines:
+            self.log.info("%s", line)
 
     # -- setup ---------------------------------------------------------------
     def _build_model(self) -> Any:
