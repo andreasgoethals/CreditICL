@@ -7,6 +7,12 @@ reason is not obvious.
 
 ## 18-08-2026 — the micro-batch rule, a run card, and the first clean end-to-end run
 
+- **`scripts/diagnose_nan.py`** — walks a checkpoint with forward hooks and names the FIRST
+  module whose output goes non-finite, with the activation magnitudes leading up to it and a
+  weight-health report. It runs on the CLUSTER: a checkpoint is ~229 MB and awkward to move, a
+  log is not. Verified against a planted NaN — it pointed at the right block, and reports a
+  healthy model as healthy.
+
 - **The trainer refuses `micro_batch_size > prior.grouping.group_size`.** Upstream keeps
   `micro_batch_size == batch_size_per_gp` in every stage and `validate_micro_batch` raises when
   a micro-batch mixes sequence lengths; we had no check. It is **not** a memory rule: datasets
