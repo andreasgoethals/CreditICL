@@ -53,6 +53,22 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
 
+### 18-08-2026 - The LGD NaN does not reproduce on CPU
+- **Tried:** running `diagnose_nan.py` on the login node against the step-600 checkpoint, on
+  the three datasets that report 100 % NaN plus `axa` as a control.
+- **Result:** **every module finite on all four**, including `base_modelisation` (256 features,
+  input absmax 8.1e7) with a sensible output (absmax 1.34). Weights are healthy too - largest
+  parameter magnitude 1.31, none non-finite. So the checkpoint is fine and the data is fine.
+- **Why the run still NaNs:** the only difference in the log is `device=cpu`. Training and
+  evaluation run on CUDA. PyTorch picks the scaled-dot-product-attention backend itself on
+  CUDA - flash, mem-efficient, cuDNN or math - and the choice depends on shape and dtype;
+  **CPU only ever has `math`**. Upstream treats the choice as load-bearing:
+  `--use_flash_attn3 False` in stage 1, `True` in stages 2-3. We do not control it at all.
+- **Instead:** `--sdpa-backend` on the diagnostic tries every kernel in turn, and
+  `scripts/slurm/diagnose.slurm` runs it on a real GPU. **UNCONFIRMED until that runs** - but
+  the lesson is already banked: **reproduce a bug on the hardware that produced it.** A CPU
+  "everything is finite" result did not refute a CUDA NaN, it only located it.
+
 ### 18-08-2026 - A login node kills unbounded torch on the second dataset
 - **Tried:** `python scripts/diagnose_nan.py` on the Genius login node.
 - **Result:** the first dataset finished, the second died with

@@ -7,6 +7,12 @@ reason is not obvious.
 
 ## 18-08-2026 — the micro-batch rule, a run card, and the first clean end-to-end run
 
+- **`--device` and `--sdpa-backend` on `diagnose_nan.py`, plus `scripts/slurm/diagnose.slurm`.**
+  On CPU the checkpoint is finite on every dataset — including the ones training reports as
+  100 % NaN — so the NaN is CUDA-specific. PyTorch chooses the attention kernel itself on CUDA
+  and CPU only has `math`; upstream sets `--use_flash_attn3 False` in stage 1 and `True` later,
+  so they treat it as load-bearing while we do not control it at all. The diagnostic now tries
+  every backend on a real GPU.
 - **`diagnose_nan.py` bounds its threads** — `OMP_NUM_THREADS` and friends set before torch is
   imported, plus `torch.set_num_threads`. Unbounded, it died on the second dataset with
   `std::system_error: Resource temporarily unavailable`, which is a login-node thread cap

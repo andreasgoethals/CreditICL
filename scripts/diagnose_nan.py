@@ -68,6 +68,34 @@ def _stats(t: Any) -> str:
     )
 
 
+def sdpa_context(backend: str, log):
+    """A context forcing one attention kernel, or a no-op for `auto`.
+
+    PyTorch chooses a CUDA backend by itself — flash, mem-efficient, cuDNN or math — and the
+    choice depends on shapes and dtype. CPU only ever has `math`. That is the leading suspect
+    for a model that is finite on CPU and all-NaN on CUDA with identical weights and inputs,
+    and upstream evidently regards the choice as load-bearing: `--use_flash_attn3 False` in
+    stage 1, `True` in stages 2-3.
+    """
+    import contextlib
+
+
+    if backend == "auto":
+        return contextlib.nullcontext()
+    try:
+        from torch.nn.attention import SDPBackend, sdpa_kernel
+    except ImportError:  # pragma: no cover — older torch
+        log(f"    (torch too old for sdpa_kernel; ignoring --sdpa-backend {backend})")
+        return contextlib.nullcontext()
+    names = {
+        "math": SDPBackend.MATH,
+        "flash": SDPBackend.FLASH_ATTENTION,
+        "efficient": SDPBackend.EFFICIENT_ATTENTION,
+        "cudnn": getattr(SDPBackend, "CUDNN_ATTENTION", SDPBackend.MATH),
+    }
+    return sdpa_kernel(names[backend])
+
+
 def walk(model: Any, x: Any, y: Any, log) -> None:
     """Forward pass with a hook on every leaf module, reporting the first bad output."""
     import torch
@@ -145,6 +173,21 @@ def main() -> int:
     ap.add_argument("--context-rows", type=int, default=512, help="as the evaluation uses")
     ap.add_argument("--max-test-rows", type=int, default=512)
     ap.add_argument(
+        "--device", default=None,
+        help="cpu | cuda. Default: cuda when available. THIS MATTERS — the same weights and "
+             "the same data were finite on CPU and all-NaN in training on CUDA, which is what "
+             "--sdpa-backend exists to pin down.",
+    )
+    ap.add_argument(
+        "--sdpa-backend", default="all",
+        choices=("all", "auto", "math", "flash", "efficient", "cudnn"),
+        help="which scaled-dot-product-attention kernel to force. `all` tries each in turn and "
+             "is the point of the tool on a GPU: PyTorch picks a CUDA backend on its own, CPU "
+             "only ever has `math`, and upstream disables FlashAttention in stage 1 "
+             "(`--use_flash_attn3 False`) while enabling it in stages 2-3 — so they treat the "
+             "choice as load-bearing too.",
+    )
+    ap.add_argument(
         "--threads", type=int, default=int(os.environ.get("CREDITICL_DIAG_THREADS", "4")),
         help="torch CPU threads. Kept small because a LOGIN NODE limits threads per user and "
              "an unbounded torch dies with 'Resource temporarily unavailable'.",
@@ -183,7 +226,7 @@ def main() -> int:
         ckpt = max(found, key=lambda p: p.stat().st_mtime)
         log(f"using the newest checkpoint: {ckpt}")
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
     model, meta = load_our_checkpoint(ckpt, device)
     device = next(model.parameters()).device
     log(
@@ -236,12 +279,20 @@ def main() -> int:
         import gc
 
         gc.collect()
-        walk(
-            model,
-            torch.from_numpy(x_in).unsqueeze(0).to(device),
-            torch.from_numpy(yc).unsqueeze(0).to(device),
-            log,
+        xt = torch.from_numpy(x_in).unsqueeze(0).to(device)
+        yt = torch.from_numpy(yc).unsqueeze(0).to(device)
+        backends = (
+            ["math", "flash", "efficient", "cudnn"]
+            if args.sdpa_backend == "all" and str(device).startswith("cuda")
+            else ["math"] if args.sdpa_backend == "all" else [args.sdpa_backend]
         )
+        for backend in backends:
+            log(f"  --- attention backend: {backend} ---")
+            try:
+                with sdpa_context(backend, log):
+                    walk(model, xt, yt, log)
+            except Exception as exc:  # noqa: BLE001 — an unavailable kernel is informative
+                log(f"    unavailable here: {type(exc).__name__}: {exc}")
 
     log("")
     log(f"log file -> {log_path}")
