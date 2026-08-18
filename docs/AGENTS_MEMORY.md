@@ -33,6 +33,7 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 17-08-2026 | 11518234/35 + 11518236–40 — benchmark + LGD debug at batch 64 | **B200 SOLVED: 3.5 % -> 88.7 % utilisation, 12x throughput** | The batch was too small to fill the card. Killed at the wall on step 1,422/1,500 |
 | 14-08-2026 | 11516936/11516938 — Exp1 debug, 8 arms | **All failed, exit 2 in 21–60 s** | `--resume auto`, a flag `pretrain.py` never defined |
 | 14-08-2026 | 11516954 — Exp1 debug LGD, `interactive` | 3/4 arms OK; task 3 deferred for maintenance | **6.6 steps/s, 69 % GPU**, loss 0.339→0.127 |
 | 14-08-2026 | 11516956 — Exp1 debug PD, `gpu_b200` | 4/4 arms OK, 12× slower — **cause STILL UNKNOWN** | 0.5 steps/s, 3 % GPU; loss 0.618→0.171, acc 0.95 |
@@ -51,6 +52,32 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
+
+### 17-08-2026 - Two silent heredoc edits, and `bash -n` accepted both
+- **Tried:** adding `--micro-batch-size` to `debug_exp1.slurm` with a python heredoc.
+- **Result:** it never applied. The first attempt's backslash-continuations did not match the
+  file, so `.replace()` was a no-op; the second wrote a **literal backslash-n** into the command. Both
+  passed `bash -n` - the first because nothing changed, the second because
+  `--micro-batch-size "$MICRO" (backslash-n) --num-workers ...` is still valid shell. A cluster run
+  then went out at micro_batch_size 4 on a 183 GB card.
+- **Why:** `.replace()` returns the input unchanged when the pattern is absent, and I checked
+  only `bash -n` and the test suite, neither of which knew the flag was supposed to be there.
+- **Instead:** assert the replacement landed (`assert old in t`), grep the file afterwards, and
+  add a test for the thing being added. **A silent no-op edit is worse than a crash**, and
+  `bash -n` proves syntax, never intent.
+
+### 17-08-2026 - `git add -A` committed deletions nobody made on purpose
+- **Tried:** the usual `git add -A; git commit; git push` at the end of a turn.
+- **Result:** the commit **deleted** `output/All_Results.md` (272 lines),
+  `output/figures/CAPTIONS.md` (the paper's captions, 133 lines) and every `.gitkeep`. It
+  surfaced only when Andreas's `git pull` listed ten `delete mode` lines.
+- **Why:** something run locally during the session removed them, and `git add -A` stages
+  deletions as readily as additions. `output/` is *mostly* generated and gitignored, so it
+  looks disposable - but a handful of files in it are tracked, and the `.gitkeep`s are what
+  give a fresh clone somewhere to write.
+- **Instead:** `test_tracked_output_files_still_exist` fails if any of them vanish, and
+  **read `git status` for `D ` lines before committing** - especially under a directory that
+  is mostly ignored, where a deletion does not look out of place.
 
 ### 17-08-2026 - How TabICL handles tables wider than it was trained on
 - **Question:** our LGD model returns all-NaN on tables with 52-256 features, having trained

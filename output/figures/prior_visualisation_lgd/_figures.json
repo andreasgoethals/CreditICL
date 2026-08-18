@@ -1,0 +1,62 @@
+[
+  {
+    "index": 1,
+    "stem": "01_palette",
+    "name": "palette",
+    "caption": "Colour key. Grey denotes the unmodified TabICL prior, blue the credit-targeted prior, orange values measured from the real datasets, and red out-of-range or flagged values."
+  },
+  {
+    "index": 2,
+    "stem": "02_prior_realism_ranking",
+    "name": "prior_realism_ranking",
+    "caption": "Distance between each prior variant's pooled target distribution and each real LGD dataset's, as total variation over 40 fixed bins. Diamonds give the mean across datasets, dots one per dataset. Variants ordered by mean distance."
+  },
+  {
+    "index": 3,
+    "stem": "03_mechanism_decomposition",
+    "name": "mechanism_decomposition",
+    "caption": "Distribution of the LGD target, split by the loss mechanism that generated each synthetic dataset, 40 bins per panel on a fixed [0,1] support. Percentages give the share of rows lying exactly at 0 and exactly at 1. Panel subtitles give the number of datasets per mechanism."
+  },
+  {
+    "index": 4,
+    "stem": "04_boundary_mass_sources",
+    "name": "boundary_mass_sources",
+    "caption": "Share of rows at exactly 0 against share at exactly 1, one point per synthetic dataset and one panel per prior variant. Stars mark the real LGD datasets. The dotted diagonal is equal mass at both ends."
+  },
+  {
+    "index": 5,
+    "stem": "05_target_shapes_by_variant_p1",
+    "name": "target_shapes_by_variant_p1",
+    "caption": "Histograms of the target for ten synthetic datasets per prior variant, one variant per row, 25 bins per panel. Rows use the same draw index, so panels in the same column are directly comparable. Page 1 of 2."
+  },
+  {
+    "index": 6,
+    "stem": "06_target_shapes_by_variant_p2",
+    "name": "target_shapes_by_variant_p2",
+    "caption": "Histograms of the target for ten synthetic datasets per prior variant, one variant per row, 25 bins per panel. Rows use the same draw index, so panels in the same column are directly comparable. Page 2 of 2."
+  },
+  {
+    "index": 7,
+    "stem": "07_difficulty_calibration",
+    "name": "difficulty_calibration",
+    "caption": "Predictability of each synthetic dataset under a small ExtraTrees on a 70/30 split, one point per dataset and one column per prior variant, with the median marked. The shaded band spans the same measurement on the real credit datasets."
+  },
+  {
+    "index": 8,
+    "stem": "08_side_by_side_tables",
+    "name": "side_by_side_tables",
+    "caption": "Eight rows of one synthetic dataset and one real credit dataset, shown as heatmaps with the target as the final column separated by a vertical rule. Each feature is rank-normalised within its own column, so shade encodes relative value rather than units."
+  },
+  {
+    "index": 9,
+    "stem": "09_spectrum_by_variant",
+    "name": "spectrum_by_variant",
+    "caption": "Eigenvalue spectra of the feature correlation matrix for up to 40 synthetic datasets per prior variant, normalised by the largest eigenvalue and plotted against normalised eigenvalue rank. Faint lines are individual datasets; bold lines are the per-variant median."
+  },
+  {
+    "index": 10,
+    "stem": "10_shapes_by_variant",
+    "name": "shapes_by_variant",
+    "caption": "Left: distribution of rows per synthetic dataset. Right: distribution of features per synthetic dataset. One step histogram per prior variant, 20 bins."
+  }
+]

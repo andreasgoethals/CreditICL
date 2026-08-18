@@ -7,6 +7,29 @@ reason is not obvious.
 
 ## 17-08-2026 — Muon ruled out, 21 duplicate runs removed, batch and features matched to upstream
 
+- **THE B200 IS SOLVED: batch 4 was too little work to fill it.** 3.5 % GPU utilisation and
+  2.2 datasets/s at batch 4; **88.7 % and 25.6 datasets/s at batch 64**, same card. Five
+  explanations were proposed and measured wrong first — the card, the prior, Muon, the wheel,
+  AMP (which is 0.49x, i.e. it makes the B200 *faster*). Fixed as a side effect of matching
+  upstream's batch.
+- **`DEBUG_STEPS` 1500 -> 600.** The debug budget is `steps x batch_size`, so raising the batch
+  to 64 silently turned 1,500 steps into 96,000 datasets; job 11518236 was killed at the
+  one-hour wall on step 1,422, losing the evaluation and the checkpoint. A test now checks the
+  step budget against the configured batch and the measured rate.
+- **`--micro-batch-size` actually reaches the job now** (32 on `gpu_b200`, 16 on A100/H100).
+  Two earlier heredoc edits silently failed to apply — one whose continuations did not match,
+  one that wrote a literal backslash-n — and `bash -n` accepted both, so a run went out at
+  micro_batch_size 4 on a 183 GB card. A test checks the flag, the per-partition values, and
+  every line continuation.
+
+- **Restored `output/All_Results.md`, `output/figures/CAPTIONS.md` and every `.gitkeep`.**
+  Something run locally this session deleted them and a `git add -A` recorded the deletion, so
+  the loss only showed up in someone else's `git pull`. `test_tracked_output_files_still_exist`
+  now fails if any of them go missing, and the `.gitkeep` files matter beyond tidiness: without
+  them a fresh clone has nowhere to write.
+- **`scripts/slurm/pilot_batch.slurm`** — the control arm at batch 16 / 64 / 256, full 12,500
+  steps, one seed, three array tasks. Settles batch size before Exp1 instead of sweeping it.
+
 - **`batch_size: 64`, `micro_batch_size: 4`** — upstream's own `--batch_size 64
   --micro_batch_size 4`, in Exp1 and Exp2. It was 4 with no accumulation: an effective batch
   **sixteen times smaller than upstream's**, while using upstream's learning rate of 8e-4,

@@ -216,3 +216,48 @@ def test_debug_arms_point_where_the_comments_say():
                 f"index {index} claims {mode}, grid says "
                 f"{run['prior']['credit']['target']['mode']}"
             )
+
+
+def test_debug_job_sets_the_micro_batch_from_the_partition():
+    """This edit silently failed to apply TWICE — a heredoc whose backslash-continuations did
+    not match, and then one that wrote a literal `\n`. `bash -n` passed both times because the
+    result was still valid shell, and no test looked, so a run went out at micro_batch_size 4
+    on a 183 GB card.
+
+    It matters: at batch 4 the B200 sat at 3.5 % utilisation and 2.2 datasets/s; at batch 64 it
+    reached 89 % and 25.6. Launch size is the whole story on a big GPU.
+    """
+    text = (SLURM / "debug_exp1.slurm").read_text(encoding="utf-8")
+    assert "--micro-batch-size" in text, "the job must pass a micro-batch size"
+    literal_backslash_n = chr(92) + "n"   # the two characters, not a newline
+    assert literal_backslash_n not in text, (
+        "a literal backslash-n crept into the script — a heredoc wrote the escape "
+        "instead of a line break, and bash -n still accepted it"
+    )
+    assert 'gpu_b200)          MICRO=' in text, "the B200 needs its own, larger value"
+
+    # every continuation must end the line, or the next flag is swallowed as an argument
+    call = text[text.index("python scripts/pretrain.py \\") :]
+    call = call[: call.index("STATUS=$?")]
+    for line in call.splitlines()[:-1]:
+        assert line.rstrip().endswith("\\"), f"broken continuation: {line!r}"
+
+
+def test_debug_steps_fit_the_walltime_at_the_configured_batch():
+    """The debug budget is `steps x batch_size`. batch_size went 4 -> 64, so 1,500 steps became
+    96,000 datasets and job 11518236 was KILLED at the one-hour wall on step 1,422 — losing the
+    evaluation and the checkpoint after 62 minutes. A debug run has to finish."""
+    import yaml
+
+    text = (SLURM / "debug_exp1.slurm").read_text(encoding="utf-8")
+    steps = int(re.search(r'DEBUG_STEPS="\$\{DEBUG_STEPS:-(\d+)\}"', text).group(1))
+    batch = yaml.safe_load(
+        (ROOT / "config" / "Exp1_LGD.yaml").read_text(encoding="utf-8")
+    )["train"]["batch_size"]
+
+    # 0.4 steps/s measured on the B200 at batch 64; leave a third of the hour for evaluation.
+    budget_s = steps / 0.4
+    assert budget_s < 2400, (
+        f"{steps} steps x batch {batch} is ~{budget_s / 60:.0f} min of training at the "
+        f"measured 0.4 steps/s, leaving nothing for the evaluation inside a 1 h walltime"
+    )

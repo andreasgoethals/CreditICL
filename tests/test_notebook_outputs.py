@@ -565,3 +565,29 @@ def test_changelog_is_one_chapter_per_date():
         f"{sorted(d.strftime('%d-%m-%Y') for d in dupes)}. Merge them."
     )
     assert dates == sorted(dates, reverse=True), "chapters must be newest first"
+
+
+def test_tracked_output_files_still_exist():
+    """`output/` is mostly generated and gitignored, but a few files in it are TRACKED —
+    written by hand or by a notebook and meant to survive.
+
+    On 17-08-2026 they were deleted by something run locally and then swept into a commit by a
+    blanket `git add -A`: `All_Results.md` (272 lines), `figures/CAPTIONS.md` (133 lines, the
+    paper's figure captions) and every `.gitkeep`, without which a fresh clone has nowhere to
+    write. Nothing noticed until the deletion appeared in someone else's `git pull`.
+    """
+    required = [
+        ROOT / "output" / ".gitkeep",
+        ROOT / "output" / "logs" / ".gitkeep",
+        ROOT / "output" / "manifests" / ".gitkeep",
+        ROOT / "output" / "results" / ".gitkeep",
+        ROOT / "output" / "figures" / ".gitkeep",
+        ROOT / "output" / "figures" / "CAPTIONS.md",
+        ROOT / "output" / "All_Results.md",
+    ]
+    missing = [p.relative_to(ROOT).as_posix() for p in required if not p.exists()]
+    assert not missing, (
+        f"tracked files under output/ are gone: {missing}. Restore them with "
+        f"`git checkout HEAD -- output/` BEFORE committing — a `git add -A` would otherwise "
+        f"record the deletion."
+    )

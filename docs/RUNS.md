@@ -172,7 +172,59 @@ The one thing to do differently.
 
 ## Runs
 
-## 17-08-2026 — the optimiser row — **Muon is not the cause either**
+## 17-08-2026 — **THE B200 MYSTERY IS SOLVED: the batch was too small for the card**
+
+**Jobs** 11518234/35 (benchmark, both cards), 11518236–40 (Exp1 LGD debug, `gpu_b200`, the
+first run at upstream's `batch_size: 64`)
+
+### The answer
+
+| | GPU utilisation | datasets/s |
+|---|---|---|
+| B200, batch 4 | **3.5 %** | 2.2 |
+| B200, batch 64 | **88.7 %** | **25.6** |
+| RTX 5000 Ada (free), batch 4 | 69 % | 26.5 |
+
+**Batch 4 was too little work to fill a B200.** One short forward pass, then a synchronising
+optimiser step, so the card idled between steps — 3.5 % utilisation. The RTX 5000 Ada only ever
+looked faster because it is small enough to be near-saturated at batch 4. Raising the batch to
+upstream's 64 lifted the same card to 89 % and **12x the throughput per dataset**, and it was
+changed for an unrelated reason: matching upstream.
+
+**Five explanations were proposed before this one and every one was wrong** — the card, the
+prior generator, Muon, the wheel's kernels, AMP. Each was inferred from a difference someone
+noticed. The per-phase timing (`fwd_bwd=98.7 %`, `data=0.0 %`) and the benchmark's optimiser
+and AMP rows are what finally cornered it:
+
+| ruled out by measurement | |
+|---|---|
+| the card | B200 ahead on every benchmark rung |
+| starvation | `data = 0.0 %` of step time |
+| Muon | 1.42x on **both** cards |
+| missing kernels | `sm_100` shipped; the false alarm was on the healthy card |
+| AMP | **0.49x — it makes the B200 *faster*** |
+
+### Also
+- **The job was killed at the walltime**, step 1,422 of 1,500, after 62 minutes — losing the
+  evaluation and the final checkpoint. The debug budget is `steps x batch_size`, and batch_size
+  went 4 -> 64, so 1,500 steps quietly became 96,000 datasets. `DEBUG_STEPS` is now 600.
+- **The micro-batch override never reached the job.** Two heredoc edits silently failed —
+  one whose continuations did not match, one that wrote a literal `
+` — and `bash -n` accepted
+  both. The run used micro_batch_size 4 on a 183 GB card. Now set per partition, with a test.
+- **Peak memory was 6.6 GB of 183 GB**, so there is a great deal left: micro 32 on `gpu_b200`.
+- **The NaN survives `max_features: 100`.** `base_modelisation` (256 features) still returns
+  all-NaN, so the training-range hypothesis is not sufficient on its own. Still needs a
+  checkpoint.
+- Learning is healthy at batch 64: loss 0.331 -> 0.122 by step 1,400, gradients live in all
+  three stacks.
+
+### Next
+600-step debug to confirm it finishes end to end, then the batch pilot, then Exp1.
+
+---
+
+## 17-08-2026 (earlier) — the optimiser row — **Muon is not the cause either**
 
 **Jobs** 11517858 (`interactive`), 11517859 (`gpu_b200`) — the benchmark rerun with
 `bench_optimizers`, which times the optimiser the configs actually use.

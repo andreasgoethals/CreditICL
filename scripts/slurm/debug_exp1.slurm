@@ -111,7 +111,12 @@ echo
 # enough to see throughput, GPU utilisation, memory headroom, and three progress-curve points.
 #
 # Raise it once, to the config's real value, only after this run comes back clean.
-DEBUG_STEPS="${DEBUG_STEPS:-1500}"
+# 600, not 1500. The budget is `steps x batch_size`, and batch_size went from 4 to upstream's
+# 64 — so 1,500 steps is now 96,000 datasets, not 6,000. Job 11518236 was KILLED at the
+# one-hour walltime on step 1,422 of 1,500, losing the evaluation and the final checkpoint
+# after 62 minutes of training. 600 steps is 38,400 datasets, ~25 minutes, and still gives
+# seven points on the progress curve. A debug run has to FINISH.
+DEBUG_STEPS="${DEBUG_STEPS:-600}"
 echo "DEBUG: overriding max_steps to ${DEBUG_STEPS} (config says 12500)"
 
 # WORKERS FROM THE ALLOCATION, not from the config. This script runs on partitions with
@@ -132,11 +137,28 @@ echo "DEBUG: num_workers=${WORKERS} (from SLURM_CPUS_PER_TASK=${SLURM_CPUS_PER_T
 # `set +e` around the call so a crash does NOT abort the script: STATUS is what the evaluation
 # below is gated on, and the artefact summary at the end is most useful precisely when training
 # has failed. Under `set -e` the script would die here and print none of it.
+# MICRO-BATCH FROM THE CARD. Datasets per FORWARD PASS — memory and speed only, never the
+# result, because accumulation averages `loss / n_micro` either way.
+#
+# MEASURED 17-08-2026, and this is what resolved the "B200 is slow" mystery. At batch 4 the
+# B200 ran at **3.5 % GPU utilisation** and 2.2 datasets/s; at batch 64 it reached **89 %** and
+# 25.6 datasets/s — 12x the throughput on the same card. A big GPU is starved by small
+# launches: batch 4 meant one short pass then a synchronising optimiser step, so the card
+# idled between steps. The RTX 5000 Ada only ever looked faster because it is small enough to
+# fill at batch 4. Peak memory was 6.6 GB of 183 GB, so bigger launches are still free.
+case "${SLURM_JOB_PARTITION:-}" in
+    gpu_b200)          MICRO="${MICRO:-32}" ;;
+    gpu_a100|gpu_h100) MICRO="${MICRO:-16}" ;;
+    *)                 MICRO="${MICRO:-4}"  ;;
+esac
+echo "DEBUG: micro_batch_size=${MICRO} on ${SLURM_JOB_PARTITION:-unknown} (memory/speed only)"
+
 set +e
 python scripts/pretrain.py \
     --config "$CONFIG" \
     --index "$INDEX" \
     --max-steps "$DEBUG_STEPS" \
+    --micro-batch-size "$MICRO" \
     --num-workers "$WORKERS"
 STATUS=$?
 set -e
