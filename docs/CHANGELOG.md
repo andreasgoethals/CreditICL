@@ -7,6 +7,14 @@ reason is not obvious.
 
 ## 18-08-2026 — the micro-batch rule, a run card, and the first clean end-to-end run
 
+- **THE LGD NaN IS FIXED: features were never standardised.** The GPU walk named module #0,
+  `col_embedder.in_linear`, with an output `absmax` of exactly 6.550e+04 — float16's ceiling —
+  on inputs reaching 9.6e8. Upstream's `PreprocessingPipeline` begins with
+  `CustomStandardScaler().fit_transform(X)`; we had imputation and no scaling.
+  `standardise_from_context()` now runs in all three inference paths, fitted on the CONTEXT
+  rows only so it cannot leak. Not the attention backend, not the device, not feature width —
+  all three were correlations, and all three were wrong.
+
 - **`--device` and `--sdpa-backend` on `diagnose_nan.py`, plus `scripts/slurm/diagnose.slurm`.**
   On CPU the checkpoint is finite on every dataset — including the ones training reports as
   100 % NaN — so the NaN is CUDA-specific. PyTorch chooses the attention kernel itself on CUDA

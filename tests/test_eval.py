@@ -583,3 +583,53 @@ def test_the_debug_job_caps_but_the_configs_do_not():
         assert "max_rows" not in cfg.read_text(encoding="utf-8"), (
             f"{cfg.name} must not cap rows — that would silently shrink a real result"
         )
+
+
+def test_features_are_standardised_before_the_model_sees_them():
+    """THE cause of the all-NaN LGD predictions, found by walking the network on a GPU.
+
+    `col_embedder.in_linear` — the FIRST layer — went non-finite with an output `absmax` of
+    exactly 6.550e+04, which is float16's largest finite value. The inputs were raw currency
+    amounts: `axa` 1.98 and `heloc` 820 worked, `loss2` 2.4e6, `base_modelisation` 8.1e7 and
+    `base_model` 9.6e8 all overflowed. Upstream's `PreprocessingPipeline.fit` begins with
+    `CustomStandardScaler().fit_transform(X)`; we skipped it entirely.
+    """
+    from src.eval.crediticl_baseline import standardise_from_context
+
+    rng = np.random.default_rng(0)
+    Xc = rng.normal(0.0, 1e8, (300, 40)).astype(np.float32)
+    Xq = rng.normal(0.0, 1e8, (100, 40)).astype(np.float32)
+    Xc[:, 3] = 7.0          # a constant column: dividing by its zero std is the other NaN route
+    Xq[:, 3] = 7.0
+    Xc[0, 7] = np.nan       # nan-robust statistics
+
+    sc, sq = standardise_from_context(Xc, Xq)
+    assert np.isfinite(sc[np.isfinite(Xc)]).all() and np.isfinite(sq).all()
+    assert np.abs(sc[np.isfinite(Xc)]).max() < 65504, "must land well inside float16 range"
+    assert np.abs(sq).max() < 65504
+    assert np.isfinite(sc[:, 3]).all(), "a constant column must survive, not become NaN"
+
+    # FITTED ON THE CONTEXT ONLY — query statistics are not ours to look at.
+    shifted = Xq + 5e8
+    _, s_shifted = standardise_from_context(Xc, shifted)
+    assert not np.allclose(s_shifted, sq), (
+        "shifting the query changed nothing, so the scaler is being fitted on the query too — "
+        "that is leakage"
+    )
+
+
+def test_every_inference_path_standardises():
+    """Three places build an episode for the model. One of them skipping this is a silent
+    half-fix: the progress curve and the final evaluation would disagree and neither would
+    say why."""
+    baseline = (ROOT / "src" / "eval" / "crediticl_baseline.py").read_text(encoding="utf-8")
+    progress = (ROOT / "src" / "train" / "progress.py").read_text(encoding="utf-8")
+
+    assert baseline.count("standardise_from_context(Xc, Xq)") == 2, (
+        "predict and predict_quantiles must both standardise"
+    )
+    assert "standardise_from_context(Xc, Xt)" in progress, "the progress scorer must too"
+    # and always AFTER imputation: standardising around NaNs would poison the statistics
+    for text, call in ((baseline, "standardise_from_context(Xc, Xq)"),
+                       (progress, "standardise_from_context(Xc, Xt)")):
+        assert text.index("np.isfinite") < text.index(call)

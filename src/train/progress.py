@@ -162,6 +162,13 @@ class ProgressTracker:
         med = np.nan_to_num(np.nanmedian(Xc, axis=0))
         Xc = np.where(np.isfinite(Xc), Xc, med)
         Xt = np.where(np.isfinite(Xt), Xt, med)
+        # STANDARDISE, context statistics only. Upstream's `PreprocessingPipeline` starts with
+        # `CustomStandardScaler().fit_transform(X)`; we skipped it and `col_embedder.in_linear`
+        # overflowed float16 on every dataset whose features reach millions, giving 100 % NaN
+        # predictions on 4 of 7 real LGD tables. See `standardise_from_context`.
+        from src.eval.crediticl_baseline import standardise_from_context
+
+        Xc, Xt = standardise_from_context(Xc, Xt)
 
         device = next(model.parameters()).device
         x = torch.from_numpy(np.concatenate([Xc, Xt]).astype(np.float32)).unsqueeze(0).to(device)

@@ -117,6 +117,43 @@ def load_our_checkpoint(
     return model, meta
 
 
+def standardise_from_context(
+    x_context: np.ndarray, *others: np.ndarray
+) -> tuple[np.ndarray, ...]:
+    """Standard-scale features using the CONTEXT rows' mean and std. Upstream's step 1.
+
+    THIS IS WHY OUR LGD MODEL RETURNED ALL-NaN ON HALF THE REAL DATASETS, and it is not subtle
+    once measured. `col_embedder.in_linear` — the very FIRST layer — went non-finite with an
+    output `absmax` of exactly **6.550e+04**, which is `float16`'s largest finite value. The
+    inputs feeding it were raw:
+
+        axa                absmax 1.98    -> finite
+        heloc              absmax 820     -> finite
+        loss2              absmax 2.4e6   -> NaN
+        base_modelisation  absmax 8.1e7   -> NaN
+        base_model         absmax 9.6e8   -> NaN
+
+    Upstream never does this. `PreprocessingPipeline.fit` starts with
+    `CustomStandardScaler().fit_transform(X)` before any normalisation, and every prediction
+    goes through `preprocessors_[...].transform(X)`. We fed the network unscaled currency
+    amounts and loan balances and it overflowed, exactly as it should have.
+
+    FITTED ON THE CONTEXT ONLY. The query rows are what we are predicting, so their mean and
+    variance are not ours to look at — using them would be leakage of precisely the kind this
+    project has to be able to rule out. That also matches the median imputation next to it,
+    which is already context-only.
+
+    Constant columns get std 1.0 rather than 0: dividing by a zero std is the other way to
+    manufacture a NaN, and a column with no variation carries no information anyway.
+    """
+    mean = np.nanmean(x_context, axis=0, keepdims=True)
+    std = np.nanstd(x_context, axis=0, keepdims=True)
+    mean = np.nan_to_num(mean)
+    std = np.nan_to_num(std)
+    std[std < 1e-12] = 1.0
+    return tuple(((a - mean) / std).astype(np.float32) for a in (x_context, *others))
+
+
 class CreditICLBaseline(Baseline):
     """One of our pretrained checkpoints, scored in-context.
 
@@ -222,9 +259,13 @@ class CreditICLBaseline(Baseline):
 
         # NaNs: the model standardises internally and a NaN would propagate to every
         # output. Impute from the CONTEXT only — using query statistics would leak.
+        # IMPUTE, THEN STANDARDISE — both from the context only. Skipping the second step is
+        # what overflowed `col_embedder.in_linear` on every dataset whose features run to
+        # millions; see `standardise_from_context`.
         ctx_median = np.nan_to_num(np.nanmedian(self._Xc, axis=0))
         Xc = np.where(np.isfinite(self._Xc), self._Xc, ctx_median)
         Xq = np.where(np.isfinite(Xq), Xq, ctx_median)
+        Xc, Xq = standardise_from_context(Xc, Xq)
 
         preds: list[np.ndarray] = []
         # Chunk the queries so a large test set cannot exhaust memory: every chunk is a
@@ -287,9 +328,13 @@ class CreditICLBaseline(Baseline):
             return None
         from src.train.loop import quantile_levels
 
+        # IMPUTE, THEN STANDARDISE — both from the context only. Skipping the second step is
+        # what overflowed `col_embedder.in_linear` on every dataset whose features run to
+        # millions; see `standardise_from_context`.
         ctx_median = np.nan_to_num(np.nanmedian(self._Xc, axis=0))
         Xc = np.where(np.isfinite(self._Xc), self._Xc, ctx_median)
         Xq = np.where(np.isfinite(np.asarray(X, np.float32)), np.asarray(X, np.float32), ctx_median)
+        Xc, Xq = standardise_from_context(Xc, Xq)
 
         rows = []
         chunk = max(1, min(2048, self.context_rows))

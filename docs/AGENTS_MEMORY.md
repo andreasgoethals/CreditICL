@@ -53,6 +53,31 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
 
+### 18-08-2026 - SOLVED: the LGD NaN was missing feature standardisation
+- **Tried:** six explanations over four days - the data, the architecture, divergence, feature
+  width, CPU-vs-CUDA, and the attention kernel. Every one wrong.
+- **Result:** the GPU walk named it at module **#0**, `col_embedder.in_linear`, the FIRST layer,
+  identically on both cards and under all four attention backends. Its output `absmax` was
+  **6.550e+04** - `float16`'s largest finite value. The inputs explain the rest:
+
+        axa                absmax 1.98    finite
+        heloc              absmax 820     finite
+        loss2              absmax 2.4e6   NaN
+        base_modelisation  absmax 8.1e7   NaN
+        base_model         absmax 9.6e8   NaN
+
+- **Why:** we fed the network **raw, unscaled features** - currency amounts and loan balances up
+  to 9.6e8. Upstream never does: `PreprocessingPipeline.fit` starts with
+  `CustomStandardScaler().fit_transform(X)` and every prediction goes through
+  `preprocessors_[...].transform(X)`. We had imputation but no scaling.
+- **Instead:** `standardise_from_context()`, applied in all three inference paths, fitted on the
+  CONTEXT rows only so it cannot leak. Verified: 4.7e8 -> 4.8.
+- **The lesson about the process, not the bug:** every one of the six wrong answers was
+  inferred from a correlation I noticed (width, device, backend). The right answer came from
+  the FIRST tool that reported a measurement instead of a hypothesis - a hook on every module,
+  printing where the number stopped being finite. **Build the instrument before the fourth
+  theory, not after the sixth.**
+
 ### 18-08-2026 - The LGD NaN does not reproduce on CPU
 - **Tried:** running `diagnose_nan.py` on the login node against the step-600 checkpoint, on
   the three datasets that report 100 % NaN plus `axa` as a control.
