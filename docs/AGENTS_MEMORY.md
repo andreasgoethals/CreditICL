@@ -53,6 +53,19 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
 
+### 18-08-2026 - A login node kills unbounded torch on the second dataset
+- **Tried:** `python scripts/diagnose_nan.py` on the Genius login node.
+- **Result:** the first dataset finished, the second died with
+  `terminate called ... std::system_error: Resource temporarily unavailable`.
+- **Why:** that is `pthread_create` returning EAGAIN. Torch opens one OMP thread per core on a
+  machine with dozens of cores shared by everyone logged in, and login nodes cap threads per
+  user. Nothing to do with the model.
+- **Instead:** the script sets `OMP_NUM_THREADS` and friends **before importing torch** (they
+  are read at import and ignored afterwards), calls `torch.set_num_threads`, and collects
+  between datasets. **Any CPU-side tool meant for a login node must bound its threads** -
+  and a crash on the SECOND item, after the first succeeded, is the signature of a resource
+  cap rather than bad input.
+
 ### 18-08-2026 - Why upstream's micro-batch is 4, and why "the GPU has room" is not a reason
 - **Tried:** explaining upstream's `--micro_batch_size 4` as a memory limit, then as an
   artefact of small GPUs, then arguing our 88.7 % utilisation left only ~1.1x to gain.

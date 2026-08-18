@@ -26,9 +26,23 @@ division by something that reached zero (magnitudes collapsing).
 from __future__ import annotations
 
 import argparse
+import contextlib
+import os
 import sys
 from pathlib import Path
 from typing import Any
+
+# THREAD LIMITS, SET BEFORE TORCH IS IMPORTED — the numeric libraries read these at import and
+# ignore later changes.
+#
+# A LOGIN NODE CAPS THREADS PER USER. Unbounded, torch opens one OMP thread per core on a
+# machine with dozens of cores shared by everyone logged in, and the second dataset died with
+# `std::system_error ... Resource temporarily unavailable` — that is `pthread_create` returning
+# EAGAIN, not anything about the model. Four threads is ample: this does ONE forward pass per
+# dataset and is not trying to be fast.
+for _var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS",
+             "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    os.environ.setdefault(_var, os.environ.get("CREDITICL_DIAG_THREADS", "4"))
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -130,10 +144,20 @@ def main() -> int:
     ap.add_argument("--datasets", default=None, help="comma-separated slugs; default all")
     ap.add_argument("--context-rows", type=int, default=512, help="as the evaluation uses")
     ap.add_argument("--max-test-rows", type=int, default=512)
+    ap.add_argument(
+        "--threads", type=int, default=int(os.environ.get("CREDITICL_DIAG_THREADS", "4")),
+        help="torch CPU threads. Kept small because a LOGIN NODE limits threads per user and "
+             "an unbounded torch dies with 'Resource temporarily unavailable'.",
+    )
     args = ap.parse_args()
 
     import numpy as np
     import torch
+
+    torch.set_num_threads(max(1, args.threads))
+    # Already initialised is harmless, and not worth failing a diagnostic over.
+    with contextlib.suppress(RuntimeError):
+        torch.set_num_interop_threads(1)
 
     from src.data.discovery import list_datasets
     from src.data.pipeline import load_processed
@@ -209,6 +233,9 @@ def main() -> int:
             f"unique={len(np.unique(yc))}"
         )
 
+        import gc
+
+        gc.collect()
         walk(
             model,
             torch.from_numpy(x_in).unsqueeze(0).to(device),

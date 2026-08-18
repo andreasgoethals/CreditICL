@@ -7,6 +7,10 @@ reason is not obvious.
 
 ## 18-08-2026 — the micro-batch rule, a run card, and the first clean end-to-end run
 
+- **`diagnose_nan.py` bounds its threads** — `OMP_NUM_THREADS` and friends set before torch is
+  imported, plus `torch.set_num_threads`. Unbounded, it died on the second dataset with
+  `std::system_error: Resource temporarily unavailable`, which is a login-node thread cap
+  hitting `pthread_create`, not a model problem.
 - **`scripts/diagnose_nan.py`** — walks a checkpoint with forward hooks and names the FIRST
   module whose output goes non-finite, with the activation magnitudes leading up to it and a
   weight-health report. It runs on the CLUSTER: a checkpoint is ~229 MB and awkward to move, a
