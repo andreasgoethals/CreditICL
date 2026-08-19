@@ -36,7 +36,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from src.eval.baselines import Baseline
+from src.eval.baselines import TabICLBaseline
 from src.utils.logging_setup import get_logger
 
 #: Rows of context to give the model. TabICLv2 trains on 512-1024-row tables, so a
@@ -69,7 +69,10 @@ def load_our_checkpoint(
         raise FileNotFoundError(f"no checkpoint at {path}")
     payload = torch.load(path, map_location=device, weights_only=False)
 
-    cfg = payload.get("config") or {}
+    # `config` is upstream's slot for the TabICL kwargs; OUR resolved YAML lives in
+    # `crediticl_config`. The fallback reads checkpoints written before 18-08-2026,
+    # whose `config` was the YAML.
+    cfg = payload.get("crediticl_config") or payload.get("config") or {}
     mcfg = dict(cfg.get("model") or {})
     task = cfg.get("task", "lgd")
     regression = task == "lgd"
@@ -154,12 +157,36 @@ def standardise_from_context(
     return tuple(((a - mean) / std).astype(np.float32) for a in (x_context, *others))
 
 
-class CreditICLBaseline(Baseline):
-    """One of our pretrained checkpoints, scored in-context.
+class CreditICLBaseline(TabICLBaseline):
+    """One of OUR pretrained checkpoints, scored through UPSTREAM'S OWN WRAPPER.
 
-    Construct with `checkpoint=<path>`. The task comes from the checkpoint's own config
-    and must match the dataset being scored — a regression checkpoint cannot score a
-    classification dataset, and mixing them would produce numbers that look plausible.
+    THE POINT OF SUBCLASSING `TabICLBaseline`: the released TabICLv2 and our checkpoints then
+    travel *the same code path*, and the only difference between them is the weights — which is
+    the only difference the experiment is about. Everything else comes for free and stays in
+    step automatically: upstream's `PreprocessingPipeline` (standard scaling, then power or
+    quantile normalisation), its 8-member feature-shuffled ensemble, its context construction,
+    its label encoding, its quantile decoding.
+
+    THIS REPLACED A HAND-ROLLED INFERENCE PATH, and the difference was not cosmetic. Measured
+    18-08-2026 on the same seven LGD datasets in one run:
+
+        released TabICLv2, through TabICLRegressor   R2  +0.224 .. +0.770
+        ours, through our own single forward pass    R2  -1.437 .. -0.246
+
+    Some of that is 600 steps against 500,000. But our path also had no preprocessing (which
+    overflowed `col_embedder.in_linear` into all-NaN on half the datasets), no ensemble, and its
+    own context rules — so the number was never a weights-only comparison, and there was no way
+    to say how much of the gap was the prior and how much was our plumbing. Only one pipeline
+    can be the measured one.
+
+    All this needs is `model_path`, which upstream already supports:
+
+        assert "config" in checkpoint          # kwargs to TabICL
+        assert "state_dict" in checkpoint
+        self.model_ = TabICL(**checkpoint["config"])
+
+    `src/train/checkpoint.py` writes exactly that schema, so our checkpoints load into their
+    wrapper unchanged.
     """
 
     name = "crediticl"
@@ -169,9 +196,6 @@ class CreditICLBaseline(Baseline):
         task: str,
         seed: int = 0,
         checkpoint: str | Path | None = None,
-        device: str | None = None,
-        context_rows: int = DEFAULT_CONTEXT_ROWS,
-        balanced_context: bool = True,
         **kwargs: Any,
     ):
         super().__init__(task=task, seed=seed, **kwargs)
@@ -180,181 +204,53 @@ class CreditICLBaseline(Baseline):
                 "CreditICLBaseline needs checkpoint=<path to one of our .ckpt files>. "
                 "Without it there is nothing to score."
             )
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.context_rows = int(context_rows)
-        self.balanced_context = bool(balanced_context)
-        self.model, self.meta = load_our_checkpoint(checkpoint, self.device)
+        self.checkpoint = Path(checkpoint)
+        if not self.checkpoint.is_file():
+            raise FileNotFoundError(f"no checkpoint at {self.checkpoint}")
 
-        if self.meta["regression"] != (task == "lgd"):
-            raise ValueError(
-                f"checkpoint is for task={self.meta['task']!r} but it is being asked to "
-                f"score task={task!r}. A regression head cannot produce class "
-                f"probabilities, and the reverse gives meaningless quantiles."
-            )
-        self._Xc: np.ndarray | None = None
-        self._yc: np.ndarray | None = None
+    def _wrapper_kwargs(self) -> dict[str, Any]:
+        """Point upstream's wrapper at OUR weights instead of the released ones.
 
-    # -- context selection ---------------------------------------------------
-    def _select_context(self, X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Pick the context rows. Records nothing here — the caller logs the report.
-
-        For classification, `balanced_context` samples the two classes evenly. That is
-        the single highest-leverage choice in this file: on imbalanced credit data a
-        uniform context can contain almost no defaults, and the model has nothing to
-        learn the positive class from.
+        `allow_auto_download=False` on purpose: if the checkpoint were unreadable, the default
+        would quietly fetch the RELEASED model from Hugging Face and score that instead —
+        reporting the baseline's numbers under our own name, which is the worst failure this
+        file could have. Better a hard error.
         """
-        rng = np.random.default_rng(self.seed)
-        n = len(X)
-        if n <= self.context_rows:
-            return X, y
-
-        if self.task == "pd" and self.balanced_context:
-            pos = np.flatnonzero(y > 0.5)
-            neg = np.flatnonzero(y <= 0.5)
-            per = self.context_rows // 2
-            take_pos = rng.choice(pos, size=min(per, len(pos)), replace=False) if len(pos) else pos
-            remaining = self.context_rows - len(take_pos)
-            take_neg = rng.choice(neg, size=min(remaining, len(neg)), replace=False)
-            idx = np.concatenate([take_pos, take_neg])
-            rng.shuffle(idx)
-        else:
-            idx = rng.choice(n, size=self.context_rows, replace=False)
-        return X[idx], y[idx]
+        return {
+            "model_path": str(self.checkpoint),
+            "allow_auto_download": False,
+        }
 
     def _fit(self, X: np.ndarray, y: np.ndarray, cat_indices: list[int]) -> None:
-        """No fitting — just store the context. ICL has no training step.
-
-        Returns None and writes to `self.report.extra`, matching the base class: the
-        wrapper in `Baseline.fit` owns the FitReport and times the call itself.
-        """
-        self._Xc, self._yc = self._select_context(
-            np.asarray(X, np.float32), np.asarray(y, np.float32)
-        )
-        # Everything about how the context was built lands in the results row. Tanna et
-        # al. 2026 found context construction explains more AUC variance than model
-        # choice, so leaving it implicit would make the numbers uninterpretable.
+        super()._fit(X, y, cat_indices)
+        # Recorded in every result row, so a number can always be traced to the arm that
+        # produced it without opening the checkpoint.
+        meta = checkpoint_metadata(self.checkpoint)
         self.report.extra.update(
             {
-                "context_rows": int(len(self._Xc)),
-                "context_from_rows": int(len(X)),
-                "balanced_context": bool(self.balanced_context and self.task == "pd"),
-                **{f"ckpt_{k}": v for k, v in self.meta.items()},
+                "checkpoint": self.checkpoint.name,
+                "checkpoint_step": meta.get("step"),
+                "credit_fraction": meta.get("credit_fraction"),
+                "run_name": meta.get("run_name"),
+                "inference": "upstream TabICL wrapper (same as tabiclv2)",
             }
         )
-        if self.task == "pd":
-            self.report.extra["context_base_rate"] = round(float((self._yc > 0.5).mean()), 4)
 
-    @torch.no_grad()
-    def _predict(self, X: np.ndarray) -> np.ndarray:
-        if self._Xc is None or self._yc is None:
-            raise RuntimeError("fit() must run before predict() — the context is set there")
 
-        Xq = np.asarray(X, np.float32)
-        # Both halves must have the same width. A query table with more columns than the
-        # context would silently misalign features, so this is an error, not a trim.
-        if Xq.shape[1] != self._Xc.shape[1]:
-            raise ValueError(
-                f"query has {Xq.shape[1]} features but the context has {self._Xc.shape[1]}"
-            )
+def checkpoint_metadata(path: str | Path) -> dict[str, Any]:
+    """Which arm produced this checkpoint. Reads the header, never builds the model.
 
-        # NaNs: the model standardises internally and a NaN would propagate to every
-        # output. Impute from the CONTEXT only — using query statistics would leak.
-        # IMPUTE, THEN STANDARDISE — both from the context only. Skipping the second step is
-        # what overflowed `col_embedder.in_linear` on every dataset whose features run to
-        # millions; see `standardise_from_context`.
-        ctx_median = np.nan_to_num(np.nanmedian(self._Xc, axis=0))
-        Xc = np.where(np.isfinite(self._Xc), self._Xc, ctx_median)
-        Xq = np.where(np.isfinite(Xq), Xq, ctx_median)
-        Xc, Xq = standardise_from_context(Xc, Xq)
-
-        preds: list[np.ndarray] = []
-        # Chunk the queries so a large test set cannot exhaust memory: every chunk is a
-        # fresh episode with the SAME context, which is exactly what ICL expects.
-        chunk = max(1, min(2048, self.context_rows))
-        for start in range(0, len(Xq), chunk):
-            block = Xq[start : start + chunk]
-            x = torch.from_numpy(np.concatenate([Xc, block], axis=0)).unsqueeze(0).to(self.device)
-            y = torch.from_numpy(self._yc).unsqueeze(0).to(self.device)
-            out = self.model(x, y)
-            # NanoTabICLv2 returns predictions for the QUERY rows only — verified:
-            # x=(1,100,d), y=(1,70) gives out=(1,30,...). Asserted rather than
-            # defensively sliced, so a future architecture change fails loudly instead
-            # of silently scoring the wrong rows.
-            if out.shape[1] != len(block):
-                raise RuntimeError(
-                    f"expected {len(block)} query predictions, got {out.shape[1]}. The "
-                    f"model's output convention changed; fix this slice before trusting "
-                    f"any number from it."
-                )
-            q = out[0]
-
-            if self.meta["regression"]:
-                # 999 quantiles -> a point prediction. The MEDIAN, not the mean: for a
-                # bimodal LGD predictive the mean lands in the empty middle where no
-                # loan actually sits, which is the failure mode this project is about.
-                # Sorted first — a quantile head predicts each level independently, so
-                # column Q//2 is the median only once crossing is fixed.
-                from src.train.loop import enforce_monotonic_quantiles
-
-                q = enforce_monotonic_quantiles(q)
-                point = q[:, q.shape[1] // 2]
-                preds.append(point.float().cpu().numpy())
-            else:
-                # Defensive slice, matching upstream's `_compute_batch_loss`. MEASURED: with
-                # `tabicl` this is a no-op, because `forward` already returns exactly the
-                # classes present in the context (a 10-wide head with binary y returns 2
-                # columns). Kept so that a change in that convention becomes a shape error
-                # here rather than a softmax quietly spreading P(default) over classes the
-                # data never contained.
-                n_classes = min(self.meta["n_classes"], q.shape[-1])
-                prob = torch.softmax(q[..., :n_classes].float(), dim=-1)[:, 1]
-                preds.append(prob.cpu().numpy())
-
-        out_arr = np.concatenate(preds)
-        if self.meta["regression"]:
-            # LGD is a loss fraction. Clipping here matches what the credit baselines do.
-            out_arr = np.clip(out_arr, 0.0, 1.0)
-        return out_arr
-
-    @torch.no_grad()
-    def predict_quantiles(self, X: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
-        """The full predictive distribution, for pinball/CRPS and boundary-mass checks.
-
-        This is the reason a quantile head is worth having: a point prediction cannot
-        say "11% chance of exactly zero loss", and that is the quantity the project
-        claims to improve.
-        """
-        if not self.meta["regression"] or self._Xc is None:
-            return None
-        from src.train.loop import quantile_levels
-
-        # IMPUTE, THEN STANDARDISE — both from the context only. Skipping the second step is
-        # what overflowed `col_embedder.in_linear` on every dataset whose features run to
-        # millions; see `standardise_from_context`.
-        ctx_median = np.nan_to_num(np.nanmedian(self._Xc, axis=0))
-        Xc = np.where(np.isfinite(self._Xc), self._Xc, ctx_median)
-        Xq = np.where(np.isfinite(np.asarray(X, np.float32)), np.asarray(X, np.float32), ctx_median)
-        Xc, Xq = standardise_from_context(Xc, Xq)
-
-        rows = []
-        chunk = max(1, min(2048, self.context_rows))
-        for start in range(0, len(Xq), chunk):
-            block = Xq[start : start + chunk]
-            x = torch.from_numpy(np.concatenate([Xc, block], axis=0)).unsqueeze(0).to(self.device)
-            y = torch.from_numpy(self._yc).unsqueeze(0).to(self.device)
-            out = self.model(x, y)
-            if out.shape[1] != len(block):
-                raise RuntimeError(f"expected {len(block)} query rows, got {out.shape[1]}")
-            rows.append(out[0].float().cpu().numpy())
-
-        from src.train.loop import enforce_monotonic_quantiles
-
-        # Sort BEFORE clipping: clipping cannot introduce crossing, and sorting a clipped row
-        # is the same row, but doing it in this order keeps the two operations independent.
-        # Pinball, CRPS, coverage and PIT all read this grid as ordered.
-        quants = np.clip(enforce_monotonic_quantiles(np.concatenate(rows, axis=0)), 0.0, 1.0)
-        levels = quantile_levels(int(self.meta["num_quantiles"])).numpy()
-        return quants, levels
+    `load_our_checkpoint` builds a network to verify the weights fit, which is right for the NaN
+    diagnostic and pure waste when all that is wanted is a run name for a results row.
+    """
+    payload = torch.load(Path(path), map_location="cpu", weights_only=False)
+    cfg = payload.get("crediticl_config") or payload.get("config") or {}
+    return {
+        "step": payload.get("curr_step", payload.get("step")),
+        "task": cfg.get("task"),
+        "run_name": cfg.get("_run_name"),
+        "credit_fraction": (cfg.get("prior") or {}).get("credit_fraction"),
+    }
 
 
 def register() -> None:

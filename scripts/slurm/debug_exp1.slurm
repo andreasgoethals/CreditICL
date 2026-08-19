@@ -218,12 +218,29 @@ if [ "$STATUS" -eq 0 ]; then
     DEBUG_EVAL_ROWS="${DEBUG_EVAL_ROWS:-20000}"
     echo "DEBUG: capping evaluation at ${DEBUG_EVAL_ROWS} rows/dataset (memory, not science)"
 
+    # CONTEXT CAP, matched to what the model was TRAINED on, applied to BOTH models.
+    #
+    # `prior.n_rows_range` tops out at 1,024 (upstream stage 1), but the wrapper does
+    # NOT cap the context — it hands the model the whole training split, 47,089 rows
+    # on `heloc`, 46x anything it has ever seen. Upstream avoids that with stages 2
+    # and 3, trained at 10,240 and 60,000 rows. We cannot follow: against a quadratic
+    # row-attention cost a proportionate curriculum runs **307x our entire stage 1**,
+    # because stage 1 is only 0.3 % of upstream total compute — the curriculum IS the
+    # expense, and 75 arms of it is unaffordable. So the mismatch is closed from the
+    # evaluation side instead.
+    #
+    # The SAME cap goes to `crediticl` and `tabiclv2`, so it is part of the
+    # measurement rather than a handicap on one side, and every row records it.
+    CONTEXT_CAP="${CONTEXT_CAP:-1024}"
+    echo "DEBUG: context capped at ${CONTEXT_CAP} rows for EVERY model (we train at <=1024)"
+
     echo "=== evaluating on the real credit datasets ==="
     python scripts/evaluate.py \
         --task "$TASK" \
         --models "$MODELS" \
         "${CKPT_ARG[@]}" \
         --max-rows "$DEBUG_EVAL_ROWS" \
+        --max-context-rows "$CONTEXT_CAP" \
         --seeds 0 \
         --tag "debug_${SLURM_JOB_ID}_t${SLURM_ARRAY_TASK_ID}" || \
         echo "WARNING: credit evaluation failed — see the traceback above"

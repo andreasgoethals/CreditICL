@@ -61,13 +61,47 @@ def save_checkpoint(
     d = Path(ckpt_dir)
     d.mkdir(parents=True, exist_ok=True)
     path = d / f"step-{step}.ckpt"
+    # UPSTREAM-COMPATIBLE KEYS alongside ours. `TabICLClassifier(model_path=<path>)` reads
+    # `state_dict`, `curr_step` and a `config` holding the TabICL kwargs; we already write
+    # `state_dict`, so adding the other two makes our checkpoints loadable by upstream's own
+    # wrapper — which is how our model can be scored through the SAME preprocessing and
+    # ensembling as the released one instead of a hand-rolled single pass.
+    inner = getattr(model, "module", model)   # unwrap DDP
+    model_config = getattr(inner, "creditcl_model_config", None)
+    # UPSTREAM'S SCHEMA, EXACTLY. `TabICLClassifier(model_path=<path>)` does:
+    #
+    #     assert "config" in checkpoint          # the TabICL kwargs
+    #     assert "state_dict" in checkpoint
+    #     self.model_ = TabICL(**checkpoint["config"])
+    #     self.model_.load_state_dict(checkpoint["state_dict"])
+    #
+    # So `config` must be the ARCHITECTURE kwargs, not a project YAML — otherwise `TabICL(**...)`
+    # is handed `task`, `prior`, `sweep` and dies. Our own metadata therefore moves to
+    # `crediticl_config`. Writing the schema their loader expects is what lets our weights be
+    # scored through upstream's own wrapper, which is the only way the comparison against the
+    # released model is about weights rather than about two different inference pipelines.
+    #
+    # They load with `weights_only=True`, so everything here must be plain types or tensors.
+    if model_config is None:
+        # Warn, do not raise. A checkpoint without it is still ours to resume from; it just
+        # cannot be handed to upstream's wrapper, which matters only for scoring. Raising here
+        # would also break every test that checkpoints a plain `nn.Module`.
+        from src.utils.logging_setup import get_logger
+
+        get_logger().warning(
+            "this model carries no `creditcl_model_config`, so the checkpoint will NOT be "
+            "loadable by TabICLRegressor(model_path=...) and `crediticl` cannot be scored from "
+            "it. Build the model through src.models.architecture.build_model, which records it."
+        )
     payload = {
-        "step": step,
+        "config": model_config,          # upstream's contract: kwargs to TabICL
         "state_dict": model.state_dict(),
+        "curr_step": step,               # upstream's name for the step
+        "step": step,                    # ours, kept so older readers still work
+        "crediticl_config": config,      # OUR resolved YAML — task, prior, sweep, everything
         "optimizer_state": optimizer.state_dict(),
         "scheduler_state": scheduler.state_dict(),
         "scaler_state": scaler.state_dict() if scaler is not None else None,
-        "config": config,
         "extra": extra or {},
     }
     # Write to a temp file then rename: a job killed at the walltime limit

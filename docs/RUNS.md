@@ -172,6 +172,63 @@ The one thing to do differently.
 
 ## Runs
 
+## 18-08-2026 — **THE NaN IS FIXED. First clean run, and the first honest comparison**
+
+**Jobs** 11519444/45 (GPU NaN diagnosis, both cards), 11519507–13 (Exp1 LGD debug, `gpu_b200`)
+
+### The NaN: solved, and it was missing feature standardisation
+The GPU walk named module **#0** — `col_embedder.in_linear`, the first layer — identically on
+both cards and under all four attention backends. Its output `absmax` was **6.550e+04**, which
+is `float16`'s largest finite value.
+
+| dataset | input absmax | before | after |
+|---|---|---|---|
+| `axa` | 1.98 | finite | finite |
+| `heloc` | 820 | finite | finite |
+| `loss2` | **2.4e6** | NaN | **finite** |
+| `base_modelisation` | **8.1e7** | NaN | **finite** |
+| `base_model` | **9.6e8** | NaN | **finite** |
+
+We fed raw currency amounts into the network. Upstream's `PreprocessingPipeline.fit` begins
+with `CustomStandardScaler().fit_transform(X)`; we had median imputation and no scaling.
+`standardise_from_context()` — context-only, so it cannot leak — now runs in all three
+inference paths. **All 7 LGD datasets score and there is not one NaN in the log.**
+
+Six explanations preceded this one and all six were wrong: the data, the architecture,
+divergence, feature width, CPU-vs-CUDA, the attention kernel. The answer came from the first
+tool that measured rather than theorised.
+
+### The first honest comparison, and it is sobering
+Same seven datasets, same evaluation run:
+
+| | R² |
+|---|---|
+| **Released TabICLv2** | **+0.224 … +0.770** |
+| Ours, 600 steps | −1.437 … −0.246 |
+
+Ours is worse than predicting the mean, everywhere. Two causes, and they must not be conflated:
+
+1. **Budget.** 600 steps x 64 = 38,400 datasets against upstream's 35.2 million — 0.11 %.
+2. **An unfair inference pipeline, which is OUR bug.** `tabiclv2` is scored through
+   `TabICLRegressor`, the official wrapper: upstream preprocessing *and* an 8-member
+   feature-shuffled ensemble. Ours went through a hand-rolled single pass with no ensemble.
+   **That is not a weights-only comparison**, so the gap above overstates the deficit by an
+   unknown amount.
+
+**Fixed:** checkpoints now carry `curr_step` and `model_config` alongside `state_dict`, which is
+the schema `TabICLClassifier(model_path=<path>)` reads — so our weights can be scored through
+upstream's own wrapper and the comparison becomes weights-only.
+
+### Bugs and anomalies
+- Nothing non-finite anywhere. Run completed, evaluation completed, exit 0.
+- **Still open:** our checkpoints are now upstream-loadable but `CreditICLBaseline` does not yet
+  USE the wrapper — that is the next change, and it is what makes the headline table fair.
+
+### Next
+Score through upstream's wrapper, then the batch pilot, then Exp1.
+
+---
+
 ## 17-08-2026 — **THE B200 MYSTERY IS SOLVED: the batch was too small for the card**
 
 **Jobs** 11518234/35 (benchmark, both cards), 11518236–40 (Exp1 LGD debug, `gpu_b200`, the

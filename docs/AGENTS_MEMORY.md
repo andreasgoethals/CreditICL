@@ -53,6 +53,37 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
 
+### 18-08-2026 - Why stages 2-3 are out of reach, and what to do instead
+- **Question:** upstream trains in three stages (500k steps at <=1,024 rows, then 40k at 10,240,
+  then 10k at 60,000). Should Exp1 do the same, or sweep it?
+- **Measured:** no, and it is not close. Row attention is ~quadratic in sequence length and the
+  micro-batch drops 4->1, so a stage-2 step costs ~400x a stage-1 step and a stage-3 step
+  ~13,700x. **Stage 1 is only 0.3 % of upstream's total compute.** A proportionate curriculum on
+  our 12,500-step stage 1 would cost **307x that stage 1** - per arm, times 75 arms.
+- **Why it matters anyway:** once `crediticl` went through upstream's wrapper, the context stopped
+  being capped, and the wrapper hands over the whole training split - 47,089 rows on `heloc`
+  against the <=1,024 we train on. 5 of 7 LGD datasets exceed the training length.
+- **Instead:** cap the context to what we trained on, on the SHARED base class so both columns
+  get the same cap, stratified for PD, recorded per row. **When you cannot afford to match the
+  reference at training time, match it at evaluation time** - and put the knob where it cannot
+  be applied to one side only.
+
+### 18-08-2026 - We had built a second inference pipeline without noticing
+- **Tried:** scoring our checkpoints with a hand-rolled forward pass (`CreditICLBaseline`),
+  while the released TabICLv2 was scored through `TabICLRegressor`.
+- **Result:** not comparable. Ours had no preprocessing (which is what overflowed
+  `col_embedder.in_linear` into all-NaN), no ensemble, and its own context rules. On the same
+  seven LGD datasets in one run: released +0.22..+0.77 R2, ours -1.44..-0.25. No way to say how
+  much of that was the prior and how much was our plumbing.
+- **Why:** the module docstring said "None of them can load a checkpoint we trained", which was
+  never checked. `TabICLClassifier(model_path=<path>)` has existed the whole time; the wrapper
+  asserts `config` and `state_dict` and does `TabICL(**checkpoint["config"])`. All that was
+  needed was writing their schema.
+- **Instead:** `CreditICLBaseline` SUBCLASSES `TabICLBaseline` and overrides only the wrapper
+  kwargs. Subclassing rather than duplicating is the point - preprocessing and ensembling
+  cannot drift apart because there is only one copy. **Before writing a second implementation
+  of anything, check whether the reference one takes a parameter.**
+
 ### 18-08-2026 - SOLVED: the LGD NaN was missing feature standardisation
 - **Tried:** six explanations over four days - the data, the architecture, divergence, feature
   width, CPU-vs-CUDA, and the attention kernel. Every one wrong.

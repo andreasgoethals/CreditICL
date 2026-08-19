@@ -61,6 +61,14 @@ class EvalConfig:
     #: The subsample is SEEDED AND RANDOM, never the head: taking the head of a sorted file
     #: misread one dataset's base rate as 49.5% against a true 37.8%.
     max_rows: int | None = None
+    #: Cap on CONTEXT rows given to a TFM, applied to every TFM baseline alike.
+    #:
+    #: We train on tables of at most 1,024 rows (upstream stage 1), and the wrapper otherwise
+    #: hands the model the whole training split — 47,089 rows on `heloc`, 46x anything it has
+    #: seen. Upstream avoids this with stages 2-3 at 10,240 and 60,000 rows; a proportionate
+    #: curriculum would cost 307x our stage 1, so we match the evaluation to the training
+    #: instead. Set once, applied to ours and the released model equally.
+    max_context_rows: int | None = None
 
 
 def make_split(
@@ -118,6 +126,7 @@ def evaluate_one(
     split: str = "random",
     model_kwargs: dict[str, Any] | None = None,
     max_rows: int | None = None,
+    max_context_rows: int | None = None,
 ) -> dict[str, Any]:
     """Fit one model on one dataset and return one result row."""
     log = get_logger()
@@ -157,6 +166,10 @@ def evaluate_one(
             X.shape[0], test_size=test_size, seed=seed, y=y, task=task, split=split
         )
         model = build(model_name, task, seed=seed, **(model_kwargs or {}))
+        # SET ON THE INSTANCE, not per-model: every TFM baseline in this run gets the same
+        # cap, so the comparison stays about the weights.
+        if max_context_rows is not None and hasattr(model, "max_context_rows"):
+            model.max_context_rows = int(max_context_rows)
         report = model.fit(X[train_idx], y[train_idx], ds.cat_indices)
         preds = model.predict(X[test_idx])
         y_test = y[test_idx]
@@ -243,6 +256,7 @@ def run(cfg: EvalConfig) -> pd.DataFrame:
                         split=cfg.split,
                         model_kwargs=cfg.model_kwargs.get(model_name, {}),
                         max_rows=cfg.max_rows,
+                        max_context_rows=cfg.max_context_rows,
                     )
                 )
 

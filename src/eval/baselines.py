@@ -421,21 +421,78 @@ class TabICLBaseline(_TFMBaseline):
             return False, f"{type(exc).__name__}: {exc}"
         return True, None
 
+    #: Cap on context rows handed to the wrapper. `None` = give it everything.
+    #:
+    #: WHY THIS EXISTS. The wrapper does not cap the context — TabICL scales to a million rows
+    #: with offloading — so it hands the model the whole training split: 47,089 rows on `heloc`.
+    #: We train on tables of at most 1,024 rows (upstream stage 1), so 5 of our 7 LGD datasets
+    #: are scored on contexts far longer than anything the model has ever seen, `heloc` by 46x.
+    #:
+    #: Upstream does not have this problem because their stages 2 and 3 train at 10,240 and
+    #: 60,000 rows. We cannot follow them: measured against a quadratic row-attention cost, a
+    #: proportionate curriculum would cost **307x our entire stage 1** — stage 1 is only 0.3 %
+    #: of upstream's total compute, so the curriculum IS the expense. For a 75-arm sweep it is
+    #: not affordable at any budget we have.
+    #:
+    #: So the mismatch is removed from the other end. Set on the SHARED base class, so our
+    #: column and the released model's column are always capped identically — the cap is part
+    #: of the measurement, not a handicap applied to one side.
+    max_context_rows: int | None = None
+
+    def _cap_context(self, X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Subsample the context to `max_context_rows`, seeded, stratified for PD.
+
+        Stratified because a 3 %-positive dataset cut uniformly to 1,024 rows can arrive with
+        almost no defaults, and then the model has nothing to learn the positive class from —
+        Tanna et al. 2026 measure balanced context construction at 3-4 AUC points on credit
+        data, which is larger than most model-family differences.
+        """
+        cap = self.max_context_rows
+        if cap is None or len(X) <= cap:
+            return X, y
+        rng = np.random.default_rng(self.seed)
+        if self.task == "pd":
+            pos = np.flatnonzero(y >= 0.5)
+            neg = np.flatnonzero(y < 0.5)
+            per = cap // 2
+            take_pos = rng.choice(pos, size=min(per, len(pos)), replace=False)
+            take_neg = rng.choice(neg, size=min(cap - len(take_pos), len(neg)), replace=False)
+            keep = np.concatenate([take_pos, take_neg])
+            rng.shuffle(keep)
+        else:
+            keep = rng.choice(len(X), size=cap, replace=False)
+        self.report.extra["context_cap"] = cap
+        self.report.extra["n_context_full"] = int(len(X))
+        return X[keep], y[keep]
+
+    def _wrapper_kwargs(self) -> dict[str, Any]:
+        """Extra arguments for upstream's wrapper. Empty here: the RELEASED weights.
+
+        The one hook `CreditICLBaseline` needs. It returns `model_path=<our checkpoint>` and
+        changes nothing else, so our model and the released model go through the same
+        preprocessing, the same ensemble and the same decoding — and the only difference between
+        the two columns of a results table is the weights, which is the only difference the
+        experiment is about.
+        """
+        return {}
+
     def _fit(self, X: np.ndarray, y: np.ndarray, cat_indices: list[int]) -> None:
         import torch
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self.report.extra["device"] = device
+        extra = self._wrapper_kwargs()
+        X, y = self._cap_context(X, y)
 
         if self.task == "pd":
             from tabicl import TabICLClassifier
 
-            self._model = TabICLClassifier(device=device, random_state=self.seed)
+            self._model = TabICLClassifier(device=device, random_state=self.seed, **extra)
             self._model.fit(X, (y >= 0.5).astype(int))
         else:
             from tabicl import TabICLRegressor
 
-            self._model = TabICLRegressor(device=device, random_state=self.seed)
+            self._model = TabICLRegressor(device=device, random_state=self.seed, **extra)
             self._model.fit(X, y)
 
     def _predict(self, X: np.ndarray) -> np.ndarray:

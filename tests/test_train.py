@@ -759,3 +759,35 @@ def test_the_run_card_answers_the_questions_a_reader_would_ask():
     ):
         assert needed in card, f"the run card does not report {needed!r}"
     assert "_log_run_card()" in src, "the card must actually be called"
+
+
+def test_checkpoints_carry_upstream_loadable_keys():
+    """Our model must be scoreable through UPSTREAM'S wrapper, not only our own code path.
+
+    Measured 18-08-2026 on the same seven LGD datasets: the released TabICLv2 scored R2 +0.22
+    to +0.77 through `TabICLRegressor`, ours -1.44 to -0.25 through a hand-rolled single pass.
+    Some of that gap is 600 steps against 500,000 — but not all of it, because their wrapper
+    also brings upstream's preprocessing pipeline and an 8-member feature-shuffled ensemble
+    while ours brought neither. A weights-only comparison needs the same pipeline on both sides.
+
+    `TabICLClassifier(model_path=<path>)` reads `state_dict`, `curr_step` and a `config` of
+    TabICL kwargs, so the checkpoint has to carry all three.
+    """
+    root = Path(__file__).resolve().parents[1]
+    src = (root / "src" / "train" / "checkpoint.py").read_text(encoding="utf-8")
+    # Their loader asserts on `config` and `state_dict` and builds `TabICL(**config)`, so
+    # `config` must be the ARCHITECTURE kwargs. Our own YAML moved to `crediticl_config`.
+    assert '"config": model_config' in src, "config must hold the TabICL kwargs, not our YAML"
+    assert '"state_dict"' in src and '"curr_step"' in src
+    assert '"crediticl_config": config' in src, "our YAML needs its own key"
+    assert 'getattr(model, "module", model)' in src, "DDP must be unwrapped first"
+
+    from src.models.architecture import build_model, is_available
+
+    if not is_available("tabicl"):
+        pytest.skip("upstream tabicl not installed here")
+    cfg = build_model("lgd", architecture="tabicl").creditcl_model_config
+    # the kwargs must be the real ones, not a stub
+    assert cfg["embed_dim"] == 128
+    assert cfg["max_classes"] == 0 and cfg["num_quantiles"] == 999, "LGD is the quantile head"
+    assert cfg["bias_free_ln"] is True, "upstream's --norm_type layernorm_nobias for regression"

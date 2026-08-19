@@ -118,7 +118,16 @@ def build_model(task: str, *, architecture: str = DEFAULT, **overrides: Any) -> 
         # Classification keeps LayerNorm biases (the default), per Table A.1.
         kwargs.update(max_classes=10, bias_free_ln=False)
     kwargs.update(_translate(overrides, TabICL))
-    return TabICL(**kwargs)
+    model = TabICL(**kwargs)
+    # RECORDED ON THE MODEL so a checkpoint can carry the exact architecture kwargs.
+    # `TabICLRegressor(model_path=...)` / `TabICLClassifier(model_path=...)` read a checkpoint
+    # whose `config` is upstream's `model_config_` — the kwargs to `TabICL`, not a project YAML.
+    # Storing them here is what lets our checkpoints be loaded by upstream's own wrapper, and
+    # that matters for fairness: the released model is scored through that wrapper, so it gets
+    # upstream's preprocessing AND its 8-member ensemble while ours got a hand-rolled single
+    # pass. Same weights-only comparison requires the same pipeline.
+    model.creditcl_model_config = dict(kwargs)
+    return model
 
 
 #: NanoTabICL's names for things upstream calls something else. Only needed because the tiny

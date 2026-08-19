@@ -524,7 +524,10 @@ class Trainer:
         # schedule mid-run, and resuming with a different prior would mean the
         # checkpoint and the data no longer match. Both are invisible in the loss
         # curve, so shout about them.
-        old_cfg = payload.get("config") or {}
+        # `config` now holds the TabICL ARCHITECTURE kwargs, per upstream's loader
+        # contract; our resolved YAML moved to `crediticl_config`. The fallback reads
+        # checkpoints written before 18-08-2026.
+        old_cfg = payload.get("crediticl_config") or payload.get("config") or {}
         old_steps = old_cfg.get("train", {}).get("max_steps")
         if old_steps is not None and int(old_steps) != self.max_steps:
             self.log.warning(

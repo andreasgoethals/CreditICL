@@ -50,6 +50,14 @@ def main() -> int:
              "arms hit OUT_OF_MEMORY on a 30 GB partition; the cap is recorded per row.",
     )
     ap.add_argument(
+        "--max-context-rows", type=int, default=None,
+        help="cap the CONTEXT rows given to every TFM baseline (ours AND the released "
+             "model). We train at <=1,024 rows and the wrapper would otherwise pass "
+             "47,089 on heloc, which the model has never seen; upstream avoids that "
+             "with stages 2-3, which would cost 307x our stage 1. Applied identically "
+             "to both, so it is part of the measurement, not a handicap.",
+    )
+    ap.add_argument(
         "--checkpoint", default=None,
         help="path to one of OUR step-*.ckpt files, required by --models crediticl. "
              "Omit it and the single checkpoint matching --task is used; with several, "
@@ -96,6 +104,7 @@ def main() -> int:
             split=args.split,
             model_kwargs=model_kwargs,
             max_rows=args.max_rows,
+            max_context_rows=args.max_context_rows,
         )
         df = run(cfg)
 

@@ -4,23 +4,25 @@
     python scripts/diagnose_nan.py --datasets 0005.base_modelisation
     python scripts/diagnose_nan.py --task pd --checkpoint <path>
 
-WHY THIS EXISTS, AND WHY IT RUNS ON THE CLUSTER
+WHAT IT FOUND, AND WHY IT IS KEPT
 
-Our LGD checkpoints return **100% NaN predictions on 4 of 7 real datasets** while `axa` scores
-normally. Three explanations are already ruled out by measurement:
+Written on 18-08-2026 to chase all-NaN LGD predictions on 4 of 7 real datasets. Six explanations
+had already been proposed and every one was wrong — the data, the architecture, divergence,
+feature width, CPU-vs-CUDA, the attention kernel — because each was inferred from a correlation
+rather than measured. This tool answered it on the first run: module **#0**,
+`col_embedder.in_linear`, output `absmax` **6.550e+04**, which is `float16`'s largest finite
+value. We were feeding raw currency amounts up to 9.6e8 into the first layer, having skipped the
+standard scaling that upstream's `PreprocessingPipeline` always applies. Fixed; see
+`standardise_from_context`.
 
-  * not the data         — the imputed input contains no non-finite value
-  * not the architecture — an UNTRAINED model returns 0% NaN on the same four datasets
-  * not divergence       — weight norms are flat across training (col 61.4->61.7, icl 174->175)
+It is kept because it is the only way to see inside a checkpoint that stays on the cluster — a
+checkpoint is ~229 MB and awkward to move, a log is not — and because the next numerical
+surprise will want the same instrument. Run it whenever a metric comes back `nan`.
 
-So it comes from the trained weights meeting a particular input, and the only way to see that
-is to run the model and watch. A checkpoint is ~229 MB, which is awkward to move between
-machines; a log is not. This walks the network with forward hooks and prints the FIRST module
-whose output goes non-finite, plus the activation magnitudes leading up to it.
-
-Read the output top-down. The first `-> NON-FINITE` line names the culprit, and the `absmax`
-column on the lines above it says whether the run-up was an overflow (magnitudes climbing) or a
-division by something that reached zero (magnitudes collapsing).
+Read the output top-down. The first `-> NON-FINITE` line names the culprit; the `absmax` column
+on the lines above says whether the run-up was an overflow (magnitudes climbing) or a division
+by something that reached zero (magnitudes collapsing). A non-finite PARAMETER, reported first,
+means training diverged and the input is irrelevant.
 """
 
 from __future__ import annotations
@@ -77,9 +79,6 @@ def sdpa_context(backend: str, log):
     and upstream evidently regards the choice as load-bearing: `--use_flash_attn3 False` in
     stage 1, `True` in stages 2-3.
     """
-    import contextlib
-
-
     if backend == "auto":
         return contextlib.nullcontext()
     try:

@@ -7,6 +7,48 @@ reason is not obvious.
 
 ## 18-08-2026 — the micro-batch rule, a run card, and the first clean end-to-end run
 
+- **A shared CONTEXT CAP, and the decision not to run stages 2-3.** The wrapper does not limit
+  context — TabICL scales to a million rows — so it was handing the model the whole training
+  split: **47,089 rows on `heloc` against the <=1,024 we train on, 46x**, and 5 of 7 LGD datasets
+  exceed the training length. Upstream avoids this with stages 2 and 3 (10,240 and 60,000 rows).
+  **We measured what that would cost: 307x our entire stage 1**, because stage 1 is only 0.3 % of
+  upstream's total compute — the curriculum IS the expense, and 75 arms of it is unaffordable at
+  any budget we have. So the mismatch is closed from the evaluation side: `max_context_rows` on
+  the SHARED `TabICLBaseline`, set once per run and applied to ours and the released model alike,
+  stratified for PD, recorded in every row. `--max-context-rows` on `evaluate.py`; the debug job
+  passes 1,024. It is part of the measurement, not a handicap on one side.
+- **NOT swept.** Curriculum and context are pipeline, not prior — the same reasoning that keeps
+  batch size and learning rate out of the grid.
+- `diagnose_nan.py`'s docstring rewritten now that it has answered its question, and a duplicated
+  import removed.
+
+- **`crediticl` IS NOW A SUBCLASS OF THE `tabiclv2` BASELINE.** Our checkpoints are scored
+  through `TabICLRegressor` / `TabICLClassifier` — upstream's own wrapper — so preprocessing,
+  the 8-member feature-shuffled ensemble, context construction and decoding are all inherited
+  and cannot drift. The subclass overrides exactly three things: `name`, `_wrapper_kwargs`
+  (which returns `model_path` and `allow_auto_download=False`) and `_fit` (metadata only,
+  calling `super()` first). `_predict` is inherited. **The only difference between our column
+  and the released model's column is the weights**, which is the only difference the experiment
+  is about. A test pins the override set.
+- **`allow_auto_download=False`** on our side deliberately: an unreadable checkpoint would
+  otherwise silently fetch the RELEASED model from Hugging Face and report its numbers under
+  our name.
+- **The checkpoint schema is upstream's**: `config` holds the TabICL kwargs (their loader does
+  `TabICL(**checkpoint["config"])`), `state_dict` the weights, `curr_step` the step. Our
+  resolved YAML moved to `crediticl_config`; both readers fall back to the old layout.
+- The **progress hook** is the one place that still rolls its own inference, and it has to: it
+  scores the LIVE model mid-training while the wrapper loads from a file. It mirrors the
+  wrapper's first step explicitly and is documented as a diagnostic trend, never a reported
+  number — `scripts/evaluate.py` produces those, through the wrapper.
+
+- **Checkpoints carry `curr_step` and `model_config`** beside `state_dict` — the schema
+  `TabICLClassifier(model_path=<path>)` reads. Measured on the same seven LGD datasets, the
+  released model scored R2 +0.22..+0.77 through `TabICLRegressor` while ours scored -1.44..-0.25
+  through a hand-rolled single pass. Part of that is 600 steps against 500,000, but their
+  wrapper also brings upstream preprocessing and an 8-member ensemble, so it is **not** a
+  weights-only comparison. `build_model` records its architecture kwargs on the model to make
+  this possible.
+
 - **THE LGD NaN IS FIXED: features were never standardised.** The GPU walk named module #0,
   `col_embedder.in_linear`, with an output `absmax` of exactly 6.550e+04 — float16's ceiling —
   on inputs reaching 9.6e8. Upstream's `PreprocessingPipeline` begins with

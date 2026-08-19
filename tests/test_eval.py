@@ -618,18 +618,101 @@ def test_features_are_standardised_before_the_model_sees_them():
     )
 
 
-def test_every_inference_path_standardises():
-    """Three places build an episode for the model. One of them skipping this is a silent
-    half-fix: the progress curve and the final evaluation would disagree and neither would
-    say why."""
-    baseline = (ROOT / "src" / "eval" / "crediticl_baseline.py").read_text(encoding="utf-8")
-    progress = (ROOT / "src" / "train" / "progress.py").read_text(encoding="utf-8")
+def test_scoring_goes_through_upstreams_wrapper_not_our_own_code():
+    """`crediticl` and `tabiclv2` must differ ONLY in the weights.
 
-    assert baseline.count("standardise_from_context(Xc, Xq)") == 2, (
-        "predict and predict_quantiles must both standardise"
+    Subclassing is what guarantees it: preprocessing, the 8-member ensemble, context
+    construction and decoding are inherited, and the subclass overrides only the wrapper
+    kwargs. A hand-rolled path scored -1.44..-0.25 against the released model's +0.22..+0.77
+    on the same run, and there was no way to attribute that gap between the prior and our
+    plumbing.
+    """
+    from src.eval.baselines import TabICLBaseline
+    from src.eval.crediticl_baseline import CreditICLBaseline
+
+    assert issubclass(CreditICLBaseline, TabICLBaseline)
+    overrides = {k for k in CreditICLBaseline.__dict__ if not k.startswith("__")}
+    assert overrides == {"name", "_fit", "_wrapper_kwargs"}, (
+        f"crediticl overrides {sorted(overrides)}. Anything beyond the wrapper kwargs and "
+        f"metadata is a difference in the inference pipeline, which the comparison cannot have."
     )
-    assert "standardise_from_context(Xc, Xt)" in progress, "the progress scorer must too"
-    # and always AFTER imputation: standardising around NaNs would poison the statistics
-    for text, call in ((baseline, "standardise_from_context(Xc, Xq)"),
-                       (progress, "standardise_from_context(Xc, Xt)")):
-        assert text.index("np.isfinite") < text.index(call)
+    # `_predict` in particular must be inherited, or the two columns decode differently
+    assert "_predict" not in CreditICLBaseline.__dict__
+
+    src = (ROOT / "src" / "eval" / "crediticl_baseline.py").read_text(encoding="utf-8")
+    assert '"allow_auto_download": False' in src, (
+        "auto-download must be off: an unreadable checkpoint would otherwise fetch the RELEASED "
+        "model and report its numbers under our name"
+    )
+
+
+def test_the_progress_hook_standardises_because_it_cannot_use_the_wrapper():
+    """The one place that still rolls its own inference, and it has to.
+
+    The progress curve scores the LIVE model mid-training; upstream's wrapper loads weights from
+    a file, so it cannot be used here. It therefore mirrors the wrapper's first step —
+    `CustomStandardScaler` — explicitly. It is a diagnostic trend, never a reported number;
+    `scripts/evaluate.py` produces those, through the wrapper.
+    """
+    progress = (ROOT / "src" / "train" / "progress.py").read_text(encoding="utf-8")
+    assert "standardise_from_context(Xc, Xt)" in progress
+    assert progress.index("np.isfinite") < progress.index("standardise_from_context(Xc, Xt)"), (
+        "standardising around NaNs would poison the statistics; impute first"
+    )
+
+
+def test_context_cap_lives_on_the_shared_base_class():
+    """Both columns must be capped identically, or the cap becomes a handicap on one side.
+
+    The wrapper does not limit context — TabICL scales to a million rows — so it hands the model
+    the whole training split: 47,089 rows on `heloc` against the <=1,024 we train on, 46x.
+    Upstream avoids that with stages 2-3 at 10,240 and 60,000 rows; measured against a quadratic
+    row-attention cost, a proportionate curriculum would run 307x our entire stage 1, because
+    stage 1 is only 0.3 % of upstream's compute. So the evaluation is matched to the training
+    instead — for every model at once.
+    """
+    from src.eval.baselines import TabICLBaseline
+    from src.eval.crediticl_baseline import CreditICLBaseline
+
+    # declared once, inherited by both — not two independent settings that can drift
+    assert "max_context_rows" in TabICLBaseline.__dict__
+    assert "max_context_rows" not in CreditICLBaseline.__dict__
+    assert "_cap_context" in TabICLBaseline.__dict__
+    assert TabICLBaseline.max_context_rows is None, "uncapped by default"
+
+    src = (ROOT / "src" / "eval" / "baselines.py").read_text(encoding="utf-8")
+    # applied inside the SHARED _fit, so neither subclass can skip it
+    fit = src[src.index("def _fit", src.index("class TabICLBaseline")) :]
+    assert "self._cap_context(X, y)" in fit[:600]
+
+
+def test_context_cap_is_stratified_for_pd_and_recorded():
+    """A 3 %-positive dataset cut uniformly to 1,024 rows can arrive with almost no defaults,
+    and then the model has nothing to learn the positive class from — Tanna et al. 2026 measure
+    balanced context at 3-4 AUC points on credit data, more than most model-family gaps."""
+    m = build("tabiclv2", "pd", seed=0)
+    m.max_context_rows = 200
+    m.report = type("R", (), {"extra": {}})()
+
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(5000, 6))
+    y = np.zeros(5000)
+    y[:150] = 1.0                      # 3 % positives
+    Xc, yc = m._cap_context(X, y)
+
+    assert len(Xc) == 200 == len(yc)
+    assert yc.sum() >= 50, f"only {yc.sum():.0f} positives survived — not stratified"
+    assert m.report.extra["context_cap"] == 200
+    assert m.report.extra["n_context_full"] == 5000
+
+    # LGD needs no stratification, only the cap
+    m2 = build("tabiclv2", "lgd", seed=0)
+    m2.max_context_rows = 100
+    m2.report = type("R", (), {"extra": {}})()
+    Xl, yl = m2._cap_context(X, rng.uniform(size=5000))
+    assert len(Xl) == 100
+
+    # under the cap, nothing is touched
+    m2.max_context_rows = 99_999
+    same, _ = m2._cap_context(X, y)
+    assert same is X
