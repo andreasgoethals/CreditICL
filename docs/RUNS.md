@@ -172,6 +172,76 @@ The one thing to do differently.
 
 ## Runs
 
+## 20-08-2026 — GPU benchmark after the prior-shape fix — **the instrument could not see the change**
+
+**Submitted** 20-08-2026 14:45 | **job** 11520989 | **cluster** mindwell `gpu_b200`, node
+`r11g12`, NVIDIA B200 178.3 GB, 148 SMs, driver 595.71.05 | **used** 55 s
+**torch** 2.11.0+cu128, CUDA 12.8, `sm_100` shipped, `exact_arch_shipped: true`
+
+Submitted to answer one question: what does matching upstream's stage-1 prior shape cost
+(rows [512, 1024] -> exactly 1,024, features [3, 50] -> [1, 100])? **It answered a different
+question, because only 2 of its 6 rungs read the config.**
+
+### What it measured
+
+| rung | value | read the new config? |
+|---|---|---|
+| matmul 4096 bf16 | **1,366.72** TFLOP/s | n/a |
+| matmul 4096 fp32 | 63.18 TFLOP/s | n/a |
+| attention @1,024 | 0.026 ms | n/a |
+| model fwd | 16.14 ms | **NO** — hardcoded 1024x40, batch 1 |
+| model fwd+bwd | 44.03 ms -> 22.71 steps/s | **NO** — same |
+| AMP @batch 4 | fp32 119.32 -> bf16 **58.21** ms | **NO** — same |
+| Muon vs AdamW | 63.25 vs 45.06 ms, **1.40x** | **NO** — same |
+| prior, 1 worker | **10.88** datasets/s (0.0919 s each) | yes |
+| end to end, 23 workers | **4.589** steps/s, 18.35 datasets/s | yes |
+
+### The one real comparison, and the one real conclusion
+
+`end_to_end` is the only rung that saw the new shape *and* has a matching earlier measurement:
+17-08 on the same card at the same batch gave **8.26 steps/s**, today **4.589** — the prior-shape
+fix costs **1.80x** here. But that number is not the training cost, for two reasons:
+
+1. **It is measured at batch 4, and training runs at batch 64.** Batch 4 is the exact regime the
+   17-08 investigation showed puts a B200 at 3.5 % utilisation. `--batch-size` defaulted to 4
+   from before `train.batch_size` became 64.
+2. **The GPU rungs were blind to the change**, so 1.80x is mostly the CPU prior generator
+   getting slower on bigger datasets — not the GPU getting slower on wider tensors.
+
+What IS solid: **at batch 64 the prior has ~10x headroom and is not the bottleneck.** 10.88
+datasets/s x 23 workers = 250 datasets/s supplied, against the 25.6 datasets/s that training
+consumed on 17-08 at 88.7 % GPU utilisation. AMP is a genuine **2.05x speed-up** (58.21 vs
+119.32 ms), and Muon's 1.40x is unchanged and confirmed a third time.
+
+### Bugs
+1. **`rows, feats, train_size = 1024, 40, 768` hardcoded in four places.** Only `bench_prior`
+   and `bench_end_to_end` called `_prior_cfg`. Fixed: one `bench_shape(task)` reads
+   `n_rows_range`, `n_features_range` and `train_frac_range` from the config, and a test asserts
+   the assignment is gone.
+2. **`--batch-size` default 4**, stale since the config moved to 64. Now defaults to
+   `train.batch_size`.
+3. **The verdict divided a batch-4 rate by a batch-1 ceiling** — `bench_model` ran at batch 1 —
+   and reported "20 % of the GPU, STARVED, more cores". It also contradicted itself: the prior
+   extrapolation printed two lines above says 23 workers can supply 62.56 steps/s, 13x what was
+   measured. Fixed: the ceiling is measured at the real batch size, includes AMP and Muon, and
+   when neither ceiling explains the gap the verdict now says so instead of guessing "more
+   cores".
+
+### Interpretation
+The arm cost is still not pinned. The FLOP model says the new shape costs ~2.5x per step; the
+one measurement available says 1.80x in a regime we do not train in. So one Exp1 arm is
+**somewhere between 15.6 h and 21.7 h**, and 75 arms between **33 M and 46 M credits**. A rerun
+of the now-fixed benchmark settles it in under a minute of GPU time.
+
+**The lesson is the same one as the NaN.** Six wrong theories then, because the instrument was
+built after the guessing; today a benchmark submitted specifically to measure a config change
+could not read the config. Check what the instrument reads BEFORE trusting what it says.
+
+### Next
+Rerun the benchmark, then decide `max_steps` against the real per-arm cost.
+
+---
+
 ## 19-08-2026 — **THE PIPELINE IS FAIR. Every arm positive, gap is now budget alone**
 
 **Job** 11520343 (Exp1 LGD debug, `gpu_b200`) — first run with `crediticl` scored through

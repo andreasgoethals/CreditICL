@@ -133,7 +133,9 @@ def bench_attention(torch: Any, device: str, n: int, warmup: int) -> dict[str, f
     return {"attention_1024_ms": round(sec * 1000, 3)}
 
 
-def bench_model(torch: Any, device: str, task: str, n: int, warmup: int) -> dict[str, Any]:
+def bench_model(
+    torch: Any, device: str, task: str, n: int, warmup: int, batch_size: int
+) -> dict[str, Any]:
     """The real network on synthetic tensors ALREADY ON THE GPU — no data pipeline at all.
 
     This is the pivotal row. If it matches across two cards but the end-to-end step does not,
@@ -145,12 +147,14 @@ def bench_model(torch: Any, device: str, task: str, n: int, warmup: int) -> dict
         return {"error": "upstream tabicl not installed"}
 
     model = build_model(task, architecture="tabicl").to(device)
-    rows, feats, train_size = 1024, 40, 768
-    X = torch.randn(1, rows, feats, device=device)
+    # AT THE REAL BATCH SIZE. It used to be 1, and the verdict below then divided a batch-N
+    # end-to-end rate by a batch-1 ceiling — which reads as starvation whatever the truth is.
+    rows, feats, train_size = bench_shape(task)
+    X = torch.randn(batch_size, rows, feats, device=device)
     y = (
-        torch.rand(1, train_size, device=device)
+        torch.rand(batch_size, train_size, device=device)
         if task == "lgd"
-        else (torch.rand(1, train_size, device=device) > 0.7).float()
+        else (torch.rand(batch_size, train_size, device=device) > 0.7).float()
     )
 
     model.eval()
@@ -169,10 +173,31 @@ def bench_model(torch: Any, device: str, task: str, n: int, warmup: int) -> dict
     both = _time(step, max(3, n // 2), warmup, torch)
     return {
         "params": sum(p.numel() for p in model.parameters()),
+        "batch_size": batch_size,
+        "rows": rows,
+        "features": feats,
         "forward_ms": round(fwd * 1000, 2),
         "forward_backward_ms": round(both * 1000, 2),
         "max_steps_per_s_if_data_were_free": round(1.0 / both, 2),
     }
+
+
+def bench_shape(task: str) -> tuple[int, int, int]:
+    """The dataset shape TRAINING actually uses, read from this task's Exp1 config.
+
+    WHY THIS IS NOT HARDCODED ANY MORE. It was `1024, 40, 768` in four places, and on
+    20-08-2026 that silently wasted a benchmark. The run was submitted to measure what
+    matching upstream's stage-1 prior shape costs — rows [512, 1024] -> exactly 1,024 and
+    features [3, 50] -> [1, 100] — and every GPU row came back at the OLD shape, because the
+    only sections reading the config were the two CPU/loader ones. A benchmark that cannot see
+    the change you submitted it to measure is worse than no benchmark: it answers confidently.
+    """
+    prior = _prior_cfg(task)
+    rows = int(max(prior.get("n_rows_range", [512, 1024])))
+    flo, fhi = prior.get("n_features_range", [3, 50])
+    feats = int(round((int(flo) + int(fhi)) / 2))      # the MEAN width, so this is the mean step
+    lo, hi = prior.get("train_frac_range", [0.3, 0.9])
+    return rows, feats, int(round(rows * (float(lo) + float(hi)) / 2))
 
 
 def _prior_cfg(task: str) -> dict[str, Any]:
@@ -184,6 +209,14 @@ def _prior_cfg(task: str) -> dict[str, Any]:
     prior_cfg = dict(cfg.get("prior") or {})
     prior_cfg.pop("grid", None)
     return prior_cfg
+
+
+def _train_cfg(task: str) -> dict[str, Any]:
+    """The `train` block from this task's real Exp1 config."""
+    import yaml
+
+    cfg_path = ROOT / "config" / f"Exp1_{'LGD' if task == 'lgd' else 'PD'}.yaml"
+    return dict(yaml.safe_load(cfg_path.read_text(encoding="utf-8")).get("train") or {})
 
 
 def bench_prior(task: str, n_batches: int, batch_size: int) -> dict[str, Any]:
@@ -231,7 +264,7 @@ def bench_amp(torch: Any, device: str, task: str, n: int, batch_size: int) -> di
     if not is_available("tabicl"):
         return {"error": "upstream tabicl not installed"}
 
-    rows, feats, train_size = 1024, 40, 768
+    rows, feats, train_size = bench_shape(task)
     X = torch.randn(batch_size, rows, feats, device=device)
     y = (
         torch.rand(batch_size, train_size, device=device)
@@ -289,7 +322,7 @@ def profile_step(torch: Any, device: str, task: str, batch_size: int, amp: bool)
     if not device.startswith("cuda"):
         return {"skipped": "profiling is only meaningful on CUDA"}
 
-    rows, feats, train_size = 1024, 40, 768
+    rows, feats, train_size = bench_shape(task)
     X = torch.randn(batch_size, rows, feats, device=device)
     y = (
         torch.rand(batch_size, train_size, device=device)
@@ -332,7 +365,9 @@ def profile_step(torch: Any, device: str, task: str, batch_size: int, amp: bool)
             "table": rank}
 
 
-def bench_optimizers(torch: Any, device: str, task: str, n_steps: int) -> dict[str, Any]:
+def bench_optimizers(
+    torch: Any, device: str, task: str, n_steps: int, batch_size: int
+) -> dict[str, Any]:
     """Time one optimiser step per optimiser, on tensors already on the GPU.
 
     THE RUNG THAT WAS MISSING, and it was the answer. The first benchmark used plain SGD and
@@ -351,15 +386,15 @@ def bench_optimizers(torch: Any, device: str, task: str, n_steps: int) -> dict[s
     if not is_available("tabicl"):
         return {"error": "upstream tabicl not installed"}
 
-    rows, feats, train_size = 1024, 40, 768
-    X = torch.randn(1, rows, feats, device=device)
+    rows, feats, train_size = bench_shape(task)
+    X = torch.randn(batch_size, rows, feats, device=device)
     y = (
-        torch.rand(1, train_size, device=device)
+        torch.rand(batch_size, train_size, device=device)
         if task == "lgd"
-        else (torch.rand(1, train_size, device=device) > 0.7).float()
+        else (torch.rand(batch_size, train_size, device=device) > 0.7).float()
     )
 
-    out: dict[str, Any] = {}
+    out: dict[str, Any] = {"batch_size": batch_size}
     for name in ("adamw", "muon"):
         try:
             model = build_model(task, architecture="tabicl").to(device)
@@ -437,7 +472,12 @@ def main() -> int:
     ap.add_argument("--steps", type=int, default=20, help="timed repetitions per measurement")
     ap.add_argument("--warmup", type=int, default=5)
     ap.add_argument("--prior-batches", type=int, default=10)
-    ap.add_argument("--batch-size", type=int, default=4, help="datasets per step, as in training")
+    # DEFAULTS TO THE CONFIG, not to 4. The default WAS 4, from when `train.batch_size` was 4,
+    # and it stayed 4 after the config moved to upstream's 64 — so every benchmark since has
+    # measured a batch the experiments do not use. Batch 4 is the exact regime the 17-08 run
+    # showed puts a B200 at 3.5 % utilisation, so it reports starvation by construction.
+    ap.add_argument("--batch-size", type=int, default=None,
+                    help="datasets per step; default: train.batch_size from this task's config")
     ap.add_argument("--workers", type=int, default=None,
                     help="for the end-to-end row; defaults to $SLURM_CPUS_PER_TASK - 1")
     ap.add_argument("--skip-prior", action="store_true", help="GPU rows only")
@@ -451,6 +491,9 @@ def main() -> int:
     )
     ap.add_argument("--json", default=None, help="also write the results here")
     args = ap.parse_args()
+
+    if args.batch_size is None:
+        args.batch_size = int(_train_cfg(args.task).get("batch_size", 64))
 
     import torch
 
@@ -476,7 +519,9 @@ def main() -> int:
 
     if not args.skip_model:
         print("--- 3/4. the real model, tensors already on the GPU " + "-" * 22)
-        results["model"] = bench_model(torch, device, args.task, args.steps, args.warmup)
+        results["model"] = bench_model(
+            torch, device, args.task, args.steps, args.warmup, args.batch_size
+        )
         for k, v in results["model"].items():
             print(f"  {k:44s} {v}")
         print()
@@ -497,7 +542,9 @@ def main() -> int:
 
     if not args.skip_model:
         print("--- 4b. OPTIMISER STEP — the row that explains the B200 " + "-" * 18)
-        results["optimizers"] = bench_optimizers(torch, device, args.task, args.steps)
+        results["optimizers"] = bench_optimizers(
+            torch, device, args.task, args.steps, args.batch_size
+        )
         for k, v in results["optimizers"].items():
             print(f"  {k:44s} {v}")
         print()
@@ -544,23 +591,55 @@ def main() -> int:
         for w in (7, 23):
             print(f"    x{w:2d} workers -> {per_worker * w / args.batch_size:6.2f} steps/s "
                   f"({args.batch_size} datasets/step)")
+    # The REALISTIC ceiling, not the SGD/fp32 one. Training runs AMP and Muon, and Muon adds a
+    # Newton-Schulz chain per weight matrix per step that no batch size amortises away. Comparing
+    # end-to-end against the plain fwd+bwd number overstates the headroom and reads as
+    # starvation; on 20-08-2026 it reported "20% of the GPU, STARVED, more cores" while its own
+    # prior extrapolation two lines above said the workers could supply 13x what was measured.
+    amp_ms = (results.get("amp") or {}).get("amp_bf16_step_ms")
+    opt = results.get("optimizers") or {}
+    muon_overhead = (
+        opt["muon_step_ms"] - opt["adamw_step_ms"]
+        if opt.get("muon_step_ms") and opt.get("adamw_step_ms") else 0.0
+    )
+    realistic = 1000.0 / (amp_ms + muon_overhead) if amp_ms else None
+    if realistic:
+        print(f"  GPU ceiling, AMP + Muon         : {realistic:.2f} steps/s "
+              f"({amp_ms:.1f} ms step + {muon_overhead:.1f} ms Muon)")
+
     e2e = (results.get("end_to_end") or {}).get("steps_per_s")
     if e2e:
         print(f"  Measured end to end             : {e2e} steps/s")
-        if ceiling:
-            pct = 100.0 * e2e / ceiling
-            print(f"  -> reaching {pct:.0f}% of what this GPU could do with free data")
-            if pct < 40:
-                print("     STARVED: the GPU is idle most of the time. More cores, not a")
-                print("     bigger GPU.")
+        ref = realistic or ceiling
+        label = "AMP + Muon" if realistic else "plain fwd+bwd"
+        if ref:
+            pct = 100.0 * e2e / ref
+            print(f"  -> reaching {pct:.0f}% of the {label} ceiling at batch {args.batch_size}")
+            supply = (
+                prior["datasets_per_s_one_worker"] * (results.get("end_to_end") or {}).get(
+                    "workers", 0) / args.batch_size
+                if prior.get("datasets_per_s_one_worker") else None
+            )
+            if pct >= 60:
+                print("     COMPUTE-BOUND: the GPU is the limit. A faster card would help;")
+                print("     more cores would not.")
+            elif supply and supply < ref:
+                print("     STARVED BY THE PRIOR: the workers cannot supply the GPU. More")
+                print("     cores, or a cheaper prior — not a bigger GPU.")
             else:
-                print("     COMPUTE-BOUND: the GPU is the limit, so a faster card would help.")
+                print("     NEITHER CEILING EXPLAINS THIS. The workers can supply "
+                      f"{supply:.1f} steps/s and the GPU can take {ref:.1f}, yet the measured")
+                print("     rate is below both. Suspect DataLoader overhead, IPC of the padded")
+                print("     (batch, rows, max_features) tensors, or core contention. Run with")
+                print("     --profile before believing any story about it.")
     print()
     print("  HOW TO READ IT: run this on both cards and compare row by row.")
     print("    matmul/attention differ    -> the CARD or the wheel. Change hardware.")
     print("    those match, model differs -> a kernel this model needs is missing here.")
     print("    all match, training differs-> the GPU was never the problem; it is the")
     print("                                  prior, and only more cores will help.")
+    print(f"  Shape measured: {bench_shape(args.task)} (rows, features, train_size), "
+          f"batch {args.batch_size}, from config/Exp1_*.yaml.")
     print("=" * 74)
 
     if args.json:

@@ -33,6 +33,7 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 20-08-2026 | 11520989 — GPU benchmark, `gpu_b200` | **Wasted: 4 of 6 rungs ignored the config it was sent to measure** | Only prior + end-to-end read it. 8.26 -> 4.589 steps/s at batch 4 = 1.80x, but batch 4 is not what we train at |
 | 19-08-2026 | 11520343 — Exp1 LGD debug, `gpu_b200` | **Pipeline fair at last: R2 positive on ALL 7 datasets** (was -1.44..-0.25) | Wrapper + shared 1,024 context cap. Gap to released now a uniform 2-4x — budget, not plumbing |
 | 17-08-2026 | 11518234/35 + 11518236–40 — benchmark + LGD debug at batch 64 | **B200 SOLVED: 3.5 % -> 88.7 % utilisation, 12x throughput** | The batch was too small to fill the card. Killed at the wall on step 1,422/1,500 |
 | 14-08-2026 | 11516936/11516938 — Exp1 debug, 8 arms | **All failed, exit 2 in 21–60 s** | `--resume auto`, a flag `pretrain.py` never defined |
@@ -53,6 +54,22 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
+
+### 20-08-2026 - A benchmark submitted to measure a config change could not read the config
+- **Tried:** one B200 job to measure what matching upstream's stage-1 prior shape costs, so the
+  75-arm Exp1 budget could be sized from a measurement instead of a FLOP model.
+- **Result:** 4 of its 6 rungs used `rows, feats, train_size = 1024, 40, 768`, hardcoded in four
+  places, and `--batch-size` still defaulted to 4 from before `train.batch_size` became 64. Only
+  `bench_prior` and `bench_end_to_end` called `_prior_cfg`. The verdict then divided a batch-4
+  throughput by a batch-1 ceiling and announced "20 % of the GPU, STARVED, more cores" - while
+  the prior extrapolation printed two lines above it said the workers could supply 13x what was
+  measured. **The report contradicted itself and still sounded certain.**
+- **Why:** the hardcoded shape was fine when written, because the config matched it. Nothing
+  connected the two, so the config moved and the benchmark did not. Same for the batch default.
+- **Instead:** `bench_shape(task)` reads the shape from the config, `--batch-size` defaults to
+  `train.batch_size`, the ceiling is measured at the real batch with AMP and Muon, and the
+  verdict admits when neither ceiling explains the gap. Two tests pin it. **Before trusting an
+  instrument, check what it READS - a stale default answers as confidently as a live one.**
 
 ### 20-08-2026 - Two silent prior deviations that also made every arm cheaper
 - **Tried:** answering "should Exp1 use upstream's three-stage curriculum, scaled down

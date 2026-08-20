@@ -20,7 +20,12 @@ reason is not obvious.
   which double-counted the micro-batch drop. A proportional curriculum is 3.6x, not 307x.
 - **Stale Exp1 comments fixed:** the budget said "12,500 x 4 = 50,000 datasets" from before
   `batch_size` became 64 (it is 800,000), and the arm count said 96 rather than 75.
-- 744 tests pass.
+- **The GPU benchmark now reads the config it is measuring.** `bench_shape(task)` replaces
+  `1024, 40, 768` hardcoded in four rungs; `--batch-size` defaults to `train.batch_size`
+  instead of a stale 4; the ceiling is measured at the real batch size with AMP and Muon
+  rather than batch 1 with SGD; and the verdict says "neither ceiling explains this"
+  instead of always blaming the core count. Job 11520989 was wasted on the old version.
+- 746 tests pass.
 
 ---
 

@@ -84,3 +84,41 @@ def test_an_unexpanded_glob_says_the_files_do_not_exist_yet(tmp_path):
     assert "still queued or running" in r.stderr
     assert "squeue" in r.stderr, "tell the reader how to check"
     assert "need at least two" not in r.stderr, "the misleading message must be gone"
+
+
+def test_bench_shape_and_batch_come_from_the_config():
+    """A benchmark that cannot see the setting you changed will answer confidently anyway.
+
+    On 20-08-2026 a B200 job was submitted purely to measure what matching upstream's stage-1
+    prior shape costs. Every GPU row came back at `1024, 40, 768` and batch 4, because those
+    were hardcoded in four places and `--batch-size` still defaulted to 4 from before
+    `train.batch_size` became 64. The run measured the old shape at a batch the experiments do
+    not use, and its verdict divided a batch-4 rate by a batch-1 ceiling.
+    """
+    import importlib.util
+
+    import yaml
+
+    spec = importlib.util.spec_from_file_location(
+        "benchmark_gpu", ROOT / "scripts" / "benchmark_gpu.py"
+    )
+    bench = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bench)
+    for task, name in (("lgd", "LGD"), ("pd", "PD")):
+        cfg = yaml.safe_load((ROOT / "config" / f"Exp1_{name}.yaml").read_text(encoding="utf-8"))
+        rows, feats, train_size = bench.bench_shape(task)
+        assert rows == max(cfg["prior"]["n_rows_range"])
+        lo, hi = cfg["prior"]["n_features_range"]
+        assert feats == round((lo + hi) / 2), "the MEAN width, so this is the mean step"
+        lo, hi = cfg["prior"]["train_frac_range"]
+        assert train_size == round(rows * (lo + hi) / 2)
+        assert bench._train_cfg(task)["batch_size"] == cfg["train"]["batch_size"]
+
+
+def test_no_hardcoded_dataset_shape_is_left_in_the_benchmark():
+    """`1024, 40, 768` appeared four times. It must come from `bench_shape` or the next config
+    change is measured against the last one again."""
+    src = (ROOT / "scripts" / "benchmark_gpu.py").read_text(encoding="utf-8")
+    # The ASSIGNMENT, not the string — `bench_shape`'s docstring names the old triple on purpose.
+    assert "train_size = 1024, 40, 768" not in src
+    assert src.count("rows, feats, train_size = bench_shape(task)") == 4
