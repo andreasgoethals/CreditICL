@@ -5,6 +5,25 @@ reason is not obvious.
 
 ---
 
+## 20-08-2026 — the prior's SHAPE now matches upstream stage 1
+
+- **`n_rows_range` [512, 1024] -> [1024, 1024].** Upstream stage 1 is 1,024 rows exactly:
+  `--max_seq_len 1024` with no `--min_seq_len`, and `sample_seq_len` returns `max_seq_len` when
+  `min_seq_len is None`. We had been training on ~25 % fewer rows than the reference.
+- **`n_features_range` [3, 50] -> [1, 100]**, matching `--min_features 1 --max_features 100`.
+  `max_features: 100` already padded the tensors to 100, so the top half of the feature axis was
+  padding the model never learned on.
+- **`test_prior_shape_matches_upstream_stage_one`** pins all five shape knobs to the values in
+  the pinned `train_v2_reg_stage1.sh`, so neither can drift again.
+- **The three-stage question answered in the config, with corrected arithmetic.** A stage-2 step
+  costs ~7x a stage-1 step and a stage-3 step ~120x — not the 400x/13,700x recorded on 18-08,
+  which double-counted the micro-batch drop. A proportional curriculum is 3.6x, not 307x.
+- **Stale Exp1 comments fixed:** the budget said "12,500 x 4 = 50,000 datasets" from before
+  `batch_size` became 64 (it is 800,000), and the arm count said 96 rather than 75.
+- 744 tests pass.
+
+---
+
 ## 18-08-2026 — the micro-batch rule, a run card, and the first clean end-to-end run
 
 - **A shared CONTEXT CAP, and the decision not to run stages 2-3.** The wrapper does not limit

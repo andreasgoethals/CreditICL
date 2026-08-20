@@ -420,3 +420,44 @@ def test_exp2_and_exp3_differ_only_where_they_should():
         assert two["init"]["strategy"] == "scratch"
         assert three["init"]["strategy"] != "scratch"
         assert three["init"]["pretrained_path"], "a warm start needs a checkpoint"
+
+
+#: TabICLv2 stage 1, read off `scripts/train_v2_reg_stage1.sh` in the pinned tfm-library.
+#: `sample_seq_len` opens with `if min_seq_len is None: return max_seq_len`, and stage 1 passes
+#: only `--max_seq_len 1024` — so 1,024 rows exactly, not a range.
+UPSTREAM_STAGE1 = {
+    "n_rows_range": [1024, 1024],       # --max_seq_len 1024, no --min_seq_len
+    "n_features_range": [1, 100],       # --min_features 1 --max_features 100
+    "max_features": 100,                # --max_features 100
+    "n_nodes_range": [2, 33],           # --min_n_nodes 2 --max_n_nodes 32, exclusive upper
+    "train_frac_range": [0.3, 0.9],     # --min_train_size 0.3 --max_train_size 0.9
+}
+
+
+@pytest.mark.parametrize("path", EXPERIMENTS)
+@pytest.mark.parametrize("key", sorted(UPSTREAM_STAGE1))
+def test_prior_shape_matches_upstream_stage_one(path, key):
+    """The prior's SHAPE is not ours to choose — only its CONTENT is.
+
+    The whole experiment rests on one sentence: the only difference from TabICLv2 is the
+    prior's credit structure. A narrower row or feature range is a second, unintended
+    difference, and it silently makes every arm cheaper — which is exactly why it survived two
+    rounds of "make everything the same". Both of these had drifted ([512, 1024] rows and
+    [3, 50] features against upstream's 1,024 and [1, 100]) while `max_features: 100` padded
+    the tensors to 100 regardless, so the top half of the feature axis was never trained.
+    """
+    assert _load(path)["prior"][key] == UPSTREAM_STAGE1[key], (
+        f"{path}: prior.{key} must match TabICLv2 stage 1 "
+        f"({UPSTREAM_STAGE1[key]}); see scripts/train_v2_reg_stage1.sh in tfm-library"
+    )
+
+
+@pytest.mark.parametrize("path", CONFIGS)
+def test_micro_batch_cannot_exceed_the_group_size(path):
+    """`Trainer.validate_micro_batch` RAISES when datasets in one micro-batch disagree on their
+    sequence length or their train/test split, and both are drawn per group. So this is a hard
+    upstream constraint, not a memory heuristic — a bigger GPU does not buy a bigger
+    micro-batch."""
+    cfg = _load(path)
+    assert cfg["train"]["micro_batch_size"] <= cfg["prior"]["grouping"]["group_size"]
+    assert cfg["train"]["batch_size"] % cfg["train"]["micro_batch_size"] == 0

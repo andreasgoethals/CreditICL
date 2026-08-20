@@ -172,6 +172,62 @@ The one thing to do differently.
 
 ## Runs
 
+## 19-08-2026 — **THE PIPELINE IS FAIR. Every arm positive, gap is now budget alone**
+
+**Job** 11520343 (Exp1 LGD debug, `gpu_b200`) — first run with `crediticl` scored through
+upstream's wrapper and a shared context cap.
+
+### The result
+Same seven LGD datasets, same run, both models through `TabICLRegressor`, both capped at 1,024
+context rows:
+
+| dataset | `crediticl` (600 steps) | `tabiclv2` (released) | ratio |
+|---|---|---|---|
+| 1 | **0.343** | 0.743 | 2.2x |
+| 2 | **0.222** | 0.677 | 3.0x |
+| 3 | **0.182** | 0.662 | 3.6x |
+| 4 | **0.174** | 0.402 | 2.3x |
+| 5 | **0.163** | 0.446 | 2.7x |
+| 6 | **0.142** | 0.343 | 2.4x |
+| 7 | **0.066** | 0.225 | 3.4x |
+
+**Every arm is positive.** The previous run, with a hand-rolled inference path and no context
+cap, was **-1.437 to -0.246 — worse than predicting the mean on all seven.** Nothing about the
+weights changed between the two runs; only the pipeline did.
+
+### What that means
+The remaining gap is a **uniform 2-4x ratio with no sign flips and no outliers** — the shape of
+a model that is simply undertrained, not one that is broken. Our budget is 38,400 datasets
+against upstream's 35,200,000: **0.11 %**. A model at 0.11 % of the data reaching 25-45 % of the
+reference R² is a coherent, reportable position.
+
+Two fixes produced it, both of them removals of OUR differences rather than changes to the model:
+
+1. **`crediticl` subclasses `TabICLBaseline`** — scored through `TabICLRegressor`, so upstream's
+   preprocessing, 8-member ensemble, context construction and decoding are inherited and cannot
+   drift. Only `name`, `_wrapper_kwargs` and `_fit` (metadata) are overridden; `_predict` is
+   inherited.
+2. **A shared context cap at 1,024**, matched to `n_rows_range`. The wrapper does not cap
+   context, so it had been feeding 47,089 rows on `heloc` to a model trained on <=1,024 — 46x.
+   Applied to both columns from one setting, so it is part of the measurement.
+
+### Bugs and anomalies
+- None. Training completed, evaluation completed, exit 0, no NaN, no failures.
+- The results CSV lives on `/lustre1` staging and was not in the upload, so the per-row
+  `context_cap` / `n_context_full` provenance columns are unverified from this log. Worth
+  confirming once, since they are what makes a capped number legible later.
+
+### Interpretation
+- **What the numbers show:** the measurement chain is sound and the comparison is now
+  weights-only. They do NOT yet show anything about the prior — this is a 600-step control arm.
+- **What is left before Exp1:** settle batch size on the control arm (3 runs), then run the 75
+  arms. Nothing else is blocking.
+
+### Next
+Batch pilot, then Exp1.
+
+---
+
 ## 18-08-2026 — **THE NaN IS FIXED. First clean run, and the first honest comparison**
 
 **Jobs** 11519444/45 (GPU NaN diagnosis, both cards), 11519507–13 (Exp1 LGD debug, `gpu_b200`)

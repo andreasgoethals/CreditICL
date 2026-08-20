@@ -60,8 +60,19 @@ sweep:
 # -----------------------------------------------------------------------------
 prior:
   credit_fraction: 0.5 # SWEPT above; this value is only a fallback
-  n_rows_range: [512, 1024] # rows per synthetic dataset
-  n_features_range: [3, 50] # columns per synthetic dataset
+  # EXACTLY 1,024 ROWS, NEVER FEWER — this is upstream stage 1, not an approximation of it.
+  # `train_v2_reg_stage1.sh` passes `--max_seq_len 1024` and NO `--min_seq_len`, and
+  # `sample_seq_len` opens with `if min_seq_len is None: return max_seq_len`. So every stage-1
+  # dataset is 1,024 rows; only the train/test SPLIT varies (`train_frac_range` below, their
+  # 0.3-0.9). Stages 2 and 3 are where the row count becomes a range, log-uniform over
+  # [400, 10,240] and [400, 60,000]. Was [512, 1024], which trained on ~25 % fewer rows than
+  # the reference and is exactly the kind of unintended difference this project cannot afford.
+  n_rows_range: [1024, 1024] # rows per synthetic dataset
+  # 1 TO 100, matching `--min_features 1 --max_features 100`. Was [3, 50], which left the top
+  # HALF of the feature axis untrained while `max_features: 100` padded the tensors out to 100
+  # anyway. Real credit tables are wider still (base_modelisation has 256 columns), so every
+  # column past the training range is extrapolation.
+  n_features_range: [1, 100] # columns per synthetic dataset
   max_features: 100 # upstream's `--max_features 100`, matched.
   # Was 64. Two reasons to match upstream instead. It is part of what "the same prior, plus
   # credit structure" means — a narrower feature range is a second, unintended difference. And

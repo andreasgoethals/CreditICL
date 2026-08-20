@@ -33,6 +33,7 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 19-08-2026 | 11520343 — Exp1 LGD debug, `gpu_b200` | **Pipeline fair at last: R2 positive on ALL 7 datasets** (was -1.44..-0.25) | Wrapper + shared 1,024 context cap. Gap to released now a uniform 2-4x — budget, not plumbing |
 | 17-08-2026 | 11518234/35 + 11518236–40 — benchmark + LGD debug at batch 64 | **B200 SOLVED: 3.5 % -> 88.7 % utilisation, 12x throughput** | The batch was too small to fill the card. Killed at the wall on step 1,422/1,500 |
 | 14-08-2026 | 11516936/11516938 — Exp1 debug, 8 arms | **All failed, exit 2 in 21–60 s** | `--resume auto`, a flag `pretrain.py` never defined |
 | 14-08-2026 | 11516954 — Exp1 debug LGD, `interactive` | 3/4 arms OK; task 3 deferred for maintenance | **6.6 steps/s, 69 % GPU**, loss 0.339→0.127 |
@@ -53,13 +54,34 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
 
+### 20-08-2026 - Two silent prior deviations that also made every arm cheaper
+- **Tried:** answering "should Exp1 use upstream's three-stage curriculum, scaled down
+  proportionally?" - which meant reading `train_v2_reg_stage{1,2,3}.sh` line by line for the
+  first time rather than trusting the summary in the config comment.
+- **Result:** two of OUR settings did not match stage 1 at all. `n_rows_range: [512, 1024]`
+  against upstream's **exactly 1,024** - stage 1 passes `--max_seq_len 1024` and NO
+  `--min_seq_len`, and `sample_seq_len` opens with `if min_seq_len is None: return max_seq_len`.
+  And `n_features_range: [3, 50]` against `--min_features 1 --max_features 100`, while
+  `max_features: 100` padded the tensors to 100 regardless - so the top HALF of the feature axis
+  was never trained on anything.
+- **Why:** both deviations made training CHEAPER (~2.5x per step combined), so nothing ever
+  complained. A wrong setting that costs you money gets found; one that saves you money does
+  not. Two rounds of "make everything the same" had already gone past them, because both times
+  the check was against the config's own comment rather than against the script.
+- **Instead:** `test_prior_shape_matches_upstream_stage_one` pins all five shape knobs to values
+  read off the pinned script, with the flag names in the docstring. **When a claim is "we match
+  upstream", the test should quote upstream's file, not our summary of it.**
+
 ### 18-08-2026 - Why stages 2-3 are out of reach, and what to do instead
 - **Question:** upstream trains in three stages (500k steps at <=1,024 rows, then 40k at 10,240,
   then 10k at 60,000). Should Exp1 do the same, or sweep it?
-- **Measured:** no, and it is not close. Row attention is ~quadratic in sequence length and the
-  micro-batch drops 4->1, so a stage-2 step costs ~400x a stage-1 step and a stage-3 step
-  ~13,700x. **Stage 1 is only 0.3 % of upstream's total compute.** A proportionate curriculum on
-  our 12,500-step stage 1 would cost **307x that stage 1** - per arm, times 75 arms.
+- **Measured:** no for Exp1 - but the first numbers here were **wrong by ~30x** and are
+  corrected below. **CORRECTED 20-08-2026:** a stage-2 step costs ~7x a stage-1 step and a
+  stage-3 step ~120x, not 400x and 13,700x. The error was compounding the quadratic row scaling
+  with the micro-batch drop 4->1, which changes the number of forward PASSES per step but not
+  the datasets per step - total compute per step is unchanged by it. A proportional curriculum
+  on our 12,500 steps costs **3.6x**, not 307x: ~9 h/arm becomes ~32 h, which is affordable for
+  Exp2 and not for 75 arms.
 - **Why it matters anyway:** once `crediticl` went through upstream's wrapper, the context stopped
   being capped, and the wrapper hands over the whole training split - 47,089 rows on `heloc`
   against the <=1,024 we train on. 5 of 7 LGD datasets exceed the training length.
