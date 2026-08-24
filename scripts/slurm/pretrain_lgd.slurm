@@ -19,10 +19,11 @@
 # raises a warning; asking for much less starves the prior generator.
 #SBATCH --cpus-per-task=24
 #SBATCH --mem=180G
-# NOT 72:00:00. Billing is on ACTUAL time, so a long request costs nothing extra — but the
-# backfill scheduler starts short jobs sooner, and this job is resumable, so a tight request
-# is strictly better. Raise it if an arm turns out longer than ~20 h.
-#SBATCH --time=24:00:00
+# MEASURED 4.39 h per arm (job 11523286, end-to-end rung). 12 h is ~2.7x that, which covers
+# evaluation, progress scoring and a slow node. Billing is on ACTUAL time so a longer request
+# costs nothing extra, but the backfill scheduler starts short jobs sooner — and the job is
+# resumable, so underestimating is cheap and overestimating is not.
+#SBATCH --time=12:00:00
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
 #SBATCH --export=ALL
@@ -74,7 +75,7 @@ echo "Array job/task : ${SLURM_ARRAY_JOB_ID}/${SLURM_ARRAY_TASK_ID}"
 echo "Cluster        : ${SLURM_CLUSTER_NAME:-?}  partition=${SLURM_JOB_PARTITION:-?}"
 echo "Node           : ${SLURMD_NODENAME:-?}"
 echo "Cores / mem    : ${SLURM_CPUS_PER_TASK:-?} / ${SLURM_MEM_PER_NODE:-?} MiB"
-echo "Walltime       : ${SBATCH_TIMELIMIT:-24:00:00}   requeue=yes  signal=USR1@600"
+echo "Walltime       : ${SBATCH_TIMELIMIT:-12:00:00}   requeue=yes  signal=USR1@600"
 echo "Restart count  : ${SLURM_RESTART_COUNT:-0}   <- >0 means this arm was requeued"
 echo "Date           : $(date)"
 echo "Log            : ${LOG}"
@@ -91,9 +92,17 @@ python -m src.utils.smoke_test --task lgd --steps 2 || {
 # FORWARD THE SIGNAL. Slurm sends SIGUSR1 to this script, not to python, so the trainer
 # would never see it. Run python in the background, trap, forward, and `wait` — a foreground
 # child would also block the trap until it exited, which is exactly too late.
+# WORKERS FROM THE ALLOCATION, not from the config. The prior is generated on the CPU, so
+# the right number is however many cores this partition gave us minus one for the main
+# process -- 23 on gpu_b200, 17 on gpu_a100, 7 on interactive. A hard-coded 12 wastes half
+# a B200 node's cores and oversubscribes a smaller card.
+WORKERS=$(( ${SLURM_CPUS_PER_TASK:-8} - 1 ))
+echo "Dataloader workers: ${WORKERS} (from SLURM_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-unset})"
+
 python -u scripts/pretrain.py \
     --config config/Exp1_LGD.yaml \
     --index "${SLURM_ARRAY_TASK_ID}" \
+    --num-workers "${WORKERS}" \
     --prior-source "${PRIOR_SOURCE:-generate}" &
 TRAIN_PID=$!
 trap 'echo "SIGUSR1 -> forwarding to trainer $TRAIN_PID"; kill -USR1 "$TRAIN_PID" 2>/dev/null || true' USR1
@@ -109,7 +118,12 @@ set -e
 # EXIT 64 = saved and stopped early. Resubmit THIS arm only; it resumes from the checkpoint.
 if [[ "$RC" -eq 64 ]]; then
     echo "Arm ${SLURM_ARRAY_TASK_ID} incomplete — resubmitting to resume."
-    sbatch --clusters=mindwell --array="${SLURM_ARRAY_TASK_ID}" \
+    # BACK TO THE SAME PLACE. `--clusters=mindwell` was hard-coded, so an arm started
+    # on wICE would have resumed on Mindwell -- a different GPU mid-run, which makes
+    # the arm's own timings incomparable and can meet a different memory ceiling.
+    sbatch --clusters="${SLURM_CLUSTER_NAME:-mindwell}" \
+           --partition="${SLURM_JOB_PARTITION:-gpu_b200}" \
+           --array="${SLURM_ARRAY_TASK_ID}" \
            "${SLURM_SUBMIT_DIR:-.}/scripts/slurm/pretrain_lgd.slurm"
     exit 64
 fi

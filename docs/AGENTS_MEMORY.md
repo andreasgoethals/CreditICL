@@ -33,6 +33,7 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 24-08-2026 | 11523286 — GPU benchmark, clean | **One arm is 4.4 h, so Exp1 is ~10 M credits and 1.8 days** | AMP is 2.07x. All 4 attention kernels work at the real shape — the 20-08 cuDNN crash was the benchmark's own oversized pass |
 | 20-08-2026 | 11521108 — GPU benchmark at batch 64, `gpu_b200` | **Found a cuDNN AMP crash that would have hit all 75 Exp1 arms** | Also: benchmark OOM (its own bug, no micro-batching), and Muon is 1.01x at batch 64 not 1.40x |
 | 20-08-2026 | 11520989 — GPU benchmark, `gpu_b200` | **Wasted: 4 of 6 rungs ignored the config it was sent to measure** | Only prior + end-to-end read it. 8.26 -> 4.589 steps/s at batch 4 = 1.80x, but batch 4 is not what we train at |
 | 19-08-2026 | 11520343 — Exp1 LGD debug, `gpu_b200` | **Pipeline fair at last: R2 positive on ALL 7 datasets** (was -1.44..-0.25) | Wrapper + shared 1,024 context cap. Gap to released now a uniform 2-4x — budget, not plumbing |
@@ -55,6 +56,52 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
+
+### 24-08-2026 - "We only use 7 % of the GPU" is a memory reading, not a utilisation one
+- **Question:** peak GPU memory on a B200 is 13.08 GB of 178. Can we raise the micro-batch,
+  pack arms onto one card, or otherwise stop wasting 93 % of it?
+- **Measured:** there is nothing to reclaim. The same run reaches **0.791 steps/s against a
+  0.986 steps/s ceiling - 80 % of the compute the card can deliver** for this model, and
+  `utilization.gpu` read 88.7 % during real training on 17-08. The card is busy. A
+  28.5M-parameter model at micro-batch 4 x 1,024 rows is latency-bound, not memory-bound.
+- **Why the levers do not exist:** `micro_batch <= group_size = 4` is enforced by
+  `validate_micro_batch` (same sequence length AND same train/test split per pass), and raising
+  `group_size` changes the prior. Packing several arms per GPU trades ~20 % against CPU
+  contention and a lot of complexity, because the compute is already 80 % committed.
+- **Instead:** the idle memory means we are paying for a card we do not need. An A100 80 GB
+  holds the model six times over at **2.7x less credit all-in**, so it wins if it is less than
+  2.7x slower - measurable in one minute with the benchmark. **Idle memory is a pricing
+  signal, not a throughput opportunity.**
+
+### 24-08-2026 - "STARVED BY THE PRIOR" was a unit error, and so were the two before it
+- **Tried:** reading the benchmark's verdict, which said the run reached **6 %** of its GPU
+  ceiling and was starved: "More cores, or a cheaper prior."
+- **Result:** it reached **80 %**, and is compute-bound. `amp_bf16_step_ms` held the time of ONE
+  forward/backward pass while the verdict divided into it as if it were a whole step. A step is
+  16 passes plus one optimiser step: 16 x 62.19 + 18.83 = 1,013.9 ms = 0.986 steps/s, against
+  0.791 measured. The prior meanwhile supplies 4.2x what the GPU can take.
+- **Why:** the two quantities have the same shape - milliseconds - and differ only by a factor
+  nobody carries in their head. Naming both `_step_ms` made them look interchangeable, and the
+  same conflation is what made Muon read as 1.40x, then 1.01x, then 1.15x across three runs.
+- **Instead:** per-pass keys are `_micro_ms`, whole-step keys are `_step_ms`, the optimiser cost
+  is `optimizer_overhead_ms_per_step`, and a test forbids the verdict from touching a per-pass
+  number. A ratio above 105 % now says "THE CEILING IS WRONG" instead of a verdict. **When two
+  measurements share a unit but not a denominator, put the denominator in the NAME.**
+
+### 24-08-2026 - RETRACTED: the cuDNN crash would NOT have hit the sweep
+- **Claimed on 20-08:** cuDNN's fused MHA raised on a B200 under AMP, and "a 75-arm run would
+  have discovered this one arm at a time."
+- **Measured on 24-08 (job 11523286):** all four backends run fine at [4, 1024, 50], the only
+  shape training builds - cuDNN at 24.11 ms bf16. The crash happened at [64, 1024, 50], the
+  whole batch in one pass, which **only the broken benchmark ever built**. Training was never
+  at risk.
+- **Why the wrong conclusion:** the crash and the fix landed in the same session as the
+  discovery that the benchmark was not micro-batching. Both were true; the causal link between
+  them was assumed, not checked.
+- **Instead:** the exclusion stays, on the reason that survives - flash is 4.8 % faster and
+  cuDNN has a demonstrated failure at a nearby shape, so dropping it costs nothing. **A bug
+  found in an instrument is a bug in the instrument until you reproduce it in the thing the
+  instrument measures.**
 
 ### 24-08-2026 - The Exp1 launcher had been pointing at the wrong cluster all along
 - **Tried:** reading `pretrain_lgd.slurm` before recommending it, while answering a question

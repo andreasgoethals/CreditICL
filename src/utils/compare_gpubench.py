@@ -19,17 +19,26 @@ ROWS: tuple[tuple[str, str, bool], ...] = (
     ("matmul.matmul_4096_float32_tflops", "matmul fp32 (TFLOP/s)", True),
     ("matmul.matmul_4096_bfloat16_tflops", "matmul bf16 (TFLOP/s)", True),
     ("attention.attention_1024_ms", "attention 1024 (ms)", False),
-    ("model.forward_ms", "model forward (ms)", False),
-    ("model.forward_backward_ms", "model fwd+bwd (ms)", False),
-    ("model.max_steps_per_s_if_data_were_free", "GPU ceiling (steps/s)", True),
-    ("amp.fp32_step_ms", "batch4 fp32 (ms)", False),
-    ("amp.amp_bf16_step_ms", "batch4 AMP bf16 (ms)", False),
+    # Every label says its UNIT. A micro-pass is one forward/backward; a step is `n_micro` of
+    # them plus one optimiser step. Rows that mixed the two made a compute-bound run read as
+    # starved on 24-08-2026.
+    ("model.micro_passes_per_step", "micro-passes / step", False),
+    ("model.forward_ms", "fwd, 1 micro-pass (ms)", False),
+    ("model.micro_fwd_bwd_ms", "fwd+bwd, 1 micro-pass (ms)", False),
+    ("model.forward_backward_ms", "fwd+bwd, whole step (ms)", False),
+    ("model.max_steps_per_s_if_data_were_free", "GPU ceiling, fp32 (steps/s)", True),
+    ("amp.fp32_micro_ms", "fp32, 1 micro-pass (ms)", False),
+    ("amp.amp_bf16_micro_ms", "AMP bf16, 1 micro-pass (ms)", False),
+    ("amp.amp_bf16_step_ms", "AMP bf16, whole step (ms)", False),
     ("amp.amp_slowdown_vs_fp32", "AMP / fp32", False),
-    ("optimizers.adamw_step_ms", "AdamW step (ms)", False),
-    ("optimizers.muon_step_ms", "MUON step (ms)", False),
-    ("optimizers.muon_slowdown_vs_adamw", "Muon / AdamW", False),
+    ("optimizers.optimizer_overhead_ms_per_step", "Muon extra, per step (ms)", False),
+    ("optimizers.muon_slowdown_in_training", "Muon / AdamW in training", False),
+    ("attention_backends.flash_attention_bf16", "flash bf16 (ms)", False),
+    ("attention_backends.cudnn_attention_bf16", "cuDNN bf16 (ms)", False),
     ("prior.datasets_per_s_one_worker", "prior, 1 worker (ds/s)", True),
+    ("end_to_end.peak_gpu_gb", "peak GPU (GB)", False),
     ("end_to_end.steps_per_s", "END TO END (steps/s)", True),
+    ("end_to_end.projected_hours_12500_steps", "-> hours for one arm", False),
 )
 
 

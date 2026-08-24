@@ -230,12 +230,19 @@ def micro_plan(task: str, batch_size: int | None = None) -> tuple[int, int]:
 
 
 def _prior_cfg(task: str) -> dict[str, Any]:
-    """The prior block from this task's real Exp1 config, with the sweep grid removed."""
-    import yaml
+    """The prior of ONE REAL ARM of this task's Exp1 grid — arm 0, the control.
+
+    Not the raw `prior:` block. A swept knob does not appear there at all (the sweep block is
+    its only home), so reading the block raw would silently benchmark whatever the code's
+    defaults happen to be — `credit_fraction` would fall back to 0.0 by accident rather than
+    by choice. Expanding the grid and taking arm 0 makes it the control ON PURPOSE, and means
+    the benchmark measures a prior the sweep will actually run.
+    """
+    from src.utils.config import expand_with_seeds, load
 
     cfg_path = ROOT / "config" / f"Exp1_{'LGD' if task == 'lgd' else 'PD'}.yaml"
-    cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-    prior_cfg = dict(cfg.get("prior") or {})
+    arm = expand_with_seeds(load(cfg_path, allow_placeholders=True))[0]
+    prior_cfg = dict(arm.get("prior") or {})
     prior_cfg.pop("grid", None)
     return prior_cfg
 
@@ -325,10 +332,16 @@ def bench_amp(torch: Any, device: str, task: str, n: int, batch_size: int) -> di
                 s.update()
 
             sec = _time(step, max(3, n // 4), 2, torch)
-            out[f"{label}_step_ms"] = round(sec * 1000, 2)
+            # BOTH UNITS, ALWAYS. `..._micro_ms` times one forward/backward pass;
+            # `..._step_ms` is that times the number of passes in a real update. Reporting
+            # only the first and calling it a "step" is what made the 24-08 verdict claim a
+            # 12.34 steps/s ceiling when the true one was 0.99 — and so report a
+            # compute-bound run as starved.
+            out[f"{label}_micro_ms"] = round(sec * 1000, 2)
+            out[f"{label}_step_ms"] = round(sec * n_micro * 1000, 2)
         except Exception as exc:  # noqa: BLE001
             out[f"{label}_error"] = f"{type(exc).__name__}: {exc}"
-    a, b = out.get("fp32_step_ms"), out.get("amp_bf16_step_ms")
+    a, b = out.get("fp32_micro_ms"), out.get("amp_bf16_micro_ms")
     if a and b:
         out["amp_slowdown_vs_fp32"] = round(b / a, 2)
     return out
@@ -437,7 +450,8 @@ def bench_optimizers(
         else (torch.rand(micro, train_size, device=device) > 0.7).float()
     )
 
-    out: dict[str, Any] = {"batch_size": batch_size, "micro_batch_size": micro}
+    out: dict[str, Any] = {"batch_size": batch_size, "micro_batch_size": micro,
+                           "micro_passes_per_step": n_micro}
     for name in ("adamw", "muon"):
         try:
             model = build_model(task, architecture="tabicl").to(device)
@@ -452,13 +466,18 @@ def bench_optimizers(
                 o.step()
 
             sec = _time(step, max(3, n_steps // 4), 2, torch)
-            out[f"{name}_step_ms"] = round(sec * 1000, 2)
-            out[f"{name}_steps_per_s"] = round(1.0 / sec, 2)
+            out[f"{name}_micro_ms"] = round(sec * 1000, 2)
         except Exception as exc:  # noqa: BLE001 — one optimiser must not sink the report
             out[f"{name}_error"] = f"{type(exc).__name__}: {exc}"
-    a, m = out.get("adamw_step_ms"), out.get("muon_step_ms")
+    a, m = out.get("adamw_micro_ms"), out.get("muon_micro_ms")
     if a and m:
-        out["muon_slowdown_vs_adamw"] = round(m / a, 2)
+        # THE OVERHEAD IS PER OPTIMISER STEP, NOT PER PASS. Newton-Schulz runs once per weight
+        # matrix per `opt.step()`, and training calls that ONCE per `n_micro` forward passes.
+        # This rung calls it every pass, so its raw ratio overstates the real cost by n_micro.
+        out["optimizer_overhead_ms_per_step"] = round(m - a, 2)
+        out["muon_slowdown_this_rung"] = round(m / a, 2)
+        step_ms = a * n_micro
+        out["muon_slowdown_in_training"] = round((step_ms + (m - a)) / step_ms, 3)
     return out
 
 
@@ -751,16 +770,17 @@ def main() -> int:
     # end-to-end against the plain fwd+bwd number overstates the headroom and reads as
     # starvation; on 20-08-2026 it reported "20% of the GPU, STARVED, more cores" while its own
     # prior extrapolation two lines above said the workers could supply 13x what was measured.
+    # `..._step_ms`, NOT `..._micro_ms`: a training step is `n_micro` passes plus ONE
+    # optimiser step. Using the per-pass number here overstated the ceiling by 16x on 24-08
+    # and turned an 80 %-of-ceiling compute-bound run into "STARVED BY THE PRIOR".
     amp_ms = (results.get("amp") or {}).get("amp_bf16_step_ms")
     opt = results.get("optimizers") or {}
-    muon_overhead = (
-        opt["muon_step_ms"] - opt["adamw_step_ms"]
-        if opt.get("muon_step_ms") and opt.get("adamw_step_ms") else 0.0
-    )
+    muon_overhead = opt.get("optimizer_overhead_ms_per_step") or 0.0
     realistic = 1000.0 / (amp_ms + muon_overhead) if amp_ms else None
     if realistic:
+        n_micro = (results.get("model") or {}).get("micro_passes_per_step", 1)
         print(f"  GPU ceiling, AMP + Muon         : {realistic:.2f} steps/s "
-              f"({amp_ms:.1f} ms step + {muon_overhead:.1f} ms Muon)")
+              f"({amp_ms:.0f} ms of fwd/bwd = {n_micro} passes, + {muon_overhead:.1f} ms Muon)")
 
     e2e = (results.get("end_to_end") or {}).get("steps_per_s")
     if e2e:
@@ -770,6 +790,12 @@ def main() -> int:
         if ref:
             pct = 100.0 * e2e / ref
             print(f"  -> reaching {pct:.0f}% of the {label} ceiling at batch {args.batch_size}")
+            if pct > 105:
+                # Faster than the ceiling is impossible, so the CEILING is what is wrong —
+                # usually too few timed iterations, or a synthetic rung that took a slower
+                # path than the real loop. Say so instead of reporting a confident verdict.
+                print("     THE CEILING IS WRONG, not the measurement: nothing can exceed it.")
+                print("     Re-run with more --steps, or distrust the AMP/optimiser rungs here.")
             supply = (
                 prior["datasets_per_s_one_worker"] * (results.get("end_to_end") or {}).get(
                     "workers", 0) / args.batch_size

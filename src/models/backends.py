@@ -1,7 +1,7 @@
 """Which attention kernel PyTorch is allowed to use, and a report saying what happened.
 
-WHY THIS EXISTS. On 20-08-2026 the GPU benchmark ran the real model at the real batch size
-(64) with AMP on a B200 and died inside cuDNN:
+WHY THIS EXISTS. On 20-08-2026 the GPU benchmark ran the model at batch 64 in ONE forward pass
+on a B200 under AMP and died inside cuDNN:
 
     RuntimeError: Expected mha_graph.execute(handle, variant_pack, workspace_ptr.get())
                   .is_good() to be true
@@ -9,14 +9,28 @@ WHY THIS EXISTS. On 20-08-2026 the GPU benchmark ran the real model at the real 
 That is `torch/csrc/cudnn/MHA.cpp` — the **fused cuDNN multi-head-attention graph**, one of the
 four backends `scaled_dot_product_attention` picks between. PyTorch chooses silently, per call,
 from the shapes and dtype, so the same model can take a different kernel at a different batch
-size and only then fail. Nothing in this project had ever pinned the choice.
+size and only then fail.
 
-Upstream evidently treats the choice as load-bearing too: `--use_flash_attn3 False` in stage 1,
-`True` in stages 2-3.
+**CORRECTED 24-08-2026: that failure was SHAPE-DEPENDENT, and training never meets that shape.**
+Job 11523286 timed all four backends at the shape training actually runs — micro-batch 4,
+[4, 1024, 50] — and cuDNN worked: 24.11 ms in bf16. It fails only at the 16x-larger pass the
+benchmark was wrongly building. So this was never a threat to the 75-arm sweep, and the earlier
+claim that it would have been is withdrawn.
 
-WHAT WE DO. Exclude cuDNN, keep flash / mem-efficient / math, and **write down which backends
-were available and which were excluded**, because a cluster run cannot be watched and a kernel
-choice that changes silently is exactly the kind of thing the log has to carry.
+WHY IT STAYS EXCLUDED ANYWAY, on the honest reason rather than the dramatic one:
+
+    flash      bf16 23.01 ms   <- fastest, and what we use
+    efficient  bf16 23.23 ms
+    cuDNN      bf16 24.11 ms   <- 4.8 % slower, and the one with a known failure mode
+    math       bf16 46.56 ms   <- 2x slower; the fallback is real but costly
+
+Excluding cuDNN costs nothing measurable and removes a kernel that has already been seen to
+raise at a nearby shape. Upstream treats the choice as load-bearing too: `--use_flash_attn3
+False` in stage 1, `True` in stages 2-3.
+
+WHAT WE DO. Pin flash / mem-efficient / math, and **write down which backends were available
+and which were excluded**, because a cluster run cannot be watched and a kernel choice that
+changes silently is exactly the kind of thing the log has to carry.
 """
 
 from __future__ import annotations
@@ -55,8 +69,10 @@ def sdpa_report() -> dict[str, Any]:
         "using": [n for n in PREFERRED if n in have],
         "excluded": [n for n in EXCLUDED if n in have],
         "why_excluded": (
-            "cuDNN fused MHA raised `mha_graph.execute(...).is_good()` on a B200 at batch 64 "
-            "under AMP, 20-08-2026 (job 11521108)"
+            "cuDNN fused MHA is 4.8% slower than flash at our shape (24.11 vs 23.01 ms bf16, "
+            "job 11523286) and raised `mha_graph.execute(...).is_good()` at a 16x larger pass "
+            "on the same card (job 11521108). Not a threat to training, which never builds "
+            "that shape - excluded because it buys nothing."
         ),
     }
 

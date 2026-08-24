@@ -158,3 +158,30 @@ def test_no_gpu_rung_builds_a_full_batch_tensor():
     src = (ROOT / "scripts" / "benchmark_gpu.py").read_text(encoding="utf-8")
     assert "torch.randn(batch_size," not in src
     assert "torch.rand(batch_size," not in src
+
+
+def test_every_timing_key_says_whether_it_is_a_pass_or_a_step():
+    """A micro-pass is not a step, and conflating them made the 24-08 verdict wrong by 16x.
+
+    `amp_bf16_step_ms` held the time of ONE forward/backward pass while the verdict divided
+    into it as if it were a whole step. The reported ceiling came out at 12.34 steps/s when
+    the truth was 0.99 — so a run reaching 80 % of its ceiling was announced as
+    "STARVED BY THE PRIOR", the opposite of the finding.
+    """
+    src = (ROOT / "scripts" / "benchmark_gpu.py").read_text(encoding="utf-8")
+    # The per-pass numbers must be named `_micro_ms` ...
+    for key in ('f"{label}_micro_ms"', 'f"{name}_micro_ms"'):
+        assert key in src, key
+    # ... and the verdict must divide into a whole-step number plus the per-step optimiser cost.
+    verdict = src[src.index("# -- the reading"):]
+    assert 'get("amp_bf16_step_ms")' in verdict
+    assert 'get("optimizer_overhead_ms_per_step")' in verdict
+    assert "amp_bf16_micro_ms" not in verdict, "the verdict must not use a per-pass number"
+
+
+def test_the_step_number_is_the_pass_number_times_the_pass_count():
+    """`forward_backward_ms` and `amp_*_step_ms` are derived, not measured separately; if the
+    multiplication is dropped the two units silently become the same again."""
+    src = (ROOT / "scripts" / "benchmark_gpu.py").read_text(encoding="utf-8")
+    assert "round(both * n_micro * 1000, 2)" in src
+    assert "round(sec * n_micro * 1000, 2)" in src

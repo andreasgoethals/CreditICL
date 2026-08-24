@@ -224,6 +224,72 @@ makes the 72 h ceiling a scheduling detail rather than a design constraint.
 
 ---
 
+### 3.5 When the whole cluster goes down — the case the job script cannot cover
+
+The signal chain in 3.4 saves an arm that is **running**. It does nothing for an arm that is
+**pending**: a cluster-wide drain cancels every queued task at once, with no signal to anyone.
+Resubmitting the array afterwards would redo every finished arm.
+
+`sweep_status` reads the OUTPUT TREE — not `sacct`, which forgets, and not the queue, which is
+gone — and classifies each array index:
+
+| state | evidence on disk | what happens on resubmission |
+|---|---|---|
+| `done` | `summary.json` with `completed: true` | not resubmitted |
+| `partial` | a checkpoint, but no completed summary | resumes from the checkpoint |
+| `todo` | nothing | starts at step 0 |
+
+```bash
+python -m src.utils.sweep_status --config config/Exp1_LGD.yaml
+python -m src.utils.sweep_status --config config/Exp1_LGD.yaml --resubmit
+```
+
+It prints a collapsed spec — `0-4,9,12-74` rather than 71 numbers — so it can be checked before
+committing hundreds of GPU-hours. **Running it repeatedly is safe**: it never touches a `done`
+arm, and a `partial` arm continues rather than restarting.
+
+`summary.json` is the authority rather than the checkpoint, because a checkpoint exists from
+step 250 onwards and says nothing about whether the arm finished.
+
+---
+
+## 3.6 Which GPU to actually use
+
+`nvidia-smi` memory is not utilisation. Job 11523286 measured **13.08 GB of 178 GB** on a
+B200 — but also **0.791 steps/s against a 0.986 ceiling, i.e. 80 % of the compute the card can
+deliver** for this model, and the 17-08 training run reported 88.7 % on `utilization.gpu`.
+The card is busy; a 28.5M-parameter model at micro-batch 4 simply does not need memory.
+
+**So there is no headroom to reclaim by making the batch bigger**, and `micro_batch` is pinned
+at `group_size` = 4 by `validate_micro_batch` regardless. What the idle memory does mean is
+that **we are paying for a card we do not need**:
+
+| partition | credits/GPU-h | + CPU | all-in | vs B200 |
+|---|---|---|---|---|
+| mindwell `gpu_b200` | 26,250 | 24 cores, 4,375 | **30,625** | 1.00x |
+| wICE `gpu_a100` | 8,500 | 18 cores, 2,750 | **11,250** | **0.37x** |
+| wICE `gpu_h100` | 34,167 | 16 cores, 2,222 | 36,389 | 1.19x |
+| mindwell `interactive` | 0 | 0 | **free** | 8 cores, 16 h, 1 job |
+
+An A100 80 GB holds 13 GB six times over and costs **2.7x less all-in**. It is cheaper per arm
+as long as it is less than 2.7x slower — which is plausible but **not measured**, and this
+workload is latency-bound rather than throughput-bound (which is exactly why the memory is
+idle), so raw FLOP ratios do not predict it. Measure before assuming:
+
+```bash
+bash scripts/slurm/submit.sh a100 lgd scripts/slurm/benchmark.slurm
+python -m src.utils.compare_gpubench $VSC_DATA/CreditICL/output/logs/gpubench_*.json
+```
+
+Compare `end_to_end.projected_hours_12500_steps`. If the A100 is under 2.7x the B200's 4.39 h
+(i.e. under ~11.9 h), it is the cheaper card for Exp1 — and it frees the B200s for other work.
+
+The launchers take the partition from the command line and read `SLURM_CPUS_PER_TASK` for the
+worker count, so one script is correct on 24 cores and on 18. A resumed arm returns to the
+cluster and partition it started on.
+
+---
+
 ## 4. Storage: three tiers, and the Lustre-vs-GPFS rule
 
 ### Where CreditICL puts things

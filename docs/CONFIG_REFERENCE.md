@@ -34,6 +34,19 @@ python scripts/pretrain.py --config config/Exp1_LGD.yaml --list
 to one control arm. `effective_fingerprint` in `src/utils/config.py` does the collapsing; it is
 what stops the control being run 8 times under 8 different names.
 
+### One knob, one home
+
+A knob that appears in `sweep:` **must not** also appear in the config body.
+`apply_sweep_block` writes the sweep list over whatever is below it, so a body literal is dead
+text that reads like a setting — and `prior.credit_fraction: 0.2` sat under `prior:` for months
+labelled "SWEPT above; this value is only a fallback". There is no fallback: nothing reads a
+config without expanding the grid first. `apply_sweep_block` now raises on the duplicate, and
+`test_a_swept_knob_has_exactly_one_home` checks all six files.
+
+The one consumer that genuinely read the raw block was the GPU benchmark. It now expands the
+grid and takes arm 0, so it benchmarks the control prior **on purpose** rather than by falling
+back to a default.
+
 **Open one group at a time.** Crossing is multiplicative, and with every lever moving you
 cannot attribute an effect to any of them.
 
@@ -61,6 +74,80 @@ train/test split varies. Two of these had drifted — `[512, 1024]` rows and `[3
 — and both made training *cheaper*, which is why nothing ever complained. A wrong setting that
 costs money gets found; one that saves money does not.
 `test_prior_shape_matches_upstream_stage_one` now pins all five.
+
+---
+
+## `prior.max_features` — 100, and where that limit actually bites
+
+**It is upstream's, stated in the paper, and it is a TRAINING-DISTRIBUTION setting only.**
+TabICLv2 §4.1: *"We retain the three-stage structure of TabICL that progressively expands the
+size of pretraining datasets, **with up to 100 features throughout all stages**."* All twelve
+stage scripts in the pinned library pass `--max_features 100` — v1 and v2, classifier and
+regressor, every stage.
+
+### Where the number is applied
+
+| where | what it does |
+|---|---|
+| `src/prior/generator.py` | caps the sampled width: `randint(lo, min(hi, max_features) + 1)` |
+| `src/prior/noise_features.py` | `n_add = min(n_add, max_features - X.shape[1])` — junk columns cannot push past it |
+| `src/prior/targets/pd.py` | missingness indicators are added only if they still fit under it |
+| `src/prior/dataset.py` | **not applied.** The batch tensor is padded to the widest dataset IN THE BATCH, not to `max_features` |
+| upstream's `adjust_max_features` | lowers it further for long sequences (80 at 20k rows, 20 at 60k) — a memory guard, never a raise |
+
+### It does NOT limit inference, and here is why
+
+**`TabICL.__init__` takes no feature-count parameter at all.** Its constructor takes
+`max_classes`, `num_quantiles`, `embed_dim`, `col_num_inds` — nothing about feature width.
+`col_embedder` is an **induced set transformer over the feature axis**: permutation-equivariant,
+with 128 learned inducing points and no per-feature weights. There is therefore no
+architectural maximum, and a trained checkpoint accepts any width.
+
+What limits inference is **our** evaluation code, and it is a different number:
+
+| where | value | behaviour above it |
+|---|---|---|
+| `src/eval/baselines.py` `TFM_MAX_FEATURES` | **500** | keep the 500 highest-variance columns |
+| `src/eval/ood.py` `max_features` | **500** | skip the dataset entirely |
+| upstream's sklearn wrapper | none | no feature cap anywhere |
+
+Both evaluation limits live on the **shared** base class, so `crediticl` and `tabiclv2` get
+the identical treatment — the same rule as the 1,024-row context cap.
+
+### Is 100 optimal? Reassessed, and kept
+
+**Keep it.** Three reasons, in order of weight:
+
+1. **It is the experiment's control variable.** The project's claim is that the *only*
+   difference from TabICLv2 is the prior's credit structure. A wider training distribution is
+   a second difference, and the comparison stops being clean.
+2. **It would bias the comparison in our favour.** The released `tabiclv2` we score against was
+   trained at 100. Training ours at 200 and then reporting that ours does better on a
+   256-column credit table would be measuring the feature width, not the prior.
+3. **Nothing in the architecture wants it changed.** There is no parameter to change.
+
+### The exposure this leaves, stated honestly
+
+`base_modelisation` has **256 columns** — 2.6x the training width — so at inference the model
+does extrapolate past what it saw. That is real, and it is worth being precise about how bad
+it might be:
+
+- TabPFN-Wide (Kolberg et al. 2026) reports TabICL "unable to reliably separate signal from
+  noise, quickly converging toward random guessing" as feature dimensionality grows. **But
+  that is TabICL v1, in an HDLSS needle-in-a-haystack regime with thousands of SNPs and ~1 %
+  of them causal** — it does not predict what 256 credit columns do, and it should not be
+  quoted as if it did.
+- TabICLv2's own authors cite that paper for "extreme feature counts", i.e. they treat wide
+  tables as a separate problem requiring continued pre-training — not something to fix by
+  nudging `max_features`.
+- The exposure is **matched**: both columns of the comparison get the same 256 columns. This
+  is the same argument as the context cap, and it is much milder — 2.6x here against the 46x
+  the row count was before it was capped.
+
+**What to do instead of changing it:** record the feature width per evaluated dataset
+alongside `context_cap`, so a reader can see which rows are extrapolating. If a wide-table
+effect ever shows up, the answer is Exp2 with a stage that trains wider — not a silent change
+to the screening tier.
 
 ---
 

@@ -461,3 +461,43 @@ def test_micro_batch_cannot_exceed_the_group_size(path):
     cfg = _load(path)
     assert cfg["train"]["micro_batch_size"] <= cfg["prior"]["grouping"]["group_size"]
     assert cfg["train"]["batch_size"] % cfg["train"]["micro_batch_size"] == 0
+
+
+@pytest.mark.parametrize("path", EXPERIMENTS)
+def test_a_swept_knob_has_exactly_one_home(path):
+    """A swept path must NOT also carry a literal in the config body.
+
+    `apply_sweep_block` writes the sweep list over whatever is below it, so such a literal is
+    dead text that reads like a setting. `prior.credit_fraction: 0.2` sat under `prior:` for
+    months, commented "SWEPT above; this value is only a fallback" — there is no fallback,
+    because nothing reads a config without expanding the grid first.
+    """
+    import yaml
+
+    from src.utils.config import _MISSING, _get_path
+
+    raw = yaml.safe_load((ROOT / path).read_text(encoding="utf-8"))
+    for swept in (raw.get("sweep") or {}):
+        if swept == "seeds":
+            continue
+        assert _get_path(raw, swept) is _MISSING, (
+            f"{path}: `{swept}` is swept AND has a literal in the body. Delete the literal."
+        )
+
+
+def test_the_duplicate_is_rejected_rather_than_silently_overwritten():
+    from src.utils.config import apply_sweep_block
+
+    with pytest.raises(ValueError, match="ALSO has the literal value"):
+        apply_sweep_block(
+            {"sweep": {"prior.credit_fraction": [0.0, 0.1]}, "prior": {"credit_fraction": 0.2}}
+        )
+
+
+@pytest.mark.parametrize("path", EXPERIMENTS)
+def test_every_config_expands_including_the_templates(path):
+    """`--list` on Exp2/Exp3 used to raise: `float('FILL_FROM_EXP1')`. A template is exactly
+    what someone inspects before filling it in, so it has to survive being read."""
+    from src.utils.config import expand_with_seeds
+
+    assert len(expand_with_seeds(_load(path))) > 0

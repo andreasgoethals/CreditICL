@@ -172,6 +172,97 @@ The one thing to do differently.
 
 ## Runs
 
+## 24-08-2026 — benchmark, third attempt — **one arm is 4.4 hours, not 20**
+
+**Submitted** 24-08-2026 11:54 | **job** 11523286 | **cluster** mindwell `gpu_b200`, node
+`r11g22` | **used** 2 min 50 s | every rung produced a number, no failures
+
+The first benchmark with no known blind spot: config-driven shape, the real micro-batch, AMP
+on, the attention kernel pinned, and a rung that times every kernel.
+
+### Results
+
+| rung | value |
+|---|---|
+| matmul bf16 / fp32 | 1,363.32 / 63.23 TFLOP/s |
+| one micro-pass, fwd | 28.55 ms |
+| one micro-pass, fwd+bwd | 128.75 ms |
+| a whole step (16 passes, fp32, SGD) | 2,060 ms |
+| AMP: micro-pass fp32 -> bf16 | 128.89 -> **62.19 ms (2.07x faster)** |
+| Muon extra, per optimiser step | **18.83 ms** |
+| prior, one worker | 11.41 datasets/s |
+| **end to end, 23 workers, AMP** | **0.791 steps/s, 50.62 datasets/s** |
+| peak GPU memory | **13.08 GB of 178** |
+| **projected hours per 12,500-step arm** | **4.39** |
+
+### Attention backends — all four work, at the shape training uses
+
+| backend | fp32 | bf16 |
+|---|---|---|
+| flash | 27.75 | **23.01** |
+| mem-efficient | 27.90 | 23.23 |
+| **cuDNN** | 28.79 | **24.11** |
+| math | 49.45 | 46.56 |
+
+**This retracts a claim.** On 20-08 cuDNN raised `mha_graph.execute(...).is_good()` and the
+write-up said it "would have hit the 75-arm run". It would not have. That failure was at
+[64, 1024, 50] — the whole batch in one pass, which only the broken benchmark ever built.
+At [4, 1024, 50], the only shape training runs, cuDNN works fine. The exclusion stays, but on
+the honest reason: flash is 4.8 % faster and cuDNN has a demonstrated failure at a nearby
+shape, so dropping it costs nothing.
+
+Also worth keeping: **math is 2x slower than flash.** The fallback is real but not free.
+
+### The bug this run exposed: a micro-pass is not a step
+
+The printed verdict said **"reaching 6 % of the ceiling — STARVED BY THE PRIOR: more cores"**.
+That is the opposite of the truth.
+
+`amp_bf16_step_ms` held the time of ONE forward/backward pass (62.19 ms), and the verdict
+divided into it as though it were a whole step. A step is **16 passes plus one optimiser
+step**:
+
+    16 x 62.19 ms  +  18.83 ms Muon  =  1,013.9 ms  ->  0.986 steps/s
+
+Measured 0.791 against 0.986 is **80 % of the ceiling: compute-bound**. And the prior supplies
+11.41 x 23 = 262 datasets/s = 4.10 steps/s against the 0.99 the GPU can take — **4.2x
+headroom**. Every "STARVED, more cores" line this tooling has printed has now been wrong.
+
+Fixed: per-pass numbers are named `_micro_ms`, whole-step numbers `_step_ms`, the optimiser
+rung reports `optimizer_overhead_ms_per_step` separately, and two tests forbid the verdict
+from dividing into a per-pass number. A percentage above 105 % now prints "THE CEILING IS
+WRONG" rather than a confident verdict.
+
+### Muon, for the third and final time
+Measured 1.15x in this rung, which calls `opt.step()` every pass. Training calls it once per
+16 passes, so in training Muon is **1.019x** — 18.83 ms on a 1,014 ms step. The benchmark now
+reports `muon_slowdown_in_training` rather than the raw rung ratio.
+
+### What it means for Exp1
+
+**~4.4 h per arm, not the 16-22 h bracket.** AMP is the difference: it was never enabled in an
+end-to-end measurement before.
+
+| | before this run | measured |
+|---|---|---|
+| hours per arm | 16-22 | **4.39** |
+| 75 arms, credits | 33-46 M | **~10 M** |
+| wall-clock at throttle %8 | ~8 days | **1.8 days** |
+
+The seed-staging plan is withdrawn: at 10 M credits and under two days there is no reason to
+run 25 arms first and add seeds later. **Run all 75.**
+
+Two caveats on 4.39 h: the rung measures 20 training steps and excludes the final evaluation
+and the mid-run progress scoring. `progress.every_datasets` was still 5,000, which was "10
+points" when an arm was 50,000 datasets and had silently become **160 measurements** at
+800,000. Raised to 40,000 -> 20 points. Walltime set to 12 h, ~2.7x the measured training
+time, which covers both.
+
+### Next
+Submit Exp1.
+
+---
+
 ## 20-08-2026 (15:34) — benchmark at the REAL batch — **it found a bug that would have killed Exp1**
 
 **Submitted** 20-08-2026 15:33 | **job** 11521108 | **cluster** mindwell `gpu_b200`, node

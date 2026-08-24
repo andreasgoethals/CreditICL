@@ -31,10 +31,9 @@ sweep:
 # THE PRIOR — the parts that are NOT swept
 # ----------------------------------------------------------------------------
 prior:
-  credit_fraction: 0.5 # SWEPT above; this value is only a fallback
   n_rows_range: [1024, 1024] # rows per dataset; upstream stage 1 is exactly 1,024
   n_features_range: [1, 100] # columns; upstream's --min_features 1 --max_features 100
-  max_features: 100 # widest table the model is padded to; upstream's --max_features
+  max_features: 100 # ceiling on generated columns; TabICLv2 uses 100 in all stages
   n_nodes_range: [2, 33] # nodes in the causal graph; upstream's 2..32, exclusive upper
   train_frac_range: [0.3, 0.9] # share of rows given as context; upstream's stage-1 range
   n_classes: 2 # binary: default or not
@@ -105,7 +104,6 @@ prior:
 # HOW TO START
 # ----------------------------------------------------------------------------
 init:
-  strategy: full # SWEPT above: full | icl_only
   pretrained_path: checkpoints/tabicl-classifier-v2-20260212.ckpt # the released weights
   strict_load: true # a name mismatch must FAIL, never load silently and half-work
 
@@ -141,7 +139,7 @@ train:
 # PROGRESS CURVE — real data scored mid-training
 # ----------------------------------------------------------------------------
 progress:
-  every_datasets: 5000 # synthetic datasets between measurements; 0 disables
+  every_datasets: 40000 # synthetic datasets between measurements; 0 disables
   n_datasets: 4 # real credit datasets scored, smallest first
   n_ood: 8 # out-of-domain datasets scored, if the cache exists
   context_rows: 512 # rows given as context when scoring

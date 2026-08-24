@@ -604,7 +604,11 @@ def test_the_benchmark_measures_the_optimizer_that_is_actually_configured():
     bench = (root / "scripts" / "benchmark_gpu.py").read_text(encoding="utf-8")
     assert "def bench_optimizers" in bench
     assert '"adamw", "muon"' in bench, "both must be timed, or there is nothing to compare"
-    assert "muon_slowdown_vs_adamw" in bench, "the ratio is the number you actually read"
+    # `muon_slowdown_in_training`, not `..._vs_adamw`: the rung calls `opt.step()` once per
+    # forward pass, while training calls it once per `n_micro` passes, so the raw ratio
+    # overstates Muon by n_micro. 1.15x measured here is 1.02x in training.
+    assert "muon_slowdown_in_training" in bench, "the ratio is the number you actually read"
+    assert "optimizer_overhead_ms_per_step" in bench, "the overhead is per STEP, not per pass"
 
 
 def test_the_step_is_split_into_phases_that_sum_to_the_wall_clock():

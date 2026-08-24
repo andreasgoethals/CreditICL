@@ -5,7 +5,7 @@ reason is not obvious.
 
 ---
 
-## 24-08-2026 — configs hold values, docs hold reasoning; and the sweep survives being killed
+## 24-08-2026 — configs hold values, docs hold reasoning, and the sweep survives being killed
 
 - **The six configs are settings files again.** 130 of 252 lines in `Exp1_LGD.yaml` were
   standalone prose. Every knob now carries at most a one-line note; the reasoning moved to
@@ -30,6 +30,53 @@ reason is not obvious.
   script resubmits that array index. Plus `--requeue` for node failures and
   `save_temp_every: 250` to bound what an ungraceful kill costs to ~10 minutes.
 - 763 tests pass.
+- **A swept knob may no longer also carry a literal in the config body.** `apply_sweep_block`
+  overwrites it, so `prior.credit_fraction: 0.2` under `prior:` — commented "only a fallback"
+  — was dead text that read like a setting. Removed from all six configs (Exp3 also had
+  `init.strategy`), `apply_sweep_block` now raises on it, and two tests check every file.
+- **The GPU benchmark expands the grid instead of reading the raw prior block**, so it
+  benchmarks arm 0 (the control) on purpose rather than falling back to a default.
+- **`effective_fingerprint` no longer crashes on a template.** `float('FILL_FROM_EXP1')` made
+  `--list` unusable on Exp2 and Exp3 — the configs a person is most likely to be inspecting.
+  All six now expand: 75 / 75 / 10 / 10 / 30 / 30.
+- **`max_features: 100` documented and reassessed — kept.** It is TabICLv2 §4.1's stated
+  choice ("up to 100 features throughout all stages") and appears in all twelve stage scripts.
+  New CONFIG_REFERENCE section traces every place it applies, shows that `TabICL.__init__`
+  takes no feature parameter at all (so inference is unbounded and our 500-column evaluation
+  cap is a separate, shared setting), and records the honest exposure: `base_modelisation` is
+  256 columns wide, 2.6x the training width, matched across both models.
+- **The benchmark's verdict was wrong by 16x: a micro-pass is not a step.** `amp_bf16_step_ms`
+  timed one forward/backward pass; the verdict divided into it as a whole step and reported
+  "6 % of the ceiling, STARVED BY THE PRIOR" for a run at 80 % of its ceiling. Per-pass keys are
+  now `_micro_ms`, whole-step keys `_step_ms`, the optimiser cost is
+  `optimizer_overhead_ms_per_step`, and two tests forbid the mix-up. Above 105 % the verdict now
+  says the ceiling is wrong rather than issuing one.
+- **Muon in training is 1.019x**, not the 1.15x the rung measures — it calls `opt.step()` every
+  pass, training calls it once per 16. Reported as `muon_slowdown_in_training`.
+- **RETRACTED: the cuDNN crash was never a threat to training.** All four attention backends run
+  at [4, 1024, 50], the shape training uses; the 20-08 failure was at the 16x-larger pass the
+  broken benchmark built. Excluded anyway — flash is 4.8 % faster.
+- **`progress.every_datasets` 5,000 -> 40,000.** It meant "10 points" when an arm was 50,000
+  datasets and had silently become **160 mid-run evaluations** at 800,000.
+- **Walltime 24 h -> 12 h**, against the measured 4.39 h per arm.
+- **`compare_gpubench` rows relabelled** so every timing says whether it is a pass or a step.
+- **`src/utils/sweep_status.py` — resume a sweep the cluster cancelled.** The signal chain
+  saves a RUNNING arm; a cluster-wide drain cancels every PENDING one with no signal at all,
+  and resubmitting the array would redo everything finished. It reads the output tree (not
+  `sacct`, which forgets) and classifies each index `done` / `partial` / `todo`, then prints a
+  collapsed `--array=0-4,9,12-74` covering only what is left. `--resubmit` submits it. Safe to
+  run repeatedly.
+- **Workers now come from the allocation**, not the config: `SLURM_CPUS_PER_TASK - 1`, so one
+  launcher is correct on a 24-core B200 and an 18-core A100. The hard-coded 12 was wasting
+  half a B200 node — a regression I introduced when rewriting the launcher.
+- **A resumed arm goes back to the cluster and partition it started on** (`SLURM_CLUSTER_NAME`
+  / `SLURM_JOB_PARTITION`). `--clusters=mindwell` was hard-coded, so an arm started on wICE
+  would have resumed on different hardware mid-run.
+- **VSC.md §3.5-3.6**: the drain-recovery procedure, and the GPU-choice arithmetic —
+  13 GB of 178 is idle MEMORY, not idle compute (80 % of the compute ceiling, 88.7 % on
+  `utilization.gpu`), so the lever is the price of the card, not the batch size. An A100 is
+  2.7x cheaper all-in and holds the model six times over.
+- 789 tests pass.
 
 ---
 

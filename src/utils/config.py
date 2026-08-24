@@ -258,9 +258,37 @@ def apply_sweep_block(cfg: dict[str, Any]) -> dict[str, Any]:
             )
         if path == "seeds":
             out["seeds"] = values
-        else:
-            _set_path(out, path, values)
+            continue
+        # ONE HOME PER KNOB. A swept path must not also carry a literal in the body below:
+        # `apply_sweep_block` overwrites it, so the literal is dead text that reads like a
+        # setting. `prior.credit_fraction: 0.2` sat under `prior:` for months labelled "only
+        # a fallback" — there is no fallback, because nothing reads the config without
+        # expanding the grid first. A value that cannot take effect but looks like it can is
+        # worse than no value.
+        existing = _get_path(out, path)
+        if existing is not _MISSING and not isinstance(existing, list):
+            raise ValueError(
+                f"sweep.{path} is swept, but `{path}` ALSO has the literal value "
+                f"{existing!r} in the config body. Delete the literal: the sweep block is "
+                f"the only place a swept knob is written. If you meant to fix the value, "
+                f"remove it from `sweep:` instead."
+            )
+        _set_path(out, path, values)
     return out
+
+
+#: Distinguishes "absent" from "present and None", which `dict.get` cannot.
+_MISSING = object()
+
+
+def _get_path(cfg: dict[str, Any], path: str) -> Any:
+    """Read a dotted path, or `_MISSING`. The mirror of `_set_path`."""
+    node: Any = cfg
+    for part in path.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return _MISSING
+        node = node[part]
+    return node
 
 
 def expand_grid(cfg: dict[str, Any]) -> list[dict[str, Any]]:
@@ -353,7 +381,15 @@ def effective_fingerprint(run: dict[str, Any]) -> str:
     for key in ("_grid", "_run_name"):
         probe.pop(key, None)
     prior = probe.get("prior") or {}
-    if float(prior.get("credit_fraction", 0.0)) == 0.0:
+    # A TEMPLATE MUST NOT CRASH THE DEDUPER. Exp2 and Exp3 ship with `FILL_FROM_EXP1` where
+    # Exp1's winner goes, and `float()` on that raised — so `--list` was unusable on exactly
+    # the configs a person is most likely to be inspecting. An unresolvable value cannot be
+    # compared to 0.0, so it is treated as "not the control" and nothing is collapsed.
+    try:
+        is_control = float(prior.get("credit_fraction", 0.0)) == 0.0
+    except (TypeError, ValueError):
+        is_control = False
+    if is_control:
         prior.pop("credit", None)
     return json.dumps(probe, sort_keys=True, default=str)
 

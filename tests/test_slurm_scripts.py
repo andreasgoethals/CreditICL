@@ -345,7 +345,7 @@ def test_launcher_survives_a_kill(name):
     assert "TRAIN_PID=$!" in text
     assert any(line.rstrip().endswith("&") for line in text.splitlines())
     # Exit 64 = "saved, not finished". Resubmitting is what makes the arm outlast the wall.
-    assert 'RC" -eq 64' in text and "sbatch --clusters=mindwell --array=" in text
+    assert 'RC" -eq 64' in text and "sbatch --clusters=" in text
 
 
 def test_the_trainer_actually_produces_exit_64():
@@ -353,3 +353,24 @@ def test_the_trainer_actually_produces_exit_64():
     src = (ROOT / "scripts" / "pretrain.py").read_text(encoding="utf-8")
     assert "return 64" in src
     assert 'summary.get("completed", True)' in src
+
+
+@pytest.mark.parametrize("name", sorted(LAUNCHERS))
+def test_workers_come_from_the_allocation_not_the_config(name):
+    """The prior is generated on the CPU, so `num_workers` should be whatever the partition
+    gave us: 23 on gpu_b200, 17 on gpu_a100, 7 on interactive. The config's 12 would waste
+    half a B200 node and oversubscribe a smaller card."""
+    text = (ROOT / "scripts" / "slurm" / name).read_text(encoding="utf-8")
+    assert "SLURM_CPUS_PER_TASK:-8} - 1" in text
+    assert '--num-workers "${WORKERS}"' in text
+
+
+@pytest.mark.parametrize("name", sorted(LAUNCHERS))
+def test_a_resumed_arm_goes_back_to_the_same_cluster(name):
+    """`--clusters=mindwell` was hard-coded in the resubmit line, so an arm started on wICE
+    would have resumed on Mindwell — a different GPU mid-run, which makes its own timings
+    incomparable and can meet a different memory ceiling."""
+    text = (ROOT / "scripts" / "slurm" / name).read_text(encoding="utf-8")
+    assert 'sbatch --clusters="${SLURM_CLUSTER_NAME:-mindwell}"' in text
+    assert '--partition="${SLURM_JOB_PARTITION:-gpu_b200}"' in text
+    assert "sbatch --clusters=mindwell --array=" not in text
