@@ -147,6 +147,19 @@ def main() -> int:
 
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps({"done": run["_run_name"], **summary}), flush=True)
+
+    # EXIT 64 = "saved and stopped early, resume me". A walltime kill or an unannounced
+    # maintenance drain sends a signal; the trainer catches it, finishes the step, writes a
+    # checkpoint and returns here with `completed: false`. Exiting 0 would tell Slurm the arm
+    # SUCCEEDED and the sweep would quietly ship a half-trained model; exiting 1 would look
+    # like a crash. 64 is neither, and the job script resubmits on it. See scripts/slurm/.
+    if not summary.get("completed", True):
+        print(
+            f"INCOMPLETE: stopped at step {summary.get('steps')} by "
+            f"{summary.get('stopped_by_signal')}. Exit 64 -> resubmit to resume.",
+            flush=True,
+        )
+        return 64
     return 0
 
 

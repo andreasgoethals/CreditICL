@@ -77,10 +77,33 @@ def run_checkpoint_dirs() -> list[Path]:
     base = Path(checkpoints_dir())
     if not base.is_dir():
         return []
+    # BY STRUCTURE, NOT BY NAME. This used to match the prefixes `exp1_`, `exp2_`, `exp3_`,
+    # which silently skipped everything else the project has since started writing —
+    # `debug_exp1_*`, pilot and benchmark runs, and any experiment past Exp3. A missed run
+    # directory is not a tidy-up problem: a rerun RESUMES from whatever checkpoint it finds
+    # and trains nothing, which is exactly what happened to all four arms on 17-08-2026.
+    #
+    # So: any SUBDIRECTORY holding a checkpoint is one of ours. The released TabICLv2 weights
+    # are safe because they sit at the TOP level of `checkpoints/`, never in a subdirectory.
     return sorted(
-        p for p in base.iterdir()
-        if p.is_dir() and p.name.startswith(("exp1_", "exp2_", "exp3_"))
+        d for d in base.iterdir()
+        if d.is_dir() and any(d.rglob("*.ckpt"))
     )
+
+
+def scratch_outputs_dir() -> Path | None:
+    """`$VSC_SCRATCH/CreditICL`, when it is a real third place.
+
+    Scratch is purged by the system eventually, but "eventually" is not "before your next run",
+    and a stale file there is as confusing as a stale file anywhere else. Returns None off the
+    cluster, where scratch collapses into the repository and `outputs_dir()` already covers it.
+    """
+    from src.utils.paths import PROJECT_NAME, REPO_ROOT, scratch_root
+
+    root = scratch_root()
+    if root == REPO_ROOT:
+        return None
+    return root / PROJECT_NAME
 
 
 def roots(*, processed: bool = False, prior_cache: bool = False,
@@ -91,9 +114,13 @@ def roots(*, processed: bool = False, prior_cache: bool = False,
     on project storage — clearing only `outputs_dir()` there would leave the largest files behind.
     """
     found = [outputs_dir()]
-    results = results_dir()
-    if not results.is_relative_to(found[0]):
-        found.append(results)
+    for extra in (results_dir(), scratch_outputs_dir()):
+        # `is_relative_to` in BOTH directions: on a laptop every root collapses into the repo,
+        # and listing the same tree twice double-counts the deletion report.
+        if extra is not None and not any(
+            extra == f or extra.is_relative_to(f) or f.is_relative_to(extra) for f in found
+        ):
+            found.append(extra)
     if processed:
         found.append(processed_dir())
     if prior_cache:

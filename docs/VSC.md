@@ -155,38 +155,72 @@ setup (`3. CreditPFN/CreditPFN/docs/VSC_GUIDE.md`):
 - CreditPFN's split, which we follow: **Mindwell `gpu_b200` for training**,
   wICE `gpu_h100` / `gpu_a100` for evaluation, wICE `batch` for CPU data prep.
 
-## 3. Walltime ceilings and the checkpoint/resume gap
+## 3. The three limits, and how a long sweep survives them
 
-- **wICE and Mindwell: 72 h (3 days), and that is a hard ceiling for GPUs.**
-  There is **no `gpu_*_long` partition on wICE or Mindwell** — only the CPU
-  partitions have 7-day `_long` variants (`batch_long`,
-  `batch_icelake_long`, `batch_sapphirerapids_long`). Genius's older
-  `gpu_p100_long` / `gpu_v100_long` do allow 7 days, but those are P100/V100 and
-  far too slow to be worth it.
-- **Default walltime if you omit `--time` is 1 hour** (30 minutes on
-  `*_debug`). Always set `--time`.
+Everything in this section is verified against `tfm-library/repositories/VSC Documentation.txt`
+except the third limit, which is not documented anywhere and comes from experience.
 
-### The gap, stated plainly
+### 3.1 Walltime — 72 h, and `gpu_b200` cannot exceed it
 
-**The VSC documentation contains no Slurm requeue recipe.** The string
-`requeue` does not appear anywhere in it. The only documented checkpointing
-facility is the **`csub` / BLCR framework**, which is a Torque-era tool, not
-a Slurm-native mechanism, and not applicable to our GPU jobs.
+> "In general, the maximum walltime for Mindwell jobs is 3 days (72 hours). Only jobs submitted
+> to the `*_long` partitions are allowed to have walltimes up to 7 days."
 
-**Consequence for us:** application-level checkpointing is **mandatory, not
-optional**. TabICLv2's reference regressor stage 1 is **500,000 steps** —
-far beyond any 72 h ceiling. `src/train/` must therefore:
+`gpu_b200` is not a `*_long` partition, so **72 h is the ceiling for every GPU job we run.**
+The `interactive` partition allows 16 h with 8 cores and one RTX 5000 Ada, and **costs no
+credits**. The default if you omit `--time` is 1 hour — always set it.
 
-1. write a checkpoint every *N* steps to `$VSC_SCRATCH`, including optimizer
-   and LR-scheduler state and the prior's RNG state (otherwise a resumed run
-   does not resample the same task stream);
-2. detect and resume from the newest checkpoint on startup, idempotently;
-3. self-resubmit, since nothing will do it for us. The pattern is for the
-   job script to `sbatch` its own successor after the training process exits
-   cleanly, guarded by a step-count check so the chain terminates.
+Do not request 72 h out of habit. Billing is on *actual* time, so a long request costs nothing
+extra, but the backfill scheduler starts short jobs sooner. Request what the arm needs plus a
+margin; the resume machinery below makes an underestimate cheap.
 
-Budget checkpoint time inside the walltime: a job killed at the limit loses
-everything since the last write.
+### 3.2 Concurrency — two separate caps, and the numbers are not in the docs
+
+VSC caps the number of jobs a user may have **pending plus running**, and separately the total
+resources their running jobs may occupy. Both are set per partition QoS; `gpu_b200` uses the
+`normal` QoS. The documentation gives the mechanism but not the values, so read them off the
+live system:
+
+```bash
+sacctmgr show qos normal format=Name%20,MaxSubmitJobsPerUser%15,MaxTRESPerUser%30
+```
+
+We have hit both already — `QOSMaxSubmitJobPerUserLimit` and `QOSMaxCpuPerUserLimit` — so
+neither is theoretical. **Use the array throttle `%N` rather than trying to stay under the cap
+by hand**: `--array=0-74%8` keeps at most 8 tasks active whatever the limit turns out to be,
+and Slurm releases the next one as each finishes.
+
+There are **24 B200 GPUs in total** (3 nodes x 8), shared with every other user on Mindwell, so
+a throttle above ~8 is optimistic regardless of what the QoS allows.
+
+### 3.3 Unannounced maintenance — the one that is not written down
+
+**Mindwell goes into maintenance without warning, and running jobs are cancelled.** Not often,
+but often enough that a multi-day sweep will meet it. The documentation only alludes to this,
+under reservations: capacity may be taken back "in case of unforeseen circumstances, such as
+hardware failures, critical security vulnerabilities or urgent maintenance."
+
+### 3.4 What we do about all three — the same mechanism
+
+A walltime kill, a node failure and a maintenance drain all arrive as a **signal**. So:
+
+| piece | where | what it does |
+|---|---|---|
+| `--signal=B:USR1@600` | job script | Slurm signals the batch script 600 s before the wall |
+| `trap ... kill -USR1 $TRAIN_PID` | job script | forwards it to python, which Slurm does **not** do |
+| `_install_stop_signals` | `src/train/loop.py` | catches USR1/TERM, sets a flag |
+| the step loop | `src/train/loop.py` | finishes the step, writes a checkpoint, breaks |
+| `return 64` | `scripts/pretrain.py` | exit 64 = "saved, not finished" |
+| resubmit on 64 | job script | `sbatch --array=<this task>` — the arm continues |
+| `--requeue` | job script | covers node failure, where no signal arrives in time |
+| `maybe_resume` | `src/train/loop.py` | picks up the newest checkpoint on start |
+| `save_temp_every: 250` | the configs | bounds what an *ungraceful* kill costs to ~10 min |
+
+The child must be **backgrounded and `wait`ed on**: a foreground child would block the trap
+until it exited, which is exactly too late. `SLURM_RESTART_COUNT` is printed in the job banner,
+so a log tells you whether it is a first attempt or a resumption.
+
+**Consequence: an arm may take longer than the walltime and still complete.** That is what
+makes the 72 h ceiling a scheduling detail rather than a design constraint.
 
 ---
 
@@ -628,62 +662,55 @@ Note this job runs on **GPFS** scratch, and it needs a
 
 ---
 
-## 9. Open questions to resolve against the live system
+## 9. Settled against the live system
 
-The documentation does not settle these; check before the first big run.
+Answered by running on it. Kept because "we checked" is worth as much as the answer.
 
-- Which `lp_*` credit accounts exist for this project, and their balances.
-- Whether Mindwell `gpu_b200` is accessible under those accounts (it is a
-  newer cluster; the docs mention a `lp_mindwell_pilot` account in examples,
-  which suggests gated access).
-- Actual `MaxSubmitJobsPerUser` and `MaxTRESPerUser` per QoS, which caps how
-  wide the array fan-out can go.
-- Whether compute nodes have outbound internet — assume **not**, and
-  pre-download everything (including any HuggingFace assets) to `$VSC_DATA`.
-  This is why `wandb` is an opt-in extra and must run offline.
-- Current charge rates via `scontrol show partitions --clusters=wice`, since
-  the table in §1 is a snapshot.
+| question | answer | how we know |
+|---|---|---|
+| Which account? | `lp_verbekelab` | jobs submitted and billed under it since 14-08-2026 |
+| Is `gpu_b200` reachable under it? | yes | job 11521108 and others ran there |
+| Per-GPU core/memory ceiling | 24 cores, 194,400 MiB | VSC "CPU resource limits in GPU jobs" |
+| B200 charge rate | 437.50 credits per GPU-**minute** (26,250/h) | VSC charge-rate table |
+| CPU charge rate on Mindwell | 3.038 credits per core-minute | same table |
+| Do compute nodes have outbound internet? | **no** | why `prior_cache/ood` can only be built on a login node |
+| `MaxSubmitJobsPerUser` / `MaxTRESPerUser` | still unread — use `%N` throttling | see §3.2 |
+
+Still worth re-checking before a big submission: the credit balance (`sam-balance`), and
+whether the staging directory is writable (`python scripts/check_storage.py`). A run that
+cannot write where it thinks it can reroutes silently to `$VSC_DATA` and dies when the 75 GiB
+quota goes.
 
 ---
 
 ## 10. Compute budget: what is actually affordable
 
-Verified numbers, not estimates:
+Measured, not estimated. B200, batch 64, micro-batch 4, the config's prior shape.
 
-| | source |
+| | value |
 |---|---|
-| TabICLv2 full pretraining | **24.5 GPU-days per model** (20 + 2.5 + 2 across three stages), H100 80GB — the paper's own figure |
-| TabICL v1 | 60 A100-days |
-| O'Prior's controlled study | **40,000 datasets per prior**, batch 4, 1,000 steps × 10 epochs |
+| B200 GPU-hour | **26,250 credits** (+ ~2,200 for 24 cores) |
+| one Exp1 arm, 12,500 steps | **~16-22 h** (bracketed; the benchmark pins it) |
+| **Exp1, 75 arms** | **~1,200-1,650 GPU-hours = 33-46 M credits** |
+| TabICLv2's own full pretraining | 24.5 GPU-days per model, H100 (the paper's figure) |
 
-Our `config/*.yaml` replicates **O'Prior's** budget exactly, not TabICLv2's, and that is
-deliberate. O'Prior states the reason: *"at reduced scale, pretraining requires only tens
-of thousands of synthetic datasets rather than millions, making controlled prior ablations
-computationally feasible without sacrificing the qualitative conclusions."*
+At the array throttle `%8`, 75 arms of ~20 h is `ceil(75/8) x 20 = 200 h`, about **8 days of
+wall-clock**. At `%16` it is 4 days. The throttle, not the credit balance, is what sets how
+long the sweep takes — so decide it against the QoS limits in §3.2 rather than by feel.
 
-### Why the full budget cannot be the grid
+### Why the full upstream budget cannot be the grid
 
-| checkpoints | GPU-days |
-|---|---|
-| 2 | 49 |
-| 6 | 147 |
-| 48 (the current grid) | **1,176 = 3.2 GPU-years** |
-
-Unlimited credits do not help: wall-clock is the constraint. Hence two phases.
-
-**Phase 1 — the science.** 40K datasets, all 48 arms, 1 GPU each, pools on. Answers
-*which* prior mix wins. ~2 hours per arm; the whole grid fits in a day of queueing.
-
-**Phase 2 — the headline.** Full TabICLv2 budget on **2 checkpoints only** (winning arm +
-unmodified control), on-the-fly generation, 4–8 GPU DDP, 2–3 chained 72h jobs each.
-Answers *is it actually good*.
+Upstream's stage 1 is 500,000 steps. At our measured rate that is ~347 h **per arm**, and 75
+arms would be 26,000 GPU-hours. Our 12,500 steps is 2.5 % of stage 1, and that is the whole
+reason Exp1 is a *screening* tier: it ranks priors, and only Exp2 runs the winner long enough
+for the number to mean anything on its own.
 
 ### Storage rules out pooling at full scale
 
-At the measured 97 KB (LGD) / 131 KB (PD) per dataset, 35M datasets is **3.5–4.7 TB per
-variant**, ~16 TB for four pools, against a ~1 TB staging quota. TabICLv2 never stored
-its datasets either — 550K steps × batch 64 ≈ 35M means **each dataset is seen once**,
-so there are no epochs and no corpus. Phase 2 therefore uses `--prior-source generate`.
+At the measured 97 KB (LGD) / 131 KB (PD) per dataset, 35M datasets is **3.5-4.7 TB per
+variant**, ~16 TB for four pools, against a ~1 TB staging quota. TabICLv2 never stored its
+datasets either — 550K steps x batch 64 means **each dataset is seen once**, so there are no
+epochs and no corpus. Exp2 therefore uses `--prior-source generate`.
 
-At 35M draws the pooling benefit is also negligible: the point of pools is removing
-draw-luck between arms, and that noise is ~1/√35M. Pools are for Phase 1.
+Pools remain useful for Exp1, where they remove draw-luck between arms that are only 12,500
+steps long.

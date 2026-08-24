@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 from contextlib import nullcontext
@@ -142,23 +143,25 @@ def bench_model(
     the model is fine and the prior generator is the bottleneck.
     """
     from src.models.architecture import build_model, is_available
+    from src.models.backends import sdpa_context
 
     if not is_available("tabicl"):
         return {"error": "upstream tabicl not installed"}
 
     model = build_model(task, architecture="tabicl").to(device)
-    # AT THE REAL BATCH SIZE. It used to be 1, and the verdict below then divided a batch-N
-    # end-to-end rate by a batch-1 ceiling — which reads as starvation whatever the truth is.
+    # AT THE REAL MICRO-BATCH, and the step cost PROJECTED from it. One pass of `batch_size` is
+    # not what training runs and does not even fit: see `micro_plan`.
+    micro, n_micro = micro_plan(task, batch_size)
     rows, feats, train_size = bench_shape(task)
-    X = torch.randn(batch_size, rows, feats, device=device)
+    X = torch.randn(micro, rows, feats, device=device)
     y = (
-        torch.rand(batch_size, train_size, device=device)
+        torch.rand(micro, train_size, device=device)
         if task == "lgd"
-        else (torch.rand(batch_size, train_size, device=device) > 0.7).float()
+        else (torch.rand(micro, train_size, device=device) > 0.7).float()
     )
 
     model.eval()
-    with torch.no_grad():
+    with torch.no_grad(), sdpa_context():
         fwd = _time(lambda: model(X, y), n, warmup, torch)
 
     model.train()
@@ -166,7 +169,8 @@ def bench_model(
 
     def step():
         opt.zero_grad(set_to_none=True)
-        out = model(X, y)
+        with sdpa_context():
+            out = model(X, y)
         out.float().square().mean().backward()
         opt.step()
 
@@ -174,11 +178,15 @@ def bench_model(
     return {
         "params": sum(p.numel() for p in model.parameters()),
         "batch_size": batch_size,
+        "micro_batch_size": micro,
+        "micro_passes_per_step": n_micro,
         "rows": rows,
         "features": feats,
         "forward_ms": round(fwd * 1000, 2),
-        "forward_backward_ms": round(both * 1000, 2),
-        "max_steps_per_s_if_data_were_free": round(1.0 / both, 2),
+        "micro_fwd_bwd_ms": round(both * 1000, 2),
+        # The number to compare against end-to-end: a whole step's worth of passes.
+        "forward_backward_ms": round(both * n_micro * 1000, 2),
+        "max_steps_per_s_if_data_were_free": round(1.0 / (both * n_micro), 3),
     }
 
 
@@ -198,6 +206,27 @@ def bench_shape(task: str) -> tuple[int, int, int]:
     feats = int(round((int(flo) + int(fhi)) / 2))      # the MEAN width, so this is the mean step
     lo, hi = prior.get("train_frac_range", [0.3, 0.9])
     return rows, feats, int(round(rows * (float(lo) + float(hi)) / 2))
+
+
+def micro_plan(task: str, batch_size: int | None = None) -> tuple[int, int]:
+    """`(micro_batch_size, micro_passes_per_step)` — how training actually runs a step.
+
+    WHY THIS MATTERS MORE THAN IT LOOKS. A step is NOT one forward pass of `batch_size`
+    datasets. It is `ceil(batch/micro)` passes of `micro`, accumulated, then one optimiser
+    step; `Trainer.validate_micro_batch` forces it, because every dataset in a pass must share
+    a sequence length and a train/test split.
+
+    Benchmarking one pass of 64 instead of 16 passes of 4 is not a small approximation. On
+    20-08-2026 (job 11521108) it produced three wrong readings at once: the end-to-end rung
+    OOMed at 176 GiB on a 178 GiB card, `forward_backward_ms` came back as 1,617 ms for a
+    "step", and Muon looked FREE at 1.01x because its fixed ~18 ms of Newton-Schulz was
+    amortised over a pass sixteen times too large.
+    """
+    train = _train_cfg(task)
+    batch = int(batch_size if batch_size is not None else train.get("batch_size", 64))
+    micro = int(train.get("micro_batch_size", batch))
+    micro = max(1, min(micro, batch))
+    return micro, math.ceil(batch / micro)
 
 
 def _prior_cfg(task: str) -> dict[str, Any]:
@@ -260,18 +289,21 @@ def bench_amp(torch: Any, device: str, task: str, n: int, batch_size: int) -> di
     were wrong.
     """
     from src.models.architecture import build_model, is_available
+    from src.models.backends import sdpa_context
 
     if not is_available("tabicl"):
         return {"error": "upstream tabicl not installed"}
 
+    micro, n_micro = micro_plan(task, batch_size)
     rows, feats, train_size = bench_shape(task)
-    X = torch.randn(batch_size, rows, feats, device=device)
+    X = torch.randn(micro, rows, feats, device=device)
     y = (
-        torch.rand(batch_size, train_size, device=device)
+        torch.rand(micro, train_size, device=device)
         if task == "lgd"
-        else (torch.rand(batch_size, train_size, device=device) > 0.7).float()
+        else (torch.rand(micro, train_size, device=device) > 0.7).float()
     )
-    out: dict[str, Any] = {"batch_size": batch_size}
+    out: dict[str, Any] = {"batch_size": batch_size, "micro_batch_size": micro,
+                           "micro_passes_per_step": n_micro}
     for label, amp in (("fp32", False), ("amp_bf16", True)):
         try:
             model = build_model(task, architecture="tabicl").to(device)
@@ -286,7 +318,7 @@ def bench_amp(torch: Any, device: str, task: str, n: int, batch_size: int) -> di
 
             def step(m=model, o=opt, s=scaler, c=ctx):
                 o.zero_grad(set_to_none=True)
-                with c:
+                with sdpa_context(), c:
                     loss = m(X, y).float().square().mean()
                 s.scale(loss).backward()
                 s.step(o)
@@ -316,18 +348,20 @@ def profile_step(torch: Any, device: str, task: str, batch_size: int, amp: bool)
     from torch.profiler import ProfilerActivity, profile
 
     from src.models.architecture import build_model, is_available
+    from src.models.backends import sdpa_context
 
     if not is_available("tabicl"):
         return {"error": "upstream tabicl not installed"}
     if not device.startswith("cuda"):
         return {"skipped": "profiling is only meaningful on CUDA"}
 
+    micro, _ = micro_plan(task, batch_size)
     rows, feats, train_size = bench_shape(task)
-    X = torch.randn(batch_size, rows, feats, device=device)
+    X = torch.randn(micro, rows, feats, device=device)
     y = (
-        torch.rand(batch_size, train_size, device=device)
+        torch.rand(micro, train_size, device=device)
         if task == "lgd"
-        else (torch.rand(batch_size, train_size, device=device) > 0.7).float()
+        else (torch.rand(micro, train_size, device=device) > 0.7).float()
     )
     model = build_model(task, architecture="tabicl").to(device)
     model.train()
@@ -338,7 +372,7 @@ def profile_step(torch: Any, device: str, task: str, batch_size: int, amp: bool)
 
     def step():
         opt.zero_grad(set_to_none=True)
-        with ctx:
+        with sdpa_context(), ctx:
             loss = model(X, y).float().square().mean()
         loss.backward()
         opt.step()
@@ -370,7 +404,14 @@ def bench_optimizers(
 ) -> dict[str, Any]:
     """Time one optimiser step per optimiser, on tensors already on the GPU.
 
-    THE RUNG THAT WAS MISSING, and it was the answer. The first benchmark used plain SGD and
+    **CORRECTED 20-08-2026: MUON IS FREE AT THE REAL BATCH SIZE.** Measured at batch 1 it costs
+    1.40x; measured at micro-batch 4 accumulated to 64, 1.01x. Both are right. Newton-Schulz
+    runs once per WEIGHT MATRIX per STEP, so its ~18 ms is fixed while the forward/backward
+    grows with the batch — at batch 1 that fixed cost is 40 % of the step and at batch 64 it is
+    1 %. The paragraph below is kept because it explains what the rung is for, but its
+    conclusion held only at a batch size we do not train at.
+
+    THE RUNG THAT WAS MISSING, and it was the answer at the time. The first benchmark used plain SGD and
     reported the B200 as 1.8x FASTER end to end than the free RTX 5000 Ada — while real
     training on the same B200 ran at 0.53 steps/s against the free card's 6.6. The only
     difference was the optimiser: `config/Exp1_*.yaml` sets `optimizer: muon`.
@@ -381,20 +422,22 @@ def bench_optimizers(
     or a faster GPU will help. This row separates it from everything else.
     """
     from src.models.architecture import build_model, is_available
+    from src.models.backends import sdpa_context
     from src.train.optim import build_optimizer
 
     if not is_available("tabicl"):
         return {"error": "upstream tabicl not installed"}
 
+    micro, n_micro = micro_plan(task, batch_size)
     rows, feats, train_size = bench_shape(task)
-    X = torch.randn(batch_size, rows, feats, device=device)
+    X = torch.randn(micro, rows, feats, device=device)
     y = (
-        torch.rand(batch_size, train_size, device=device)
+        torch.rand(micro, train_size, device=device)
         if task == "lgd"
-        else (torch.rand(batch_size, train_size, device=device) > 0.7).float()
+        else (torch.rand(micro, train_size, device=device) > 0.7).float()
     )
 
-    out: dict[str, Any] = {"batch_size": batch_size}
+    out: dict[str, Any] = {"batch_size": batch_size, "micro_batch_size": micro}
     for name in ("adamw", "muon"):
         try:
             model = build_model(task, architecture="tabicl").to(device)
@@ -403,7 +446,9 @@ def bench_optimizers(
 
             def step(m=model, o=opt):
                 o.zero_grad(set_to_none=True)
-                m(X, y).float().square().mean().backward()
+                with sdpa_context():
+                    loss = m(X, y).float().square().mean()
+                loss.backward()
                 o.step()
 
             sec = _time(step, max(3, n_steps // 4), 2, torch)
@@ -417,8 +462,67 @@ def bench_optimizers(
     return out
 
 
+def _autocast(torch: Any, device: str, amp: bool):
+    """AMP where training uses it, a no-op otherwise. `bfloat16`, so no GradScaler is needed."""
+    import contextlib
+
+    if not (amp and device.startswith("cuda")):
+        return contextlib.nullcontext()
+    return torch.amp.autocast("cuda", dtype=torch.bfloat16)
+
+
+def bench_attention_backends(torch: Any, device: str, task: str, batch_size: int) -> dict[str, Any]:
+    """Which SDPA kernels actually RUN this model at this shape — one line each, or the error.
+
+    THE RUNG THAT WOULD HAVE SAVED A RUN. On 20-08-2026 the AMP row died with
+    `Expected mha_graph.execute(...).is_good() to be true` — cuDNN's fused multi-head-attention
+    graph — and the report showed one opaque `RuntimeError` and no way to tell whether the
+    model, the card, the batch size or the kernel was at fault. PyTorch picks a backend per
+    call from the shapes and dtype, so the answer is not knowable from the config; it has to be
+    measured. This measures it, in both precisions, and keeps going when one combination
+    raises.
+    """
+    from src.models.architecture import build_model, is_available
+    from src.models.backends import EXCLUDED, PREFERRED, sdpa_context
+
+    if not is_available("tabicl"):
+        return {"error": "upstream tabicl not installed"}
+    micro, _ = micro_plan(task, batch_size)
+    rows, feats, train_size = bench_shape(task)
+    out: dict[str, Any] = {"micro_batch_size": micro, "shape": [micro, rows, feats]}
+    try:
+        model = build_model(task, architecture="tabicl").to(device)
+        model.eval()
+        X = torch.randn(micro, rows, feats, device=device)
+        y = (
+            torch.rand(micro, train_size, device=device)
+            if task == "lgd"
+            else (torch.rand(micro, train_size, device=device) > 0.7).float()
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+    for name in (*PREFERRED, *EXCLUDED):
+        for label, amp in (("fp32", False), ("bf16", True)):
+            key = f"{name.lower()}_{label}"
+            try:
+                with torch.no_grad(), sdpa_context(only=name), _autocast(torch, device, amp):
+                    sec = _time(lambda: model(X, y), 3, 1, torch)
+                out[key] = round(sec * 1000, 2)
+            except Exception as exc:  # noqa: BLE001 - the failures ARE the measurement
+                # On CPU only MATH exists, so the CUDA-only backends are absent rather than
+                # broken. Calling that a FAILURE would drown the one that matters.
+                miss = "No viable backend" in str(exc) and not device.startswith("cuda")
+                out[key] = (
+                    "n/a on CPU" if miss
+                    else f"FAILED {type(exc).__name__}: {str(exc)[:120]}"
+                )
+    return out
+
+
 def bench_end_to_end(
-    torch: Any, device: str, task: str, n_steps: int, workers: int, batch_size: int
+    torch: Any, device: str, task: str, n_steps: int, workers: int, batch_size: int,
+    amp: bool = True,
 ) -> dict[str, Any]:
     """The real thing: real DataLoader, real workers, real optimiser steps.
 
@@ -427,8 +531,10 @@ def bench_end_to_end(
     high and this is low, the GPU spent the run waiting.
     """
     from src.models.architecture import build_model, is_available
+    from src.models.backends import sdpa_context
     from src.prior.dataset import build_loader
 
+    micro, n_micro = micro_plan(task, batch_size)
     if not is_available("tabicl"):
         return {"error": "upstream tabicl not installed"}
     try:
@@ -436,31 +542,54 @@ def bench_end_to_end(
         model.train()
         opt = torch.optim.SGD(model.parameters(), lr=1e-6)
         loader = build_loader(_prior_cfg(task), task, batch_size, seed=0, num_workers=workers)
+        micro, n_micro = micro_plan(task, batch_size)
+        if device.startswith("cuda"):
+            torch.cuda.reset_peak_memory_stats()
 
         it = iter(loader)
         next(it)  # worker start-up is not part of the steady state
         _sync(torch)
         t0 = time.perf_counter()
         done = 0
+        peak_gb = 0.0
         for _ in range(n_steps):
             X, y, train_size = next(it)
-            X = X.to(device, non_blocking=True)
-            y = y.to(device, non_blocking=True)
             opt.zero_grad(set_to_none=True)
-            out = model(X, y[:, :train_size])
-            out.float().square().mean().backward()
+            # MICRO-BATCHED, exactly as `Trainer.train_step` does it. Pushing all
+            # `batch_size` datasets through one forward pass is not what training runs and
+            # does not fit: at batch 64 it OOMed at 176 GiB of a 178 GiB card (job 11521108).
+            for i in range(n_micro):
+                sl = slice(i * micro, (i + 1) * micro)
+                Xi = X[sl].to(device, non_blocking=True)
+                yi = y[sl].to(device, non_blocking=True)
+                if Xi.shape[0] == 0:
+                    continue
+                with sdpa_context(), _autocast(torch, device, amp):
+                    out = model(Xi, yi[:, :train_size])
+                    loss = out.float().square().mean() / n_micro
+                loss.backward()
             opt.step()
             done += 1
         _sync(torch)
         sec = time.perf_counter() - t0
+        if device.startswith("cuda"):
+            peak_gb = round(torch.cuda.max_memory_allocated() / 1e9, 2)
     except Exception as exc:  # noqa: BLE001
-        return {"error": f"{type(exc).__name__}: {exc}"}
+        return {"error": f"{type(exc).__name__}: {exc}", "workers": workers,
+                "micro_batch_size": micro, "batch_size": batch_size}
     return {
         "workers": workers,
+        "batch_size": batch_size,
+        "micro_batch_size": micro,
+        "micro_passes_per_step": n_micro,
+        "amp": amp,
         "steps": done,
         "seconds": round(sec, 2),
         "steps_per_s": round(done / sec, 3) if sec else None,
         "datasets_per_s": round(done * batch_size / sec, 2) if sec else None,
+        "peak_gpu_gb": peak_gb or None,
+        # What a 12,500-step Exp1 arm would cost at this rate. The number the budget needs.
+        "projected_hours_12500_steps": round(12_500 * sec / done / 3600, 2) if done and sec else None,
     }
 
 
@@ -541,7 +670,16 @@ def main() -> int:
         print()
 
     if not args.skip_model:
-        print("--- 4b. OPTIMISER STEP — the row that explains the B200 " + "-" * 18)
+        print("--- 4c. ATTENTION BACKENDS - which kernels run this model " + "-" * 16)
+        results["attention_backends"] = bench_attention_backends(
+            torch, device, args.task, args.batch_size
+        )
+        for k, v in results["attention_backends"].items():
+            print(f"  {k:44s} {v}")
+        print()
+
+    if not args.skip_model:
+        print("--- 4b. OPTIMISER STEP - Muon costs 1.4x at batch 1, 1.01x at batch 64 " + "-" * 2)
         results["optimizers"] = bench_optimizers(
             torch, device, args.task, args.steps, args.batch_size
         )
@@ -557,7 +695,7 @@ def main() -> int:
             workers = max(0, int(os.environ.get("SLURM_CPUS_PER_TASK", 4)) - 1)
         print(f"--- 6. end to end, {workers} workers (what the training log reports) " + "-" * 8)
         results["end_to_end"] = bench_end_to_end(
-            torch, device, args.task, max(10, args.steps), workers, args.batch_size
+            torch, device, args.task, max(10, args.steps), workers, args.batch_size, amp=True
         )
         for k, v in results["end_to_end"].items():
             print(f"  {k:44s} {v}")
@@ -580,6 +718,23 @@ def main() -> int:
 
     # -- the reading -----------------------------------------------------------
     print("=" * 74)
+    # FAILURES FIRST, LOUDLY. On 20-08-2026 the end-to-end rung OOMed and the AMP rung raised
+    # inside cuDNN, and the summary simply omitted both — so the report ENDED on a tidy
+    # "prior, one worker" line and looked like a clean run. A rung that did not produce a
+    # number is the most important thing on the page, not the least.
+    failed = []
+    for section, res in results.items():
+        if isinstance(res, dict):
+            for key, val in res.items():
+                if key == "error" or key.endswith("_error") or (
+                    isinstance(val, str) and val.startswith("FAILED")
+                ):
+                    failed.append((section, key, val))
+    if failed:
+        print(f"  *** {len(failed)} MEASUREMENT(S) FAILED - read these before anything else ***")
+        for section, key, val in failed:
+            print(f"    {section}.{key}: {str(val)[:150]}")
+        print()
     model = results.get("model") or {}
     prior = results.get("prior") or {}
     ceiling = model.get("max_steps_per_s_if_data_were_free")

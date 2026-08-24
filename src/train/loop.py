@@ -34,6 +34,7 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 
+from ..models.backends import sdpa_context, sdpa_report
 from ..prior.dataset import build_loader
 from ..utils.logging_setup import close_logging, log_environment, log_section, setup_logging
 from . import distributed as dist
@@ -442,6 +443,22 @@ class Trainer:
             f"   <- we see ~{100 * self.max_steps * self.batch_size / 35_200_000:.2f}% of "
             f"their data",
             "",
+            "",
+            "  -- RUNTIME " + "-" * 65,
+            f"  attention kernels      : {sdpa_report()['using']}"
+            f"   excluded={sdpa_report()['excluded']}"
+            f"   <- pinned; PyTorch would otherwise pick per call",
+            f"  amp / scaler           : {self.amp} / "
+            f"{type(self.scaler).__name__ if self.scaler is not None else 'none'}",
+            f"  device                 : {self.device}",
+            f"  dataloader workers     : {tcfg.get('num_workers')}",
+            f"  log cadences           : step/{tcfg.get('log_every')} "
+            f"hw/{(self.cfg.get('logging') or {}).get('log_hardware_every')} "
+            f"grad/{(self.cfg.get('logging') or {}).get('log_grad_every')} "
+            f"prior/{(self.cfg.get('logging') or {}).get('log_prior_every')}",
+            f"  checkpoints            : temp/{tcfg.get('save_temp_every')} "
+            f"perm/{tcfg.get('save_perm_every')} -> {self.ckpt_dir}",
+            "",
             "  -- LEAKAGE CHECK " + "-" * 59,
             "  training data          : SYNTHETIC ONLY, generated fresh each step",
             "  real credit data       : NEVER trained on; used for scoring only",
@@ -602,7 +619,12 @@ class Trainer:
             if Xi.shape[0] == 0:
                 continue
             try:
-                loss, extra = self._loss_for(Xi, yi, train_size)
+                # PIN THE ATTENTION KERNEL. PyTorch picks an SDPA backend per call from the
+                # shapes and dtype, and on 20-08-2026 the cuDNN fused-MHA graph raised on a
+                # B200 at batch 64 under AMP. Wrapping the forward pass makes the choice a
+                # property of the run rather than of the batch that happened to come along.
+                with sdpa_context():
+                    loss, extra = self._loss_for(Xi, yi, train_size)
                 self.scaler.scale(loss / n_micro).backward()
                 # detach() before float(): torch warns that converting a tensor
                 # still attached to the graph can behave unexpectedly, and we only
@@ -669,7 +691,55 @@ class Trainer:
         return totals
 
     # -- main ----------------------------------------------------------------
+    def _install_stop_signals(self) -> None:
+        """Turn a kill into a checkpoint.
+
+        THREE THINGS END A CLUSTER RUN EARLY, and none of them is a bug:
+        the 72-hour walltime; an unannounced maintenance drain, which happens often enough on
+        this cluster to plan for; and a node failure. All three arrive as a signal, and the
+        default action is to die where you stand — losing everything since the last rolling
+        checkpoint.
+
+        So: set a flag, finish the step in progress, save, and exit 0. With `--requeue` in the
+        job script Slurm resubmits the task, and `maybe_resume` picks up the checkpoint. A
+        75-arm sweep then survives a drain instead of restarting.
+
+        SIGUSR1 is what `--signal=B:USR1@<sec>` delivers before the walltime; SIGTERM is what
+        `scancel` and a drain send. We do NOT trap SIGINT: Ctrl-C at a terminal should stop
+        immediately, and a person can send it twice anyway.
+        """
+        import signal
+
+        def _request_stop(signum: int, _frame: Any) -> None:
+            name = signal.Signals(signum).name
+            if self._stop_requested:
+                self.log.warning("%s again — exiting NOW without saving", name)
+                raise SystemExit(143)
+            self._stop_requested = name
+            self.log.warning(
+                "%s received at step %s — finishing this step, saving, then exiting 0 so the "
+                "job can be requeued and resumed", name, self.step,
+            )
+
+        # `getattr`, not `signal.SIGUSR1`: the attribute does not EXIST on Windows, so naming
+        # it raises while building the tuple, before any try block can catch it.
+        wanted = [getattr(signal, n, None) for n in ("SIGUSR1", "SIGTERM")]
+        installed = []
+        for sig in [s for s in wanted if s is not None]:
+            try:
+                signal.signal(sig, _request_stop)
+                installed.append(sig.name)
+            except (ValueError, OSError):
+                # Handlers can only be set on the main thread. Not a reason to refuse to train.
+                self.log.debug("could not install a handler for %s", sig)
+        self.log.info(
+            "stop signals: %s -> checkpoint and exit 0 (requeue resumes)",
+            ", ".join(installed) or "none available on this platform",
+        )
+
     def train(self) -> dict[str, Any]:
+        self._stop_requested: str | None = getattr(self, "_stop_requested", None)
+        self._install_stop_signals()
         loader = build_loader(
             self.cfg["prior"],
             self.task,
@@ -809,11 +879,21 @@ class Trainer:
 
             is_temp = self.save_temp_every > 0 and self.step % self.save_temp_every == 0
             is_perm = self.save_perm_every > 0 and self.step % self.save_perm_every == 0
-            if is_temp or is_perm or self.step == self.max_steps:
+            if is_temp or is_perm or self.step == self.max_steps or self._stop_requested:
                 self._save()
+
+            if self._stop_requested:
+                self.log.warning(
+                    "STOPPING EARLY on %s at step %s/%s. A checkpoint was written; requeue or "
+                    "resubmit the same job and it resumes from here.",
+                    self._stop_requested, self.step, self.max_steps,
+                )
+                break
 
         summary = {
             "steps": self.step,
+            "completed": self.step >= self.max_steps,
+            "stopped_by_signal": self._stop_requested,
             "datasets_seen": self.datasets_seen,
             "elapsed_s": round(time.time() - started, 1),
             "resumed_at": self.resumed_at,

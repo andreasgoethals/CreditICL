@@ -1,28 +1,153 @@
-# Config reference
+# Config reference — why each setting is what it is
 
-`config/Exp1_LGD.yaml` and `config/Exp1_PD.yaml` hold every setting for their experiment.
-This file holds the *reasoning* — why each setting exists and what evidence backs
-it — so the configs stay scannable.
+The six files in `config/` hold **values**; this file holds the **reasoning**. A knob in a
+config carries at most a one-line note saying what it is. Everything else — why that value,
+what evidence backs it, what upstream does, and what breaks if you change it — is here, under
+the same knob name.
 
-The configs used to carry all of this inline and ran to 542 lines, which made them
-unreadable. YAML was never the problem; 250 lines of prose in a settings file was.
+That split is deliberate and it has slipped twice. A config is read while deciding what to
+submit, and 130 lines of prose in a 250-line settings file makes the settings unfindable. If
+you catch yourself writing a paragraph above a knob, it belongs in this file.
+
+| file | holds |
+|---|---|
+| `config/Exp{1,2,3}_{LGD,PD}.yaml` | the values, one note per knob |
+| **this file** | the reasoning behind them |
+| [`EXPERIMENTAL_DESIGN.md`](EXPERIMENTAL_DESIGN.md) | what the three experiments ask |
+| [`PRIORS.md`](PRIORS.md) | how the credit prior is built |
+| [`VSC.md`](VSC.md) | the cluster, its limits, and how to submit |
+
+---
 
 ## How the sweep works
 
-Any setting may be a single value or a list. A list means one run per value, and
-all lists are **crossed**: three settings with two values each is 8 runs, times
-the number of seeds.
+Any setting may be a single value or a list. A list means one run per value, and all lists are
+**crossed**. Names ending in `_range` are literal `[low, high]` intervals sampled *from*, never
+swept — to sweep one, nest it: `boundary_mass_range: [[0.0, 0.1], [0.1, 0.3]]`.
 
 ```bash
 python scripts/pretrain.py --config config/Exp1_LGD.yaml --list
 ```
 
-`# S: [...]` marks a setting left at one value and shows how to open it up. Names
-ending in `_range` are literal `[low, high]` intervals sampled from, never swept —
-to sweep one, nest it: `boundary_mass_range: [[0.0, 0.1], [0.1, 0.3]]`.
+**Exp1 crosses to 32 combinations but expands to 25 runs x 3 seeds = 75.** At
+`credit_fraction: 0.0` the three credit knobs have no effect, so those 8 combinations collapse
+to one control arm. `effective_fingerprint` in `src/utils/config.py` does the collapsing; it is
+what stops the control being run 8 times under 8 different names.
 
-**Open one group at a time.** Crossing is multiplicative, and with every lever
-moving you cannot attribute an effect to any of them.
+**Open one group at a time.** Crossing is multiplicative, and with every lever moving you
+cannot attribute an effect to any of them.
+
+---
+
+## The prior's SHAPE is not ours to choose
+
+`n_rows_range`, `n_features_range`, `max_features`, `n_nodes_range`, `train_frac_range`.
+
+The whole project rests on one sentence: **the only difference from TabICLv2 is the prior's
+credit structure.** These five knobs are the prior's shape, and they are copied from
+`scripts/train_v2_reg_stage1.sh` in the pinned tfm-library:
+
+| knob | ours | upstream stage 1 |
+|---|---|---|
+| `n_rows_range` | `[1024, 1024]` | `--max_seq_len 1024`, **no `--min_seq_len`** |
+| `n_features_range` | `[1, 100]` | `--min_features 1 --max_features 100` |
+| `max_features` | `100` | `--max_features 100` |
+| `n_nodes_range` | `[2, 33]` | `--min_n_nodes 2 --max_n_nodes 32` |
+| `train_frac_range` | `[0.3, 0.9]` | `--min_train_size 0.3 --max_train_size 0.9` |
+
+**Rows are 1,024 EXACTLY, not a range.** `sample_seq_len` opens with
+`if min_seq_len is None: return max_seq_len`, and stage 1 passes no `--min_seq_len`. Only the
+train/test split varies. Two of these had drifted — `[512, 1024]` rows and `[3, 50]` features
+— and both made training *cheaper*, which is why nothing ever complained. A wrong setting that
+costs money gets found; one that saves money does not.
+`test_prior_shape_matches_upstream_stage_one` now pins all five.
+
+---
+
+## Why one stage, and not TabICLv2's three
+
+Upstream trains in three, and what changes between them is the row count and the learning rate:
+
+| stage | steps | share | rows | lr | clip |
+|---|---|---|---|---|---|
+| 1 | 500,000 | 90.9 % | 1,024 exactly | 8e-4 | 10 |
+| 2 | 40,000 | 7.3 % | log-uniform 400-10,240 | 1e-4 | 10 |
+| 3 | 10,000 | 1.8 % | log-uniform 400-60,000 | 2e-5 | 1 |
+
+**Proportional in STEPS is wildly disproportionate in COMPUTE.** Rows enter the cost twice:
+linearly through the column and row encoders, and *quadratically* through the 12-block ICL
+predictor, which attends across rows. Calibrating `cost(n) = a.n + b.n^2` at n=1,024, a stage-2
+step costs ~7x a stage-1 step and a stage-3 step ~120x. Keep the 90.9/7.3/1.8 split on 12,500
+steps and stage 3 becomes 227 steps — **1.8 % of the steps and ~61 % of the budget**.
+
+And those 227 steps would learn almost nothing: stage 3 runs at **one fortieth** of stage 1's
+learning rate. By sum-of-learning-rates — a crude proxy for how far the weights move — stage 3
+would contribute ~0.05 % of the run's optimisation for 61 % of its cost. **Upstream's stages
+2-3 are low-rate adaptation to long context, not more prior learning.** Shrink their step
+counts 40x and you pay for the adaptation without getting it.
+
+**Instead:** stage 1 only, and cap the *evaluation* context to 1,024 for both models from one
+shared setting, so the comparison is matched rather than approximate. Long context belongs in
+Exp2 on the single winning prior, and it needs no new code — `init.strategy: full` plus
+`pretrained_path` is upstream's `--checkpoint_path ... --only_load_model True`.
+
+---
+
+## `train.micro_batch_size` — a hard constraint, not a memory setting
+
+`micro_batch_size <= prior.grouping.group_size`, full stop. A bigger GPU does not buy a bigger
+micro-batch.
+
+`Trainer.validate_micro_batch` **raises** when the datasets in one micro-batch disagree on
+their sequence length *or* their train/test split, and both are drawn per group. Upstream keeps
+`micro_batch_size == batch_size_per_gp` in every stage for exactly this reason: their 4 tracks
+the group size, not the quality of their hardware.
+
+Gradient accumulation runs `ceil(batch_size / micro_batch_size)` passes and averages them, so
+the update is mathematically identical to one batch of 64 — **it does not change the result**,
+only speed and memory. What keeps a big GPU busy is the number of micro-passes per sync, not
+the micro-batch itself.
+
+---
+
+## `train.max_steps` — why 12,500 and not more
+
+12,500 x 64 = **800,000 datasets per arm, 2.5 % of upstream's stage 1** (500,000 x 64 = 32 M).
+
+The limit is credits. A B200 costs **437.50 credits per GPU-minute** (26,250/hour) plus ~3.04
+per CPU-core-minute, and 75 arms at ~16-22 h each is **33-46 M credits**. Doubling `max_steps`
+doubles that. Exp1 buys a **ranking**; Exp2 buys the converged number.
+
+If the budget will not stretch, **cut `max_steps`, not the prior shape.** A shorter run is just
+shorter; a cheaper prior is a confound.
+
+---
+
+## `train.amp` and the attention kernel
+
+`amp: true`, and the attention backend is **pinned** — see `src/models/backends.py`.
+
+PyTorch picks between four SDPA backends silently, per call, from the shapes and dtype. On
+20-08-2026 the cuDNN fused multi-head-attention graph raised
+`Expected mha_graph.execute(...).is_good() to be true` on a B200 at batch 64 under AMP. It is
+excluded; flash, mem-efficient and math remain. The run card logs which are in use.
+
+AMP itself is a real ~2x speed-up and upstream uses it in every stage.
+
+---
+
+## `train.optimizer` — Muon, and what it actually costs
+
+Muon is what TabICLv2 uses, at `--lr 8e-4`. Its Newton-Schulz orthogonalisation runs **once per
+weight matrix per step**, so its ~18 ms is a FIXED cost:
+
+| batch | step time | Muon overhead |
+|---|---|---|
+| 1 | 45 ms | **1.40x** |
+| 64 | 1,618 ms | **1.01x** |
+
+Both measurements are right. At the batch size we train at, Muon is free — a conclusion that
+took three runs to reach because every earlier measurement was at batch 1.
 
 ---
 
@@ -118,13 +243,13 @@ that argument rather than ignore it.
 
 ## `init.strategy` — how to start
 
-`scratch` (random init), `full` (pretrained, train everything at a low LR),
-`icl_only` (freeze the column and row blocks), `head_only` (freeze all blocks).
+`scratch` (random init), `full` (pretrained, train everything at a low LR), `icl_only` (freeze
+the column and row blocks), `head_only` (freeze all blocks). Exp1 and Exp2 use `scratch`; Exp3
+warm-starts from the released TabICLv2 weights.
 
-All four come from what TabICL itself does — v1's final stage froze col+row at
-`lr 2e-6`, v2's froze nothing at `lr 2e-5`. **No LoRA**: there is none anywhere in
-TabICL, and Tanna 2025 found it unstable on TabPFN. Full write-up in
-[`finetuning.md`](finetuning.md).
+All four come from what TabICL itself does. **No LoRA.** Full analysis in
+[Appendix: full retraining or fine-tuning?](#appendix-full-retraining-or-fine-tuning) at the
+bottom of this file.
 
 ## `model` — do not sweep
 
@@ -153,14 +278,6 @@ and nothing is left behind. `log_prior_every` periodically samples the prior and
 records what it is actually producing — cheap insurance, because a config typo that
 silently disables the credit path looks exactly like a real null result.
 
-## `eval` — not yet wired up
-
-`dev_datasets` and `holdout_datasets` are deliberately empty. The split must be
-**frozen before any prior tuning**, or we meta-overfit the way Mitra warns about.
-That is a scientific commitment and needs sign-off, not a default.
-
----
-
 ## A note on the published LGD R² figures
 
 The configs and docs quote "published LGD R² ≈ 0.04–0.15 linear, 0.10–0.25 beta,
@@ -171,3 +288,199 @@ paper. Our own measurements so far: CatBoost 0.376 on Freddie and 0.501 on heloc
 both inside the quoted tree band; but `lgd_lendingclub` scores 0.71–0.76, well
 outside it, which most likely means a feature derived from the recovery amount is
 surviving the recipe.
+
+---
+
+## Appendix: full retraining or fine-tuning?
+
+Written 2026-08-05. Library pin `21d555a`.
+
+**Short answer.** Four options are real, and one is not:
+
+| option | what it does | where it comes from | recommendation |
+|---|---|---|---|
+| `scratch` | train every weight from random init | TabICLv2 stage 1 | **start here** |
+| `full` | pretrained weights, train everything at a low LR | TabICLv2 stage 3 | best fine-tune option |
+| `icl_only` | freeze the col + row blocks, train the ICL stack + y-embeddings + head | TabICL **v1** stage 3 | good second arm |
+| `head_only` | freeze all three block stacks | our own floor | reference only |
+| ~~LoRA~~ | low-rank adapters | — | **do not** — see §4 |
+
+All four are implemented in [`src/train/adapt.py`](../src/train/adapt.py) and
+selected by `init.strategy` in the configs.
+
+---
+
+### 1. What the architecture allows
+
+TabICL has three stages in sequence, and the model file makes the split obvious:
+
+```
+TF_col   column embedding      InducedTransformerBlock x 3   "what is in this column"
+TF_row   row attention         TransformerBlock x 3          "what is in this row"
+TF_icl   in-context learning   TransformerBlock x 12         "what does y look like given the context"
+```
+
+The target enters **twice**: `y_embed_in` is added before the column blocks, and
+`y_embed_icl` is added again before the ICL blocks. That detail matters for us and
+is covered in §3.
+
+TabICL ships freezing support for exactly these three stages. From
+`_finetune/base.py`:
+
+```python
+def _frozen_submodules(self, model):
+    out = []
+    if self.freeze_col: out.append(model.col_embedder)
+    if self.freeze_row: out.append(model.row_interactor)
+    if self.freeze_icl: out.append(model.icl_predictor)
+    return out
+```
+
+Two implementation details worth copying, both of which we did:
+
+* `_apply_freezing` sets `requires_grad = False`, and `_set_training_mode`
+  separately snaps frozen parts back to `eval()`. This is not redundant:
+  `nn.Module.train()` is recursive, so calling it would switch dropout back on
+  inside a frozen block.
+* the optimizer only ever receives
+  `[p for p in self.model_.parameters() if p.requires_grad]`.
+
+### 2. What the TabICL authors actually did
+
+This is the most useful evidence available, because it is the people who built the
+model choosing a recipe rather than us guessing. Read straight off their training
+scripts.
+
+**TabICL v1, stage 3** (`scripts/train_stage3.sh`) — a partial fine-tune:
+
+```
+--freeze_col True          # column embedder frozen
+--freeze_row True          # row encoder frozen
+--lr 2e-6                  # very low
+--scheduler constant       # no decay
+--gradient_clipping 1.0    # down from 10.0 in stage 1
+--only_load_model True     # weights only, not optimizer state
+--max_steps 50 --batch_size 512
+```
+
+**TabICL v2, stage 3** (`scripts/train_v2_{clf,reg}_stage3.sh`) — **no freezing**:
+
+```
+--lr 2e-5
+--scheduler cosine_with_restarts
+--gradient_clipping 1.0
+--only_load_model True
+--max_steps 10000
+```
+
+So **the v2 authors moved away from freezing.** With the v2 architecture they
+train everything at a low LR in the final stage. That is a real signal, and it is
+why `full` rather than `icl_only` is the recommended fine-tune arm.
+
+Note the pattern in both: the final stage is always a **low LR with tight
+gradient clipping** (1.0 instead of stage 1's 10.0). Whatever you freeze, do not
+fine-tune at stage-1 learning rates.
+
+### 3. The one place we improve on a naive freeze
+
+Our change is to the **target** distribution, not the feature distribution. So the
+parts that most need to move are the target-side parts.
+
+A naive "freeze the column stage" would also freeze `y_embed_in`, which is where
+the target first enters the model — exactly the parameter that needs to adapt to a
+bounded [0,1] target with mass at the boundaries. That would be
+self-defeating.
+
+So in [`src/train/adapt.py`](../src/train/adapt.py), freezing covers the **block
+stacks** and always leaves these trainable, whatever the strategy:
+
+```python
+ALWAYS_TRAINABLE = ("y_embed_in", "y_embed_icl", "out_ln", "out_mlp",
+                    "row_ln", "row_cls_tokens")
+```
+
+`icl_only` therefore means: keep the learned table representation, retrain
+everything that touches the target.
+
+### 4. Why not LoRA
+
+Three reasons, in order of weight:
+
+1. **TabICL has no LoRA.** Searching the entire repository dump for "lora" returns
+   **zero matches**. There is nothing upstream to copy or validate against.
+2. **Tanna 2025 found LoRA unstable on TabPFN** — batched-inference constraints
+   force an automatic fallback to full fine-tuning. Rubachev 2025 independently
+   found that for TabPFN v2, full fine-tuning matches LoRA and every other
+   parameter-efficient variant on accuracy while converging fastest. So even where
+   LoRA works, it buys nothing.
+3. **It would be a third confound.** We are already varying the prior and the
+   adaptation strategy. Adding an unvalidated adapter means a bad result could be
+   the prior, the strategy, or the adapter, and we could not tell which.
+
+If you later want a parameter-efficient option, the better-evidenced one is
+BETA-style input adapters (Liu & Ye 2025): a small learnable input encoder,
+0.6 MB of trainable parameters, weights otherwise frozen. But it is v1-only and
+classification-only in the paper, so it is future work, not a tonight decision.
+
+### 5. The warning that matters most
+
+**Fine-tuning TabICL is documented as dangerous.** Tanna 2026 (*Exploring
+Fine-Tuning for Tabular Foundation Models*) reports that full supervised
+fine-tuning is **near-catastrophic for TabICL**: TabZilla accuracy drops from
+**0.873 to 0.567**. TabPFN survives the same treatment essentially intact. This is
+a strong architecture-by-adaptation interaction, and TabICL is on the bad side of
+it.
+
+Two honest caveats on that result: it is a four-page paper with **one
+hyperparameter setting per strategy**, so "TabICL collapses" may partly be
+under-tuning rather than a property of the architecture; and the authors are
+comparing against their own models. But it points the same way as the v2 authors'
+own choice of a very low LR, so the two independent signals agree: **be gentle**.
+
+This is also a direct argument for the mixture lever. Keeping 70–90% of datasets
+from the original prior means the model keeps seeing the distribution it was built
+for, which is the natural defence against exactly the collapse Tanna documents.
+
+### 6. The practical blocker
+
+**Loading the released TabICLv2 checkpoints into NanoTabICL is untested and may
+not work.** The released weights come from the full implementation, whose module
+names differ (`col_embedder` / `row_interactor` / `icl_predictor` versus
+NanoTabICL's `col_blocks` / `row_blocks` / `icl_blocks`). NanoTabICL's own README
+points you at the main repository for pretrained weights, and notes a RoPE change
+that "permutes the neurons", so a mismatch is plausible.
+
+`load_pretrained` in `src/train/adapt.py` handles this by **refusing to run** when
+fewer than half the tensors match, rather than quietly training a randomly
+initialised model and reporting it as fine-tuned. That failure would be invisible
+in the loss curve and would silently invalidate every comparison.
+
+Three ways forward, best first:
+
+1. **Pretrain your own base with `scratch`, then fine-tune from that.** The
+   architecture is identical by construction, so there is no mapping problem at
+   all. This is why `scratch` is the default and the recommended first run.
+2. Write an explicit key mapping from the full checkpoint to NanoTabICL, and
+   verify a forward pass reproduces the full model's output on the same input.
+   Do not trust a mapping that has not been checked numerically.
+3. Use the full `tabicl` package instead of NanoTabICL for the fine-tuning arms
+   (`pip install -e ".[tabicl]"`), which loads its own checkpoints natively. Costs
+   us the small, readable codebase.
+
+### 7. Recommended sequence
+
+1. **`scratch`, `credit_fraction` swept over 0.0 / 0.1 / 0.2 / 0.3.** This
+   answers the actual research question — does adding our datasets to the prior
+   help — with nothing else moving. Run this first.
+2. **`full` from the best `scratch` checkpoint**, at `lr 2e-5`, cosine, clip 1.0.
+   Answers "is it cheaper to fine-tune than to retrain?"
+3. **`icl_only` from the same base**, at `lr 2e-6`, constant, clip 1.0. Answers
+   "does keeping the table representation fixed protect against collapse?"
+
+Steps 2 and 3 need step 1's checkpoint, so they cannot run tonight. That is fine —
+step 1 is the one that answers the research question.
+
+`recommended_hparams()` in `adapt.py` returns the LR / schedule / clipping each
+strategy was actually used with upstream, so those numbers stay visible in the
+config rather than being applied silently.
+

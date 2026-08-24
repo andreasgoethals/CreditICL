@@ -121,4 +121,40 @@ def test_no_hardcoded_dataset_shape_is_left_in_the_benchmark():
     src = (ROOT / "scripts" / "benchmark_gpu.py").read_text(encoding="utf-8")
     # The ASSIGNMENT, not the string — `bench_shape`'s docstring names the old triple on purpose.
     assert "train_size = 1024, 40, 768" not in src
-    assert src.count("rows, feats, train_size = bench_shape(task)") == 4
+    # >= 4: the four original rungs, plus any new one — the point is that none is hardcoded.
+    assert src.count("rows, feats, train_size = bench_shape(task)") >= 4
+
+
+def test_micro_plan_matches_what_a_training_step_actually_does():
+    """A step is `ceil(batch/micro)` passes of `micro`, not one pass of `batch`.
+
+    Benchmarking one pass of 64 (job 11521108) OOMed at 176 GiB of a 178 GiB card, reported a
+    1,617 ms "step", and made Muon look free at 1.01x because its fixed ~18 ms of Newton-Schulz
+    was amortised over a pass sixteen times too large.
+    """
+    import importlib.util
+    import math
+
+    import yaml
+
+    spec = importlib.util.spec_from_file_location(
+        "benchmark_gpu", ROOT / "scripts" / "benchmark_gpu.py"
+    )
+    bench = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bench)
+
+    for task, name in (("lgd", "LGD"), ("pd", "PD")):
+        cfg = yaml.safe_load((ROOT / "config" / f"Exp1_{name}.yaml").read_text(encoding="utf-8"))
+        batch, micro_cfg = cfg["train"]["batch_size"], cfg["train"]["micro_batch_size"]
+        micro, n_micro = bench.micro_plan(task)
+        assert micro == micro_cfg
+        assert n_micro == math.ceil(batch / micro_cfg)
+        assert micro * n_micro >= batch, "the passes must cover the batch"
+
+
+def test_no_gpu_rung_builds_a_full_batch_tensor():
+    """Every `torch.randn` in a timing rung must be sized by `micro`, never by `batch_size` —
+    that is the difference between measuring a training step and OOMing the card."""
+    src = (ROOT / "scripts" / "benchmark_gpu.py").read_text(encoding="utf-8")
+    assert "torch.randn(batch_size," not in src
+    assert "torch.rand(batch_size," not in src

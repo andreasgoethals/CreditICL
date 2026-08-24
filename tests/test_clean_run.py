@@ -138,3 +138,42 @@ def test_resuming_at_max_steps_warns_that_nothing_will_train():
     assert "if self.step >= self.max_steps:" in src
     assert "THIS RUN WILL TRAIN NOTHING" in src
     assert "--clean --checkpoints" in src, "the warning must name the fix"
+
+
+def test_checkpoint_discovery_is_by_structure_not_by_name(tmp_path, monkeypatch):
+    """A run directory the prefix list did not anticipate is the dangerous one.
+
+    `run_checkpoint_dirs` matched `exp1_`, `exp2_`, `exp3_` and nothing else, so every other
+    thing the project has started writing — `debug_exp1_*`, pilots, benchmarks, an eventual
+    Exp4 — survived `--checkpoints`. That is not untidiness: a rerun RESUMES from a surviving
+    checkpoint and trains nothing, exits 0, and reports success. All four arms did exactly that
+    on 17-08-2026.
+    """
+    from src.utils import clean_run, paths
+
+    base = tmp_path / "checkpoints"
+    (base).mkdir()
+    monkeypatch.setattr(paths, "checkpoints_dir", lambda *a: base)
+    monkeypatch.setattr(clean_run, "protected_paths", list)
+
+    # The released TabICLv2 weights live at the TOP level and must never be found.
+    (base / "tabiclv2-reg.ckpt").write_bytes(b"released")
+    for name in ("exp1_abc", "debug_exp1_lgd", "pilot_batch_64", "exp4_something", "nested"):
+        d = base / name
+        (d / "inner").mkdir(parents=True)
+        (d / "inner" / "step-500.ckpt").write_bytes(b"ours")
+    (base / "not_a_run").mkdir()          # a directory with no checkpoint in it
+
+    found = {d.name for d in clean_run.run_checkpoint_dirs()}
+    assert found == {"exp1_abc", "debug_exp1_lgd", "pilot_batch_64", "exp4_something", "nested"}
+    assert (base / "tabiclv2-reg.ckpt").exists(), "released weights must never be a target"
+
+
+def test_scratch_is_a_root_on_the_cluster_and_not_off_it(tmp_path, monkeypatch):
+    """Three tiers on VSC, one locally — and never the same tree listed twice."""
+    from src.utils import clean_run, paths
+
+    assert clean_run.scratch_outputs_dir() is None, "off-cluster scratch IS the repo"
+    monkeypatch.setattr(paths, "scratch_root", lambda: tmp_path / "scratch")
+    assert clean_run.scratch_outputs_dir() == tmp_path / "scratch" / paths.PROJECT_NAME
+    assert len(clean_run.roots()) == len({str(r) for r in clean_run.roots()})

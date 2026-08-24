@@ -172,6 +172,81 @@ The one thing to do differently.
 
 ## Runs
 
+## 20-08-2026 (15:34) — benchmark at the REAL batch — **it found a bug that would have killed Exp1**
+
+**Submitted** 20-08-2026 15:33 | **job** 11521108 | **cluster** mindwell `gpu_b200`, node
+`r11g17`, NVIDIA B200 | **used** 3 min 6 s | **ceiling quoted at submit** 30,600 credits
+
+The rerun of the fixed benchmark. It now reads the config — `batch 64, rows 1024, features 50`,
+printed at the bottom — and the first honest look at the real batch size broke in three places.
+
+### Results
+
+| rung | value |
+|---|---|
+| matmul bf16 / fp32 | 1,358.88 / 63.3 TFLOP/s (unchanged) |
+| attention @1,024 | 0.026 ms |
+| model fwd / fwd+bwd @batch 64 | 290.44 / **1,617.47** ms |
+| AMP @batch 64 | fp32 1,617.24 ms, bf16 **RuntimeError inside cuDNN** |
+| AdamW / Muon @batch 64 | 1,618.02 / 1,636.16 ms -> **1.01x** |
+| prior, 1 worker | **11.78** datasets/s (640-dataset sample) |
+| end to end | **CUDA OOM** — 176.30 GiB allocated of 178.34 |
+
+### The three findings
+
+**1. AMP crashes on this card, and training has `amp: true`.**
+
+    RuntimeError: Expected mha_graph.execute(handle, variant_pack,
+                  workspace_ptr.get()).is_good() to be true
+
+That is `torch/csrc/cudnn/MHA.cpp` — the **fused cuDNN multi-head-attention graph**, one of the
+four backends `scaled_dot_product_attention` picks between. PyTorch chooses silently, per call,
+from the shapes and dtype, so the same model takes a different kernel at a different batch size
+and only then fails. **Nothing in this project had ever pinned the choice.** A 75-arm run would
+have discovered this one arm at a time. Upstream treats the choice as load-bearing too:
+`--use_flash_attn3 False` in stage 1, `True` in stages 2-3.
+
+Fixed: `src/models/backends.py` excludes cuDNN, keeps flash / mem-efficient / math, wraps every
+forward pass in training, and logs which kernels are in use in the run card.
+
+**2. The OOM is the BENCHMARK's bug, not training's.** It pushed all 64 datasets through one
+forward pass. Training runs `ceil(64/4) = 16` passes of 4 and accumulates — `micro_plan` now
+models that, and the end-to-end rung micro-batches exactly as `Trainer.train_step` does. Same
+root cause as yesterday's: the instrument did not model the thing it was measuring.
+
+**3. Muon is FREE at the real batch size — 1.01x, not 1.40x.** This corrects a number recorded
+three times. Newton-Schulz runs once per weight matrix per step, so its ~18 ms is FIXED while
+the forward/backward grows with the batch: 40 % of a batch-1 step, 1 % of a batch-64 step. Both
+measurements were right; only one was at a batch size we train at.
+
+### What is solid
+**The prior is not the bottleneck and never was.** 11.78 datasets/s x 23 workers = **271
+datasets/s supplied** against the **25.6 datasets/s** training consumed on 17-08 at 88.7 % GPU
+utilisation — **10x headroom**. Every "STARVED, more cores" line the tooling has printed since
+14-08 was an artefact of benchmarking at batch 4.
+
+### Bugs fixed
+1. Attention backend never pinned -> `src/models/backends.py`, wired into training and all
+   five GPU rungs, with an `attention_backends` rung that times every kernel in both
+   precisions and reports the failures as data.
+2. GPU rungs ran one pass of `batch_size` -> `micro_plan(task)`, and a test forbidding
+   `torch.randn(batch_size, ...)` anywhere in a timing rung.
+3. Failed rungs were silently omitted from the summary, so a report with an OOM and a cuDNN
+   crash in it ended on a tidy line and looked clean -> failures now print FIRST, before any
+   verdict.
+4. `bench_optimizers` still claimed Muon "explains the B200". Corrected in place.
+
+### Interpretation
+Still no per-arm cost — the run that was supposed to produce it crashed twice. But it bought
+something worth more: **the cuDNN failure would have hit the 75-arm run**, and at one arm per
+crash that is the kind of thing that costs a week rather than three minutes.
+
+### Next
+Rerun. `projected_hours_12500_steps` is now computed and printed by the end-to-end rung, so the
+next run states the arm cost directly instead of leaving it to be inferred.
+
+---
+
 ## 20-08-2026 — GPU benchmark after the prior-shape fix — **the instrument could not see the change**
 
 **Submitted** 20-08-2026 14:45 | **job** 11520989 | **cluster** mindwell `gpu_b200`, node

@@ -162,7 +162,7 @@ model actually trained on.
 The same TabICLv2 architecture on each prior variant under a matched budget. One
 checkpoint per (arm × seed). Adaptation strategy — train from scratch, or
 fine-tune with parts frozen — is `init.strategy`; see
-[`docs/FINETUNING.md`](docs/FINETUNING.md).
+[`docs/CONFIG_REFERENCE.md`](docs/CONFIG_REFERENCE.md).
 
 ### 4. Eval
 
@@ -240,11 +240,15 @@ CreditICL/
 │   ├── raw/lgd/         7 LGD datasets
 │   ├── raw/pd/          14 PD datasets
 │   └── processed/
-├── docs/
-│   ├── experimental_design.md   the full design
-│   ├── finetuning.md            what fine-tuning TabICL allows, and why
-│   ├── vsc.md                   KU Leuven VSC deployment facts
-│   └── changelog.md             dated log of what changed and why
+├── docs/            eight files, no more — every one has inbound links
+│   ├── EXPERIMENTAL_DESIGN.md   what the three experiments ask, and how they can fail
+│   ├── CONFIG_REFERENCE.md      why each config value is what it is (the configs hold values)
+│   ├── PRIORS.md                how the credit prior is built
+│   ├── VSC.md                   the cluster: costs, limits, storage, how a long sweep survives
+│   ├── RUNS.md                  the full write-up of every cluster run
+│   ├── AGENTS_MEMORY.md         one line per run, four per dead end
+│   ├── CHANGELOG.md             one chapter per date
+│   └── TEMPLATE.md              the layout this project started from
 ├── logs/              timestamped run logs — INFORMATION ONLY, no results
 ├── notebooks/
 │   ├── prior_visualisation.ipynb   compares ALL prior variants found on disk

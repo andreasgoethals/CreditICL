@@ -1,105 +1,41 @@
 # =============================================================================
-# EXPERIMENT 2 — PD — DOES IT TRANSFER? (the headline result, ONE prior)
+# EXPERIMENT 2 — PD — THE WINNING PRIOR, RUN LONG
 #
-# Probability of Default — imbalanced binary classification. Head: binary classification.
-#
-# THIS EXPERIMENT HAS ONE PRIOR — the arm that won Exp1 — plus the control. That is
-# why its prior block below is all single values: the sweep is over, and what is left
-# is the decision Exp1 made, written down.
-#
-# The question the paper answers: at a real budget, does a credit-targeted prior beat
-# the unmodified TabICL prior on Probability of Default?
-#
-# A TEMPLATE UNTIL EXP1 FINISHES. Every `FILL_FROM_EXP1` must be replaced; loading
-# refuses a config that still holds one, so it cannot reach the cluster by accident.
+# Every knob below carries at most a one-line note. The REASONING — why each
+# value, what evidence backs it, what upstream does — lives in
+# docs/CONFIG_REFERENCE.md, section by section under the same knob names.
 #
 #   python scripts/pretrain.py --config config/Exp2_PD.yaml --list
 #
-# SELF-CONTAINED: this file holds its own prior. The three experiments do NOT share one,
-# because Exp1 sweeps 32 priors, Exp2 runs the single winner, and Exp3 sweeps the mixture.
-#
-# Prior design: docs/PRIORS.md   Experiment design: docs/EXPERIMENTAL_DESIGN.md
-# Every run written up in: docs/RUNS.md
+# Design: docs/EXPERIMENTAL_DESIGN.md   Prior: docs/PRIORS.md   Runs: docs/RUNS.md
 # =============================================================================
+
 
 experiment: exp2_pd
 task: pd
 
-# -----------------------------------------------------------------------------
-# ARCHITECTURE — TabICLv2's own, unchanged, and IDENTICAL in all three experiments.
-# Loaded from the upstream `tabicl` package, so "same architecture" is a fact rather
-# than a claim about a reimplementation. Nothing here is ever swept: the experiments
-# are about the PRIOR.
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# ARCHITECTURE — TabICLv2's own, never swept
+# ----------------------------------------------------------------------------
 architecture: tabicl # the upstream TabICL class; see src/models/architecture.py
 
-# -----------------------------------------------------------------------------
-# THE SWEEP — every multi-value knob, crossed. This block IS the experiment.
-# 2 arms x 5 seeds = 10 runs. Five seeds, because a headline claim needs an interval.
-# Everything below this block is a single value.
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# THE SWEEP — every multi-value knob, crossed. This block IS the experiment
+# ----------------------------------------------------------------------------
 sweep:
   prior.credit_fraction: [0.0, FILL_FROM_EXP1] # the control, and Exp1's winning share
   seeds: [0, 1, 2, 3, 4] # five seeds: these are the numbers that get reported
 
-# -----------------------------------------------------------------------------
-# THE PRIOR — ONE configuration, Exp1's winner. Single values throughout: this is a
-# decision that has been made, not a space still being searched.
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# THE PRIOR — the parts that are NOT swept
+# ----------------------------------------------------------------------------
 prior:
   credit_fraction: FILL_FROM_EXP1 # SWEPT above (control vs winner)
-  # SINGLE STAGE, and that is a deliberate scope limit. TabICLv2 trains in THREE, and what
-  # changes between them is the row count and the learning rate:
-  #     stage 1  500,000 steps (90.9 %)  micro 4  rows 1,024        lr 8e-4   clip 10
-  #     stage 2   40,000 steps ( 7.3 %)  micro 1  rows 400-10,240   lr 1e-4   clip 10
-  #     stage 3   10,000 steps ( 1.8 %)  micro 1  rows 400-60,000   lr 2e-5   clip  1
-  #
-  # WHY NOT A PROPORTIONALLY-SHRUNK THREE-STAGE CURRICULUM. Because proportional in STEPS is
-  # wildly disproportionate in COMPUTE, and the disproportion lands on the stage that learns
-  # least. Rows enter the cost twice: linearly through the column and row encoders, and
-  # QUADRATICALLY through the 12-block ICL predictor, which attends across rows. Under a
-  # cost(n) = a.n + b.n^2 model calibrated at n=1,024, and with log-uniform row draws, a
-  # stage-2 step costs ~7x a stage-1 step and a stage-3 step ~120x. Keep the 90.9/7.3/1.8 split
-  # on our 12,500 steps and stage 3 becomes 227 steps -- 1.8 % of the steps and ~61 % of the
-  # BUDGET. Total ~3.6x, so ~9 h per arm becomes ~32 h, times 75 arms.
-  #
-  # And those 227 steps would learn almost nothing: stage 3 runs at lr 2e-5, one FORTIETH of
-  # stage 1's. Sum-of-learning-rates is a crude proxy for how far the weights move, and by it
-  # stage 3 would contribute ~0.05 % of the run's optimisation while taking 61 % of its cost.
-  # Upstream's stages 2-3 are LOW-RATE ADAPTATION to long context, not more prior learning;
-  # shrink their step counts 40x and you pay for the adaptation without getting it.
-  #
-  # WHAT WE DO INSTEAD. Stage 1 only here, and cap the EVALUATION context to 1,024 for both
-  # models from one shared setting (`max_context_rows`), so the comparison is matched rather
-  # than approximate. Long context belongs in Exp2, on the single winning prior, where 1-3 arms
-  # can afford a real stage 2 -- and it needs NO new code: `init.strategy: full` +
-  # `pretrained_path` is upstream's `--checkpoint_path ... --only_load_model True`.
-  #
-  # Also why micro_batch is 4 and not larger: `Trainer.validate_micro_batch` requires every
-  # dataset in a micro-batch to share BOTH its sequence length and its train/test split, and
-  # both are drawn per GROUP. So micro_batch <= grouping.group_size, full stop. Fixing rows at
-  # 1,024 does not relax it, because `train_frac_range` still varies per group.
-  # EXACTLY 1,024 ROWS, NEVER FEWER — this is upstream stage 1, not an approximation of it.
-  # `train_v2_reg_stage1.sh` passes `--max_seq_len 1024` and NO `--min_seq_len`, and
-  # `sample_seq_len` opens with `if min_seq_len is None: return max_seq_len`. So every stage-1
-  # dataset is 1,024 rows; only the train/test SPLIT varies (`train_frac_range` below, their
-  # 0.3-0.9). Stages 2 and 3 are where the row count becomes a range, log-uniform over
-  # [400, 10,240] and [400, 60,000]. Was [512, 1024], which trained on ~25 % fewer rows than
-  # the reference and is exactly the kind of unintended difference this project cannot afford.
-  n_rows_range: [1024, 1024] # rows per synthetic dataset
-  # 1 TO 100, matching `--min_features 1 --max_features 100`. Was [3, 50], which left the top
-  # HALF of the feature axis untrained while `max_features: 100` padded the tensors out to 100
-  # anyway. Real credit tables are wider still (base_modelisation has 256 columns), so every
-  # column past the training range is extrapolation.
-  n_features_range: [1, 100] # columns per synthetic dataset
-  max_features: 100 # upstream's `--max_features 100`, matched.
-  # Was 64. Two reasons to match upstream instead. It is part of what "the same prior, plus
-  # credit structure" means — a narrower feature range is a second, unintended difference. And
-  # real credit tables are far wider than either (base_modelisation has 256 columns), so every
-  # column past the training range is extrapolation; 100 shortens that gap. The column encoder
-  # is a SHARED SET TRANSFORMER, so any width is architecturally fine — see docs/PRIORS.md.
-  n_nodes_range: [2, 33] # nodes in the random causal graph
-  train_frac_range: [0.3, 0.9] # share of rows given as context
+  n_rows_range: [1024, 1024] # rows per dataset; upstream stage 1 is exactly 1,024
+  n_features_range: [1, 100] # columns; upstream's --min_features 1 --max_features 100
+  max_features: 100 # widest table the model is padded to; upstream's --max_features
+  n_nodes_range: [2, 33] # nodes in the causal graph; upstream's 2..32, exclusive upper
+  train_frac_range: [0.3, 0.9] # share of rows given as context; upstream's stage-1 range
   n_classes: 2 # binary: default or not
   max_filter_attempts: 40 # retries before giving up on a rejected dataset
 
@@ -164,34 +100,20 @@ prior:
     remove_trivial: false # also drop datasets that are too easy
     trivial_threshold: 0.1 # what counts as too easy
 
-# -----------------------------------------------------------------------------
-# HOW TO START — from scratch. Exp2 and Exp3 differ in initialisation and budget, and
-# that is what makes "you can skip the expensive pretraining" a measurable claim.
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# HOW TO START
+# ----------------------------------------------------------------------------
 init:
   strategy: scratch # scratch | full | icl_only | head_only
   pretrained_path: null # checkpoint to start from, for anything but scratch
 
-# -----------------------------------------------------------------------------
-# TRAINING — 100,000 steps x 4 datasets = 400,000 datasets, seen ONCE each.
-#
-# 10x O'Prior's 40,000, for less sampling noise, and ~1.1% of TabICLv2's own 35.2M.
-# Every result here is a statement about priors AT A FIXED SMALL BUDGET.
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# TRAINING
+# ----------------------------------------------------------------------------
 train:
   max_steps: 100000 # gradient updates
-  batch_size: 64 # datasets per UPDATE — upstream's `--batch_size 64`, matched.
-  # datasets per FORWARD PASS. Gradient accumulation runs batch_size/micro_batch_size passes
-  # and averages them, so the update is mathematically identical to one batch of 64 while only
-  # micro_batch_size datasets sit in GPU memory at a time. IT DOES NOT CHANGE THE RESULT —
-  # only speed and memory — so it is safe to raise on a bigger card. Override per machine with
-  # `--micro-batch-size`; a B200 has 183 GiB against the A100's 80 and can take 16.
-  #
-  # This used to be batch_size: 4 with no accumulation, i.e. an effective batch SIXTEEN TIMES
-  # smaller than upstream's while using upstream's learning rate (8e-4, tuned for 64). Large
-  # batches tolerate large rates; small ones do not, and that mismatch is the leading suspect
-  # for the NaN predictions.
-  micro_batch_size: 4
+  batch_size: 64 # datasets per UPDATE; upstream's --batch_size 64
+  micro_batch_size: 4 # datasets per FORWARD PASS; must be <= grouping.group_size
 
   optimizer: muon # muon = what TabICLv2 uses | adamw
   muon_lr: 8.0e-4 # Muon's rate; it prefers ~8x AdamW's
@@ -209,14 +131,13 @@ train:
   amp: true # mixed precision, GPU only
   num_workers: 12 # CPU workers generating datasets
   log_every: 250 # steps between log lines
-  save_temp_every: 2000 # steps between rolling checkpoints
+  save_temp_every: 250 # steps between rolling checkpoints; caps what a kill loses
   save_perm_every: 25000 # steps between kept-forever checkpoints
   max_temp_checkpoints: 2 # rolling checkpoints retained
 
-# -----------------------------------------------------------------------------
-# PROGRESS CURVE — 40 points. This curve IS a result: it shows whether the prior helps
-# early, late, or only at convergence.
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# PROGRESS CURVE — real data scored mid-training
+# ----------------------------------------------------------------------------
 progress:
   every_datasets: 10000 # synthetic datasets between measurements; 0 disables
   n_datasets: 4 # real credit datasets scored, smallest first
@@ -224,11 +145,9 @@ progress:
   context_rows: 512 # rows given as context when scoring
   max_test_rows: 2000 # rows scored per dataset
 
-# -----------------------------------------------------------------------------
-# LOGGING — every field is explained in docs/RUNS.md, which is also where a finished run
-# gets written up. Log generously: a cluster run cannot be watched, so the log is the only
-# thing that survives it.
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# LOGGING
+# ----------------------------------------------------------------------------
 logging:
   level: INFO # INFO | DEBUG | WARNING
   console: true # also print to stdout
@@ -238,13 +157,9 @@ logging:
   log_hardware_every: 100 # steps between GPU / memory / throughput samples; 0 disables
   log_grad_every: 250 # steps between per-block gradient-norm reports; 0 disables
 
-# -----------------------------------------------------------------------------
-# EVALUATION — the dev/holdout split is frozen BEFORE any prior tuning, and only the final
-# report may read holdout. Identical in all three experiments so their numbers are
-# comparable; see src/eval/ for the shared harness.
-# -----------------------------------------------------------------------------
-# dev SPANS the observed base-rate range — 6.7%, 16.0%, 22.1%, 30.0%, 40.0% — and the
-# size range, 1k to 150k rows, so an arm chosen on it cannot be tuned to one regime.
+# ----------------------------------------------------------------------------
+# EVALUATION — frozen before any prior tuning
+# ----------------------------------------------------------------------------
 eval:
   data_dir: data/raw/pd # where the real datasets live
   dev_datasets: [0001.gmsc, 0004.lendingclub, 0002.taiwan_creditcard, 0008.german, 0005.myhom] # used to choose the prior

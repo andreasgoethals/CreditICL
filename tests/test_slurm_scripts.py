@@ -265,3 +265,91 @@ def test_debug_steps_fit_the_walltime_at_the_configured_batch():
         f"{steps} steps x batch {batch} is ~{budget_s / 60:.0f} min of training at the "
         f"measured 0.4 steps/s, leaving nothing for the evaluation inside a 1 h walltime"
     )
+
+
+# ---------------------------------------------------------------------------------------
+# The Exp1 launchers. Each of these pinned a real defect found on 24-08-2026: the scripts
+# said "TARGET: Mindwell B200" in a banner and then submitted `--clusters=wice
+# --partition=gpu_a100`, with wICE's core and memory limits and `--array=0-47` for a sweep
+# that expands to 75.
+# ---------------------------------------------------------------------------------------
+
+#: Mindwell gpu_b200, from the VSC "CPU resource limits in GPU jobs" table.
+GPU_B200_MAX_CORES = 24
+GPU_B200_MAX_MEM_MIB = 194_400
+#: Mindwell's general cap. Only `*_long` partitions may exceed it, and gpu_b200 is not one.
+MINDWELL_MAX_WALLTIME_H = 72
+
+LAUNCHERS = {"pretrain_lgd.slurm": "LGD", "pretrain_pd.slurm": "PD"}
+
+
+def _directives(name: str) -> dict[str, str]:
+    text = (ROOT / "scripts" / "slurm" / name).read_text(encoding="utf-8")
+    out = {}
+    for line in text.splitlines():
+        if line.startswith("#SBATCH "):
+            body = line[len("#SBATCH "):].strip()
+            key, _, val = body.partition("=")
+            out[key.lstrip("-")] = val
+    return out
+
+
+@pytest.mark.parametrize("name", sorted(LAUNCHERS))
+def test_launcher_targets_the_cluster_its_banner_claims(name):
+    d = _directives(name)
+    assert d["clusters"] == "mindwell"
+    assert d["partition"] == "gpu_b200"
+
+
+@pytest.mark.parametrize("name", sorted(LAUNCHERS))
+def test_launcher_stays_inside_the_per_gpu_resource_limits(name):
+    """Asking for more than the documented share per GPU earns a warning from VSC."""
+    d = _directives(name)
+    assert int(d["cpus-per-task"]) <= GPU_B200_MAX_CORES
+    mem_gb = int(d["mem"].rstrip("Gg"))
+    assert mem_gb * 1024 <= GPU_B200_MAX_MEM_MIB
+    hours = int(d["time"].split(":")[0])
+    assert hours <= MINDWELL_MAX_WALLTIME_H
+
+
+@pytest.mark.parametrize("name, track", sorted(LAUNCHERS.items()))
+def test_array_range_matches_the_grid_it_submits(name, track):
+    """`--array=0-47` against a 75-arm sweep silently drops 27 arms and nobody notices until
+    the results table is short."""
+    # `expand_with_seeds`, the same call `pretrain.py --list` makes: it crosses the grid,
+    # multiplies by seeds, AND collapses the arms that would do the same thing.
+    from src.utils.config import expand_with_seeds, load
+
+    cfg = load(ROOT / "config" / f"Exp1_{track}.yaml", allow_placeholders=True)
+    n_runs = len(expand_with_seeds(cfg))
+    d = _directives(name)
+    span, _, throttle = d["array"].partition("%")
+    lo, _, hi = span.partition("-")
+    assert int(lo) == 0
+    assert int(hi) == n_runs - 1, f"{name}: --array=0-{hi} but the grid expands to {n_runs}"
+    assert throttle and 0 < int(throttle) <= 24, "throttle to at most the 24 B200s that exist"
+
+
+@pytest.mark.parametrize("name", sorted(LAUNCHERS))
+def test_launcher_survives_a_kill(name):
+    """A 75-arm sweep spanning days WILL meet the walltime, a node failure, or an
+    unannounced maintenance drain. All three arrive as a signal; none may cost an arm."""
+    d = _directives(name)
+    text = (ROOT / "scripts" / "slurm" / name).read_text(encoding="utf-8")
+    assert "requeue" in d, "Slurm must be allowed to put a killed task back in the queue"
+    assert d["signal"].startswith("B:USR1@"), "the trainer needs warning before the walltime"
+    # Slurm signals the batch script, not python: the trap must forward it, and the child
+    # must be backgrounded or `wait` never returns in time.
+    assert "kill -USR1" in text
+    # Backgrounded, or `wait` would not return until the child exited anyway.
+    assert "TRAIN_PID=$!" in text
+    assert any(line.rstrip().endswith("&") for line in text.splitlines())
+    # Exit 64 = "saved, not finished". Resubmitting is what makes the arm outlast the wall.
+    assert 'RC" -eq 64' in text and "sbatch --clusters=mindwell --array=" in text
+
+
+def test_the_trainer_actually_produces_exit_64():
+    """The job script's resubmission branch is dead code unless pretrain.py emits the code."""
+    src = (ROOT / "scripts" / "pretrain.py").read_text(encoding="utf-8")
+    assert "return 64" in src
+    assert 'summary.get("completed", True)' in src

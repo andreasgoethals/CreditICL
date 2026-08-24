@@ -1,86 +1,42 @@
 # =============================================================================
-# EXPERIMENT 3 — PD — CAN WE SKIP PRETRAINING? (continued pre-training on our prior)
+# EXPERIMENT 3 — PD — CONTINUED PRE-TRAINING FROM THE RELEASED WEIGHTS
 #
-# Probability of Default — imbalanced binary classification. Head: binary classification.
-#
-# Start from the RELEASED TabICLv2 checkpoint and keep pretraining it on synthetic data
-# that includes our prior. If that matches Exp2, nobody ever has to pay for a full
-# pretraining run to get a credit-specialised model.
-#
-# THE PRECEDENT IS PUBLISHED. TabPFN-Wide (Kolberg et al. 2026) does exactly this —
-# "extends existing models through continued pre-training on synthetic data sampled from
-# a customized prior" — and reports the result matches or exceeds the base model. Its
-# recipe is what the numbers below follow: LR 1e-5, ~10,000 steps, performance plateaued
-# after that.
-#
-# THIS IS WHERE THE MIXTURE IS THE EXPERIMENT. The model already knows the original
-# prior, so the question is how much of ours to add: a little, half, or only ours.
-# Mitra (Zhang et al. 2025) is the reason to expect an interior optimum — it selects a
-# prior MIXTURE on performance, diversity and distinctiveness, and finds mixtures beat
-# single priors. `credit_fraction: 1.0` is included precisely so we can see whether
-# forgetting the original prior costs out-of-domain generality.
-#
-# BLOCKED until the released checkpoint loads — see docs/AGENTS_MEMORY.md.
+# Every knob below carries at most a one-line note. The REASONING — why each
+# value, what evidence backs it, what upstream does — lives in
+# docs/CONFIG_REFERENCE.md, section by section under the same knob names.
 #
 #   python scripts/pretrain.py --config config/Exp3_PD.yaml --list
 #
-# SELF-CONTAINED: this file holds its own prior. The three experiments do NOT share one,
-# because Exp1 sweeps 32 priors, Exp2 runs the single winner, and Exp3 sweeps the mixture.
-#
-# Prior design: docs/PRIORS.md   Experiment design: docs/EXPERIMENTAL_DESIGN.md
-# Every run written up in: docs/RUNS.md
+# Design: docs/EXPERIMENTAL_DESIGN.md   Prior: docs/PRIORS.md   Runs: docs/RUNS.md
 # =============================================================================
+
 
 experiment: exp3_pd
 task: pd
 
-# -----------------------------------------------------------------------------
-# ARCHITECTURE — TabICLv2's own, unchanged, and IDENTICAL in all three experiments.
-# Loaded from the upstream `tabicl` package, so "same architecture" is a fact rather
-# than a claim about a reimplementation. Nothing here is ever swept: the experiments
-# are about the PRIOR.
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# ARCHITECTURE — TabICLv2's own, never swept
+# ----------------------------------------------------------------------------
 architecture: tabicl # the upstream TabICL class; see src/models/architecture.py
 
-# -----------------------------------------------------------------------------
-# THE SWEEP — every multi-value knob, crossed. This block IS the experiment.
-# 5 mixtures x 2 strategies x 3 seeds = 30 runs. Cheap enough to sweep properly:
-# at 10,000 steps each this is a fraction of ONE Exp2 arm.
-# Everything below this block is a single value.
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# THE SWEEP — every multi-value knob, crossed. This block IS the experiment
+# ----------------------------------------------------------------------------
 sweep:
   prior.credit_fraction: [0.0, 0.25, 0.5, 0.75, 1.0] # how much of OUR prior to add; 0.0 = pure continued pretraining
   init.strategy: [full, icl_only] # update everything, or only the ICL stack and head
   seeds: [0, 1, 2] # repeats, so an effect can be told from noise
 
-# -----------------------------------------------------------------------------
-# THE PRIOR — Exp1's winning credit settings, but `credit_fraction` is SWEPT: the mixture
-# is what this experiment is about. Everything else matches Exp2 so the two differ only
-# in initialisation, budget and mixture.
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# THE PRIOR — the parts that are NOT swept
+# ----------------------------------------------------------------------------
 prior:
   credit_fraction: 0.5 # SWEPT above; this value is only a fallback
-  # EXACTLY 1,024 ROWS, NEVER FEWER — this is upstream stage 1, not an approximation of it.
-  # `train_v2_reg_stage1.sh` passes `--max_seq_len 1024` and NO `--min_seq_len`, and
-  # `sample_seq_len` opens with `if min_seq_len is None: return max_seq_len`. So every stage-1
-  # dataset is 1,024 rows; only the train/test SPLIT varies (`train_frac_range` below, their
-  # 0.3-0.9). Stages 2 and 3 are where the row count becomes a range, log-uniform over
-  # [400, 10,240] and [400, 60,000]. Was [512, 1024], which trained on ~25 % fewer rows than
-  # the reference and is exactly the kind of unintended difference this project cannot afford.
-  n_rows_range: [1024, 1024] # rows per synthetic dataset
-  # 1 TO 100, matching `--min_features 1 --max_features 100`. Was [3, 50], which left the top
-  # HALF of the feature axis untrained while `max_features: 100` padded the tensors out to 100
-  # anyway. Real credit tables are wider still (base_modelisation has 256 columns), so every
-  # column past the training range is extrapolation.
-  n_features_range: [1, 100] # columns per synthetic dataset
-  max_features: 100 # upstream's `--max_features 100`, matched.
-  # Was 64. Two reasons to match upstream instead. It is part of what "the same prior, plus
-  # credit structure" means — a narrower feature range is a second, unintended difference. And
-  # real credit tables are far wider than either (base_modelisation has 256 columns), so every
-  # column past the training range is extrapolation; 100 shortens that gap. The column encoder
-  # is a SHARED SET TRANSFORMER, so any width is architecturally fine — see docs/PRIORS.md.
-  n_nodes_range: [2, 33] # nodes in the random causal graph
-  train_frac_range: [0.3, 0.9] # share of rows given as context
+  n_rows_range: [1024, 1024] # rows per dataset; upstream stage 1 is exactly 1,024
+  n_features_range: [1, 100] # columns; upstream's --min_features 1 --max_features 100
+  max_features: 100 # widest table the model is padded to; upstream's --max_features
+  n_nodes_range: [2, 33] # nodes in the causal graph; upstream's 2..32, exclusive upper
+  train_frac_range: [0.3, 0.9] # share of rows given as context; upstream's stage-1 range
   n_classes: 2 # binary: default or not
   max_filter_attempts: 40 # retries before giving up on a rejected dataset
 
@@ -145,37 +101,17 @@ prior:
     remove_trivial: false # also drop datasets that are too easy
     trivial_threshold: 0.1 # what counts as too easy
 
-# -----------------------------------------------------------------------------
-# HOW TO START — from the released TabICLv2 weights, and `strategy` is SWEPT.
-#
-# `icl_only` is in the sweep on the strength of Tanna et al. 2026, which finds that FULL
-# supervised fine-tuning of a tabular foundation model "often reduces accuracy or
-# calibration quality" while parameter-efficient approaches give moderate gains. Their
-# setting is supervised fine-tuning on real data rather than continued pretraining, so
-# this is a caution and not a result — but miscalibration is disqualifying for PD, so
-# the cheaper, more conservative update is worth measuring rather than assuming.
-#
-# `strict_load: true` is not optional: with it off a name mismatch loads NOTHING, the
-# model still runs, and it outputs partly random numbers without a single warning.
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# HOW TO START
+# ----------------------------------------------------------------------------
 init:
   strategy: full # SWEPT above: full | icl_only
   pretrained_path: checkpoints/tabicl-classifier-v2-20260212.ckpt # the released weights
   strict_load: true # a name mismatch must FAIL, never load silently and half-work
 
-# -----------------------------------------------------------------------------
-# TRAINING — 10,000 steps x 16 datasets = 160,000 datasets, seen ONCE each.
-#
-# STRAIGHT FROM TabPFN-Wide (Kolberg et al. 2026), which fixed continued pretraining at
-# 10,000 steps after observing no consistent gains beyond it, with batch 16 and
-# LR 1e-5.
-#
-# THE LEARNING RATE IS THE IMPORTANT NUMBER HERE. Pretraining uses 8e-4; applying that
-# to already-trained weights would destroy them in the first few hundred steps — the
-# update is adaptation, not training. Warmup is longer (5% vs 1%) for the same reason.
-# Gradient clipping drops to 1.0, matching TabICLv2's own final stage rather than its
-# first.
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# TRAINING
+# ----------------------------------------------------------------------------
 train:
   max_steps: 10000 # gradient updates
   batch_size: 16 # datasets per update
@@ -197,15 +133,13 @@ train:
   amp: true # mixed precision, GPU only
   num_workers: 12 # CPU workers generating datasets
   log_every: 50 # steps between log lines
-  save_temp_every: 500 # steps between rolling checkpoints
+  save_temp_every: 250 # steps between rolling checkpoints; caps what a kill loses
   save_perm_every: 2500 # steps between kept-forever checkpoints
   max_temp_checkpoints: 2 # rolling checkpoints retained
 
-# -----------------------------------------------------------------------------
-# PROGRESS CURVE — every 5,000 datasets, so 32 points across a short run. The densest of
-# the three on purpose: TabPFN-Wide's finding is about WHERE the curve plateaus, and that
-# is the number this experiment is here to reproduce.
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# PROGRESS CURVE — real data scored mid-training
+# ----------------------------------------------------------------------------
 progress:
   every_datasets: 5000 # synthetic datasets between measurements; 0 disables
   n_datasets: 4 # real credit datasets scored, smallest first
@@ -213,11 +147,9 @@ progress:
   context_rows: 512 # rows given as context when scoring
   max_test_rows: 2000 # rows scored per dataset
 
-# -----------------------------------------------------------------------------
-# LOGGING — every field is explained in docs/RUNS.md, which is also where a finished run
-# gets written up. Log generously: a cluster run cannot be watched, so the log is the only
-# thing that survives it.
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# LOGGING
+# ----------------------------------------------------------------------------
 logging:
   level: INFO # INFO | DEBUG | WARNING
   console: true # also print to stdout
@@ -227,13 +159,9 @@ logging:
   log_hardware_every: 100 # steps between GPU / memory / throughput samples; 0 disables
   log_grad_every: 250 # steps between per-block gradient-norm reports; 0 disables
 
-# -----------------------------------------------------------------------------
-# EVALUATION — the dev/holdout split is frozen BEFORE any prior tuning, and only the final
-# report may read holdout. Identical in all three experiments so their numbers are
-# comparable; see src/eval/ for the shared harness.
-# -----------------------------------------------------------------------------
-# dev SPANS the observed base-rate range — 6.7%, 16.0%, 22.1%, 30.0%, 40.0% — and the
-# size range, 1k to 150k rows, so an arm chosen on it cannot be tuned to one regime.
+# ----------------------------------------------------------------------------
+# EVALUATION — frozen before any prior tuning
+# ----------------------------------------------------------------------------
 eval:
   data_dir: data/raw/pd # where the real datasets live
   dev_datasets: [0001.gmsc, 0004.lendingclub, 0002.taiwan_creditcard, 0008.german, 0005.myhom] # used to choose the prior

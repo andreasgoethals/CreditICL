@@ -1,7 +1,7 @@
 """How to adapt the model: train from scratch, or start from pretrained weights
 and train some or all of it.
 
-All of this is grounded in what TabICL itself does. See docs/FINETUNING.md for
+All of this is grounded in what TabICL itself does. See docs/CONFIG_REFERENCE.md (`init.strategy`) for
 the full write-up; the short version:
 
 * TabICL ships three freeze switches in `_finetune/base.py`

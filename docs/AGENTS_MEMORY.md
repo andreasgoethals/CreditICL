@@ -33,6 +33,7 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 20-08-2026 | 11521108 — GPU benchmark at batch 64, `gpu_b200` | **Found a cuDNN AMP crash that would have hit all 75 Exp1 arms** | Also: benchmark OOM (its own bug, no micro-batching), and Muon is 1.01x at batch 64 not 1.40x |
 | 20-08-2026 | 11520989 — GPU benchmark, `gpu_b200` | **Wasted: 4 of 6 rungs ignored the config it was sent to measure** | Only prior + end-to-end read it. 8.26 -> 4.589 steps/s at batch 4 = 1.80x, but batch 4 is not what we train at |
 | 19-08-2026 | 11520343 — Exp1 LGD debug, `gpu_b200` | **Pipeline fair at last: R2 positive on ALL 7 datasets** (was -1.44..-0.25) | Wrapper + shared 1,024 context cap. Gap to released now a uniform 2-4x — budget, not plumbing |
 | 17-08-2026 | 11518234/35 + 11518236–40 — benchmark + LGD debug at batch 64 | **B200 SOLVED: 3.5 % -> 88.7 % utilisation, 12x throughput** | The batch was too small to fill the card. Killed at the wall on step 1,422/1,500 |
@@ -54,6 +55,50 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
+
+### 24-08-2026 - The Exp1 launcher had been pointing at the wrong cluster all along
+- **Tried:** reading `pretrain_lgd.slurm` before recommending it, while answering a question
+  about cluster limits.
+- **Result:** its banner said "TARGET: Mindwell - NVIDIA B200" and it printed "Mindwell B200"
+  at runtime, but the directives said `--clusters=wice --partition=gpu_a100`, with wICE's
+  18-core/100G per-GPU limits and `--array=0-47%12` against a sweep that expands to **75**. It
+  would have run on the wrong hardware and silently dropped 27 arms.
+- **Why:** every run so far has gone through `submit.sh` (which passes cluster and partition on
+  the command line) or through `debug_exp1.slurm`. The real Exp1 launcher had not been executed
+  since the project moved to Mindwell, and a comment saying the right thing kept it looking
+  correct. **A banner is not a directive.**
+- **Instead:** four tests parse the `#SBATCH` lines and check them against the VSC limit table
+  and against `expand_with_seeds` - the same function `--list` uses, so the array range cannot
+  drift from the grid again. **Test the job script against the thing it claims to match, not
+  against a number someone typed twice.**
+
+### 20-08-2026 - Muon costs 1.40x, and also 1.01x. Both measurements were right.
+- **Tried:** using the optimiser rung, measured at batch 1, to explain why a B200 trained
+  slowly. Recorded three times across 16-08 and 17-08 as "Muon is 1.34-1.42x on both cards".
+- **Result:** at the REAL batch (micro 4 accumulated to 64) Muon costs **1.01x**. 1,636 ms
+  against AdamW's 1,618.
+- **Why:** Newton-Schulz runs once per WEIGHT MATRIX per STEP. Its ~18 ms is FIXED; the
+  forward/backward is not. At batch 1 the step is 45 ms and Muon is 40 % of it; at batch 64 the
+  step is 1,618 ms and Muon is 1 %. Nothing was mismeasured - the batch size was the variable
+  nobody was holding.
+- **Instead:** every timing rung now runs at the config's micro-batch. **A per-step fixed cost
+  and a per-dataset cost look identical until you vary the batch**, so a ratio measured at one
+  batch size says nothing about another.
+
+### 20-08-2026 - PyTorch was choosing our attention kernel, and one of them crashes
+- **Tried:** running the real model at the real batch (64) with AMP on a B200, to size Exp1.
+- **Result:** `RuntimeError: Expected mha_graph.execute(...).is_good() to be true` -
+  `torch/csrc/cudnn/MHA.cpp`, the fused cuDNN multi-head-attention graph. Training sets
+  `amp: true`, so **this would have hit the 75-arm run**, one arm at a time.
+- **Why:** `scaled_dot_product_attention` picks between four backends silently, per call, from
+  the shapes and the dtype. Nothing in this project had ever pinned it, so the kernel was a
+  property of whatever batch happened to come along - and the earlier batch-4 runs never
+  selected the broken one. Upstream evidently regards the choice as load-bearing:
+  `--use_flash_attn3 False` in stage 1, `True` in stages 2-3.
+- **Instead:** `src/models/backends.py` excludes cuDNN and pins flash/mem-efficient/math,
+  wrapped around every forward pass in training and logged in the run card. Plus an
+  `attention_backends` rung that times every kernel in both precisions, **because a failure is
+  a measurement**. **A silent per-call choice is a config setting you did not know you had.**
 
 ### 20-08-2026 - A benchmark submitted to measure a config change could not read the config
 - **Tried:** one B200 job to measure what matching upstream's stage-1 prior shape costs, so the

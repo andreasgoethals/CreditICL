@@ -5,6 +5,34 @@ reason is not obvious.
 
 ---
 
+## 24-08-2026 — configs hold values, docs hold reasoning; and the sweep survives being killed
+
+- **The six configs are settings files again.** 130 of 252 lines in `Exp1_LGD.yaml` were
+  standalone prose. Every knob now carries at most a one-line note; the reasoning moved to
+  `docs/CONFIG_REFERENCE.md` under the same knob names. 1,491 -> 995 lines across the six.
+- **`docs/CONFIG_REFERENCE.md` rewritten** around what the configs no longer say: the five
+  shape knobs and their upstream flags, why one stage and not three (with the ~7x / ~120x
+  per-step arithmetic), the `micro_batch <= group_size` constraint, why 12,500 steps, the
+  pinned attention kernel, and Muon's 1.40x-at-batch-1 / 1.01x-at-batch-64.
+- **`docs/FINETUNING.md` merged** into it as an appendix; its two inbound links updated. Eight
+  docs remain, all with inbound references.
+- **`docs/VSC.md` sections 3, 9 and 10 rewritten** against the pinned VSC documentation: the
+  72 h ceiling and why `gpu_b200` cannot exceed it, the two separate concurrency caps and how
+  to read them, unannounced maintenance drains, the whole signal->checkpoint->resubmit chain,
+  and the measured Exp1 budget. Section 9's open questions are now answered ones.
+- **THE EXP1 LAUNCHERS WERE POINTED AT THE WRONG CLUSTER.** `pretrain_{lgd,pd}.slurm` printed
+  a "Mindwell B200" banner and submitted `--clusters=wice --partition=gpu_a100`, with wICE's
+  18-core/100G limits and `--array=0-47` for a sweep that expands to 75. All four fixed, with
+  tests that check each against the VSC limit table and against `expand_with_seeds`.
+- **A killed arm now resumes instead of dying.** `--signal=B:USR1@600` + a trap that forwards
+  to the backgrounded child; `_install_stop_signals` catches USR1/TERM, finishes the step,
+  checkpoints and breaks; `pretrain.py` returns **64** for "saved, not finished"; the job
+  script resubmits that array index. Plus `--requeue` for node failures and
+  `save_temp_every: 250` to bound what an ungraceful kill costs to ~10 minutes.
+- 763 tests pass.
+
+---
+
 ## 20-08-2026 — the prior's SHAPE now matches upstream stage 1
 
 - **`n_rows_range` [512, 1024] -> [1024, 1024].** Upstream stage 1 is 1,024 rows exactly:
@@ -25,7 +53,29 @@ reason is not obvious.
   instead of a stale 4; the ceiling is measured at the real batch size with AMP and Muon
   rather than batch 1 with SGD; and the verdict says "neither ceiling explains this"
   instead of always blaming the core count. Job 11520989 was wasted on the old version.
-- 746 tests pass.
+- **The attention kernel is pinned.** `src/models/backends.py` excludes cuDNN's fused MHA —
+  it raised `mha_graph.execute(...).is_good()` on a B200 at batch 64 under AMP, and training
+  runs AMP. Wrapped around every forward pass in `Trainer.train_step` and every GPU rung of the
+  benchmark, and reported in the run card and the machine block.
+- **The benchmark models a training STEP.** `micro_plan(task)` sizes every timing rung by
+  `micro_batch_size` and projects the step as `n_micro` passes; the end-to-end rung accumulates
+  exactly as `train_step` does, under AMP, and now reports `peak_gpu_gb` and
+  `projected_hours_12500_steps`. One pass of 64 had OOMed at 176 GiB of a 178 GiB card.
+- **A new `attention_backends` rung** times every SDPA kernel in fp32 and bf16 and records the
+  failures as data rather than one opaque `RuntimeError`.
+- **Failed rungs print FIRST.** A report containing an OOM and a cuDNN crash used to end on a
+  tidy line and read as clean.
+- **Muon's cost corrected: 1.01x at batch 64**, not the 1.40x measured at batch 1. Newton-Schulz
+  is per weight matrix per step, so a real batch amortises it away.
+- **`log_environment` records everything a cluster run cannot be asked afterwards**: commit and
+  dirty flag, tfm-library pin, 23 SLURM variables, GPU model/capability/memory/SMs, CUDA and
+  cuDNN, whether the wheel shipped kernels for this arch, thread limits, the attention backends
+  in use, and every storage root with its writability. As JSON for diffing and as a readable
+  MACHINE block.
+- **`clean_run` finds run checkpoints by STRUCTURE, not by name prefix** — `exp1_/2_/3_` missed
+  `debug_exp1_*`, pilots, benchmarks and any future experiment, and a missed checkpoint makes a
+  rerun resume and train nothing. Scratch is now a third root on the cluster.
+- 754 tests pass.
 
 ---
 

@@ -1,44 +1,45 @@
 #!/bin/bash -l
 # =============================================================================
-#  CreditICL — pretraining array, LGD (regression, 999-quantile pinball head)
-#  TARGET: Mindwell — NVIDIA B200 SXM6, 192 GiB VRAM, 24 cores/GPU
+#  CreditICL — Exp1 pretraining array, LGD (999-quantile pinball head)
+#  Mindwell, partition gpu_b200. One array task = one arm of config/Exp1_LGD.yaml.
 #
-#  One array task = one grid point of config/Exp1_LGD.yaml.
-#  Check the grid size BEFORE submitting:
-#
+#  Check the grid size BEFORE submitting, and set --array to match:
 #      python scripts/pretrain.py --config config/Exp1_LGD.yaml --list
 #
-#  and set --array to match (default config expands to 48 runs -> 0-47).
-#
-#  Storage, matching CreditPFN:
-#    checkpoints  -> project staging (/lustre1/project/stg_00211), big files
-#    metrics/logs -> $VSC_DATA/CreditICL, small + backed up
+#  Cluster limits, resilience and the throttle arithmetic: docs/VSC.md
 # =============================================================================
-
-# SINGLE CLUSTER, ON PURPOSE. Slurm job dependencies do not work ACROSS clusters,
-# and the pipeline is chained with --dependency=afterok. An earlier version put
-# preprocess on wice, the prior arrays on genius and training on mindwell; the chain
-# could never have run. Everything in Phase 1 therefore stays on wice, which has both
-# `batch` (CPU) and `gpu_a100` (GPU). Mindwell's B200s are for the Phase 2
-# multi-GPU confirmation runs, submitted on their own (see pretrain_multigpu.slurm).
 #SBATCH --job-name=crediticl-lgd
-#SBATCH --clusters=wice
+#SBATCH --clusters=mindwell
 #SBATCH --account=lp_verbekelab
-#SBATCH --partition=gpu_a100
+#SBATCH --partition=gpu_b200
 #SBATCH --gpus-per-node=1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=18
-#SBATCH --mem=100G
-#SBATCH --time=72:00:00
+# 24 cores and 194400 MiB is the documented per-GPU ceiling on gpu_b200. Asking for more
+# raises a warning; asking for much less starves the prior generator.
+#SBATCH --cpus-per-task=24
+#SBATCH --mem=180G
+# NOT 72:00:00. Billing is on ACTUAL time, so a long request costs nothing extra — but the
+# backfill scheduler starts short jobs sooner, and this job is resumable, so a tight request
+# is strictly better. Raise it if an arm turns out longer than ~20 h.
+#SBATCH --time=24:00:00
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
-# Propagate the submission env, or a cross-cluster sbatch can hit Slurm's
-# login-shell env retrieval ("user env retrieval failed requeued held").
 #SBATCH --export=ALL
-#SBATCH --array=0-47%12
+# THREE THINGS END A RUN EARLY on this cluster and none is a bug: the walltime, a node
+# failure, and an unannounced maintenance drain. --requeue lets Slurm put the task back in
+# the queue for the first two; --signal delivers SIGUSR1 to THIS script 600 s before the
+# walltime, which the trap below forwards so the trainer can checkpoint. `maybe_resume`
+# picks the checkpoint up. See docs/VSC.md.
+#SBATCH --requeue
+#SBATCH --signal=B:USR1@600
+# 0-74 = the 75 arms of Exp1. %8 caps how many run at once: gpu_b200 has 24 GPUs TOTAL
+# shared with every other user, and both MaxSubmitJobsPerUser and MaxTRESPerUser apply.
+# Check yours before raising it:
+#     sacctmgr show qos normal format=Name,MaxSubmitJobsPerUser%15,MaxTRESPerUser%30
+#SBATCH --array=0-74%8
 
-# Jitter the start so 12 tasks do not hammer the filesystem at once.
+# Jitter the start so concurrent tasks do not hammer the filesystem at once.
 sleep $((RANDOM % 30 + 1))
 
 set -euo pipefail
@@ -56,22 +57,25 @@ exec > "$LOG" 2>&1
 _log_exit() {
     rc=$?
     echo "=========================================="
-    if [[ "$rc" -eq 0 ]]; then echo "END status=OK - $(date)"
+    if   [[ "$rc" -eq 0  ]]; then echo "END status=OK - $(date)"
+    elif [[ "$rc" -eq 64 ]]; then echo "END status=INCOMPLETE-RESUBMITTED - $(date)"
     else echo "END status=FAILED exit_code=${rc} - $(date)"; fi
     echo "=========================================="
 }
 trap _log_exit EXIT
-trap 'exit 143' TERM INT
 
 cd "${VSC_DATA}/CreditICL"
 source scripts/slurm/_activate_env.sh
 
 echo "=========================================="
-echo "CreditICL — PRETRAIN (LGD) — Mindwell B200"
+echo "CreditICL — PRETRAIN (LGD) — Mindwell gpu_b200"
 echo "=========================================="
 echo "Array job/task : ${SLURM_ARRAY_JOB_ID}/${SLURM_ARRAY_TASK_ID}"
 echo "Cluster        : ${SLURM_CLUSTER_NAME:-?}  partition=${SLURM_JOB_PARTITION:-?}"
 echo "Node           : ${SLURMD_NODENAME:-?}"
+echo "Cores / mem    : ${SLURM_CPUS_PER_TASK:-?} / ${SLURM_MEM_PER_NODE:-?} MiB"
+echo "Walltime       : ${SBATCH_TIMELIMIT:-24:00:00}   requeue=yes  signal=USR1@600"
+echo "Restart count  : ${SLURM_RESTART_COUNT:-0}   <- >0 means this arm was requeued"
 echo "Date           : $(date)"
 echo "Log            : ${LOG}"
 python -c "import json; from src.utils.paths import describe; print(json.dumps(describe(), indent=2))"
@@ -84,13 +88,32 @@ python -m src.utils.smoke_test --task lgd --steps 2 || {
     exit 1
 }
 
-# --prior-source pool: read the shards built by stage 2 of the chain. Every arm
-# then draws its original-prior share from the SAME files, so a difference between
-# arms cannot be luck of the draw. Set PRIOR_SOURCE=generate to build them live.
+# FORWARD THE SIGNAL. Slurm sends SIGUSR1 to this script, not to python, so the trainer
+# would never see it. Run python in the background, trap, forward, and `wait` — a foreground
+# child would also block the trap until it exited, which is exactly too late.
 python -u scripts/pretrain.py \
     --config config/Exp1_LGD.yaml \
     --index "${SLURM_ARRAY_TASK_ID}" \
-    --prior-source "${PRIOR_SOURCE:-pool}"
+    --prior-source "${PRIOR_SOURCE:-generate}" &
+TRAIN_PID=$!
+trap 'echo "SIGUSR1 -> forwarding to trainer $TRAIN_PID"; kill -USR1 "$TRAIN_PID" 2>/dev/null || true' USR1
+trap 'echo "SIGTERM -> forwarding to trainer $TRAIN_PID"; kill -TERM "$TRAIN_PID" 2>/dev/null || true' TERM
+
+# Two waits: the first returns as soon as a trapped signal arrives, the second lets the
+# trainer finish writing its checkpoint.
+set +e
+wait "$TRAIN_PID"; RC=$?
+if [[ $RC -gt 128 ]]; then wait "$TRAIN_PID"; RC=$?; fi
+set -e
+
+# EXIT 64 = saved and stopped early. Resubmit THIS arm only; it resumes from the checkpoint.
+if [[ "$RC" -eq 64 ]]; then
+    echo "Arm ${SLURM_ARRAY_TASK_ID} incomplete — resubmitting to resume."
+    sbatch --clusters=mindwell --array="${SLURM_ARRAY_TASK_ID}" \
+           "${SLURM_SUBMIT_DIR:-.}/scripts/slurm/pretrain_lgd.slurm"
+    exit 64
+fi
+[[ "$RC" -eq 0 ]] || exit "$RC"
 
 mkdir -p "${CREDITICL_OUTPUT_ROOT}/.sentinels"
 touch "${CREDITICL_OUTPUT_ROOT}/.sentinels/pretrain_ok_lgd_${SLURM_ARRAY_TASK_ID}"
