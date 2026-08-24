@@ -290,6 +290,32 @@ cluster and partition it started on.
 
 ---
 
+### 3.7 Genius (P100 / V100) is not an option
+
+Worth stating with the evidence, because the queue on Genius is separate from Mindwell's and
+wICE's, so it looks attractive when another project is occupying those.
+
+**It cannot run this code.** Our own benchmark output settles it in one line:
+
+    compiled_for  ['sm_75', 'sm_80', 'sm_86', 'sm_90', 'sm_100', 'sm_120']
+
+P100 is **sm_60** and V100 is **sm_70**. Neither is in the installed wheel, so
+`has_kernels_for_this_card` would come back False and every kernel would fall back or fail.
+
+Two further reasons, each independently disqualifying:
+
+- **No bfloat16.** bf16 needs Ampere (sm_80) or later. Our AMP path is
+  `autocast("cuda", dtype=torch.bfloat16)` and AMP is a measured **2.07x** — losing it doubles
+  every arm.
+- **Memory.** Peak is 13.08 GB *with* bf16; in fp32 it is roughly double, against a P100's
+  16 GB.
+
+So the real choice is **Mindwell `gpu_b200` or wICE `gpu_a100` / `gpu_h100`** — and those are
+two different clusters with two different queues, which is the flexibility that mattered. A100
+is sm_80 and H100 is sm_90; both are in the wheel.
+
+---
+
 ## 4. Storage: three tiers, and the Lustre-vs-GPFS rule
 
 ### Where CreditICL puts things

@@ -251,10 +251,14 @@ def apply_sweep_block(cfg: dict[str, Any]) -> dict[str, Any]:
                 f"sweep.{path} must be a LIST — the block exists to hold multi-value "
                 f"knobs. Single values belong in the config body below it."
             )
-        if len(values) < 2:
+        # `seeds` is exempt: it is a REPEAT COUNT, never a lever. `[0]` legitimately means "no
+        # repeats", which a screening tier wants — Exp3 is 60 arms before seeds are considered.
+        # The rule exists to stop a fixed value being parked here where it looks like a lever.
+        if len(values) < 2 and path != "seeds":
             raise ValueError(
                 f"sweep.{path} has {len(values)} value(s). A one-value entry here is a "
-                f"single value pretending to be a sweep; move it into the config body."
+                f"single value pretending to be a sweep; move it into the config body. "
+                f"(`seeds` is the one exception: it is a repeat count, not a lever.)"
             )
         if path == "seeds":
             out["seeds"] = values

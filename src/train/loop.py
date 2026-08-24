@@ -276,6 +276,7 @@ class Trainer:
 
         # --- adaptation strategy: scratch / full / icl_only / head_only --------
         icfg = cfg.get("init", {})
+        tcfg_for_l2sp = self.cfg.get("train") or {}
         self.strategy = str(icfg.get("strategy", "scratch"))
         if self.strategy not in STRATEGIES:
             raise ValueError(f"init.strategy={self.strategy!r} must be one of {STRATEGIES}")
@@ -287,6 +288,31 @@ class Trainer:
             self.log.info("loaded pretrained weights: %s", json.dumps(self.load_report))
         else:
             self.load_report = {"strategy": "scratch"}
+
+        # L2-SP, for continued pre-training (Exp3). Captured HERE, straight after the
+        # pretrained weights are loaded and before a single step: w0 is the starting point,
+        # and any later snapshot is a different regulariser.
+        self.l2sp_alpha = float(tcfg_for_l2sp.get("l2sp_alpha", 0.0) or 0.0)
+        if self.l2sp_alpha < 0:
+            raise ValueError(f"train.l2sp_alpha must be >= 0, got {self.l2sp_alpha}")
+        if self.l2sp_alpha > 0 and self.strategy == "scratch":
+            raise ValueError(
+                "train.l2sp_alpha > 0 with init.strategy='scratch': L2-SP penalises distance "
+                "from a STARTING POINT, and a random init is not one. Either warm-start "
+                "(init.strategy=full/icl_only/head_only) or set l2sp_alpha to 0."
+            )
+        self._l2sp_ref: dict[str, Any] = {}
+        if self.l2sp_alpha > 0:
+            self._l2sp_ref = {
+                name: param.detach().clone()
+                for name, param in self.model.named_parameters()
+                if param.requires_grad
+            }
+            self.log.info(
+                "L2-SP active: alpha=%g over %d tensors (%.1f MB held as the reference)",
+                self.l2sp_alpha, len(self._l2sp_ref),
+                sum(v.numel() * v.element_size() for v in self._l2sp_ref.values()) / 1e6,
+            )
 
         self.freeze_report = apply_freezing(self.model, self.strategy)
         self.log.info(
@@ -408,6 +434,8 @@ class Trainer:
             f"  architecture           : {self.cfg.get('architecture', 'tabicl')}",
             f"  parameters             : {sum(p.numel() for p in self.model.parameters()):,}",
             f"  init strategy          : {self.strategy}",
+            f"  L2-SP alpha            : {self.l2sp_alpha}"
+            f"{'   <- OFF' if not self.l2sp_alpha else '   penalises drift from the loaded weights'}",
             "",
             "  -- OPTIMISATION " + "-" * 60,
             f"  batch_size             : {self.batch_size}   (datasets per UPDATE)",
@@ -647,8 +675,15 @@ class Trainer:
                 "Reduce micro_batch_size, n_rows_range or max_features."
             )
 
-        if self.grad_clip > 0:
+        # Unscale before EITHER of the two things that read raw gradients. L2-SP's
+        # contribution is unscaled by construction, so it must not land on scaled gradients.
+        if self.grad_clip > 0 or self.l2sp_alpha > 0:
             self.scaler.unscale_(self.optimizer)
+        # BEFORE the clip, not after: L2-SP is part of the objective, so the norm that gets
+        # clipped is the norm of the whole gradient.
+        if self.l2sp_alpha > 0:
+            totals["l2sp"] = self._apply_l2sp()
+        if self.grad_clip > 0:
             # Trainable parameters only: frozen ones have no grad, and including
             # them would change the computed norm and so the effective clip.
             torch.nn.utils.clip_grad_norm_(
@@ -736,6 +771,38 @@ class Trainer:
             "stop signals: %s -> checkpoint and exit 0 (requeue resumes)",
             ", ".join(installed) or "none available on this platform",
         )
+
+    def _apply_l2sp(self) -> float:
+        """Add L2-SP's gradient straight onto `.grad`, and return the penalty value.
+
+        Omega(w) = (alpha/2) * ||w - w0||^2, so its gradient is exactly `alpha * (w - w0)`.
+        Writing that in by hand rather than adding a term to the loss is deliberate, for two
+        reasons:
+
+        1. **It cannot be counted twice.** The data loss is accumulated over `n_micro` micro
+           passes; a parameter penalty is not per-example and must be applied ONCE per step.
+           Inside the micro-loop it would be applied `n_micro` times and the effective alpha
+           would silently depend on the micro-batch size.
+        2. **It is exact and free.** No graph, no second backward.
+
+        Called after `scaler.unscale_`, so `.grad` holds true gradients rather than AMP's
+        scaled copies — adding an unscaled penalty to scaled gradients would make the
+        effective alpha depend on the loss scaler's current guess.
+
+        Recipe from Real-TabPFN (Garg et al. 2025), which uses alpha=0.003 for continued
+        pre-training of TabPFNv2; the method is Li et al. 2018.
+        """
+        if not self._l2sp_ref:
+            return 0.0
+        total = 0.0
+        for name, param in self.model.named_parameters():
+            ref = self._l2sp_ref.get(name)
+            if ref is None or param.grad is None:
+                continue
+            delta = param.detach() - ref
+            param.grad.add_(delta, alpha=self.l2sp_alpha)
+            total += float(delta.pow(2).sum())
+        return 0.5 * self.l2sp_alpha * total
 
     def train(self) -> dict[str, Any]:
         self._stop_requested: str | None = getattr(self, "_stop_requested", None)

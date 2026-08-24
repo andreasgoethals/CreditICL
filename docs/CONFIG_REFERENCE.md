@@ -328,6 +328,74 @@ Fig. 10).
 capacity. It also contradicts a published convergence result, so it has to beat
 that argument rather than ignore it.
 
+## Experiment 3 — continued pre-training, and how its hyperparameters were chosen
+
+Exp3 starts from the **released TabICLv2 weights** and keeps training on a mixture of the
+original prior and ours. The question is how much of ours to add; everything else on this page
+is a nuisance parameter that has to be set well enough not to confound the answer.
+
+Two published recipes for continued pre-training of a tabular foundation model, both in the
+pinned library:
+
+| | Real-TabPFN (Garg et al. 2025) | TabPFN-Wide (Kolberg et al. 2026) |
+|---|---|---|
+| optimiser | AdamW | AdamW |
+| learning rate | **3e-7** | **1e-5** |
+| schedule | linear warm-up -> cosine annealing | linear warm-up -> cosine decay |
+| weight decay | — | **1e-4** |
+| grad clip | — | **1.0** |
+| what is updated | all parameters | all parameters |
+| **L2-SP** | **alpha = 0.003** | not used |
+
+TabICLv2's own stage 3 — the closest thing to CPT inside TabICL — uses **lr 2e-5, clip 1.0**.
+
+**The published rates span 3e-7 to 2e-5, nearly two orders of magnitude.** That disagreement is
+the reason `train.lr` is swept rather than picked.
+
+### `train.optimizer: adamw` — and why this is not a free choice
+
+Both CPT papers use AdamW; TabICLv2 stage 3 uses Muon. The deciding argument is mechanical:
+**under `optimizer: muon`, `train.lr` is only the rate of Muon's auxiliary AdamW half**, so
+sweeping it would move almost nothing and the sweep would look like "learning rate does not
+matter". Exp1 and Exp2 keep Muon, matching how the released weights were made.
+
+### `train.l2sp_alpha` — pull toward the starting point
+
+    Omega(w) = (alpha / 2) * || w - w0 ||^2       added to the loss
+
+`w0` is the released checkpoint. It penalises drift from weights that already know the original
+prior, which is exactly the risk continued pre-training runs: learning credit structure by
+forgetting everything else. Introduced for transfer learning by Li et al. 2018; used for
+continued pre-training of TabPFNv2 by Real-TabPFN at **alpha = 0.003**, which is the non-zero
+value swept here against `0.0` (off).
+
+Implementation notes that matter for correctness:
+
+- The gradient is written **directly onto `.grad`** as `alpha * (w - w0)` rather than added to
+  the loss. A parameter penalty is not per-example, and inside the micro-batch loop it would be
+  applied `n_micro` times — the effective alpha would silently depend on the micro-batch size.
+- It is applied **after `scaler.unscale_` and before the clip**: after, because an unscaled
+  penalty on AMP-scaled gradients would make the effective alpha depend on the loss scaler;
+  before, because L2-SP is part of the objective, so what gets clipped is the whole gradient.
+- `l2sp_alpha > 0` with `init.strategy: scratch` **raises**. There is no starting point.
+
+### `init.strategy` — three depths, not two
+
+`full` (every parameter), `icl_only` (freeze the column and row encoders, train the ICL stack,
+the y-embeddings and the head), `head_only` (the last layer alone). Both CPT papers update
+everything, so `full` is the literature default and the other two test whether a cheaper
+adaptation is enough. See the appendix at the bottom of this file for what the architecture
+allows and why there is no LoRA.
+
+### Budget
+
+5 mixtures x 3 strategies x 2 alphas x 2 rates = **60 arms**, one seed. Seeds are deliberately
+withheld: at ~3.5 h per arm this is already ~210 GPU-hours, and repeating a 60-arm screen three
+times to reduce noise on arms that will be discarded is the wrong place to spend it. Once the
+mixture axis has a winner, re-run that configuration with three seeds.
+
+---
+
 ## `init.strategy` — how to start
 
 `scratch` (random init), `full` (pretrained, train everything at a low LR), `icl_only` (freeze

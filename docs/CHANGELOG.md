@@ -76,7 +76,29 @@ reason is not obvious.
   13 GB of 178 is idle MEMORY, not idle compute (80 % of the compute ceiling, 88.7 % on
   `utilization.gpu`), so the lever is the price of the card, not the batch size. An A100 is
   2.7x cheaper all-in and holds the model six times over.
-- 789 tests pass.
+- **Exp3 designed properly: continued pre-training with a real hyperparameter sweep.**
+  `init.strategy: [full, icl_only, head_only]` (all layers / ICL stack + head / head alone),
+  `train.l2sp_alpha: [0.0, 0.003]`, `train.lr: [1e-6, 1e-5]`, crossed with the five mixtures =
+  **60 arms** at one seed. Seeds come after a winner.
+- **L2-SP implemented** (`Omega(w) = alpha/2 * ||w - w0||^2`, Li et al. 2018; alpha 0.003 from
+  Real-TabPFN). Its gradient is written directly onto `.grad` as `alpha * (w - w0)` — a
+  parameter penalty is not per-example, and inside the micro-batch loop the effective alpha
+  would have been 16x too big. Applied after `unscale_` (so the loss scaler cannot change it)
+  and before the clip (so the clipped norm is the whole gradient). Raises on
+  `strategy: scratch`. Seven tests.
+- **Exp3 switches to AdamW**, and this is not cosmetic: under Muon, `train.lr` is only the
+  AUXILIARY AdamW rate, so the learning-rate sweep would have moved almost nothing. Both
+  published CPT recipes use AdamW. Exp1/Exp2 keep Muon. Also `weight_decay: 1e-4`
+  (TabPFN-Wide's CPT value) rather than pretraining's 0.01.
+- **`seeds` is exempt from the "a sweep needs >= 2 values" rule** — it is a repeat count, not a
+  lever, and `[0]` legitimately means no repeats.
+- **Three superseded job scripts deleted**: `pilot_batch.slurm` (the batch question is settled
+  by `validate_micro_batch`), `smoke_test.slurm` (the preflight now runs inside the launchers),
+  `pretrain_multigpu.slurm` (targeted a phase that does not exist, and was as stale as the
+  single-GPU launcher turned out to be).
+- **VSC.md §3.7: Genius is not an option.** P100 is sm_60 and V100 is sm_70; the installed
+  wheel ships neither, and neither supports bf16 — which is a measured 2.07x.
+- 793 tests pass.
 
 ---
 

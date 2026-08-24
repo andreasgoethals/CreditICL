@@ -362,8 +362,13 @@ def test_exp3_uses_a_continued_pretraining_learning_rate():
     for track in ("LGD", "PD"):
         three = _load(f"config/Exp3_{track}.yaml")["train"]
         two = _load(f"config/Exp2_{track}.yaml")["train"]
-        assert three["lr"] <= two["lr"] / 10, (
-            f"{track}: Exp3 lr {three['lr']} is not far below Exp2's {two['lr']}"
+        # A LIST since 24-08-2026: Exp3 sweeps the rate, because the published continued-
+        # pretraining rates disagree by two orders of magnitude (Real-TabPFN 3e-7,
+        # TabPFN-Wide 1e-5, TabICLv2 stage 3 2e-5). Every value swept must still be far below
+        # pretraining's, or the sweep is testing "does destroying the weights help".
+        rates = three["lr"] if isinstance(three["lr"], list) else [three["lr"]]
+        assert max(rates) <= two["lr"] / 10, (
+            f"{track}: Exp3 rates {rates} are not far below Exp2's {two['lr']}"
         )
         assert three["muon_lr"] <= two["muon_lr"] / 10
         assert three["warmup_proportion"] > two["warmup_proportion"], "warm start needs longer warmup"

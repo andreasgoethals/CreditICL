@@ -588,13 +588,20 @@ def test_optim_docstring_matches_the_configs():
     doc = doc[: doc.index('"""', 3)]
 
     chosen = {
-        yaml.safe_load(p.read_text(encoding="utf-8"))["train"]["optimizer"].lower()
+        p.name: yaml.safe_load(p.read_text(encoding="utf-8"))["train"]["optimizer"].lower()
         for p in (root / "config").glob("Exp*.yaml")
     }
-    assert len(chosen) == 1, f"configs disagree on the optimizer: {chosen}"
-    name = chosen.pop()
-    assert name.upper() in doc.upper(), f"configs use {name!r}; the docstring never says so"
-    assert "Deviation: AdamW, not Muon" not in doc, "that claim is false while configs use muon"
+    # PRETRAINING IS MUON, CONTINUED PRETRAINING IS ADAMW, and the split is deliberate. Exp1
+    # and Exp2 train from scratch and must match how the released weights were made. Exp3
+    # continues FROM those weights, where both published recipes (Real-TabPFN, TabPFN-Wide)
+    # use AdamW — and the deciding argument is mechanical: under Muon, `train.lr` is only the
+    # AUXILIARY AdamW rate, so Exp3's learning-rate sweep would move almost nothing.
+    pretrain = {v for k, v in chosen.items() if k.startswith(("Exp1", "Exp2"))}
+    assert pretrain == {"muon"}, f"Exp1/Exp2 must match upstream's optimiser, got {pretrain}"
+    cpt = {v for k, v in chosen.items() if k.startswith("Exp3")}
+    assert cpt == {"adamw"}, f"Exp3 continued pretraining should use AdamW, got {cpt}"
+    for name in pretrain | cpt:
+        assert name.upper() in doc.upper(), f"configs use {name!r}; the docstring never says so"
 
 
 def test_the_benchmark_measures_the_optimizer_that_is_actually_configured():
@@ -710,7 +717,13 @@ def test_batch_size_is_not_swept_in_any_experiment():
     root = Path(__file__).resolve().parents[1]
     for cfg_path in sorted((root / "config").glob("Exp*.yaml")):
         sweep = yaml.safe_load(cfg_path.read_text(encoding="utf-8")).get("sweep") or {}
-        offenders = [k for k in sweep if "batch" in k or k.endswith(".lr")]
+        # EXP3 IS ALLOWED TO SWEEP THE RATE. For Exp1 and Exp2 the optimisation settings are
+        # nuisance parameters and upstream has already chosen them. Exp3 has no such anchor:
+        # the three published continued-pretraining rates span 3e-7 to 2e-5, so the rate is a
+        # genuine unknown rather than a knob being fiddled with. Batch size stays fixed
+        # everywhere — it is coupled to the rate, and sweeping both confounds the pair.
+        forbidden = ["batch"] if cfg_path.name.startswith("Exp3") else ["batch", ".lr"]
+        offenders = [k for k in sweep if any(f in k for f in forbidden)]
         assert not offenders, (
             f"{cfg_path.name} sweeps {offenders}. Optimisation settings are nuisance "
             f"parameters: hold them fixed so the prior is the only thing that varies."

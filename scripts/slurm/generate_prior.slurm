@@ -24,7 +24,7 @@
 # preprocess on wice, the prior arrays on genius and training on mindwell; the chain
 # could never have run. Everything in Phase 1 therefore stays on wice, which has both
 # `batch` (CPU) and `gpu_a100` (GPU). Mindwell's B200s are for the Phase 2
-# multi-GPU confirmation runs, submitted on their own (see pretrain_multigpu.slurm).
+# multi-GPU confirmation runs, which Exp2 will need and which do not exist yet.
 #SBATCH --job-name=crediticl-prior
 #SBATCH --clusters=wice
 #SBATCH --partition=batch
