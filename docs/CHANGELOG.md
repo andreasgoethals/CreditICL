@@ -30,7 +30,16 @@ reason is not obvious.
   same seed gives the same dataset and nothing outside the block is disturbed.
 - **Credit datasets are permuted and padded to `max_features`** exactly as `GraphSCM.__call__`
   ends, or the width itself would have told the model which prior a dataset came from.
-- 819 tests pass.
+- **`src/utils/pipeline.py` — one idempotent command replaces the submission recipe.** This
+  cluster stops routinely (maintenance drains, node failures, the walltime, running out of
+  credits), and a five-command recipe in a fixed order gets executed wrongly after a week's
+  break. `python -m src.utils.pipeline --submit` reads the output tree, refuses to start a
+  benchmark before its training finished, resubmits only the arms a drain took, and skips
+  anything already queued. Nine tests.
+- **The LGD/PD asymmetry was accidental** and is now a documented scheduling choice: a FRESH
+  sweep splits LGD across Mindwell and wICE for the two queues, a partial one does not, and
+  `--single-cluster` turns it off. Both tracks otherwise follow identical rules.
+- 828 tests pass.
 
 ---
 

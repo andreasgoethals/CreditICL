@@ -316,6 +316,46 @@ is sm_80 and H100 is sm_90; both are in the wheel.
 
 ---
 
+### 3.8 The recovery procedure is one command
+
+This cluster stops routinely — unannounced maintenance drains, node failures, the 72 h
+walltime, and running out of credits until the balance is topped up. A plan made of five
+`sbatch` commands in a fixed order will be executed wrongly after a week's interruption,
+because nobody remembers which of the five already happened.
+
+```bash
+python -m src.utils.pipeline            # what is done, what is next, what is blocked
+python -m src.utils.pipeline --submit   # submit whatever is ready
+```
+
+It reads the **output tree** — not `sacct`, which forgets, and not the queue, which a drain
+empties — and submits only what is missing. **Running it repeatedly is the intended usage.**
+After any interruption, whatever the cause, the recovery procedure is to run it again.
+
+```
+  [x] exp1-lgd-train             done        75/75
+  [ ] exp1-lgd-benchmark         ready        0/76
+  [~] exp1-pd-train              running     42/75
+  [-] exp1-pd-benchmark          blocked      0/76  waiting on exp1-pd-train
+```
+
+Four guarantees, each with a test:
+
+| | |
+|---|---|
+| `benchmark` cannot start early | phase 2 scores what phase 1 writes; 74 of 75 arms still blocks it |
+| a drain costs only what was pending | a partial sweep resubmits `--array=40-49,52-74`, not `0-74` |
+| a re-run never doubles a queued job | matched on the Slurm job name via `squeue` |
+| a broken `squeue` errs towards submitting | a duplicate can be cancelled; work that never starts cannot |
+
+**LGD is split across two clusters and PD is not** — on a FRESH sweep only. Two clusters means
+two queues and roughly half the wall-clock; there is nothing about LGD that needs wICE, and
+`--single-cluster` turns it off. A partial sweep goes back to one cluster, because the
+surviving indices are scattered and splitting a scattered spec across two partitions gains
+nothing but confusion.
+
+---
+
 ## 4. Storage: three tiers, and the Lustre-vs-GPFS rule
 
 ### Where CreditICL puts things

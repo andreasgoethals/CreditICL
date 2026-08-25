@@ -107,14 +107,17 @@ def seeded(seed: int):
     """
     import numpy as np
 
-    np_state = np.random.get_state()
+    # The LEGACY global API on purpose, and the lint rule is wrong here: `graph_lib` calls
+    # `np.random.standard_cauchy` / `randint` / `choice` / `uniform` / `permutation`, which read
+    # the legacy global state. Seeding a `np.random.Generator` would leave them untouched.
+    np_state = np.random.get_state()  # noqa: NPY002
     try:
         with torch.random.fork_rng(devices=[], enabled=True):
             torch.manual_seed(seed)
-            np.random.seed(seed % (2**32))
+            np.random.seed(seed % (2**32))  # noqa: NPY002
             yield
     finally:
-        np.random.set_state(np_state)
+        np.random.set_state(np_state)  # noqa: NPY002
 
 
 def prior_config(overrides: dict[str, Any] | None = None) -> Any:
