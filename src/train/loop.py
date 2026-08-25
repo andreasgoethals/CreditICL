@@ -150,8 +150,12 @@ class Trainer:
         device: str | None = None,
         ckpt_dir: str | Path | None = None,
         log_dir: str | Path | None = None,
+        manifest_dir: str | Path | None = None,
     ):
         self.cfg = cfg
+        # Only the preflight smoke test passes this. Production leaves it None and gets the
+        # shared manifests directory; see where it is resolved below.
+        self.manifest_dir = Path(manifest_dir) if manifest_dir is not None else None
         self.task = cfg["task"]
         self.regression = self.task == "lgd"
         self.out_dir = Path(out_dir)
@@ -357,7 +361,14 @@ class Trainer:
         # Same tier rule as the logs: on the cluster the manifest joins the other small
         # durable output under $VSC_DATA/output/; locally it stays inside the run's own
         # directory, so a test with an explicit out_dir is self-contained.
-        manifest_dir = manifests_dir() if on_vsc() else Path(self.out_dir) / "manifests"
+        # `manifest_dir` OVERRIDES the shared location. The preflight smoke test runs with a
+        # temp `out_dir` but was still writing its telemetry and progress CSVs into the real
+        # `$VSC_DATA/.../manifests/` under the REAL arm's run name — a two-step toy run
+        # depositing rows in a 12,500-step arm's results file. It never actually wrote one
+        # (its 4 datasets never reach `every_datasets`), but nothing stopped it.
+        manifest_dir = self.manifest_dir or (
+            manifests_dir() if on_vsc() else Path(self.out_dir) / "manifests"
+        )
 
         self.progress = ProgressTracker(
             ProgressConfig(
@@ -925,9 +936,16 @@ class Trainer:
                 # time to react, rather than being discovered dead at the wall.
                 if self._walltime_warning_s and eta_s > self._walltime_warning_s:
                     self.log.warning(
-                        "PROJECTED OVERRUN: eta %s exceeds the remaining job walltime. "
-                        "This run will be cut off and must be resumed (--resume auto), "
-                        "or restarted with more GPUs (torchrun --nproc_per_node=N).",
+                        # NOT ADVICE ANY MORE, JUST NOTICE. This used to tell the reader to
+                        # resume with `--resume auto` — a flag `pretrain.py` has never defined,
+                        # and the one that killed eight jobs with argparse exit 2 on
+                        # 14-08-2026. It survived in a WARNING string for ten days. Since
+                        # 24-08 the run resumes itself: SIGUSR1 600 s before the wall ->
+                        # checkpoint -> exit 64 -> the job script resubmits this array index.
+                        "PROJECTED OVERRUN: eta %s exceeds the remaining walltime. This is "
+                        "handled: the job will checkpoint on SIGUSR1 and resubmit itself, and "
+                        "the arm continues where it stopped. Nothing to do. Raise --time only "
+                        "if you would rather it finish in one go.",
                         _hms(eta_s),
                     )
                 window, window_n = {}, 0

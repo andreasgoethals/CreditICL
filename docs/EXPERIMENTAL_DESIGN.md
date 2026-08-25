@@ -410,6 +410,48 @@ parallelism is the stated preference. `docs/VSC.md` §8 has the array skeleton.
 
 ---
 
+## Exp1 runs in two phases, and the order is not a convention
+
+**Phase 2 scores what phase 1 wrote**, so it cannot start earlier. There is no way to shorten
+this: a checkpoint has to exist before it can be benchmarked.
+
+| | phase 1 — `pretrain_{lgd,pd}.slurm` | phase 2 — `benchmark.slurm` |
+|---|---|---|
+| array | `0-74%8` | `0-75%8` |
+| each task | trains one arm, 12,500 steps | scores one model on everything |
+| produces | one checkpoint on `/lustre1` | result rows on `$VSC_DATA` |
+| cost | ~4.4 h (B200) / ~8.5 h (A100) | minutes |
+| index 75 | — | the REFERENCE: TabICLv2, CatBoost, linear |
+
+**Why the reference is inside the same array rather than run separately.** It is then scored by
+the same code, on the same day, with the same `--max-context-rows`, the same seeds and the same
+splits as our 75. Every comparison this project got wrong, it got wrong by scoring the two sides
+through different paths — the hand-rolled inference pipeline on 18-08 being the clearest case.
+
+**Why evaluation is not inside the training job**, which it briefly was on 25-08: an arm would
+then be benchmarked by whatever the code looked like the hour it happened to finish, against a
+reference scored on a different day. The 75 arms finish over ~2 days.
+
+### What phase 2 records, per (model, dataset, seed)
+
+- **Ranking** — ROC-AUC, PR-AUC, Gini, KS, PR-AUC lift, recall at the top 1/5/10/20 %
+- **Probability** — Brier, Brier skill score, log loss, **ECE and MCE**, calibration slope,
+  intercept and bias
+- **Hard labels** — accuracy, balanced accuracy, **F1**, precision, recall, specificity, MCC,
+  and the full confusion matrix, at 0.5 **and** at the base rate
+- **LGD** — pinball, CRPS, coverage, boundary mass, R², RMSE, MAE
+- **Cost** — `fit_seconds` and `predict_seconds`
+- **Provenance** — the checkpoint file and step, the arm's `credit_fraction` and run name, the
+  inference path, `context_cap` and `n_context_full` (recorded even when the cap does not bind)
+
+ECE and MCE are reported together on purpose. ECE weights bins by occupancy, and in a PD model
+the bins that matter — the high-score tail where the defaults are — are the sparsest, so ECE
+can look respectable while the worst bin is badly wrong. F1 is reported at the base rate as
+well as at 0.5 for the same reason: at a 2 % base rate almost nothing crosses 0.5, and a model
+that ranks perfectly can score F1 near zero.
+
+---
+
 ## 5. Phase 3 — evaluation (`src/eval/`)
 
 ### 5.1 What gets compared

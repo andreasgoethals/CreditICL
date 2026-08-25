@@ -174,7 +174,9 @@ def main() -> int:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[3/4] device={device}  amp={cfg['train']['amp']}  workers={cfg['train']['num_workers']}", flush=True)
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
-        trainer = Trainer(cfg, tmp, device=device)
+        # `manifest_dir=tmp`: on the cluster the trainer otherwise writes its manifests to the
+        # SHARED output tree, so the preflight would file rows under the real arm's name.
+        trainer = Trainer(cfg, tmp, device=device, manifest_dir=Path(tmp) / "manifests")
         print(
             f"      model OK: {trainer.freeze_report['trainable_params']:,} trainable / "
             f"{trainer.freeze_report['total_params']:,} total "

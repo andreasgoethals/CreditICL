@@ -248,9 +248,13 @@ def apply_pd_target(
     if float(y.sum()) < 2 or float(y.sum()) > y.numel() - 2:
         y = _quantile_cut(z, max(base_rate, 3.0 / max(y.numel(), 1)))
 
-    # 6. Informative missingness, after labels exist so it can depend on them.
-    X, miss_meta = apply_informative_missingness(rng, X, y, cfg.get("missingness", {}), max_features)
-    meta.update(miss_meta)
+    # 6. Informative missingness USED TO BE APPLIED HERE, from `credit.target.missingness`.
+    # It moved to `TaskGenerator._sample_candidate` on 25-08-2026 so that BOTH tracks get it:
+    # `apply_lgd_target` is never handed X, so LGD could not have applied it, and the
+    # `credit.missingness` block in the LGD configs was read by nothing at all — four settings
+    # that looked active and were dead. docs/PRIORS.md lists missingness under "Both tracks".
+    # The call site is unchanged in ORDER (after the target, before noise features), so PD's
+    # output distribution is the same.
 
     meta["realised_base_rate"] = float(y.mean())
     return X, y, meta

@@ -51,7 +51,7 @@ prior:
     subgroup_size: 2 # datasets sharing exact values within a group
 
   base: # the UNMODIFIED TabICL prior — changing this changes the control arm
-    max_cat_size: 100 # largest number of categories per column
+    max_cat_size: 200 # upstream graph_scm: sample_categorical_sizes(max_cat_size=200)
     category_frequency: balanced # how category counts are distributed
 
   credit: # OUR credit-targeted path
@@ -81,17 +81,17 @@ prior:
         selection_drop: 0.2 # share of rows removed as rejected
         selection_sharpness: 0.7 # how strictly the cut-off is applied
 
-      missingness:
-        missing_col_fraction: 0.3 # share of columns that get missing values
-        missing_rate_range: [0.05, 0.35] # how much is missing in those columns
-        missing_target_coupling: 1.0 # 1.0 = missingness carries signal (a thin file is a risk signal)
-        missing_indicators: true # add a was-missing flag column
 
     shift: # context and predicted rows come from different populations
       shift_prob: 0.3 # share of datasets given a shift
       kind_weights: { cohort: 1.0, covariate: 1.0, prior_prob: 1.0 } # time | feature range | base rate
       prior_prob_range: [0.15, 0.45] # how far the base rate moves
 
+    missingness:
+      missing_col_fraction: 0.3 # share of columns that get missing values
+      missing_rate_range: [0.05, 0.35] # how much is missing in those columns
+      missing_target_coupling: 1.0 # 1.0 = missingness carries signal (a thin file is a risk signal)
+      missing_indicators: true # add a was-missing flag column
     noise_features:
       fraction: 0.3 # share of columns carrying no information
       kind_weights: { pure_noise: 1.0, duplicate: 1.0, shuffled: 1.0, constant: 0.5 } # kinds of junk

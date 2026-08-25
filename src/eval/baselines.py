@@ -448,6 +448,12 @@ class TabICLBaseline(_TFMBaseline):
         data, which is larger than most model-family differences.
         """
         cap = self.max_context_rows
+        # RECORD IT EVEN WHEN IT DOES NOT BIND. Writing these columns only on the datasets
+        # that were actually trimmed makes an absent value ambiguous six months later: "no cap
+        # was set" and "the cap was set and the table was smaller" are different facts and
+        # only one of them is a caveat on the number.
+        self.report.extra["context_cap"] = cap
+        self.report.extra["n_context_full"] = int(len(X))
         if cap is None or len(X) <= cap:
             return X, y
         rng = np.random.default_rng(self.seed)
@@ -461,8 +467,6 @@ class TabICLBaseline(_TFMBaseline):
             rng.shuffle(keep)
         else:
             keep = rng.choice(len(X), size=cap, replace=False)
-        self.report.extra["context_cap"] = cap
-        self.report.extra["n_context_full"] = int(len(X))
         return X[keep], y[keep]
 
     def _wrapper_kwargs(self) -> dict[str, Any]:

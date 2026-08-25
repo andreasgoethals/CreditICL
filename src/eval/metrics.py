@@ -24,6 +24,8 @@ and PR-AUC is the more honest of the two ranking metrics under heavy imbalance.
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 EPS = 1e-12
@@ -212,6 +214,60 @@ def expected_calibration_error(y_true: np.ndarray, p: np.ndarray, n_bins: int = 
     return float(ece)
 
 
+def maximum_calibration_error(y_true: np.ndarray, p: np.ndarray, n_bins: int = 15) -> float:
+    """MCE — the WORST bin, where ECE is the average of them weighted by occupancy.
+
+    The pair matters for credit. ECE can look respectable while one bin is badly wrong, and in
+    a PD model the bins that matter most — the high-score tail where the defaults are — are
+    the sparsest, so occupancy weighting hides exactly the error a lender would care about.
+    Report both or report neither.
+    """
+    y_true = np.asarray(y_true, dtype=float).ravel()
+    p = np.clip(np.asarray(p, dtype=float).ravel(), 0.0, 1.0)
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    idx = np.clip(np.digitize(p, edges[1:-1], right=True), 0, n_bins - 1)
+    worst = 0.0
+    for b in range(n_bins):
+        m = idx == b
+        if not m.any():
+            continue
+        worst = max(worst, abs(float(y_true[m].mean()) - float(p[m].mean())))
+    return float(worst)
+
+
+def threshold_metrics(y_true: np.ndarray, p: np.ndarray, threshold: float = 0.5) -> dict[str, float]:
+    """The hard-label family: F1, precision, recall, MCC, balanced accuracy.
+
+    All of them depend on a THRESHOLD, which is why the ranking metrics come first everywhere
+    else in this file — 0.5 is arbitrary on an imbalanced target and a model can be excellent
+    at ranking while scoring 0 here. Reported anyway, because they are what a downstream credit
+    policy actually applies, and because a benchmark table that omits F1 gets asked for it.
+    """
+    y_true = np.asarray(y_true, dtype=float).ravel() >= 0.5
+    yhat = np.asarray(p, dtype=float).ravel() >= threshold
+    tp = float(np.sum(yhat & y_true))
+    fp = float(np.sum(yhat & ~y_true))
+    fn = float(np.sum(~yhat & y_true))
+    tn = float(np.sum(~yhat & ~y_true))
+    precision = tp / max(tp + fp, EPS)
+    recall = tp / max(tp + fn, EPS)
+    specificity = tn / max(tn + fp, EPS)
+    denom = math.sqrt(max((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn), EPS))
+    return {
+        "threshold": float(threshold),
+        "precision": float(precision),
+        "recall": float(recall),
+        "specificity": float(specificity),
+        "f1": float(2 * precision * recall / max(precision + recall, EPS)),
+        "balanced_accuracy": float(0.5 * (recall + specificity)),
+        "mcc": float((tp * tn - fp * fn) / denom),
+        "true_positives": tp,
+        "false_positives": fp,
+        "false_negatives": fn,
+        "true_negatives": tn,
+    }
+
+
 def ks_statistic(y_true: np.ndarray, p: np.ndarray) -> float:
     """Kolmogorov-Smirnov: the largest gap between the score distributions of defaults and
     non-defaults.
@@ -272,6 +328,7 @@ def pd_metrics(y_true: np.ndarray, p: np.ndarray) -> dict[str, float]:
         "brier": float(brier_score_loss(y_true, p)),
         "log_loss": float(log_loss(y_true, p, labels=[0, 1])),
         "ece": expected_calibration_error(y_true, p),
+        "mce": maximum_calibration_error(y_true, p),
         # A model that just predicts the base rate for everyone. Any log-loss
         # above this is worse than knowing nothing but the average.
         "log_loss_base_rate": float(
@@ -288,6 +345,15 @@ def pd_metrics(y_true: np.ndarray, p: np.ndarray) -> dict[str, float]:
     # dataset rather than the model.
     out["brier_uncertainty"] = float(base_rate * (1 - base_rate))
     out["brier_skill_score"] = float(1.0 - out["brier"] / max(out["brier_uncertainty"], EPS))
+
+    # Hard labels at 0.5, and at the base rate. A single threshold on an imbalanced target is
+    # close to meaningless on its own — at a 2 % base rate almost nothing crosses 0.5 and F1
+    # collapses to 0 for a model that ranks perfectly — so the base-rate threshold is reported
+    # beside it as the version a credit policy would actually pick.
+    out.update(threshold_metrics(y_true, p, 0.5))
+    for key, value in threshold_metrics(y_true, p, max(base_rate, EPS)).items():
+        if key not in ("true_positives", "false_positives", "false_negatives", "true_negatives"):
+            out[f"{key}_at_base_rate"] = value
 
     # `calibration_slope` from a logistic regression of the outcome on the log-odds. 1.0 is
     # calibrated, below 1 over-confident. Named in every credit-scoring validation standard,

@@ -808,3 +808,37 @@ def test_checkpoints_carry_upstream_loadable_keys():
     assert cfg["embed_dim"] == 128
     assert cfg["max_classes"] == 0 and cfg["num_quantiles"] == 999, "LGD is the quantile head"
     assert cfg["bias_free_ln"] is True, "upstream's --norm_type layernorm_nobias for regression"
+
+
+def test_the_overrun_warning_no_longer_recommends_a_flag_that_does_not_exist():
+    """`--resume auto` killed eight jobs on 14-08-2026 with argparse exit 2, and then survived
+    for ten more days inside the WARNING string that fires every hundred steps. A projected
+    overrun is now handled automatically, so the message must say so rather than send the
+    reader to a flag `pretrain.py` has never defined."""
+    root = Path(__file__).resolve().parents[1]
+    src = (root / "src" / "train" / "loop.py").read_text(encoding="utf-8")
+    warning = src[src.index("PROJECTED OVERRUN"):][:600]
+    assert "--resume auto" not in warning
+    assert "resubmits itself" in warning or "resubmit" in warning
+
+
+def test_the_smoke_test_cannot_write_into_the_real_manifests():
+    """It runs as the launcher's preflight with a temp `out_dir`, but manifests resolve to the
+    SHARED output tree on the cluster — so a two-step toy run was filing telemetry under the
+    real 12,500-step arm's run name."""
+    root = Path(__file__).resolve().parents[1]
+    smoke = (root / "src" / "utils" / "smoke_test.py").read_text(encoding="utf-8")
+    assert "manifest_dir=" in smoke, "the smoke test must pin its own manifests directory"
+    loop = (root / "src" / "train" / "loop.py").read_text(encoding="utf-8")
+    assert "self.manifest_dir or (" in loop, "the override must actually be honoured"
+
+
+def test_the_job_banner_reads_the_real_walltime_from_slurm():
+    """`SBATCH_TIMELIMIT` is not set inside a job, so the banner printed the #SBATCH default
+    (12:00:00) while the actual limit was the 20 minutes passed on the command line. That is
+    the one number a reader checks the ETA against."""
+    root = Path(__file__).resolve().parents[1]
+    for name in ("pretrain_lgd.slurm", "pretrain_pd.slurm"):
+        text = (root / "scripts" / "slurm" / name).read_text(encoding="utf-8")
+        assert "SLURM_JOB_END_TIME" in text and "SLURM_JOB_START_TIME" in text
+        assert "SBATCH_TIMELIMIT:-12:00:00" not in text

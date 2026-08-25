@@ -349,7 +349,13 @@ def test_the_control_arm_prior_never_carries_a_placeholder():
         base = _load(path)["prior"]["base"]
         assert PLACEHOLDER not in str(base), f"{path}: control-arm prior was modified: {base}"
         assert base["category_frequency"] == "balanced"
-        assert base["max_cat_size"] == 100, "TabICL's own value; changing it changes the control"
+        # 200, NOT 100. `_graph_scm.py` calls
+        # `sample_categorical_sizes(self.num_features, context, max_cat_size=200)`.
+        # This test asserted 100 until 26-08-2026 and the configs were set to match the
+        # test, so the control arm was NARROWER than TabICLv2 and the credit arm's 500 was
+        # a smaller step than documented. A test pins a wrong number as firmly as a right
+        # one; this one quotes the upstream call site instead of a remembered value.
+        assert base["max_cat_size"] == 200, "upstream graph_scm's value"
 
 
 # -- Exp3 is continued pre-training, not pretraining ---------------------------

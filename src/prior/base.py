@@ -7,10 +7,14 @@ Two credit-relevant knobs are exposed here rather than in `targets/`, because
 they change how *features* are generated and so must sit inside the graph
 evaluation:
 
-* ``max_cat_size`` — upstream caps categorical cardinality at 100. Credit files
-  routinely carry columns well past that (US state, MSA, seller/servicer name,
-  occupation code), and Purucker 2026 finds the best-GBDT-over-best-TFM margin
-  grows with high-cardinality columns (rho=+0.47). So the cap is a lever.
+* ``max_cat_size`` — **upstream's `graph_scm` caps categorical cardinality at 200**:
+  `sample_categorical_sizes(self.num_features, context, max_cat_size=200)` in
+  `_graph_scm.py`. This file claimed 100 until 26-08-2026 and the control arm was
+  configured to match the claim, so the control was NARROWER than TabICLv2 and the
+  credit arm's 500 was a smaller step than documented. Credit files routinely carry
+  columns past 200 (US state, MSA, seller/servicer name, occupation code), and
+  Purucker 2026 finds the best-GBDT-over-best-TFM margin grows with
+  high-cardinality columns (rho=+0.47). So the cap is a lever — from 200.
 * ``category_frequency`` — upstream category assignment is roughly balanced
   (nearest-centre or softmax over random points). Real credit categoricals are
   severely unbalanced: a handful of states hold most of the book, and the long

@@ -716,3 +716,51 @@ def test_context_cap_is_stratified_for_pd_and_recorded():
     m2.max_context_rows = 99_999
     same, _ = m2._cap_context(X, y)
     assert same is X
+
+
+def test_crediticl_refuses_the_released_checkpoint(tmp_path):
+    """The worst failure this project could have: the RELEASED TabICLv2 weights scored in the
+    `crediticl` column, reporting the baseline's numbers under our own name.
+
+    `allow_auto_download=False` stops the wrapper fetching them when a file is unreadable, but
+    nothing stopped someone pointing `--checkpoint` at `checkpoints/tabiclv2-reg.ckpt`.
+    `crediticl_config` is written by `src/train/checkpoint.py` and appears in no upstream
+    artefact, so its presence is the signature of a checkpoint we trained.
+    """
+    import torch
+
+    from src.eval.crediticl_baseline import CreditICLBaseline, checkpoint_metadata
+
+    released = tmp_path / "tabiclv2-reg.ckpt"
+    torch.save({"config": {"max_classes": 0}, "state_dict": {}}, released)
+    assert checkpoint_metadata(released)["ours"] is False
+    with pytest.raises(ValueError, match="NOT produced by this project"):
+        CreditICLBaseline(task="pd", seed=0, checkpoint=released)
+
+    ours = tmp_path / "step-500.ckpt"
+    torch.save(
+        {"config": {"max_classes": 0}, "state_dict": {}, "step": 500,
+         "crediticl_config": {"task": "pd", "_run_name": "x", "prior": {"credit_fraction": 0.2}}},
+        ours,
+    )
+    meta = checkpoint_metadata(ours)
+    assert meta["ours"] is True and meta["credit_fraction"] == 0.2
+    CreditICLBaseline(task="pd", seed=0, checkpoint=ours)  # must not raise
+
+
+def test_the_benchmark_reports_every_metric_a_credit_table_needs():
+    """AUC, Brier, ECE **and MCE**, F1, MCC, accuracy — plus fit and predict seconds."""
+    import numpy as np
+
+    from src.eval.metrics import pd_metrics
+
+    rng = np.random.default_rng(0)
+    y = (rng.random(2000) < 0.05).astype(float)
+    p = np.clip(y * 0.4 + rng.random(2000) * 0.4, 0.01, 0.99)
+    m = pd_metrics(y, p)
+    for key in ("roc_auc", "pr_auc", "gini", "brier", "brier_skill_score", "ece", "mce",
+                "log_loss", "ks", "calibration_slope", "accuracy_at_0.5", "balanced_accuracy",
+                "f1", "f1_at_base_rate", "precision", "recall", "specificity", "mcc"):
+        assert key in m, f"missing {key}"
+    # MCE >= ECE by construction: the worst bin cannot beat the weighted average of all bins.
+    assert m["mce"] >= m["ece"]

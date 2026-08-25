@@ -5,6 +5,101 @@ reason is not obvious.
 
 ---
 
+## 26-08-2026 — the control arm now runs TabICLv2's ACTUAL prior
+
+- **`src/prior/upstream.py`: the base prior is imported, not transcribed.** The control arm
+  calls `tabicl.prior.GraphSCM` verbatim; the credit arms start from the same upstream sample
+  via upstream's own `Context` / `DatasetProperties` / `RandomDataset` /
+  `sample_categorical_sizes` / `outlier_removing` / `standard_scaling`. `base.py`'s NanoTabICL
+  transcription survives only as `prior.base.implementation: transcribed`, and `upstream`
+  raises with the install command rather than falling back to it.
+- **Why nobody could have done this by `pip install tabicl`.** The PyPI wheel for 2.1.1 AND the
+  `v2.1.1` git tag both omit `_graph_scm.py` and the entire `graph_lib/` subpackage — 29 files.
+  Only the **default branch** ships them, at the same version string. Verified by installing
+  all three and diffing the trees. `graph_scm` is what upstream's own stage-1 script selects,
+  so the prior TabICLv2 was trained on is absent from every released artefact of TabICLv2.
+  `pyproject.toml` now pins
+  `tabicl[pretrain] @ git+https://github.com/soda-inria/tabicl.git`; `[pretrain]` pulls
+  `xgboost`, without which `tabicl.prior` will not import at all.
+- **Both arms are switched, not just the control.** Switching only the control would have been
+  worse than leaving both transcribed: they would then differ in the credit structure AND the
+  base implementation, and no difference between them could be attributed to either.
+- **Upstream draws from TWO global generators.** `GraphSCM` uses torch's; six `graph_lib`
+  modules also call `np.random.*`. Seeding torch alone left the sample non-reproducible —
+  measured. `upstream.seeded()` snapshots and restores both, seeded from our `PriorRNG`, so the
+  same seed gives the same dataset and nothing outside the block is disturbed.
+- **Credit datasets are permuted and padded to `max_features`** exactly as `GraphSCM.__call__`
+  ends, or the width itself would have told the model which prior a dataset came from.
+- 819 tests pass.
+
+---
+
+## 25-08-2026 — the first real arm, and the card decision
+
+- **Arm 0 of Exp1 LGD is finished** (jobs 11524582 -> 11524593), through a deliberate mid-run
+  kill. Every link of the resilience chain fired: signal -> forward -> checkpoint at step 447
+  -> exit 64 -> resubmit -> resume -> step 12,500. 0.82 steps/s, 88.75 % GPU, loss 0.343 ->
+  0.059.
+- **`PROJECTED OVERRUN` no longer recommends `--resume auto`** — the flag that never existed
+  and killed eight jobs on 14-08. It had survived ten days in a WARNING string. Now it says the
+  run resubmits and resumes itself, and a test forbids the dead flag.
+- **The preflight smoke test can no longer write into the real arm's manifests.** `Trainer`
+  takes `manifest_dir`; the smoke test pins its temp directory. On the cluster it was resolving
+  to the shared output tree under the real run name.
+- **The job banner reads the real walltime** from `SLURM_JOB_END_TIME - SLURM_JOB_START_TIME`.
+  `SBATCH_TIMELIMIT` is unset inside a job, so it printed the `#SBATCH` default (12:00:00) while
+  the actual limit was 20 minutes.
+- **A100 benchmarked (job 61776784): 8.49 h/arm, 1.93x slower than the B200 but 2.72x cheaper
+  per hour — 29 % cheaper per arm.** 75 arms: 7.16 M credits on A100 against 10.08 M on B200.
+- **THE SWEEP WOULD HAVE PRODUCED NO NUMBERS.** `pretrain_{lgd,pd}.slurm` trained and stopped
+  — every result so far came from `debug_exp1.slurm`, which also scores. Evaluation added to
+  both launchers on the exit-0 path, `--models crediticl` with the shared 1,024-row context cap
+  plus the out-of-domain sweep. `tabiclv2` and the classical baselines do not vary by arm and
+  are scored once by `evaluate.slurm`.
+- **LGD's informative missingness was dead code.** It was invoked from inside `apply_pd_target`
+  reading `credit.target.missingness`, and `apply_lgd_target` never receives X — so the
+  `credit.missingness` block in every LGD config was read by nothing, while `docs/PRIORS.md`
+  lists it under "Both tracks". Now applied in `TaskGenerator._sample_candidate` for both,
+  from one config path, at the same point in the pipeline (PD's output is unchanged).
+- **PD verified end to end for the first time**: a real Exp1_PD arm trains (27,552,258 params,
+  upstream's classifier count), checkpoints, loads through the official wrapper and scores —
+  `0008.german`, provenance columns intact.
+- **`context_cap` is recorded even when it does not bind.** Writing it only on trimmed datasets
+  made an absent value ambiguous: "no cap set" and "cap set, table smaller" are different facts.
+- **Exp1 is now explicitly TWO PHASES, and the eval added yesterday was moved back out.**
+  Phase 1 (`pretrain_{lgd,pd}.slurm`) produces 75 checkpoints and nothing else. Phase 2
+  (`benchmark.slurm`, new) is a `0-75` array: tasks 0-74 score our 75 checkpoints, task 75
+  scores the reference column (released TabICLv2, CatBoost, logistic/linear). Same code, same
+  day, same context cap, same seeds, same splits for every model — which is the property
+  per-arm scoring cannot have.
+- **Phase 2 refuses to score an arm that never finished.** A SIGUSR1 checkpoint loads perfectly
+  and is not a result; `summary.json` is the authority, as in `sweep_status`.
+- **`crediticl` now refuses the RELEASED checkpoint.** `allow_auto_download=False` stopped the
+  wrapper *fetching* it, but nothing stopped `--checkpoint checkpoints/tabiclv2-reg.ckpt`
+  reporting the baseline's numbers in our own column. `crediticl_config` is written by
+  `src/train/checkpoint.py` and exists in no upstream artefact, so its absence is now a hard
+  error.
+- **MCE, F1, precision, recall, specificity, MCC and balanced accuracy added** — 42 PD metrics,
+  each also at the base-rate threshold, alongside the ranking metrics and `fit_seconds` /
+  `predict_seconds` that were already recorded. At a 5 % base rate the new numbers show why
+  both are needed: AUC 1.00 with F1 0.12 at the base-rate threshold and MCE 0.57 against
+  ECE 0.21.
+- **Phase 2 is SHARED by all three experiments** — `benchmark.slurm`, selected with
+  `EXP=1|2|3` and `TRACK=lgd|pd`. The reference column (released TabICLv2, **TabPFN-3**,
+  CatBoost, logistic/linear) is scored **once** into `reference_<track>` and reused: it does
+  not depend on our prior, and rescoring it per experiment would produce three slightly
+  different baselines to compare against. `FORCE_REFERENCE=1` overrides.
+- **TabPFN-3 added to the reference.** It is the "someone else's prior, properly trained"
+  yardstick; its prior is never touched by this project.
+- **`max_cat_size` in the CONTROL arm was 100; upstream's `graph_scm` uses 200.**
+  `_graph_scm.py` calls `sample_categorical_sizes(self.num_features, context,
+  max_cat_size=200)`. The claim lived in `base.py`'s docstring, the configs matched the claim,
+  and a test pinned it — so all three agreed on a wrong number. The control arm was narrower
+  than TabICLv2 and the credit arm's 500 was a smaller step than documented.
+- 816 tests pass.
+
+---
+
 ## 24-08-2026 — configs hold values, docs hold reasoning, and the sweep survives being killed
 
 - **The six configs are settings files again.** 130 of 252 lines in `Exp1_LGD.yaml` were

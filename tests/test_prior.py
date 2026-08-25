@@ -306,3 +306,114 @@ def test_pd_batches_keep_both_classes_in_context(pd_cfg):
         _, y, train_size = next(it)
         for row in y:
             assert len(row[:train_size].unique()) >= 1  # at minimum, not empty
+
+
+@pytest.mark.parametrize("track", ["LGD", "PD"])
+def test_informative_missingness_fires_on_both_tracks(track):
+    """`docs/PRIORS.md` lists missingness under "Both tracks". It ran on PD only.
+
+    `apply_informative_missingness` was called from inside `apply_pd_target`, reading
+    `credit.target.missingness`. `apply_lgd_target` is never handed X, so LGD could not have
+    applied it — and the LGD configs carried a `credit.missingness` block that nothing read:
+    four settings that looked active and were dead. Found on 25-08-2026, before the sweep.
+    """
+    from pathlib import Path
+
+    from src.prior.generator import TaskGenerator
+    from src.prior.rng import PriorRNG
+    from src.utils.config import expand_with_seeds, load
+
+    root = Path(__file__).resolve().parents[1]
+    arm = expand_with_seeds(load(root / "config" / f"Exp1_{track}.yaml"))[3]
+    prior = dict(arm["prior"])
+    prior["credit_fraction"] = 1.0
+    gen = TaskGenerator(prior, task=track.lower(), rng=PriorRNG(0))
+
+    assert gen.credit_missing_cfg, f"{track}: credit.missingness must be read"
+    for _ in range(3):
+        meta = gen._sample_candidate(shape=(512, 20)).meta
+        assert meta.get("missing_cols", 0) > 0, f"{track}: missingness never applied"
+        assert meta.get("missing_indicators", 0) > 0, f"{track}: no was-missing flags added"
+
+
+@pytest.mark.parametrize("track", ["LGD", "PD"])
+def test_missingness_has_one_home_in_the_configs(track):
+    """It sat under `credit.target` for PD and `credit` for LGD — the asymmetry IS the bug."""
+    from pathlib import Path
+
+    import yaml
+
+    root = Path(__file__).resolve().parents[1]
+    credit = yaml.safe_load(
+        (root / "config" / f"Exp1_{track}.yaml").read_text(encoding="utf-8")
+    )["prior"]["credit"]
+    assert credit.get("missingness"), f"{track}: expected credit.missingness"
+    assert "missingness" not in (credit.get("target") or {}), (
+        f"{track}: credit.target.missingness is the old home and is now read by nothing"
+    )
+
+
+def test_the_control_arm_runs_upstreams_own_class_not_a_transcription():
+    """"The same prior as TabICLv2" has to be a fact, not a claim about a transcription.
+
+    `src/prior/base.py` is transcribed from **NanoTabICL**, a reimplementation, and one
+    divergence had already been found by hand (`max_cat_size` 100 against upstream's 200).
+    The control arm now calls `tabicl.prior.GraphSCM` — upstream's class, upstream's `__call__`
+    — with no code of ours in the path.
+    """
+    from pathlib import Path
+
+    from src.prior import upstream
+    from src.prior.generator import TaskGenerator
+    from src.prior.rng import PriorRNG
+    from src.utils.config import expand_with_seeds, load
+
+    assert upstream.is_available(), upstream.availability()[1]
+    root = Path(__file__).resolve().parents[1]
+    prior = dict(expand_with_seeds(load(root / "config" / "Exp1_LGD.yaml"))[0]["prior"])
+    assert prior["credit_fraction"] == 0.0, "arm 0 is the control"
+    gen = TaskGenerator(prior, task="lgd", rng=PriorRNG(0))
+    assert gen.base_impl == "upstream"
+    assert gen._sample_candidate(shape=(256, 12)).meta["base_impl"] == "upstream.GraphSCM"
+
+
+@pytest.mark.parametrize("track", ["LGD", "PD"])
+def test_the_credit_arms_share_the_control_s_base_distribution(track):
+    """Switching only the control would have been WORSE than leaving both transcribed: the two
+    would then differ in the credit structure AND in the base implementation, and no
+    difference between them could be attributed to either."""
+    from pathlib import Path
+
+    from src.prior.generator import TaskGenerator
+    from src.prior.rng import PriorRNG
+    from src.utils.config import expand_with_seeds, load
+
+    root = Path(__file__).resolve().parents[1]
+    prior = dict(expand_with_seeds(load(root / "config" / f"Exp1_{track}.yaml"))[3]["prior"])
+    prior["credit_fraction"] = 1.0
+    gen = TaskGenerator(prior, task=track.lower(), rng=PriorRNG(0))
+    task = gen._sample_candidate(shape=(256, 12))
+    assert task.source == "credit"
+    assert task.meta["base_impl"] == "upstream.graph_lib"
+    # And both arms must come out the same width, or the padding itself leaks which prior a
+    # dataset came from.
+    control = dict(prior)
+    control["credit_fraction"] = 0.0
+    other = TaskGenerator(control, task=track.lower(), rng=PriorRNG(1))._sample_candidate(
+        shape=(256, 12)
+    )
+    assert task.X.shape[1] == other.X.shape[1] == prior["max_features"]
+
+
+def test_upstream_absence_is_a_loud_error_not_a_silent_fallback():
+    """The PyPI wheel and the v2.1.1 tag both omit `graph_lib`. If someone installs one of
+    them, the run must stop with the install command — not quietly train on a transcription
+    and report it as TabICLv2's prior."""
+    from src.prior import upstream
+
+    ok, why = upstream.availability()
+    if ok:
+        import pytest as _pytest
+
+        _pytest.skip("upstream is installed here; the error path is covered by the message")
+    assert "git+https://github.com/soda-inria/tabicl.git" in why

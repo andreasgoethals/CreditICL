@@ -231,10 +231,14 @@ def test_metadata_records_every_component():
         **BASE,
         "rules": {"n_rules": 2},
         "selection": {"selection_drop": 0.1},
-        "missingness": {"missing_col_fraction": 0.3},
     }
     _, _, meta = apply_pd_target(rng, features(), latent(), cfg, max_features=32)
+    # NOT `missing_cols`. Informative missingness moved OUT of `apply_pd_target` on
+    # 25-08-2026 and into `TaskGenerator._sample_candidate`, so that LGD gets it too —
+    # `apply_lgd_target` is never handed X and so could never have applied it. See
+    # `test_informative_missingness_fires_on_both_tracks` in test_prior.py.
     for key in ("target", "n_rules", "selection_drop", "signal_strength",
-                "target_base_rate", "realised_base_rate", "missing_cols"):
+                "target_base_rate", "realised_base_rate"):
         assert key in meta, f"missing {key}"
+    assert "missing_cols" not in meta, "missingness is the generator's job now, not the target's"
     assert meta["target"] == "pd"

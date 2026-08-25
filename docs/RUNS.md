@@ -172,6 +172,99 @@ The one thing to do differently.
 
 ## Runs
 
+## 24-08-2026 (evening) — **the resilience chain worked, and arm 0 of Exp1 is finished**
+
+**Jobs** 11524582 (killed at 20 min) -> 11524593 (resumed, completed) | `gpu_b200`, node
+`r11g17` | **arm** 0 of 75, LGD, `credit_fraction 0.0` — the control
+
+A deliberate kill test: one arm, `--time=00:20:00`, so `--signal=B:USR1@600` fires ten minutes
+in. **Every link fired, in order**, and the arm then finished on its own.
+
+    Dataloader workers: 23 (from SLURM_CPUS_PER_TASK=24)     <- allocation, not config
+    SIGUSR1 -> forwarding to trainer 165362                  <- the trap
+    SIGUSR1 received at step 446 - finishing this step       <- the handler
+    checkpoint saved at step 447
+    STOPPING EARLY on SIGUSR1 at step 447/12500
+    INCOMPLETE: stopped at step 447 by SIGUSR1. Exit 64      <- the exit code
+    Arm 0 incomplete - resubmitting to resume.
+    Submitted batch job 11524593
+    END status=INCOMPLETE-RESUBMITTED
+
+Job 11524593 picked up at step 447 and ran to **step 12,500 / 800,000 datasets** in 4.02 h.
+**Arm 0 of Exp1 LGD is done**, across two jobs, through a mid-run kill, with no human action.
+
+### Health of the run itself
+- **0.77-0.85 steps/s, mean 0.82** — against the benchmark's 0.791. The projection held.
+- **GPU utilisation 86-92 %, mean 88.75 %.** Peak memory 12.3 GB.
+- `phases` is `fwd_bwd=97.2%` once the workers warm up: compute-bound, not starved.
+- **Loss 0.343 -> 0.0587** over 12,500 steps, smooth, no spikes. Gradients live in all three
+  stacks at step 250 (`col=8.05e-03 icl=7.73e-04 row=1.58e-02`).
+- Prior composition exactly as configured: `sources={'base': 16, 'credit': 0}` at
+  `credit_fraction 0.0`; 23.8 % of candidates rejected as unpredictable.
+
+### Three defects it exposed
+1. **`PROJECTED OVERRUN` still told the reader to use `--resume auto`** — the flag that has
+   never existed and that killed eight jobs with argparse exit 2 on 14-08-2026. It had survived
+   ten days inside a WARNING string that fires every hundred steps. The advice was also simply
+   wrong now: the run resumes itself. Rewritten to say so.
+2. **The preflight smoke test writes its manifests into the REAL arm's results directory.** It
+   runs with a temp `out_dir`, but `manifest_dir` resolves to the shared
+   `$VSC_DATA/.../manifests/` on the cluster, under the real run name — a two-step toy run
+   filing telemetry under a 12,500-step arm. It never actually wrote a row (4 datasets never
+   reach `every_datasets`), but nothing stopped it. `Trainer` now takes `manifest_dir` and the
+   smoke test pins its own.
+3. **The job banner printed the wrong walltime.** `SBATCH_TIMELIMIT` is not set inside a job,
+   so it fell back to the `#SBATCH` default and said `12:00:00` while the real limit was
+   20 minutes — the one number a reader checks the ETA against. Now computed from
+   `SLURM_JOB_END_TIME - SLURM_JOB_START_TIME`.
+
+### One thing to fix before the sweep, outside the code
+The MACHINE block reports `commit 1797f48  *** UNCOMMITTED CHANGES ***`. The cluster is running
+working-tree edits on top of a commit from days ago, so **this arm is not reproducible from
+any commit**. Fine for a kill test; not acceptable for 75 arms whose numbers go in a paper.
+
+---
+
+## 25-08-2026 — A100 vs B200: the A100 is 29 % cheaper per arm
+
+**Job** 61776784, wICE `gpu_a100`, A100-SXM4-80GB, node `k28g32`, 18 cores.
+
+| | B200 (11523286) | A100 (61776784) | ratio |
+|---|---|---|---|
+| matmul bf16 | 1,363 | 258 TFLOP/s | 5.28x |
+| one micro-pass, fwd+bwd | 128.75 | 258.92 ms | 2.01x |
+| AMP micro-pass | 62.19 | 132.37 ms | 2.13x |
+| prior, one worker | 11.41 | 4.02 datasets/s | 2.84x |
+| **end to end** | **0.791** | **0.409 steps/s** | **1.93x** |
+| peak GPU memory | 13.08 | 11.72 GB | |
+| % of its own ceiling | 80 % | **89 %** | |
+| **hours per arm** | **4.39** | **8.49** | **1.93x** |
+
+**The A100 is 1.93x slower and 2.72x cheaper per hour, so it is 29 % cheaper per arm.**
+
+| | credits/arm | 75 arms | wall-clock at %8 |
+|---|---|---|---|
+| B200 | 134,443 | **10.08 M** | 1.8 days |
+| A100 | 95,510 | **7.16 M** | 3.5 days |
+
+Note the raw-FLOP ratio is 5.28x but the end-to-end ratio is only 1.93x — this workload is
+latency-bound, not throughput-bound, exactly as the idle memory suggested. Peak FLOPs do not
+predict it.
+
+The A100's **prior generator is 2.84x slower per worker** (Icelake vs AMD Turin). With 17
+workers it still supplies 1.44 steps/s against the 0.46 needed — 3.1x headroom, so the smaller
+core count is not a problem.
+
+**cuDNN works on both cards** at [4, 1024, 50], and flash is fastest on both. The exclusion
+stands on the "buys nothing" reason.
+
+### Recommendation
+Split the sweep across both clusters: they have separate queues, so 40 arms on `gpu_b200` and
+35 on `gpu_a100` finishes in **~1.8 days for 8.7 M credits**, and leaves neither cluster
+monopolised. `sweep_status` reconciles the two halves afterwards.
+
+---
+
 ## 24-08-2026 — benchmark, third attempt — **one arm is 4.4 hours, not 20**
 
 **Submitted** 24-08-2026 11:54 | **job** 11523286 | **cluster** mindwell `gpu_b200`, node

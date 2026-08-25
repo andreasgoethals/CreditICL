@@ -50,7 +50,7 @@ prior:
     subgroup_size: 2 # datasets sharing exact values within a group
 
   base: # the UNMODIFIED TabICL prior — changing this changes the control arm
-    max_cat_size: 100 # largest number of categories per column
+    max_cat_size: 200 # upstream graph_scm: sample_categorical_sizes(max_cat_size=200)
     category_frequency: balanced # how category counts are distributed
 
   credit: # OUR credit-targeted path

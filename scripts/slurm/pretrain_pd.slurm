@@ -75,7 +75,11 @@ echo "Array job/task : ${SLURM_ARRAY_JOB_ID}/${SLURM_ARRAY_TASK_ID}"
 echo "Cluster        : ${SLURM_CLUSTER_NAME:-?}  partition=${SLURM_JOB_PARTITION:-?}"
 echo "Node           : ${SLURMD_NODENAME:-?}"
 echo "Cores / mem    : ${SLURM_CPUS_PER_TASK:-?} / ${SLURM_MEM_PER_NODE:-?} MiB"
-echo "Walltime       : ${SBATCH_TIMELIMIT:-12:00:00}   requeue=yes  signal=USR1@600"
+# FROM SLURM, not from the #SBATCH default. `SBATCH_TIMELIMIT` is not set inside a job,
+# so the banner printed "12:00:00" while the actual limit was the 20 minutes passed on
+# the command line — the one number a reader checks against the ETA.
+LIMIT_S=$(( ${SLURM_JOB_END_TIME:-0} - ${SLURM_JOB_START_TIME:-0} ))
+echo "Walltime       : $(printf '%02d:%02d:%02d' $((LIMIT_S/3600)) $((LIMIT_S%3600/60)) $((LIMIT_S%60)))   requeue=yes  signal=USR1@600"
 echo "Restart count  : ${SLURM_RESTART_COUNT:-0}   <- >0 means this arm was requeued"
 echo "Date           : $(date)"
 echo "Log            : ${LOG}"
@@ -128,6 +132,19 @@ if [[ "$RC" -eq 64 ]]; then
     exit 64
 fi
 [[ "$RC" -eq 0 ]] || exit "$RC"
+
+
+# NO EVALUATION HERE. Phase 1 produces checkpoints; phase 2 scores them, and it is a
+# SEPARATE array so that all 75 arms and the reference column (released TabICLv2,
+# CatBoost, logistic/linear) are benchmarked by the same code, on the same day, with the
+# same context cap, seeds and splits. Every comparison this project got wrong, it got
+# wrong by scoring the two sides through different paths.
+#
+#     python -m src.utils.sweep_status --config config/Exp1_<TRACK>.yaml   # 75 done?
+#     sbatch --clusters=mindwell --export=ALL,TRACK=<track> \
+#            scripts/slurm/benchmark.slurm
+
+
 
 mkdir -p "${CREDITICL_OUTPUT_ROOT}/.sentinels"
 touch "${CREDITICL_OUTPUT_ROOT}/.sentinels/pretrain_ok_pd_${SLURM_ARRAY_TASK_ID}"

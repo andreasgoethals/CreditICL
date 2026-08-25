@@ -207,6 +207,22 @@ class CreditICLBaseline(TabICLBaseline):
         self.checkpoint = Path(checkpoint)
         if not self.checkpoint.is_file():
             raise FileNotFoundError(f"no checkpoint at {self.checkpoint}")
+        # IS THIS ACTUALLY OURS? `allow_auto_download=False` stops the wrapper fetching the
+        # released model when the file is unreadable, but nothing stopped someone pointing
+        # `--checkpoint` at `checkpoints/tabiclv2-reg.ckpt` — the DOWNLOAD — and having its
+        # numbers reported in the `crediticl` column. That is the one failure this file exists
+        # to prevent, and it would look completely normal in the results.
+        #
+        # `crediticl_config` is written by `src/train/checkpoint.py` and appears in no upstream
+        # artefact, so its presence is the signature of a checkpoint we trained.
+        meta = checkpoint_metadata(self.checkpoint)
+        if not meta.get("ours"):
+            raise ValueError(
+                f"{self.checkpoint} has no `crediticl_config` block, so it was NOT produced by "
+                f"this project — it is almost certainly the released TabICLv2 download. "
+                f"Scoring it as `crediticl` would report the baseline's numbers under our own "
+                f"name. Use `--models tabiclv2` for the released weights."
+            )
 
     def _wrapper_kwargs(self) -> dict[str, Any]:
         """Point upstream's wrapper at OUR weights instead of the released ones.
@@ -244,8 +260,12 @@ def checkpoint_metadata(path: str | Path) -> dict[str, Any]:
     diagnostic and pure waste when all that is wanted is a run name for a results row.
     """
     payload = torch.load(Path(path), map_location="cpu", weights_only=False)
+    # `crediticl_config` is OURS; `config` alone is upstream's TabICL kwargs and is present in
+    # the released download too, so it cannot tell the two apart.
+    ours = "crediticl_config" in payload
     cfg = payload.get("crediticl_config") or payload.get("config") or {}
     return {
+        "ours": ours,
         "step": payload.get("curr_step", payload.get("step")),
         "task": cfg.get("task"),
         "run_name": cfg.get("_run_name"),

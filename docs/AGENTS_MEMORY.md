@@ -33,6 +33,8 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 25-08-2026 | 61776784 — GPU benchmark, wICE `gpu_a100` | **A100 is 1.93x slower, 2.72x cheaper/hour -> 29 % cheaper per arm** | 8.49 h/arm, 89 % of its own ceiling. Raw FLOPs say 5.28x; this workload is latency-bound |
+| 24-08-2026 | 11524582 -> 11524593 — Exp1 LGD arm 0, deliberate kill test | **Whole resilience chain fired; arm 0 COMPLETED across two jobs** | signal -> checkpoint -> exit 64 -> resubmit -> resume. 0.82 steps/s, 88.75 % GPU, loss 0.343 -> 0.059 |
 | 24-08-2026 | 11523286 — GPU benchmark, clean | **One arm is 4.4 h, so Exp1 is ~10 M credits and 1.8 days** | AMP is 2.07x. All 4 attention kernels work at the real shape — the 20-08 cuDNN crash was the benchmark's own oversized pass |
 | 20-08-2026 | 11521108 — GPU benchmark at batch 64, `gpu_b200` | **Found a cuDNN AMP crash that would have hit all 75 Exp1 arms** | Also: benchmark OOM (its own bug, no micro-batching), and Muon is 1.01x at batch 64 not 1.40x |
 | 20-08-2026 | 11520989 — GPU benchmark, `gpu_b200` | **Wasted: 4 of 6 rungs ignored the config it was sent to measure** | Only prior + end-to-end read it. 8.26 -> 4.589 steps/s at batch 4 = 1.80x, but batch 4 is not what we train at |
@@ -56,6 +58,90 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
+
+### 26-08-2026 - RESOLVED: the released `tabicl` does not contain the prior TabICLv2 was trained on
+- **Tried:** importing upstream's `graph_scm` so the control arm stops being a transcription of
+  NanoTabICL's transcription. Reported the day before as "not importable, would need a package
+  upgrade".
+- **Result:** it is importable, but from **none of the obvious places**. `pip install
+  tabicl==2.1.1` and `pip install git+...@v2.1.1` both give a package with no `_graph_scm.py`
+  and no `graph_lib/` - 29 files missing - while reporting version `2.1.1`. The **default
+  branch** has them, at the same version string. Installing all three and listing the trees is
+  what settled it.
+- **Why it looked impossible:** the version number matched the pinned dump, so the natural
+  conclusion was that the dump included files the package legitimately excluded. It does not:
+  the release simply predates them.
+- **Also required:** `xgboost`. `tabicl.prior._tree_scm` imports it at module scope, so
+  `import tabicl.prior` fails without it even though nothing we use touches the tree prior.
+  It is in upstream's `[pretrain]` extra.
+- **And a second trap once it worked:** `graph_lib` draws from **numpy's** global RNG as well as
+  torch's, so seeding `torch.manual_seed` alone left the prior non-reproducible under our own
+  seed. Both are now snapshotted, seeded and restored together.
+- **Instead:** `pip install "tabicl[pretrain] @ git+https://github.com/soda-inria/tabicl.git"`.
+  **A version number is not a content guarantee - install it and list the tree.**
+
+### 26-08-2026 - The control arm's base prior WAS transcribed from NanoTabICL (fixed same day)
+- **Asked:** is the `credit_fraction: 0.0` arm running EXACTLY TabICLv2's prior?
+- **Found:** `src/prior/base.py` opens with *"Transcribed from **NanoTabICL's** `prior.py`"* -
+  a reimplementation, not upstream's `graph_scm`. And the installed `tabicl` package ships
+  `_mlp_scm.py` and `_tree_scm.py` but **no `_graph_scm.py` and no `graph_lib/`**, both of
+  which exist in the pinned 2.1.1 dump. So upstream's actual stage-1 prior is not importable
+  in this environment; it would need a package upgrade plus `xgboost`.
+- **One concrete divergence already found:** `max_cat_size` 100 in our control against
+  `sample_categorical_sizes(..., max_cat_size=200)` in `_graph_scm.py`. Fixed. Others are
+  unaudited.
+- **What it does and does not invalidate.** Exp1 compares credit arms against a control that
+  uses the SAME base implementation, so the RANKING is internally valid and the sweep is worth
+  running. What it weakens is the separate claim that our control reproduces TabICLv2 - and
+  therefore any absolute comparison against the released checkpoint, which is already framed
+  as "2.5 % of their budget".
+- **Instead:** run Exp1 on the ranking question, and before Exp2 - where the absolute number is
+  the headline - install the pinned `tabicl` 2.1.1 with `xgboost` and drive
+  `tabicl.prior.graph_scm` directly, exactly as the model class and the inference wrapper were
+  switched from reimplementations to upstream. **"Transcribed from" is not "is".**
+
+### 25-08-2026 - THE SWEEP WOULD HAVE PRODUCED 75 CHECKPOINTS AND ZERO NUMBERS
+- **Tried:** a last read-through of `pretrain_lgd.slurm` before submitting 75 arms.
+- **Result:** it trains and stops. **No evaluation anywhere in it.** Every result this project
+  has ever produced came from `debug_exp1.slurm`, which trains AND scores; the production
+  launcher never did. Submitting would have spent ~10 M credits and left 75 checkpoints with
+  nothing to compare and no way to rank a single prior.
+- **Why:** the two scripts were written weeks apart for different purposes, and every run since
+  has gone through the debug path - so the gap was never exercised. The launcher's own tests
+  checked its `#SBATCH` directives and its flags against argparse, never *what it does*.
+- **Instead:** the eval block moved into both launchers, on the exit-0 path only (an arm stopped
+  by SIGUSR1 has a checkpoint but is not finished, and scoring it would file a row that looks
+  like a result). `--models crediticl` only, since `tabiclv2` does not vary by arm.
+  **A test that a script is well-formed is not a test that it does the job.**
+
+### 25-08-2026 - LGD's informative missingness was configured, documented, and never applied
+- **Tried:** diffing the LGD and PD configs key by key, looking for asymmetries.
+- **Result:** `missingness` sat under `credit.target` for PD and under `credit` for LGD. Only
+  the PD path read it: `apply_informative_missingness` was called from inside
+  `apply_pd_target`. **`apply_lgd_target` is never handed X**, so LGD could not have applied it
+  under any config - and the four settings in the LGD files were read by nothing at all.
+  `docs/PRIORS.md` lists missingness under **"Both tracks"**.
+- **Why:** the mechanism was implemented for PD first and the function lives in `targets/pd.py`,
+  so it was natural to call it there. Nothing connected "this is a both-tracks mechanism" to
+  "it is invoked from a PD-only function". A config block that is never read raises no error.
+- **Instead:** applied in `TaskGenerator._sample_candidate` for both tracks, from a single
+  `credit.missingness`, at the same point in the pipeline (after the target, before the noise
+  columns) so PD's distribution is unchanged. Two tests: one that it fires on both tracks, one
+  that the config has one home. **When two tracks configure the same mechanism at different
+  paths, one of them is dead.**
+
+### 24-08-2026 - `--resume auto` was still in a warning string ten days after it killed eight jobs
+- **Tried:** reading the first real arm's log, which prints `PROJECTED OVERRUN` every hundred
+  steps while the ETA exceeds the walltime.
+- **Result:** the warning said "must be resumed (--resume auto)". That flag has never existed;
+  on 14-08-2026 it made argparse exit 2 and eight jobs did nothing at all. It was removed from
+  the job scripts that day - and left in the WARNING TEXT, where it fired 4 times in 10 minutes.
+- **Why:** the fix was applied where the bug bit, not everywhere the string appeared. A grep
+  for `--resume auto` at the time would have found it; the test added that day only checked
+  the SLURM scripts' flags against `pretrain.py`'s argparse.
+- **Instead:** the message now describes what actually happens (checkpoint, exit 64, resubmit,
+  resume) and a test asserts the dead flag is absent. **When you delete a flag, grep the whole
+  tree for its NAME, not just the place it broke.**
 
 ### 24-08-2026 - "We only use 7 % of the GPU" is a memory reading, not a utilisation one
 - **Question:** peak GPU memory on a B200 is 13.08 GB of 178. Can we raise the micro-batch,

@@ -1,72 +1,221 @@
 #!/bin/bash -l
 # =============================================================================
-#  Run scripts/benchmark_gpu.py on whichever card SLURM gives us.
+#  CreditICL — PHASE 2: benchmark every trained checkpoint. SHARED BY ALL THREE EXPERIMENTS.
 #
-#  Submit it TWICE — the whole point is the comparison:
-#      bash scripts/slurm/submit.sh free pd scripts/slurm/benchmark.slurm
-#      bash scripts/slurm/submit.sh b200 pd scripts/slurm/benchmark.slurm
+#  PHASE 1 (pretrain_{lgd,pd}.slurm) produces 75 checkpoints and NOTHING ELSE.
+#  PHASE 2 is this script. It cannot start until phase 1 has finished, because it scores the
+#  checkpoints phase 1 wrote — that ordering is a fact about the data, not a convention.
 #
-#  Then diff the two logs row by row. The reading is printed at the bottom of
-#  each: raw matmul differing means the card or the wheel; only the end-to-end
-#  step differing means the prior generator, and no GPU will fix it.
+#      python -m src.utils.sweep_status --config config/Exp1_LGD.yaml   # must say 75 done
+#      sbatch --clusters=mindwell --export=ALL,EXP=1,TRACK=lgd scripts/slurm/benchmark.slurm
+#      sbatch --clusters=mindwell --export=ALL,EXP=2,TRACK=lgd scripts/slurm/benchmark.slurm
+#      sbatch --clusters=mindwell --export=ALL,EXP=3,TRACK=lgd scripts/slurm/benchmark.slurm
 #
-#  Fifteen minutes and one array task, so it is cheap even on a paid partition.
+#  THE REFERENCE COLUMN IS SCORED ONCE, EVER. CatBoost, TabPFN-3, the released TabICLv2 and
+#  logistic/linear regression do not depend on our prior, so their numbers are identical in
+#  Exp1, Exp2 and Exp3 — and re-running them per experiment would not only waste GPU time, it
+#  would introduce three slightly different reference columns to compare against. The last
+#  array index writes `reference_<track>` and SKIPS if that already exists; pass
+#  `FORCE_REFERENCE=1` to rescore it deliberately.
+#
+#  ONE ARRAY TASK = ONE MODEL, scored on every real credit dataset and every out-of-domain
+#  suite, at every seed:
+#
+#      tasks 0-74   our 75 checkpoints, one per Exp1 arm
+#      task  75     THE REFERENCE COLUMN: released TabICLv2, CatBoost, logistic/linear
+#
+#  Keeping the reference inside the same array is deliberate. It is scored by the same code,
+#  on the same day, with the same `--max-context-rows`, the same seeds and the same splits as
+#  the 75. Every previous comparison this project got wrong got it wrong by scoring the two
+#  sides through different paths.
+#
+#  Set TRACK=lgd or TRACK=pd. Logs and results are small and go to $VSC_DATA; the checkpoints
+#  they read are large and live on project storage. See docs/VSC.md.
 # =============================================================================
-
-#SBATCH --job-name=crediticl-gpubench
+#SBATCH --job-name=crediticl-bench
 #SBATCH --clusters=mindwell
 #SBATCH --account=lp_verbekelab
-#SBATCH --partition=interactive
+#SBATCH --partition=gpu_b200
 #SBATCH --gpus-per-node=1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=30G
-#SBATCH --time=00:15:00
+#SBATCH --cpus-per-task=24
+#SBATCH --mem=180G
+# Scoring is minutes per model, not hours — but `0014.algorithmwatch` is 158,700 x 2,986 and
+# the 8-member ensemble runs once per dataset per seed. 4 h is generous and schedules well.
+#SBATCH --time=04:00:00
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
 #SBATCH --export=ALL
-# ONE task. This is a measurement, not a sweep.
-#SBATCH --array=0
+#SBATCH --requeue
+# 0-75 fits Exp1 (75 arms + 1 reference). OVERRIDE IT for the others:
+#     Exp2: --array=0-10%8      Exp3: --array=0-60%8
+# Indices past the reference slot exit in seconds, so an oversized range is safe.
+#SBATCH --array=0-75%8
+
+sleep $((RANDOM % 30 + 1))
 
 set -euo pipefail
+export PYTHONUNBUFFERED=1
+export PYTHONIOENCODING=utf-8
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
-REPO="${VSC_DATA}/CreditICL"
-cd "$REPO"
+TRACK="${TRACK:-lgd}"
+EXP="${EXP:-1}"
+CONFIG="config/Exp${EXP}_$(echo "$TRACK" | tr '[:lower:]' '[:upper:]').yaml"
+IDX="${SLURM_ARRAY_TASK_ID}"
+
+export CREDITICL_OUTPUT_ROOT="${CREDITICL_OUTPUT_ROOT:-${VSC_DATA}/CreditICL}"
+mkdir -p "${CREDITICL_OUTPUT_ROOT}/output/logs"
+
+TS=$(date +%Y%m%d_%H%M%S)
+LOG="${CREDITICL_OUTPUT_ROOT}/output/logs/bench_exp${EXP}_${TRACK}_${TS}_j${SLURM_ARRAY_JOB_ID}_a${IDX}.log"
+exec > "$LOG" 2>&1
+
+_log_exit() {
+    rc=$?
+    echo "=========================================="
+    if [[ "$rc" -eq 0 ]]; then echo "END status=OK - $(date)"
+    else echo "END status=FAILED exit_code=${rc} - $(date)"; fi
+    echo "=========================================="
+}
+trap _log_exit EXIT
+
+cd "${VSC_DATA}/CreditICL"
 source scripts/slurm/_activate_env.sh
 
-# Argument 1 is the config, for symmetry with debug_exp1.slurm — only its task is used.
-CONFIG="${1:-config/Exp1_PD.yaml}"
-case "$CONFIG" in
-    *_PD.yaml) TASK=pd ;;
-    *)         TASK=lgd ;;
-esac
+echo "=========================================="
+echo "CreditICL — PHASE 2 BENCHMARK — experiment ${EXP}, track ${TRACK}"
+echo "=========================================="
+echo "Array job/task : ${SLURM_ARRAY_JOB_ID}/${IDX}"
+echo "Cluster / part : ${SLURM_CLUSTER_NAME:-?} / ${SLURM_JOB_PARTITION:-?}   node ${SLURMD_NODENAME:-?}"
+echo "Cores / mem    : ${SLURM_CPUS_PER_TASK:-?} / ${SLURM_MEM_PER_NODE:-?} MiB"
+echo "Restart count  : ${SLURM_RESTART_COUNT:-0}"
+echo "Config         : ${CONFIG}"
+echo "Date           : $(date)"
+echo "Log            : ${LOG}"
+echo "Commit         : $(git rev-parse --short HEAD 2>/dev/null || echo '?')  dirty=$(test -n "$(git status --porcelain 2>/dev/null)" && echo YES || echo no)"
+nvidia-smi || true
+echo "=========================================="
 
-LOGDIR="${VSC_DATA}/CreditICL/output/logs"
-mkdir -p "$LOGDIR"
-# The PARTITION is in the filename: the two runs differ only by hardware, so a name that
-# does not say which card it was is useless the moment the second one lands.
-STDOUT="${LOGDIR}/gpubench_${SLURM_JOB_PARTITION:-unknown}_${SLURM_JOB_ID}.out"
-exec > >(tee -a "$STDOUT") 2>&1
+# CONTEXT CAP, matched to what every model here was trained on (upstream stage 1 is 1,024 rows
+# exactly, and so are we). Applied from ONE variable to OUR checkpoints and to the reference
+# alike, so it is part of the measurement rather than a handicap on one side, and recorded in
+# every row — including on the datasets where it does not bind.
+CONTEXT_CAP="${CONTEXT_CAP:-1024}"
+SEEDS="${SEEDS:-0,1,2}"
+echo "context cap ${CONTEXT_CAP} rows | seeds ${SEEDS} | applies to EVERY model in this array"
 
-echo "=============================================================="
-echo " CreditICL GPU BENCHMARK"
-echo " job          : ${SLURM_JOB_ID}"
-echo " cluster/part : ${SLURM_CLUSTER_NAME:-?} / ${SLURM_JOB_PARTITION:-?}"
-echo " node         : $(hostname)"
-echo " cores        : ${SLURM_CPUS_PER_TASK:-?}"
-echo " task         : ${TASK}"
-echo " started      : $(date -Is)"
-echo "=============================================================="
-nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv || true
-echo
+N_ARMS=$(python -c "
+from src.utils.config import expand_with_seeds, load
+print(len(expand_with_seeds(load('${CONFIG}'))))
+")
+echo "grid has ${N_ARMS} arms; this task is index ${IDX}"
 
-python scripts/benchmark_gpu.py \
-    --task "$TASK" \
-    --json "${LOGDIR}/gpubench_${SLURM_JOB_PARTITION:-unknown}_${SLURM_JOB_ID}.json"
+# EXACTLY ONE index is the reference: the first past the grid. Anything beyond it exists only
+# because `--array` is a fixed range and the three experiments have different arm counts
+# (Exp1 75, Exp2 10, Exp3 60). Those tasks exit immediately rather than all racing to write the
+# same reference file.
+if [ "${IDX}" -gt "${N_ARMS}" ]; then
+    echo "index ${IDX} is past the grid (${N_ARMS} arms) and past the reference slot. Nothing to do."
+    exit 0
+fi
 
-echo
-echo "compare the two cards with:"
-echo "  ls ${LOGDIR}/gpubench_*.json"
-echo "  python -m src.utils.compare_gpubench ${LOGDIR}/gpubench_*.json"
-echo "finished: $(date -Is)"
+if [ "${IDX}" -eq "${N_ARMS}" ]; then
+    # ------------------------------------------------------------------ the reference column
+    echo "=== REFERENCE MODELS (no checkpoint of ours involved) ==="
+    # `linear` is Ridge for LGD and logistic regression for PD — the floor to beat.
+    # `tabpfn3` is TabPFN-3 via `model_path="v3"`, a tabular foundation model whose prior we
+    # never touch, so it is the "someone else's prior, properly trained" yardstick.
+    MODELS="${REFERENCE_MODELS:-tabiclv2,tabpfn3,catboost,linear}"
+    REF_TAG="reference_${TRACK}"
+    REF_FILE="$(python -c "
+from src.utils import paths
+print(paths.results_dir() / '${TRACK}' / 'eval' / 'results_${REF_TAG}.csv')
+")"
+    if [ -f "$REF_FILE" ] && [ "${FORCE_REFERENCE:-0}" != "1" ]; then
+        echo "reference already scored: ${REF_FILE}"
+        echo "It does not depend on our prior, so Exp1/2/3 all compare against THIS file."
+        echo "Pass FORCE_REFERENCE=1 to rescore."
+        exit 0
+    fi
+    echo "models: ${MODELS}   ->  ${REF_TAG}"
+    python scripts/evaluate.py \
+        --task "${TRACK}" \
+        --models "${MODELS}" \
+        --max-context-rows "${CONTEXT_CAP}" \
+        --seeds "${SEEDS}" \
+        --tag "${REF_TAG}"
+    python scripts/evaluate_ood.py \
+        --models "${MODELS}" \
+        --seeds "${SEEDS}" \
+        --tag "${REF_TAG}"
+    exit 0
+fi
+
+# ---------------------------------------------------------------------- one of our 75 arms --
+read -r RUN_NAME CKPT_DIR <<< "$(python -c "
+import sys
+from src.utils import paths
+from src.utils.config import expand_with_seeds, load, run_name
+runs = expand_with_seeds(load('${CONFIG}'))
+name = run_name(runs[${IDX}])
+print(name, paths.checkpoints_dir() / name)
+")"
+echo "arm ${IDX}: ${RUN_NAME}"
+echo "checkpoint dir: ${CKPT_DIR}"
+
+# The LAST permanent checkpoint, which for a completed arm is step-12500. Sorting numerically
+# on the step matters: a lexical sort puts step-9500 after step-12500.
+CKPT="$(ls -1 "${CKPT_DIR}"/step-*.ckpt 2>/dev/null | sort -t- -k2 -n | tail -1)"
+if [ -z "$CKPT" ]; then
+    echo "FATAL: no checkpoint under ${CKPT_DIR}." >&2
+    echo "Phase 1 has not finished this arm. Run:" >&2
+    echo "  python -m src.utils.sweep_status --config ${CONFIG}" >&2
+    exit 1
+fi
+echo "scoring: ${CKPT}"
+
+# REFUSE A HALF-TRAINED ARM. An arm stopped by SIGUSR1 leaves a checkpoint that loads perfectly
+# and is not a result. `summary.json` is the authority, exactly as `sweep_status` uses it.
+python - "$CKPT" "${RUN_NAME}" "${CONFIG}" <<'PYCHECK'
+import json
+import sys
+from pathlib import Path
+
+from src.utils import paths
+from src.utils.config import load
+
+ckpt, run_name, config = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+summary = paths.outputs_dir() / run_name / "summary.json"
+if not summary.is_file():
+    raise SystemExit(f"FATAL: {summary} is missing — phase 1 never finished this arm.")
+data = json.loads(summary.read_text(encoding="utf-8"))
+want = (load(Path(config)).get("train") or {}).get("max_steps")
+if not data.get("completed"):
+    raise SystemExit(
+        f"FATAL: arm stopped at step {data.get('steps')} by {data.get('stopped_by_signal')} "
+        f"and is NOT complete. Resubmit phase 1 for this index before benchmarking it."
+    )
+print(f"phase 1 OK: {data.get('steps')}/{want} steps, completed={data.get('completed')}")
+PYCHECK
+
+echo "=== real credit datasets ==="
+python scripts/evaluate.py \
+    --task "${TRACK}" \
+    --models crediticl \
+    --checkpoint "$CKPT" \
+    --max-context-rows "${CONTEXT_CAP}" \
+    --seeds "${SEEDS}" \
+    --tag "exp${EXP}bench_${TRACK}_a${IDX}"
+
+echo "=== out of domain ==="
+# A prior that helps credit by destroying generality has to be visible, not inferred.
+python scripts/evaluate_ood.py \
+    --models crediticl \
+    --task "${TRACK}" \
+    --checkpoint "$CKPT" \
+    --seeds "${SEEDS}" \
+    --tag "exp${EXP}bench_${TRACK}_a${IDX}"
+
+echo "arm ${IDX} benchmarked."

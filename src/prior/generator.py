@@ -30,6 +30,7 @@ from typing import Any
 
 import torch
 
+from . import upstream
 from .base import SyntheticTask, assemble_xy, rand_cat_sizes, rand_dataset_plain
 from .filters import PredictabilityFilter
 from .grouping import GroupedSampler
@@ -38,7 +39,7 @@ from .preprocess import process_features, standard_scaling
 from .rng import PriorRNG
 from .shift import apply_shift
 from .targets.lgd import apply_lgd_target
-from .targets.pd import apply_pd_target
+from .targets.pd import apply_informative_missingness, apply_pd_target
 
 
 class TaskGenerator:
@@ -72,7 +73,19 @@ class TaskGenerator:
         self.n_classes = int(cfg.get("n_classes", 2))
 
         base = cfg.get("base", {})
-        self.base_max_cat_size = int(base.get("max_cat_size", 100))
+        # `upstream` = `tabicl.prior.GraphSCM`, the real thing. `transcribed` = the
+        # NanoTabICL transcription in `base.py`, kept only so a machine without the default
+        # branch of `tabicl` installed can still run the tests. Nothing chooses it silently:
+        # `upstream` raises with the install command if the package is short.
+        self.base_impl = str(base.get("implementation", "upstream")).lower()
+        if self.base_impl not in {"upstream", "transcribed"}:
+            raise ValueError(
+                f"prior.base.implementation must be 'upstream' or 'transcribed', "
+                f"got {self.base_impl!r}"
+            )
+        if self.base_impl == "upstream":
+            upstream.require()
+        self.base_max_cat_size = int(base.get("max_cat_size", upstream.UPSTREAM_MAX_CAT_SIZE))
         self.base_category_frequency = base.get("category_frequency", "balanced")
 
         credit = cfg.get("credit", {})
@@ -80,6 +93,7 @@ class TaskGenerator:
         self.credit_category_frequency = credit.get("category_frequency", self.base_category_frequency)
         self.credit_target_cfg = credit.get("target", {})
         self.credit_noise_cfg = credit.get("noise_features", {})
+        self.credit_missing_cfg = credit.get("missingness", {})
 
         # TabICL's correlated hyperparameter sampling: datasets inside a group
         # share a shape and a difficulty, so a batch contains relatives rather
@@ -132,19 +146,51 @@ class TaskGenerator:
             if drop > 0:
                 n_gen = int(round(n_rows / max(1.0 - min(drop, 0.5), 0.5))) + 8
 
-        x_cat_sizes = rand_cat_sizes(self.rng, n_features, max_cat_size=max_cat)
-        y_cat_sizes = [0 if self.regression else self.n_classes]
-
-        columns = rand_dataset_plain(
-            self.rng,
-            x_cat_sizes,
-            y_cat_sizes,
-            n_gen,
-            n_nodes_range=self.n_nodes_range,
-            category_frequency=cat_freq,
-        )
-        X, y_latent = assemble_xy(columns, n_features)
         meta: dict[str, Any] = {"source": source, "n_rows_requested": n_rows}
+
+        if self.base_impl == "upstream":
+            # THE CONTROL ARM IS UPSTREAM'S CLASS, CALLED. No code of ours sits between the
+            # config and the data, which is the only way "the same prior as TabICLv2" can be
+            # a fact rather than a claim about a transcription.
+            if not use_credit:
+                X, y = upstream.sample_control(
+                    regression=self.regression,
+                    seq_len=n_gen,
+                    num_features=n_features,
+                    max_features=self.max_features,
+                    num_classes=self.n_classes,
+                    # SEEDED FROM OUR STREAM. Upstream draws from torch's GLOBAL generator, so
+                    # without this the same `PriorRNG` seed stops reproducing the same dataset
+                    # and the base path stops being isolated from anything else in the process.
+                    seed=self.rng.randint(0, 2**31 - 1),
+                )
+                meta["base_impl"] = "upstream.GraphSCM"
+                meta["target"] = "base_regression" if self.regression else "base_classification"
+                if X.shape[0] > n_rows:
+                    X, y = X[:n_rows], y[:n_rows]
+                return self._finish(X, y, meta)
+
+            # The credit arms start from the SAME upstream sample, unpadded so the credit
+            # columns have somewhere to go. Switching only the control would have made the two
+            # differ in two ways at once — the credit structure AND the base implementation.
+            X, y_latent = upstream.sample_base_latent(
+                seq_len=n_gen, num_features=n_features,
+                seed=self.rng.randint(0, 2**31 - 1),
+            )
+            meta["base_impl"] = "upstream.graph_lib"
+        else:
+            x_cat_sizes = rand_cat_sizes(self.rng, n_features, max_cat_size=max_cat)
+            y_cat_sizes = [0 if self.regression else self.n_classes]
+            columns = rand_dataset_plain(
+                self.rng,
+                x_cat_sizes,
+                y_cat_sizes,
+                n_gen,
+                n_nodes_range=self.n_nodes_range,
+                category_frequency=cat_freq,
+            )
+            X, y_latent = assemble_xy(columns, n_features)
+            meta["base_impl"] = "transcribed"
 
         if self.regression:
             if use_credit:
@@ -171,6 +217,20 @@ class TaskGenerator:
 
         meta.update(tmeta)
 
+        # INFORMATIVE MISSINGNESS, both tracks, credit path only. After the target so the
+        # missingness can depend on it — a thin credit file is itself a risk signal, which is
+        # what `missing_target_coupling` encodes — and before the noise columns so junk
+        # columns are not themselves punched full of holes.
+        #
+        # It lived inside `apply_pd_target` until 25-08-2026, which meant LGD never got it:
+        # `apply_lgd_target` receives only the latent, not X. The LGD configs carried a
+        # `credit.missingness` block that nothing read.
+        if use_credit and self.credit_missing_cfg:
+            X, mmeta = apply_informative_missingness(
+                self.rng, X, y, self.credit_missing_cfg, self.max_features
+            )
+            meta.update(mmeta)
+
         # Irrelevant columns, on the credit path only. Real credit files carry
         # plenty of columns that turn out to be useless, and the base prior only
         # produces them as a side effect of random graph geometry — it cannot
@@ -184,8 +244,18 @@ class TaskGenerator:
         if X.shape[0] > n_rows:
             X, y = X[:n_rows], y[:n_rows]
 
-        X = torch.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
-        y = torch.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0)
+        # PERMUTE THEN PAD TO max_features, exactly as `GraphSCM.__call__` ends. The control
+        # arm already got this inside upstream's class; the credit arms need it here or a
+        # mixed batch would hold 100-wide control datasets beside 34-wide credit ones, and
+        # the widths themselves would tell the model which prior a dataset came from.
+        # Permutation comes FIRST so a noise column or a was-missing flag is as likely to land
+        # anywhere as a real feature.
+        if self.base_impl == "upstream":
+            X = X[..., torch.randperm(X.shape[1])]
+            if X.shape[1] < self.max_features:
+                X = torch.nn.functional.pad(X, (0, self.max_features - X.shape[1]), value=0.0)
+            elif X.shape[1] > self.max_features:
+                X = X[..., : self.max_features]
 
         # Shift stress: arrange the rows so the context/query split falls across a
         # distribution change. O'Prior's ablations find shift-aware stress contributes
@@ -197,7 +267,15 @@ class TaskGenerator:
             X, y, smeta = apply_shift(self.rng, X, y, self.shift_cfg, self.train_frac_mid)
             meta.update(smeta)
 
-        return SyntheticTask(X=X.float(), y=y.float(), source=source, meta=meta)
+        return self._finish(X, y, meta)
+
+    def _finish(self, X: Any, y: Any, meta: dict[str, Any]) -> SyntheticTask:
+        """The last three lines every path shares. Extracted so the control arm — which
+        returns straight out of `upstream.sample_control` — cannot drift from the credit
+        arms on NaN handling or dtype."""
+        X = torch.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+        y = torch.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0)
+        return SyntheticTask(X=X.float(), y=y.float(), source=meta["source"], meta=meta)
 
     # -- public --------------------------------------------------------------
     def sample(self, shape: tuple[int, int] | None = None) -> SyntheticTask:

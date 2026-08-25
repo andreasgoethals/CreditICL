@@ -374,3 +374,94 @@ def test_a_resumed_arm_goes_back_to_the_same_cluster(name):
     assert 'sbatch --clusters="${SLURM_CLUSTER_NAME:-mindwell}"' in text
     assert '--partition="${SLURM_JOB_PARTITION:-gpu_b200}"' in text
     assert "sbatch --clusters=mindwell --array=" not in text
+
+
+# ---------------------------------------------------------------------------------------
+# Two phases, and the order is a fact about the data: phase 2 scores what phase 1 wrote.
+# ---------------------------------------------------------------------------------------
+
+BENCH = "benchmark.slurm"
+
+
+@pytest.mark.parametrize("name", sorted(LAUNCHERS))
+def test_phase_one_only_trains(name):
+    """Evaluation lived in the training launcher for one day (25-08-2026) and was moved out.
+
+    Scoring inside the training job means each arm is benchmarked by whatever the code looked
+    like the hour it happened to finish, against a reference scored on a different day. Every
+    comparison this project got wrong, it got wrong exactly that way.
+    """
+    text = (ROOT / "scripts" / "slurm" / name).read_text(encoding="utf-8")
+    assert "evaluate.py" not in text
+    assert "evaluate_ood.py" not in text
+    assert BENCH in text, "it must point the reader at the phase that does score"
+
+
+def test_phase_two_covers_every_arm_plus_a_reference_column():
+    """`--array=0-75`: 0-74 are our checkpoints, 75 is the released TabICLv2 + CatBoost +
+    linear. One index past the grid, by design — the reference must be scored by the same
+    code, the same day, the same cap, the same seeds."""
+    from src.utils.config import expand_with_seeds, load
+
+    text = (ROOT / "scripts" / "slurm" / BENCH).read_text(encoding="utf-8")
+    spec = next(ln for ln in text.splitlines() if ln.startswith("#SBATCH --array="))
+    hi = int(spec.split("=")[1].split("%")[0].split("-")[1])
+    n_arms = len(expand_with_seeds(load(ROOT / "config" / "Exp1_LGD.yaml")))
+    assert hi == n_arms, f"--array=0-{hi} should be 0-{n_arms}: {n_arms} arms + 1 reference"
+    # EXACTLY ONE reference index. The script is shared by all three experiments, whose grids
+    # differ (75 / 10 / 60), so an oversized `--array` is normal — but every index past the
+    # reference slot must exit rather than race the others to write the same file.
+    assert 'IDX}" -eq "${N_ARMS}' in text, "the reference slot must be exactly one index"
+    assert 'IDX}" -gt "${N_ARMS}' in text, "indices past it must exit"
+
+
+@pytest.mark.parametrize("exp,track", [(1, "LGD"), (1, "PD"), (2, "LGD"), (3, "LGD")])
+def test_phase_two_is_shared_by_all_three_experiments(exp, track):
+    """One benchmark, three experiments. The config is chosen by `EXP` and `TRACK`, so Exp2 and
+    Exp3 are scored by the same code and against the same reference column as Exp1."""
+    from src.utils.config import expand_with_seeds, load
+
+    text = (ROOT / "scripts" / "slurm" / BENCH).read_text(encoding="utf-8")
+    assert 'CONFIG="config/Exp${EXP}_' in text
+    # and the config it would pick must exist and expand
+    cfg = ROOT / "config" / f"Exp{exp}_{track}.yaml"
+    assert cfg.is_file()
+    assert len(expand_with_seeds(load(cfg, allow_placeholders=True))) > 0
+
+
+def test_the_reference_column_is_scored_once_and_reused():
+    """CatBoost, TabPFN-3, released TabICLv2 and logistic/linear do not depend on our prior, so
+    their numbers are identical across Exp1/2/3. Rescoring per experiment would waste GPU time
+    AND produce three slightly different reference columns to compare against."""
+    text = (ROOT / "scripts" / "slurm" / BENCH).read_text(encoding="utf-8")
+    assert 'REF_TAG="reference_${TRACK}"' in text, "the tag must not mention the experiment"
+    assert "already scored" in text and "FORCE_REFERENCE" in text
+    assert "tabiclv2,tabpfn3,catboost,linear" in text
+
+
+def test_phase_two_applies_the_same_context_cap_to_both_branches():
+    """One variable, both branches. A cap applied to our column and not to the reference is
+    not a measurement, it is a handicap."""
+    text = (ROOT / "scripts" / "slurm" / BENCH).read_text(encoding="utf-8")
+    assert text.count('--max-context-rows "${CONTEXT_CAP}"') == 2
+    assert text.count('--seeds "${SEEDS}"') >= 4
+
+
+def test_phase_two_refuses_an_arm_that_never_finished():
+    """A SIGUSR1 checkpoint loads perfectly and is not a result. `summary.json` is the
+    authority, the same one `sweep_status` reads."""
+    text = (ROOT / "scripts" / "slurm" / BENCH).read_text(encoding="utf-8")
+    assert "summary.json" in text
+    assert 'data.get("completed")' in text
+    assert "is NOT complete" in text
+
+
+def test_phase_two_scores_our_checkpoints_not_the_released_ones():
+    """The whole point. `--models crediticl` with an explicit `--checkpoint`, and a hard error
+    when the directory is empty rather than a silent fall-through to the download."""
+    text = (ROOT / "scripts" / "slurm" / BENCH).read_text(encoding="utf-8")
+    assert "--models crediticl" in text
+    assert '--checkpoint "$CKPT"' in text
+    assert "FATAL: no checkpoint under" in text
+    # numeric sort on the step: a lexical sort puts step-9500 after step-12500
+    assert "sort -t- -k2 -n" in text

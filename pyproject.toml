@@ -76,7 +76,12 @@ dependencies = [
     #
     # It also brings upstream's training loop and their Muon, so our loop can be
     # checked against theirs instead of being an independent guess.
-    "tabicl>=2.0",
+  # NOT the PyPI wheel and NOT the v2.1.1 tag: both omit `_graph_scm.py` and the whole
+  # `graph_lib/` subpackage (29 files), and `graph_scm` is the prior upstream's own
+  # stage-1 script selects. Only the default branch ships them, at the same version
+  # string. `[pretrain]` pulls xgboost, which `tabicl.prior._tree_scm` imports at module
+  # scope — without it the whole `tabicl.prior` package fails to import.
+  "tabicl[pretrain] @ git+https://github.com/soda-inria/tabicl.git",
 ]
 
 [project.optional-dependencies]
