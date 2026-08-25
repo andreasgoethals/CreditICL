@@ -324,15 +324,24 @@ walltime, and running out of credits until the balance is topped up. A plan made
 because nobody remembers which of the five already happened.
 
 ```bash
-python -m src.utils.pipeline            # what is done, what is next, what is blocked
-python -m src.utils.pipeline --submit   # submit whatever is ready
+python -m src.utils.run_experiment 1            # Exp1: what is done, what is next, what is blocked
+python -m src.utils.run_experiment 1 --submit   # Exp1: submit whatever is ready
 ```
+
+**The experiment number is required** — never a default — and is printed at the top of the
+report, so "am I looking at Exp1 or Exp3?" is answered on the page, not from memory. One
+invocation drives exactly ONE experiment's two phases (train -> benchmark) across both tracks.
+`run_experiment 2` and `run_experiment 3` **refuse to run** while their configs still hold
+`FILL_FROM_EXP1`, so you cannot start a later experiment before Exp1 has chosen a winner.
 
 It reads the **output tree** — not `sacct`, which forgets, and not the queue, which a drain
 empties — and submits only what is missing. **Running it repeatedly is the intended usage.**
 After any interruption, whatever the cause, the recovery procedure is to run it again.
 
 ```
+==============================================================================
+ CREDITICL — EXPERIMENT 1 — read from the output tree, not from memory
+==============================================================================
   [x] exp1-lgd-train             done        75/75
   [ ] exp1-lgd-benchmark         ready        0/76
   [~] exp1-pd-train              running     42/75

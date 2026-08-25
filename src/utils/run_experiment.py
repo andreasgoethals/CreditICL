@@ -1,8 +1,13 @@
-"""ONE command that works out what still needs running, and submits only that.
+"""Run ONE experiment end to end: `python -m src.utils.run_experiment <1|2|3>`.
 
-    python -m src.utils.pipeline                  # what is done, what is next
-    python -m src.utils.pipeline --submit         # submit whatever is ready
-    python -m src.utils.pipeline --exp 1          # just Exp1
+    python -m src.utils.run_experiment 1            # Exp1: what is done, what is next
+    python -m src.utils.run_experiment 1 --submit   # Exp1: submit whatever is ready
+    python -m src.utils.run_experiment 2 --submit   # Exp2 (only after Exp1's winner is filled in)
+
+WHICH EXPERIMENT, ALWAYS EXPLICIT. The experiment number is a REQUIRED argument, not a default,
+and it is printed at the top of every report — because "did I just submit Exp1 or Exp3?" is not
+a question anyone should have to answer from memory. One invocation drives exactly one
+experiment's two phases (train -> benchmark) for both tracks.
 
 WHY THIS EXISTS
 ---------------
@@ -169,25 +174,49 @@ def _benchmark_stage(exp: int, track: str, queued: set[str], train: Stage) -> St
     return stage
 
 
-def plan(experiments: list[int], tracks: list[str], single_cluster: bool = False) -> list[Stage]:
-    """Every stage, in dependency order, with its state read off the filesystem."""
+def unconfigured_tracks(exp: int, tracks: list[str]) -> list[str]:
+    """Tracks whose config still holds `FILL_FROM_EXP1`. Empty for a runnable experiment.
+
+    Exp2 and Exp3 ship as templates: the prior mix and (for Exp2) the winning arm are blank
+    until Exp1 has picked a winner. Submitting one anyway would run for hours and measure the
+    wrong thing, so `run_experiment 2 --submit` must refuse until the holes are filled.
+    """
+    from src.utils.config import find_placeholders, load_yaml
+
+    blocked = []
+    for track in tracks:
+        cfg = load_yaml(ROOT / "config" / f"Exp{exp}_{track.upper()}.yaml")
+        if find_placeholders(cfg):
+            blocked.append(track)
+    return blocked
+
+
+def plan(exp: int, tracks: list[str], single_cluster: bool = False) -> list[Stage]:
+    """Every stage of ONE experiment, in dependency order, state read off the filesystem."""
     queued = queued_job_names()
     stages: list[Stage] = []
-    for exp in experiments:
-        for track in tracks:
-            train = _train_stage(exp, track, queued, single_cluster)
-            stages.append(train)
-            stages.append(_benchmark_stage(exp, track, queued, train))
+    for track in tracks:
+        train = _train_stage(exp, track, queued, single_cluster)
+        stages.append(train)
+        stages.append(_benchmark_stage(exp, track, queued, train))
     return stages
 
 
-def render(stages: list[Stage]) -> str:
+def render(stages: list[Stage], exp: int, blocked_tracks: list[str] | None = None) -> str:
     mark = {"done": "[x]", "running": "[~]", "ready": "[ ]", "blocked": "[-]"}
     lines = [
         "=" * 78,
-        " CREDITICL PIPELINE — read from the output tree, not from memory",
+        f" CREDITICL — EXPERIMENT {exp} — read from the output tree, not from memory",
         "=" * 78,
     ]
+    if blocked_tracks:
+        lines += [
+            f"  EXPERIMENT {exp} IS NOT CONFIGURED YET: {', '.join(blocked_tracks)} still hold",
+            "  FILL_FROM_EXP1. Finish Exp1, choose the winning prior, and fill it into",
+            f"  config/Exp{exp}_*.yaml before running this. Nothing will be submitted.",
+            "=" * 78,
+        ]
+        return "\n".join(lines)
     for s in stages:
         bar = f"{s.done}/{s.total}"
         note = f"  waiting on {s.blocked_by}" if s.blocked_by else ""
@@ -218,15 +247,23 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("--exp", type=int, nargs="*", default=[1], help="experiments (default: 1)")
+    ap.add_argument("exp", type=int, choices=(1, 2, 3),
+                    help="WHICH EXPERIMENT to run (1, 2, or 3). Required, never a default.")
     ap.add_argument("--track", nargs="*", default=["lgd", "pd"], choices=["lgd", "pd"])
     ap.add_argument("--submit", action="store_true", help="actually sbatch what is ready")
     ap.add_argument("--single-cluster", action="store_true",
                     help="keep everything on Mindwell instead of splitting LGD across two")
     args = ap.parse_args(argv)
 
+    blocked = unconfigured_tracks(args.exp, args.track)
+    if blocked:
+        # Refuse a template. Print the plan header with the reason and stop — no filesystem
+        # scan, no submission.
+        print(render([], args.exp, blocked_tracks=blocked))
+        return 1
+
     stages = plan(args.exp, args.track, args.single_cluster)
-    print(render(stages))
+    print(render(stages, args.exp))
     if not args.submit:
         return 0
 
