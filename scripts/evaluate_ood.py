@@ -78,6 +78,7 @@ def main() -> int:
         models=models,
         seeds=[int(s) for s in args.seeds.split(",") if s.strip()],
         kinds=kinds,
+        crediticl_task=(task if "crediticl" in models else None),
         test_size=args.test_size,
         max_rows=args.max_rows,
         model_kwargs=model_kwargs,

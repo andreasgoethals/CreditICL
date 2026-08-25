@@ -103,15 +103,24 @@ case "${TARGET}" in
               --gpus-per-node=1 --cpus-per-task=8 --mem=30G --time=${WALLTIME:-01:00:00})
         ;;
     b200)
+        # Charge rate, credits per MINUTE, from the VSC table. Used below to check
+        # `sam-quote` still agrees with the published price.
+        GPU_RATE=437.50; CORE_RATE=3.03819; CORES=24
         # 24 GPUs and 24 cores/GPU: the most of both. The production target.
         OPTS=(--clusters=mindwell --partition=gpu_b200
               --gpus-per-node=1 --cpus-per-task=24 --mem=180G --time=${WALLTIME:-01:00:00})
         ;;
     a100)
+        # Charge rate, credits per MINUTE, from the VSC table. Used below to check
+        # `sam-quote` still agrees with the published price.
+        GPU_RATE=141.667; CORE_RATE=2.54630; CORES=18
         OPTS=(--clusters=wice --partition=gpu_a100
               --gpus-per-node=1 --cpus-per-task=18 --mem=120G --time=${WALLTIME:-01:00:00})
         ;;
     h100)
+        # Charge rate, credits per MINUTE, from the VSC table. Used below to check
+        # `sam-quote` still agrees with the published price.
+        GPU_RATE=569.444; CORE_RATE=2.54630; CORES=16
         OPTS=(--clusters=wice --partition=gpu_h100
               --gpus-per-node=1 --cpus-per-task=16 --mem=180G --time=${WALLTIME:-01:00:00})
         ;;
@@ -150,7 +159,34 @@ fi
 # So treat the number as a ceiling, not a forecast. Skipped for `free`, where it is always zero.
 if [[ "${TARGET}" != "free" ]] && command -v sam-quote >/dev/null 2>&1; then
     echo "--- cost ceiling if it runs the full ${WALLTIME:-01:00:00} (billing is on ACTUAL time) ---"
-    sam-quote sbatch --account="${ACCOUNT}" "${OPTS[@]}" "${SCRIPT}" "${CONFIG}" "$@" || true
+    QUOTE=$(sam-quote sbatch --account="${ACCOUNT}" "${OPTS[@]}" "${SCRIPT}" "${CONFIG}" "$@" \
+            2>/dev/null | tail -1 | tr -dc '0-9')
+    echo "${QUOTE:-<sam-quote returned no number>}"
+
+    # CROSS-CHECK AGAINST THE PUBLISHED RATES. On 25-08-2026 an identical submission quoted
+    # 2,325,600 where the same line had quoted 30,600 the day before - 76x, with no change to
+    # the partition, the GPU count, the cores or the walltime. It was only caught because
+    # someone read the number twice. At 76x, Exp1 goes from ~10 M credits to ~760 M.
+    #
+    # A quote is the cluster telling you the price. This is us checking we still recognise it.
+    if [[ -n "${QUOTE:-}" && -n "${GPU_RATE:-}" ]]; then
+        MINUTES=$(awk -F: '{print ($1*60)+$2+($3/60)}' <<< "${WALLTIME:-01:00:00}")
+        EXPECT=$(awk -v g="${GPU_RATE}" -v c="${CORE_RATE}" -v n="${CORES}" -v m="${MINUTES}" \
+                     'BEGIN{printf "%d", (g + c*n) * m}')
+        RATIO=$(awk -v q="${QUOTE}" -v e="${EXPECT}" \
+                    'BEGIN{ if (e>0) printf "%.2f", q/e; else print 0 }')
+        echo "published rates predict : ${EXPECT}   (quote / expected = ${RATIO}x)"
+        if awk -v r="${RATIO}" 'BEGIN{exit !(r > 2.0 || r < 0.5)}'; then
+            echo ""
+            echo "  *** THE QUOTE DOES NOT MATCH THE PUBLISHED RATES (${RATIO}x) ***"
+            echo "  Either the cluster has been repriced, or this job asks for more than it"
+            echo "  looks like. DO NOT SUBMIT A SWEEP until you know which. The cheapest way"
+            echo "  to find out is what the last small job ACTUALLY cost:"
+            echo "      sam-balance"
+            echo "      sam-list-usagerecords | tail -5"
+            echo ""
+        fi
+    fi
     echo "-----------------------------------------------------------------------------------"
 fi
 

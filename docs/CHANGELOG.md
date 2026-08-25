@@ -5,6 +5,33 @@ reason is not obvious.
 
 ---
 
+## 26-08-2026 (later) — the phase-2 script collision, and two eval bugs it exposed
+
+- **RESTORED the GPU-benchmark script as `scripts/slurm/gpubench.slurm`.** On 26-08 the shared
+  phase-2 script was written to `scripts/slurm/benchmark.slurm`, which OVERWROTE the GPU
+  hardware benchmark that lived there. So `submit.sh b200 lgd benchmark.slurm` — meant to be
+  the 3-minute card check — launched the 76-task evaluation array instead (job 11528053). The
+  two are now distinct: `gpubench.slurm` (one task, `benchmark_gpu.py`) and `benchmark.slurm`
+  (phase 2). `submit.sh` header says so.
+- **A missing checkpoint in phase 2 is now a clean SKIP, not exit 2.** `CKPT="$(ls ... | sort
+  | tail)"` under `set -o pipefail` died at that line when the glob was empty — before the
+  graceful guard — so 74 arms-without-checkpoints each failed in ~1 s with a bare exit 2. Now
+  `|| true` on the pipeline and `exit 0` with a SKIPPED message; `pipeline.py` simply resubmits
+  once phase 1 has produced the checkpoint.
+- **`crediticl` no longer crashes on the OOD kind its checkpoint cannot score.** An LGD
+  (regression, 999-quantile) checkpoint was being sent to OOD *classification* datasets and
+  every such cell crashed with `(N,999)` vs `(N,2)`. The comment in `evaluate_ood.py` already
+  said a regression checkpoint "cannot score classification datasets" — but nothing enforced
+  it. `OODEvalConfig.crediticl_task` now skips the mismatched kind (lgd->regression only,
+  pd->classification only).
+- **Verified the reinstalled stack works on a B200**: job 11528053's arm-0 subtask ran on
+  r11g12 with torch 2.11.0+cu128, `cuda_available: true`, `exact_arch_shipped: true`. The
+  arm-0 credit eval completed 21/21; those numbers are from the OLD transcribed-prior
+  checkpoint (24-08) and are discarded.
+- Tests updated; suite green.
+
+---
+
 ## 26-08-2026 — the control arm now runs TabICLv2's ACTUAL prior
 
 - **`src/prior/upstream.py`: the base prior is imported, not transcribed.** The control arm

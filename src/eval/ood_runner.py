@@ -35,6 +35,12 @@ class OODEvalConfig:
     #: that in the row; False = fail loudly rather than mis-score.
     binarise_multiclass: bool = True
     model_kwargs: dict[str, dict[str, Any]] = field(default_factory=dict)
+    #: OUR checkpoint scores only its own task's OOD kind. `crediticl` wraps ONE checkpoint:
+    #: an LGD (regression, 999-quantile) net has no class head and cannot score a
+    #: classification dataset, and vice versa. On 25-08 this was unset and every OOD
+    #: classification cell for an LGD checkpoint crashed with a (N,999)-vs-(N,2) broadcast
+    #: error. lgd -> regression, pd -> classification.
+    crediticl_task: str | None = None
 
 
 def _split(X: np.ndarray, y: np.ndarray, seed: int, test_size: float, stratify: bool):
@@ -177,6 +183,17 @@ def run_ood(cfg: OODEvalConfig) -> pd.DataFrame:
                  entry.name, entry.kind, entry.n_rows, entry.n_features)
         for seed in cfg.seeds:
             for model_name in cfg.models:
+                # OUR checkpoint cannot cross task types; skip rather than crash.
+                if model_name == "crediticl" and cfg.crediticl_task:
+                    wanted = "regression" if cfg.crediticl_task == "lgd" else "classification"
+                    if entry.kind != wanted:
+                        rows.append({
+                            "dataset": entry.name, "kind": entry.kind, "model": model_name,
+                            "seed": seed, "status": "skipped",
+                            "error": f"{cfg.crediticl_task} checkpoint cannot score a "
+                                     f"{entry.kind} task",
+                        })
+                        continue
                 rows.append(evaluate_one_ood(entry, model_name, seed, cfg))
 
     df = pd.DataFrame(rows)

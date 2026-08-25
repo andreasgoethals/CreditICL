@@ -59,6 +59,20 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
 
+### 26-08-2026 - Renaming a script to share it silently deleted the script it replaced
+- **Tried:** making phase 2 shared across the three experiments by writing it to
+  `scripts/slurm/benchmark.slurm` and removing the old `benchmark_exp1.slurm`.
+- **Result:** `benchmark.slurm` was ALREADY the GPU hardware benchmark. The write overwrote it,
+  and no test noticed because nothing pinned "benchmark.slurm runs benchmark_gpu.py". So the
+  next `submit.sh b200 lgd benchmark.slurm` — habitually the card check — submitted a 76-task
+  eval array (job 11528053). 74 of its tasks had no checkpoint and died in ~1 s each: the
+  "little jobs that keep coming".
+- **Why it hid:** the collision was a filename, not a code path. The phase-2 script was correct;
+  the GPU script simply ceased to exist, and the only thing that would have caught it is a test
+  that the GPU-benchmark filename still contains `benchmark_gpu.py`.
+- **Instead:** distinct names (`gpubench.slurm` vs `benchmark.slurm`), and `pipeline.py` — never
+  `submit.sh` — drives phase 2. **When you move a file onto a name, grep that name first.**
+
 ### 26-08-2026 - RESOLVED: the released `tabicl` does not contain the prior TabICLv2 was trained on
 - **Tried:** importing upstream's `graph_scm` so the control arm stops being a transcription of
   NanoTabICL's transcription. Reported the day before as "not importable, would need a package

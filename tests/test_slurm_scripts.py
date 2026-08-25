@@ -462,6 +462,10 @@ def test_phase_two_scores_our_checkpoints_not_the_released_ones():
     text = (ROOT / "scripts" / "slurm" / BENCH).read_text(encoding="utf-8")
     assert "--models crediticl" in text
     assert '--checkpoint "$CKPT"' in text
-    assert "FATAL: no checkpoint under" in text
+    # A missing checkpoint is a CLEAN SKIP (exit 0), not a failure: on 25-08-2026 the array was
+    # submitted before phase 1 and 74 tasks died with a bare exit 2 because `ls` under
+    # `pipefail` killed the script before the guard. It must skip, and the `ls` must not abort.
+    assert "SKIPPED: no checkpoint under" in text
+    assert "|| true)" in text, "the ls pipeline must not kill the script under pipefail"
     # numeric sort on the step: a lexical sort puts step-9500 after step-12500
     assert "sort -t- -k2 -n" in text

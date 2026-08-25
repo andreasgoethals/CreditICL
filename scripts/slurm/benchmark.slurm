@@ -167,12 +167,18 @@ echo "checkpoint dir: ${CKPT_DIR}"
 
 # The LAST permanent checkpoint, which for a completed arm is step-12500. Sorting numerically
 # on the step matters: a lexical sort puts step-9500 after step-12500.
-CKPT="$(ls -1 "${CKPT_DIR}"/step-*.ckpt 2>/dev/null | sort -t- -k2 -n | tail -1)"
+# `|| true`: under `set -o pipefail`, `ls` exits 2 when the glob matches nothing and would
+# kill the script THERE, before the graceful check below ever runs. That is exactly what
+# happened on 25-08 when the benchmark array was submitted before phase 1: 74 tasks each died
+# in ~1 s with a bare exit 2 instead of the clean skip intended here.
+CKPT="$(ls -1 "${CKPT_DIR}"/step-*.ckpt 2>/dev/null | sort -t- -k2 -n | tail -1 || true)"
 if [ -z "$CKPT" ]; then
-    echo "FATAL: no checkpoint under ${CKPT_DIR}." >&2
-    echo "Phase 1 has not finished this arm. Run:" >&2
-    echo "  python -m src.utils.sweep_status --config ${CONFIG}" >&2
-    exit 1
+    # NOT a failure. This arm has not been trained yet. Exit 0 so it does not show as FAILED
+    # and does not trigger a requeue; `pipeline.py` sees no result file and resubmits phase 2
+    # once phase 1 has produced the checkpoint. Run phase 1 first:
+    echo "SKIPPED: no checkpoint under ${CKPT_DIR} — arm ${IDX} not trained yet."
+    echo "  python -m src.utils.sweep_status --config ${CONFIG}   # what is done"
+    exit 0
 fi
 echo "scoring: ${CKPT}"
 

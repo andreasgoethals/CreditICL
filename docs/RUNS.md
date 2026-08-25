@@ -867,7 +867,7 @@ to the classes present, per upstream's `_compute_batch_loss`. **Every checkpoint
 different networks. Discard them rather than mixing.
 
 The B200 question has a script now: `scripts/benchmark_gpu.py` via
-`scripts/slurm/benchmark.slurm`, run on both cards and diffed with
+`scripts/slurm/gpubench.slurm`, run on both cards and diffed with
 `python -m src.utils.compare_gpubench`. It reports `torch.cuda.get_arch_list()`, so if the
 wheel carries no `sm_100` kernels the answer will be on the first screen.
 

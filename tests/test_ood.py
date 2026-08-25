@@ -457,3 +457,30 @@ def test_the_same_dataset_is_not_cached_twice_from_two_suites():
     assert "already cached from another suite" in block
     # and the set must be seeded from disk, or a resumed fetch re-adds what is already there
     assert "for d in existing.values()" in block
+
+
+def test_crediticl_skips_the_ood_kind_its_checkpoint_cannot_score():
+    """An LGD (regression, 999-quantile) checkpoint has no class head. Scoring it on an OOD
+    CLASSIFICATION dataset crashed every such cell on 25-08-2026 with a (N,999)-vs-(N,2)
+    broadcast error. It must be skipped, not attempted."""
+    import inspect
+
+    from src.eval import ood_runner
+
+    src = inspect.getsource(ood_runner.run_ood)
+    assert 'model_name == "crediticl"' in src
+    assert "cfg.crediticl_task" in src
+    assert '"skipped"' in src
+    # the mapping: lgd -> regression, pd -> classification
+    assert 'regression" if cfg.crediticl_task == "lgd"' in src
+
+
+def test_evaluate_ood_passes_the_checkpoint_task_into_the_config():
+    """The runner cannot skip the wrong kind if the script never tells it the checkpoint's
+    task. This wiring was the actual gap: the comment claimed the restriction, the code did
+    not apply it."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    src = (root / "scripts" / "evaluate_ood.py").read_text(encoding="utf-8")
+    assert "crediticl_task=(task if" in src

@@ -277,7 +277,7 @@ workload is latency-bound rather than throughput-bound (which is exactly why the
 idle), so raw FLOP ratios do not predict it. Measure before assuming:
 
 ```bash
-bash scripts/slurm/submit.sh a100 lgd scripts/slurm/benchmark.slurm
+bash scripts/slurm/submit.sh a100 lgd scripts/slurm/gpubench.slurm
 python -m src.utils.compare_gpubench $VSC_DATA/CreditICL/output/logs/gpubench_*.json
 ```
 
