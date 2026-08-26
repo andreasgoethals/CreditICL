@@ -31,8 +31,8 @@ from src.utils.config import (  # noqa: E402
     sweep_axes,
 )
 
-#: One file per experiment per track. Exp1 screens the prior grid; Exp2 and Exp3 run the
-#: winner long, so they stay templates until Exp1 has finished.
+#: One file per experiment per track. Exp1 screens the prior grid; Exp2 and Exp3 build on
+#: its winner, so they stay templates until Exp1 has finished.
 EXPERIMENTS = [f"config/{e}_{t}.yaml" for e in ("Exp1", "Exp2", "Exp3") for t in ("LGD", "PD")]
 #: The runnable ones. Exp2/Exp3 hold `FILL_FROM_EXP1` and must not expand.
 CONFIGS = ["config/Exp1_LGD.yaml", "config/Exp1_PD.yaml"]
@@ -85,11 +85,11 @@ def test_exp2_and_exp3_refuse_to_expand_until_exp1_has_run(path):
 
 
 
-def test_exp3_refuses_a_silent_partial_load():
+def test_exp2_refuses_a_silent_partial_load():
     """A name mismatch that loads nothing still runs and still outputs numbers — they are
     just partly random. `strict_load` is what turns that into a crash."""
     for track in ("LGD", "PD"):
-        cfg = _load(f"config/Exp3_{track}.yaml")
+        cfg = _load(f"config/Exp2_{track}.yaml")
         assert cfg["init"]["strict_load"] is True
         assert cfg["init"]["pretrained_path"], "a warm start needs a checkpoint"
 
@@ -97,20 +97,20 @@ def test_exp3_refuses_a_silent_partial_load():
 # -- the screening budget ------------------------------------------------------
 
 
-def test_exp1_is_cheaper_per_arm_than_exp2():
-    """Exp1 exists to make the grid affordable. If its budget ever matched Exp2's, the
+def test_exp1_is_cheaper_per_arm_than_exp3():
+    """Exp1 exists to make the grid affordable. If its budget ever matched Exp3's, the
     two-phase design would have quietly become one very expensive phase."""
     for track in ("LGD", "PD"):
         one = _load(f"config/Exp1_{track}.yaml")["train"]["max_steps"]
-        two = _load(f"config/Exp2_{track}.yaml")["train"]["max_steps"]
+        two = _load(f"config/Exp3_{track}.yaml")["train"]["max_steps"]
         assert one < two, f"{track}: screening budget {one} is not below the full {two}"
 
 
-def test_exp2_and_exp3_report_more_seeds_than_the_screen():
+def test_exp3_reports_more_seeds_than_the_screen():
     """Ranking arms tolerates 3 seeds; a headline interval does not."""
     for track in ("LGD", "PD"):
         assert len(_load(f"config/Exp1_{track}.yaml")["seeds"]) == 3
-        assert len(_load(f"config/Exp2_{track}.yaml")["seeds"]) >= 5
+        assert len(_load(f"config/Exp3_{track}.yaml")["seeds"]) >= 5
 
 
 # -- the frozen evaluation split ----------------------------------------------
@@ -291,7 +291,7 @@ def test_no_model_block_in_the_configs(path):
 
 
 def test_no_experiment_shares_a_prior_file():
-    """Exp1 sweeps 32 priors, Exp2 runs the ONE that won, Exp3 sweeps the mixture. A shared
+    """Exp1 sweeps 32 priors, Exp3 runs the ONE that won, Exp2 sweeps the mixture. A shared
     `prior_file:` encoded the false claim that all three use the same prior, so each config is
     now self-contained."""
     for path in EXPERIMENTS:
@@ -313,7 +313,7 @@ def test_exp1_sweeps_priors_and_never_the_architecture():
             assert not any(b in key for b in banned), f"{track}: {key} is an architecture knob"
 
 
-def test_exp1_defines_many_priors_and_exp2_exactly_one():
+def test_exp1_defines_many_priors_and_exp3_exactly_one():
     """The counts that make the two-phase design what it is."""
     for track in ("LGD", "PD"):
         axes = [(k, v) for k, v in sweep_axes(_load(f"config/Exp1_{track}.yaml")) if k != "seeds"]
@@ -322,15 +322,15 @@ def test_exp1_defines_many_priors_and_exp2_exactly_one():
             n_priors *= len(values)
         assert n_priors == 32, f"{track}: expected 32 Exp1 priors, got {n_priors}"
 
-        exp2 = [(k, v) for k, v in sweep_axes(_load(f"config/Exp2_{track}.yaml")) if k != "seeds"]
-        assert exp2 == [("prior.credit_fraction", [0.0, PLACEHOLDER])], (
-            f"{track}: Exp2 must be exactly control-vs-winner, got {exp2}"
+        exp3 = [(k, v) for k, v in sweep_axes(_load(f"config/Exp3_{track}.yaml")) if k != "seeds"]
+        assert exp3 == [("prior.credit_fraction", [0.0, PLACEHOLDER])], (
+            f"{track}: Exp3 must be exactly control-vs-winner, got {exp3}"
         )
 
 
 def test_exp2_and_exp3_pin_every_knob_exp1_swept():
     """The bug this catches, which shipped once: the winner placeholders were never inserted, so
-    Exp2 would have silently trained on whatever default the prior happened to carry — measuring
+    Exp3 would have silently trained on whatever default the prior happened to carry — measuring
     an arm nobody chose."""
     for track in ("LGD", "PD"):
         swept = {k for k, _ in sweep_axes(_load(f"config/Exp1_{track}.yaml"))
@@ -358,48 +358,48 @@ def test_the_control_arm_prior_never_carries_a_placeholder():
         assert base["max_cat_size"] == 200, "upstream graph_scm's value"
 
 
-# -- Exp3 is continued pre-training, not pretraining ---------------------------
+# -- Exp2 is continued pre-training, not pretraining ---------------------------
 
 
-def test_exp3_uses_a_continued_pretraining_learning_rate():
+def test_exp2_uses_a_continued_pretraining_learning_rate():
     """TabPFN-Wide (Kolberg et al. 2026) continued-pretrains at 1e-5. Applying pretraining's
     8e-4 to already-trained weights destroys them in a few hundred steps, and the loss curve
     would look like a bad prior rather than a bad learning rate."""
     for track in ("LGD", "PD"):
-        three = _load(f"config/Exp3_{track}.yaml")["train"]
         two = _load(f"config/Exp2_{track}.yaml")["train"]
-        # A LIST since 24-08-2026: Exp3 sweeps the rate, because the published continued-
+        three = _load(f"config/Exp3_{track}.yaml")["train"]
+        # A LIST since 24-08-2026: Exp2 sweeps the rate, because the published continued-
         # pretraining rates disagree by two orders of magnitude (Real-TabPFN 3e-7,
         # TabPFN-Wide 1e-5, TabICLv2 stage 3 2e-5). Every value swept must still be far below
         # pretraining's, or the sweep is testing "does destroying the weights help".
-        rates = three["lr"] if isinstance(three["lr"], list) else [three["lr"]]
-        assert max(rates) <= two["lr"] / 10, (
-            f"{track}: Exp3 rates {rates} are not far below Exp2's {two['lr']}"
+        rates = two["lr"] if isinstance(two["lr"], list) else [two["lr"]]
+        assert max(rates) <= three["lr"] / 10, (
+            f"{track}: Exp2 rates {rates} are not far below Exp3's {three['lr']}"
         )
-        assert three["muon_lr"] <= two["muon_lr"] / 10
-        assert three["warmup_proportion"] > two["warmup_proportion"], "warm start needs longer warmup"
-        assert three["gradient_clipping"] < two["gradient_clipping"]
+        assert two["muon_lr"] <= three["muon_lr"] / 10
+        assert two["warmup_proportion"] > three["warmup_proportion"], "warm start needs longer warmup"
+        assert two["gradient_clipping"] < three["gradient_clipping"]
 
 
-def test_exp3_sweeps_the_mixture_because_that_is_its_question():
+def test_exp2_sweeps_the_mixture_because_that_is_its_question():
     """The model already knows the original prior, so how much of ours to add IS the experiment.
     `1.0` must be included so 'forgetting the original prior' is measurable, and `0.0` so
     'continued pretraining alone' is a control."""
     for track in ("LGD", "PD"):
-        axes = dict(sweep_axes(_load(f"config/Exp3_{track}.yaml")))
+        axes = dict(sweep_axes(_load(f"config/Exp2_{track}.yaml")))
         mixture = axes["prior.credit_fraction"]
         assert 0.0 in mixture and 1.0 in mixture, f"{track}: mixture must span 0..1, got {mixture}"
         assert len(mixture) >= 4, "an interior optimum needs interior points"
         assert "init.strategy" in axes, "full vs parameter-efficient must be measured, not assumed"
 
 
-def test_exp3_is_cheaper_than_exp2():
-    """The point of Exp3 is that it is cheap. If its budget ever matched Exp2's there would be
+def test_exp2_is_cheaper_than_exp3():
+    """The point of Exp2 is that it is cheap. If its budget ever matched Exp3's there would be
     no claim left to make."""
     for track in ("LGD", "PD"):
-        three = _load(f"config/Exp3_{track}.yaml")["train"]
         two = _load(f"config/Exp2_{track}.yaml")["train"]
-        assert three["max_steps"] * three["batch_size"] < two["max_steps"] * two["batch_size"]
+        three = _load(f"config/Exp3_{track}.yaml")["train"]
+        assert two["max_steps"] * two["batch_size"] < three["max_steps"] * three["batch_size"]
 
 
 # -- one architecture, everywhere ---------------------------------------------
@@ -420,7 +420,7 @@ def test_config_folder_holds_exactly_the_six_experiments():
 
 
 def test_exp2_and_exp3_differ_only_where_they_should():
-    """They are not identical any more — Exp3 is continued pre-training, so its budget, learning
+    """They are not identical any more — Exp2 is continued pre-training, so its budget, learning
     rate and mixture all differ by design. What must still match is the EVALUATION, or the two
     cannot be compared at all."""
     for track in ("LGD", "PD"):
@@ -428,9 +428,9 @@ def test_exp2_and_exp3_differ_only_where_they_should():
         assert two["eval"] == three["eval"], f"{track}: evaluation must be identical"
         assert two["task"] == three["task"]
         assert two["architecture"] == three["architecture"]
-        assert two["init"]["strategy"] == "scratch"
-        assert three["init"]["strategy"] != "scratch"
-        assert three["init"]["pretrained_path"], "a warm start needs a checkpoint"
+        assert three["init"]["strategy"] == "scratch"
+        assert two["init"]["strategy"] != "scratch"
+        assert two["init"]["pretrained_path"], "a warm start needs a checkpoint"
 
 
 #: TabICLv2 stage 1, read off `scripts/train_v2_reg_stage1.sh` in the pinned tfm-library.

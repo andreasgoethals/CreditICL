@@ -311,7 +311,7 @@ def test_the_same_metrics_are_used_by_every_experiment():
 
 
 def test_the_same_dev_holdout_split_is_used_by_every_experiment():
-    """A different split per experiment would let Exp3 look better than Exp2 purely by being
+    """A different split per experiment would let Exp2 look better than Exp3 purely by being
     scored on easier datasets."""
     from src.utils.config import load
 
@@ -480,7 +480,7 @@ def test_pd_head_is_tabiclv2s_own_ten_class_head():
     `_compute_batch_loss` slices `logits[..., :n_classes]` before cross-entropy: the head width
     is architecture, the class count is data. Building a 2-wide head made a
     27,538,938-parameter model where TabICLv2's is 27,552,258 — a DIFFERENT NETWORK, which
-    voids the project's central claim to be testing only the prior, and left Exp3 unable to
+    voids the project's central claim to be testing only the prior, and left Exp2 unable to
     warm-start (4 head tensors mismatched on shape).
     """
     from src.models.architecture import build_model, is_available

@@ -844,7 +844,7 @@ morning stands, and the "PD's prior is expensive" hypothesis is dead.
    writing the round-trip test, and confirmed by parameter count: 27,538,938 against
    27,552,258, a difference of exactly 13,320 — the four head tensors. `Trainer._build_model`
    sets `max_classes` from `prior.n_classes`, overriding `build_model`'s upstream default of 10.
-   Exp1 and Exp2 are self-consistent, but **Exp3's PD warm start cannot load the released
+   Exp1 and Exp3 are self-consistent, but **Exp2's PD warm start cannot load the released
    checkpoint.** Left unchanged deliberately: it is a decision about the experiment.
 
 ### Interpretation

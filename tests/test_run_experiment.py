@@ -140,7 +140,7 @@ def test_the_report_says_what_to_do_next(fake_tree):
 
 
 def test_the_experiment_number_is_required_and_shown():
-    """"Did I just submit Exp1 or Exp3?" must never be a question answered from memory. The
+    """"Did I just submit Exp1 or Exp2?" must never be a question answered from memory. The
     number is a required positional and appears in the report header."""
     from src.utils.run_experiment import main, render
 
@@ -148,7 +148,7 @@ def test_the_experiment_number_is_required_and_shown():
     with pytest.raises(SystemExit):
         main([])
 
-    assert "EXPERIMENT 3" in render([], 3)  # empty stage list, exp 3
+    assert "EXPERIMENT 2" in render([], 2)  # empty stage list, exp 2
 
 
 def test_exp2_and_exp3_refuse_to_run_while_still_templates(fake_tree, capsys):
@@ -177,6 +177,6 @@ def test_one_invocation_drives_one_experiment_only():
 
     sig = inspect.signature(plan)
     assert list(sig.parameters)[0] == "exp"
-    # a single int, so exp1 and exp3 can never be planned in the same call
+    # a single int, so exp1 and exp2 can never be planned in the same call
     stages = plan(1, ["lgd"])
     assert all(s.name.startswith("exp1-") for s in stages)

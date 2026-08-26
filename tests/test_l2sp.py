@@ -3,8 +3,8 @@
     Omega(w) = (alpha / 2) * || w - w0 ||^2
 
 Introduced for transfer learning by Li et al. 2018; used for continued pre-training of
-TabPFNv2 by Real-TabPFN (Garg et al. 2025) at alpha = 0.003, which is the value Exp3 sweeps
-against 0.0. Exp3 is the only experiment that uses it: Exp1 and Exp2 train from scratch, where
+TabPFNv2 by Real-TabPFN (Garg et al. 2025) at alpha = 0.003, which is the value Exp2 sweeps
+against 0.0. Exp2 is the only experiment that uses it: Exp1 and Exp3 train from scratch, where
 there is no starting point to be pulled toward.
 
 Two things here are easy to get wrong and neither shows up in a loss curve:
@@ -36,7 +36,7 @@ def _trainer(cfg, tmp_path, **train_overrides):
 
 def test_l2sp_needs_a_starting_point(lgd_cfg, tmp_path):
     """`scratch` + L2-SP is a contradiction: a random init is not a starting point worth
-    staying near. Silently ignoring it would make an Exp3 arm look like it ran with the
+    staying near. Silently ignoring it would make an Exp2 arm look like it ran with the
     regulariser when it did not."""
     with pytest.raises(ValueError, match="STARTING POINT"):
         _trainer(lgd_cfg, tmp_path, l2sp_alpha=0.003)
@@ -110,15 +110,15 @@ def test_the_penalty_lands_on_unscaled_gradients_and_before_the_clip():
     assert unscale < apply_ < clip
 
 
-def test_exp3_sweeps_it_and_the_others_do_not():
-    """It is a continued-pretraining tool. Exp1 and Exp2 start from random weights."""
+def test_exp2_sweeps_it_and_the_others_do_not():
+    """It is a continued-pretraining tool. Exp1 and Exp3 start from random weights."""
     import yaml
 
     for path in sorted((ROOT / "config").glob("Exp*.yaml")):
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         swept = (raw.get("sweep") or {}).get("train.l2sp_alpha")
         body = (raw.get("train") or {}).get("l2sp_alpha")
-        if path.name.startswith("Exp3"):
+        if path.name.startswith("Exp2"):
             assert swept == [0.0, 0.003], f"{path.name}: expected off vs Real-TabPFN's value"
             assert body is None, "one knob, one home"
         else:

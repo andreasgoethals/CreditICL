@@ -252,7 +252,7 @@ def apply_sweep_block(cfg: dict[str, Any]) -> dict[str, Any]:
                 f"knobs. Single values belong in the config body below it."
             )
         # `seeds` is exempt: it is a REPEAT COUNT, never a lever. `[0]` legitimately means "no
-        # repeats", which a screening tier wants — Exp3 is 60 arms before seeds are considered.
+        # repeats", which a screening tier wants — Exp2 is 60 arms before seeds are considered.
         # The rule exists to stop a fixed value being parked here where it looks like a lever.
         if len(values) < 2 and path != "seeds":
             raise ValueError(

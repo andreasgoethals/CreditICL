@@ -146,7 +146,7 @@ it might be:
 
 **What to do instead of changing it:** record the feature width per evaluated dataset
 alongside `context_cap`, so a reader can see which rows are extrapolating. If a wide-table
-effect ever shows up, the answer is Exp2 with a stage that trains wider — not a silent change
+effect ever shows up, the answer is Exp3 with a stage that trains wider — not a silent change
 to the screening tier.
 
 ---
@@ -175,7 +175,7 @@ counts 40x and you pay for the adaptation without getting it.
 
 **Instead:** stage 1 only, and cap the *evaluation* context to 1,024 for both models from one
 shared setting, so the comparison is matched rather than approximate. Long context belongs in
-Exp2 on the single winning prior, and it needs no new code — `init.strategy: full` plus
+Exp3 on the single winning prior, and it needs no new code — `init.strategy: full` plus
 `pretrained_path` is upstream's `--checkpoint_path ... --only_load_model True`.
 
 ---
@@ -203,7 +203,7 @@ the micro-batch itself.
 
 The limit is credits. A B200 costs **437.50 credits per GPU-minute** (26,250/hour) plus ~3.04
 per CPU-core-minute, and 75 arms at ~16-22 h each is **33-46 M credits**. Doubling `max_steps`
-doubles that. Exp1 buys a **ranking**; Exp2 buys the converged number.
+doubles that. Exp1 buys a **ranking**; Exp3 buys the converged number.
 
 If the budget will not stretch, **cut `max_steps`, not the prior shape.** A shorter run is just
 shorter; a cheaper prior is a confound.
@@ -328,9 +328,9 @@ Fig. 10).
 capacity. It also contradicts a published convergence result, so it has to beat
 that argument rather than ignore it.
 
-## Experiment 3 — continued pre-training, and how its hyperparameters were chosen
+## Experiment 2 — continued pre-training, and how its hyperparameters were chosen
 
-Exp3 starts from the **released TabICLv2 weights** and keeps training on a mixture of the
+Exp2 starts from the **released TabICLv2 weights** and keeps training on a mixture of the
 original prior and ours. The question is how much of ours to add; everything else on this page
 is a nuisance parameter that has to be set well enough not to confound the answer.
 
@@ -357,7 +357,7 @@ the reason `train.lr` is swept rather than picked.
 Both CPT papers use AdamW; TabICLv2 stage 3 uses Muon. The deciding argument is mechanical:
 **under `optimizer: muon`, `train.lr` is only the rate of Muon's auxiliary AdamW half**, so
 sweeping it would move almost nothing and the sweep would look like "learning rate does not
-matter". Exp1 and Exp2 keep Muon, matching how the released weights were made.
+matter". Exp1 and Exp3 keep Muon, matching how the released weights were made.
 
 ### `train.l2sp_alpha` — pull toward the starting point
 
@@ -399,7 +399,7 @@ mixture axis has a winner, re-run that configuration with three seeds.
 ## `init.strategy` — how to start
 
 `scratch` (random init), `full` (pretrained, train everything at a low LR), `icl_only` (freeze
-the column and row blocks), `head_only` (freeze all blocks). Exp1 and Exp2 use `scratch`; Exp3
+the column and row blocks), `head_only` (freeze all blocks). Exp1 and Exp3 use `scratch`; Exp2
 warm-starts from the released TabICLv2 weights.
 
 All four come from what TabICL itself does. **No LoRA.** Full analysis in

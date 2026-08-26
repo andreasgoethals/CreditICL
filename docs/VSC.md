@@ -329,9 +329,9 @@ python -m src.utils.run_experiment 1 --submit   # Exp1: submit whatever is ready
 ```
 
 **The experiment number is required** — never a default — and is printed at the top of the
-report, so "am I looking at Exp1 or Exp3?" is answered on the page, not from memory. One
+report, so "am I looking at Exp1 or Exp2?" is answered on the page, not from memory. One
 invocation drives exactly ONE experiment's two phases (train -> benchmark) across both tracks.
-`run_experiment 2` and `run_experiment 3` **refuse to run** while their configs still hold
+`run_experiment 3` and `run_experiment 2` **refuse to run** while their configs still hold
 `FILL_FROM_EXP1`, so you cannot start a later experiment before Exp1 has chosen a winner.
 
 It reads the **output tree** — not `sacct`, which forgets, and not the queue, which a drain
@@ -843,7 +843,7 @@ long the sweep takes — so decide it against the QoS limits in §3.2 rather tha
 
 Upstream's stage 1 is 500,000 steps. At our measured rate that is ~347 h **per arm**, and 75
 arms would be 26,000 GPU-hours. Our 12,500 steps is 2.5 % of stage 1, and that is the whole
-reason Exp1 is a *screening* tier: it ranks priors, and only Exp2 runs the winner long enough
+reason Exp1 is a *screening* tier: it ranks priors, and only Exp3 runs the winner long enough
 for the number to mean anything on its own.
 
 ### Storage rules out pooling at full scale
@@ -851,7 +851,7 @@ for the number to mean anything on its own.
 At the measured 97 KB (LGD) / 131 KB (PD) per dataset, 35M datasets is **3.5-4.7 TB per
 variant**, ~16 TB for four pools, against a ~1 TB staging quota. TabICLv2 never stored its
 datasets either — 550K steps x batch 64 means **each dataset is seen once**, so there are no
-epochs and no corpus. Exp2 therefore uses `--prior-source generate`.
+epochs and no corpus. Exp3 therefore uses `--prior-source generate`.
 
 Pools remain useful for Exp1, where they remove draw-luck between arms that are only 12,500
 steps long.

@@ -1,7 +1,7 @@
 """One architecture for all three experiments, and it is TabICLv2's own.
 
 The test that matters here is the LAST one: our model's parameter names match the released
-checkpoint's EXACTLY. That is the difference between Exp3 being possible and not, and it is the
+checkpoint's EXACTLY. That is the difference between Exp2 being possible and not, and it is the
 thing that was silently false while the model was vendored from NanoTabICL — a 665-line
 reimplementation whose 390 names matched zero of the checkpoint's 347.
 """
@@ -56,7 +56,7 @@ def test_the_two_tasks_differ_only_in_the_head_and_the_norms():
 @REAL
 @pytest.mark.parametrize("task,pattern", [("lgd", "regressor"), ("pd", "classifier")])
 def test_our_model_matches_the_released_checkpoint_exactly(task, pattern):
-    """THE TEST THIS FILE EXISTS FOR. Exp3 warm-starts from these weights, and a checkpoint only
+    """THE TEST THIS FILE EXISTS FOR. Exp2 warm-starts from these weights, and a checkpoint only
     loads into the code that saved it. A name mismatch loads NOTHING and raises nothing — the
     model still runs and outputs partly random numbers — so this must be checked by name, not by
     whether `load_state_dict` threw."""
@@ -80,7 +80,7 @@ def test_our_model_matches_the_released_checkpoint_exactly(task, pattern):
 @REAL
 @pytest.mark.parametrize("task,pattern", [("lgd", "regressor"), ("pd", "classifier")])
 def test_the_released_checkpoint_loads_strictly(task, pattern):
-    """The end-to-end version of the test above: `strict=True` must succeed, because Exp3 sets
+    """The end-to-end version of the test above: `strict=True` must succeed, because Exp2 sets
     `strict_load: true` precisely so a mismatch is a crash rather than a silent no-op."""
     found = glob.glob(f"checkpoints/*tabicl*{pattern}*.ckpt")
     if not found:
@@ -106,7 +106,7 @@ def test_test_sized_overrides_do_not_have_to_know_the_architecture():
 
 @REAL
 def test_freezing_finds_the_stacks_on_the_upstream_model():
-    """`icl_only` is an Exp3 arm. Upstream names the stacks `col_embedder`/`row_interactor`/
+    """`icl_only` is an Exp2 arm. Upstream names the stacks `col_embedder`/`row_interactor`/
     `icl_predictor` and the fallback names them `col_blocks`/`row_blocks`/`icl_blocks`; hard-
     coding either set made this raise AttributeError only after a job had queued."""
     from src.train.adapt import apply_freezing

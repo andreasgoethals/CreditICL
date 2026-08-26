@@ -293,7 +293,7 @@ class Trainer:
         else:
             self.load_report = {"strategy": "scratch"}
 
-        # L2-SP, for continued pre-training (Exp3). Captured HERE, straight after the
+        # L2-SP, for continued pre-training (Exp2). Captured HERE, straight after the
         # pretrained weights are loaded and before a single step: w0 is the starting point,
         # and any later snapshot is a different regulariser.
         self.l2sp_alpha = float(tcfg_for_l2sp.get("l2sp_alpha", 0.0) or 0.0)
@@ -527,7 +527,7 @@ class Trainer:
         # architecture is TabICLv2's, unchanged — every one of upstream's classifier stage
         # scripts passes `--max_classes 10`. This line used to force it to `prior.n_classes`
         # (2), which made a 27,538,938-parameter model where upstream's is 27,552,258: a
-        # different network, so "same architecture as TabICLv2" stopped being true and Exp3
+        # different network, so "same architecture as TabICLv2" stopped being true and Exp2
         # could not warm-start from the released checkpoint (4 head tensors mismatched).
         # A binary task simply uses the first two of the ten logits — see `_loss_for`.
         return build_model(self.task, architecture=architecture, **mcfg)

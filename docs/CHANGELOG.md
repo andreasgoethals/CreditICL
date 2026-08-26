@@ -7,6 +7,10 @@ reason is not obvious.
 
 ## 27-08-2026 — the overnight run: 8 LGD arms clean, 6 PD mechanism arms crashed (fixed)
 
+- **Exp2 and Exp3 renumbered (swapped) across the whole repo.** Continued pre-training is now
+  **Exp2**; the long confirmation run of Exp1's winning prior is now **Exp3**. Config file
+  *contents* were exchanged (filenames unchanged), and `src/`, `scripts/`, `tests/` and `docs/`
+  follow, so every `Exp2`/`Exp3` reads consistently. Exp1 untouched; 836 tests pass.
 - **`Vasicek mechanism produced a single-class target` no longer crashes an arm.** Overnight,
   6 PD `mode=mechanism` arms died with exit 1: `apply_pd_mechanism` RAISED on a rare
   single-class draw, and the exception escaped the DataLoader worker and killed the whole run.
@@ -87,8 +91,8 @@ reason is not obvious.
 - **`src/utils/pipeline.py` -> `src/utils/run_experiment.py`.** The command now reads as what it
   does: `python -m src.utils.run_experiment 1`. The experiment number is a REQUIRED positional
   (1/2/3), never a default, and is printed at the top of every report — so "did I submit Exp1 or
-  Exp3?" is answered on the page. One invocation drives exactly one experiment.
-- **Exp2 and Exp3 refuse to run while they are still templates.** `run_experiment 2 --submit`
+  Exp2?" is answered on the page. One invocation drives exactly one experiment.
+- **Exp2 and Exp3 refuse to run while they are still templates.** `run_experiment 3 --submit`
   checks for `FILL_FROM_EXP1` and stops with exit 1 and a clear message rather than submitting a
   sweep that would measure the wrong arm. You cannot start a later experiment before Exp1 has
   picked a winner and it has been filled in.
@@ -188,7 +192,7 @@ reason is not obvious.
 - 763 tests pass.
 - **A swept knob may no longer also carry a literal in the config body.** `apply_sweep_block`
   overwrites it, so `prior.credit_fraction: 0.2` under `prior:` — commented "only a fallback"
-  — was dead text that read like a setting. Removed from all six configs (Exp3 also had
+  — was dead text that read like a setting. Removed from all six configs (Exp2 also had
   `init.strategy`), `apply_sweep_block` now raises on it, and two tests check every file.
 - **The GPU benchmark expands the grid instead of reading the raw prior block**, so it
   benchmarks arm 0 (the control) on purpose rather than falling back to a default.
@@ -232,7 +236,7 @@ reason is not obvious.
   13 GB of 178 is idle MEMORY, not idle compute (80 % of the compute ceiling, 88.7 % on
   `utilization.gpu`), so the lever is the price of the card, not the batch size. An A100 is
   2.7x cheaper all-in and holds the model six times over.
-- **Exp3 designed properly: continued pre-training with a real hyperparameter sweep.**
+- **Exp2 designed properly: continued pre-training with a real hyperparameter sweep.**
   `init.strategy: [full, icl_only, head_only]` (all layers / ICL stack + head / head alone),
   `train.l2sp_alpha: [0.0, 0.003]`, `train.lr: [1e-6, 1e-5]`, crossed with the five mixtures =
   **60 arms** at one seed. Seeds come after a winner.
@@ -242,9 +246,9 @@ reason is not obvious.
   would have been 16x too big. Applied after `unscale_` (so the loss scaler cannot change it)
   and before the clip (so the clipped norm is the whole gradient). Raises on
   `strategy: scratch`. Seven tests.
-- **Exp3 switches to AdamW**, and this is not cosmetic: under Muon, `train.lr` is only the
+- **Exp2 switches to AdamW**, and this is not cosmetic: under Muon, `train.lr` is only the
   AUXILIARY AdamW rate, so the learning-rate sweep would have moved almost nothing. Both
-  published CPT recipes use AdamW. Exp1/Exp2 keep Muon. Also `weight_decay: 1e-4`
+  published CPT recipes use AdamW. Exp1/Exp3 keep Muon. Also `weight_decay: 1e-4`
   (TabPFN-Wide's CPT value) rather than pretraining's 0.01.
 - **`seeds` is exempt from the "a sweep needs >= 2 values" rule** — it is a repeat count, not a
   lever, and `[0]` legitimately means no repeats.
@@ -410,7 +414,7 @@ reason is not obvious.
   steps, one seed, three array tasks. Settles batch size before Exp1 instead of sweeping it.
 
 - **`batch_size: 64`, `micro_batch_size: 4`** — upstream's own `--batch_size 64
-  --micro_batch_size 4`, in Exp1 and Exp2. It was 4 with no accumulation: an effective batch
+  --micro_batch_size 4`, in Exp1 and Exp3. It was 4 with no accumulation: an effective batch
   **sixteen times smaller than upstream's**, while using upstream's learning rate of 8e-4,
   which was tuned for 64. Large batches tolerate large rates; small ones do not, and that
   mismatch is the leading suspect for the NaN predictions.
@@ -555,7 +559,7 @@ reason is not obvious.
 - **`max_classes` is no longer set from the prior.** `Trainer._build_model` forced it to
   `prior.n_classes` (2), making a 27,538,938-parameter network where TabICLv2's classifier is
   27,552,258 — a *different architecture*, which voids the project's claim to be varying only
-  the prior, and left Exp3 unable to warm-start. Now 10, as in every one of upstream's
+  the prior, and left Exp2 unable to warm-start. Now 10, as in every one of upstream's
   classifier stage scripts.
 - **The classification loss slices the logits**, exactly as upstream's `_compute_batch_loss`
   does (`logits[..., :n_classes]` where `n_classes = y_train.max()+1`). Same slice added to
@@ -576,7 +580,7 @@ reason is not obvious.
 - **Round-trip test** (`build_model` → save → `load_our_checkpoint` → identical keys and equal
   weights), both tasks, both architectures. That seam had no test at all.
 - **`test_pd_head_size_is_pinned`** records that our PD head is 2-class (27,538,938 params) while
-  the released classifier is 10-class (27,552,258), so **Exp3's PD warm start cannot load the
+  the released classifier is 10-class (27,552,258), so **Exp2's PD warm start cannot load the
   released checkpoint**. Deliberately not changed — that is a decision about the experiment.
 - **Progress measurement isolates each dataset.** One `try` wrapped both loops, so a NaN target
   in the second real dataset discarded the other two *and* all eight out-of-domain suites. Adds
@@ -804,10 +808,10 @@ Figures, after rendering and actually looking at each one:
 ## 12-08-2026
 
 - **The released TabICLv2 checkpoints now load with `strict=True`: 347/347 tensors for the
-  regressor, 391/391 for the classifier.** Exp3's blocker is gone. Our LGD model is
+  regressor, 391/391 for the classifier.** Exp2's blocker is gone. Our LGD model is
   28,544,991 parameters — the checkpoint's exact count. Two fixes got there: the real
   constructor takes `bias_free_ln`, not `norm_type`; and `apply_freezing` hard-coded
-  NanoTabICL's stack names, so Exp3's `icl_only` arm would have raised `AttributeError` only
+  NanoTabICL's stack names, so Exp2's `icl_only` arm would have raised `AttributeError` only
   after the job had queued.
 - **The test suite now runs on the real architecture** (`conftest` prefers it when installed),
   shrunk for speed. `test_gradients_actually_reach_the_weights` no longer reaches into one
@@ -834,19 +838,19 @@ Figures, after rendering and actually looking at each one:
 - **One architecture for all three experiments: TabICLv2's own.** `tabicl>=2.0` is now a
   REQUIRED dependency and `src/models/architecture.py` is the single entry point; every config
   carries `architecture: tabicl`. NanoTabICL was a 665-line reimplementation vendored only so
-  the repo had a model with nothing to install — the cost was that Exp3 could not warm-start
+  the repo had a model with nothing to install — the cost was that Exp2 could not warm-start
   and architectural identity was unverifiable. It survives as an explicitly-selected fallback
   for smoke tests and must never produce a result. **Needs installing before any real run.**
 - **Each experiment owns its own prior; the shared `prior_file:` is gone.** It encoded a false
-  claim: Exp1 sweeps **32** priors, Exp2 runs the **one** that won, Exp3 sweeps the **mixture**.
+  claim: Exp1 sweeps **32** priors, Exp3 runs the **one** that won, Exp2 sweeps the **mixture**.
   One file cannot represent all three.
 - **Two bugs found while doing it, both caught by tests written for the purpose:** the Exp2/Exp3
   winner placeholders were never inserted, so those configs would have silently trained on
   whatever default the prior carried; and a regex put PD's `category_frequency` placeholder
   under `prior.base` — the **control arm**, which must stay exactly TabICL's.
-- **Exp3 rebuilt as continued pre-training, from the published precedent.** TabPFN-Wide
+- **Exp2 rebuilt as continued pre-training, from the published precedent.** TabPFN-Wide
   (Kolberg et al. 2026) does exactly this and reports it matches the base model; its recipe is
-  now Exp3's — **LR 1e-5** (not pretraining's 8e-4, which would destroy trained weights),
+  now Exp2's — **LR 1e-5** (not pretraining's 8e-4, which would destroy trained weights),
   batch 16, 10,000 steps, longer warmup, clip 1.0. Sweeps `credit_fraction` 0→1 (Mitra, Zhang
   et al. 2025: mixtures beat single priors, so expect an interior optimum) and `init.strategy`
   `full` vs `icl_only` (Tanna et al. 2026 find full fine-tuning can hurt calibration, which is
@@ -861,8 +865,8 @@ Figures, after rendering and actually looking at each one:
 - `docs/PRIORS.md` cut from 268 to 185 lines.
 
 - **Six config files, one per experiment per track** — `Exp{1,2,3}_{LGD,PD}.yaml`, replacing
-  `LGD.yaml`/`PD.yaml`. Exp1 screens the prior grid (96 arms, 50,000 datasets each), Exp2 runs
-  the winner long (400,000), Exp3 is Exp2 with only `init` changed.
+  `LGD.yaml`/`PD.yaml`. Exp1 screens the prior grid (96 arms, 50,000 datasets each), Exp3 runs
+  the winner long (400,000), Exp2 is Exp3 with only `init` changed.
 - **`prior_file:`** — the prior lives once per track in `prior_{LGD,PD}.yaml` and each
   experiment names it, so all three sample the same distribution. `config.load()` deep-merges
   it; an experiment can override one nested key without deleting its siblings.

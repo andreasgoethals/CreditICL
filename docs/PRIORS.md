@@ -155,17 +155,17 @@ genuinely different things with it.
 | | how many priors | budget/arm | init |
 |---|---|---|---|
 | **Exp1** | **32**, swept — this is the experiment | 50,000 datasets | scratch |
-| **Exp2** | **1**, the Exp1 winner (+ control) | 400,000 | scratch |
-| **Exp3** | 1 winner, **5 mixtures** swept | 160,000 | released checkpoint |
+| **Exp2** | 1 winner, **5 mixtures** swept | 160,000 | released checkpoint |
+| **Exp3** | **1**, the Exp1 winner (+ control) | 400,000 | scratch |
 
-**Exp3 is continued pre-training, and it has a published precedent.** TabPFN-Wide (Kolberg et
+**Exp2 is continued pre-training, and it has a published precedent.** TabPFN-Wide (Kolberg et
 al. 2026) *"extends existing models through continued pre-training on synthetic data sampled
 from a customized prior"* and reports it matches or exceeds the base model. Its recipe is what
-Exp3 follows: **LR 1e-5**, batch 16, **10,000 steps** (they saw no consistent gains beyond).
+Exp2 follows: **LR 1e-5**, batch 16, **10,000 steps** (they saw no consistent gains beyond).
 The learning rate is the important part — pretraining's 8e-4 applied to trained weights would
 destroy them.
 
-Exp3 sweeps `credit_fraction` from 0.0 to 1.0 because the model **already knows** the original
+Exp2 sweeps `credit_fraction` from 0.0 to 1.0 because the model **already knows** the original
 prior, so how much of ours to add *is* the question. Mitra (Zhang et al. 2025) selects a prior
 mixture on performance, diversity and distinctiveness and finds mixtures beat single priors —
 so expect an interior optimum, and `1.0` is included to measure what forgetting the original
@@ -175,11 +175,11 @@ supervised fine-tuning on real data rather than continued pretraining, so that i
 not a result — but miscalibration is disqualifying for PD, so it gets measured.
 
 **For scale:** TabICLv2's own budget is `500,000 + 40,000 + 10,000` steps at batch 64 =
-**35,200,000 datasets**, 24.5 GPU-days per model. Our Exp2 is ~1.1 % of that. Every result here
+**35,200,000 datasets**, 24.5 GPU-days per model. Our Exp3 is ~1.1 % of that. Every result here
 is a statement about priors **at a fixed small budget**, and must be written that way.
 
 ## 7. Open item
 
-**Exp3 needs the upstream `tabicl` package installed** (`pip install "tabicl>=2.0"`). It is now
+**Exp2 needs the upstream `tabicl` package installed** (`pip install "tabicl>=2.0"`). It is now
 a required dependency: the released checkpoint only loads into the code that saved it. See
 `docs/AGENTS_MEMORY.md`.

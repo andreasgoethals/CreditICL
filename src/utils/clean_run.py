@@ -22,7 +22,7 @@ LISTS BY DEFAULT. The two mistakes are not symmetric: a listing you meant as a d
 more command, and a deletion you meant as a listing costs the run.
 
 NEVER TOUCHES `data/raw/` or `tfm-library/`, nor the RELEASED `*.ckpt` weights at the top of
-`checkpoints/` — those are a HuggingFace download and what Exp3 warm-starts from.
+`checkpoints/` — those are a HuggingFace download and what Exp2 warm-starts from.
 
 `--checkpoints` clears OUR OWN `exp*/` run directories under `checkpoints/`. **Without it a
 rerun resumes from the last one and trains nothing** — it exits 0 in two seconds having scored
@@ -64,7 +64,7 @@ def run_checkpoint_dirs() -> list[Path]:
     """OUR trained checkpoints — the `exp*` run directories under `checkpoints/`.
 
     Separated from the released TabICLv2 `*.ckpt` files, which sit at the top level of the same
-    directory and must never go: they are a HuggingFace download and what Exp3 warm-starts from.
+    directory and must never go: they are a HuggingFace download and what Exp2 warm-starts from.
 
     This exists because of a chain of two fixes. Our checkpoints used to fall back to
     `$VSC_DATA/output/<run>/checkpoints` (staging was mode 0500), where a normal clean removed

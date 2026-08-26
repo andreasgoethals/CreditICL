@@ -49,7 +49,7 @@
 #SBATCH --export=ALL
 #SBATCH --requeue
 # 0-75 fits Exp1 (75 arms + 1 reference). OVERRIDE IT for the others:
-#     Exp2: --array=0-10%8      Exp3: --array=0-60%8
+#     Exp2: --array=0-60%8      Exp3: --array=0-10%8
 # Indices past the reference slot exit in seconds, so an oversized range is safe.
 #SBATCH --array=0-75%8
 
@@ -114,7 +114,7 @@ echo "grid has ${N_ARMS} arms; this task is index ${IDX}"
 
 # EXACTLY ONE index is the reference: the first past the grid. Anything beyond it exists only
 # because `--array` is a fixed range and the three experiments have different arm counts
-# (Exp1 75, Exp2 10, Exp3 60). Those tasks exit immediately rather than all racing to write the
+# (Exp1 75, Exp2 60, Exp3 10). Those tasks exit immediately rather than all racing to write the
 # same reference file.
 if [ "${IDX}" -gt "${N_ARMS}" ]; then
     echo "index ${IDX} is past the grid (${N_ARMS} arms) and past the reference slot. Nothing to do."

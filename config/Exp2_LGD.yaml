@@ -1,5 +1,5 @@
 # =============================================================================
-# EXPERIMENT 2 — LGD — THE WINNING PRIOR, RUN LONG
+# EXPERIMENT 2 — LGD — CONTINUED PRE-TRAINING FROM THE RELEASED WEIGHTS
 #
 # Every knob below carries at most a one-line note. The REASONING — why each
 # value, what evidence backs it, what upstream does — lives in
@@ -23,8 +23,11 @@ architecture: tabicl # the upstream TabICL class; see src/models/architecture.py
 # THE SWEEP — every multi-value knob, crossed. This block IS the experiment
 # ----------------------------------------------------------------------------
 sweep:
-  prior.credit_fraction: [0.0, FILL_FROM_EXP1] # the control, and Exp1's winning share
-  seeds: [0, 1, 2, 3, 4] # five seeds: these are the numbers that get reported
+  prior.credit_fraction: [0.0, 0.25, 0.5, 0.75, 1.0] # how much of OUR prior to add; 0.0 = pure continued pretraining
+  init.strategy: [full, icl_only, head_only] # every layer, the ICL stack + head, or the head alone
+  train.l2sp_alpha: [0.0, 0.003] # pull toward the loaded weights; 0.003 is Real-TabPFN's value
+  train.lr: [1.0e-6, 1.0e-5] # AdamW rate; published CPT rates span 3e-7 to 2e-5
+  seeds: [0] # ONE seed: 5x3x2x2 is already 60 arms. Seeds come after a winner is picked.
 
 # ----------------------------------------------------------------------------
 # THE PRIOR — the parts that are NOT swept
@@ -91,36 +94,35 @@ prior:
 # HOW TO START
 # ----------------------------------------------------------------------------
 init:
-  strategy: scratch # scratch | full | icl_only | head_only
-  pretrained_path: null # checkpoint to start from, for anything but scratch
+  pretrained_path: checkpoints/tabicl-regressor-v2-20260212.ckpt # the released weights
+  strict_load: true # a name mismatch must FAIL, never load silently and half-work
 
 # ----------------------------------------------------------------------------
 # TRAINING
 # ----------------------------------------------------------------------------
 train:
-  max_steps: 100000 # gradient updates
-  batch_size: 64 # datasets per UPDATE; upstream's --batch_size 64
-  micro_batch_size: 4 # datasets per FORWARD PASS; must be <= grouping.group_size
+  max_steps: 10000 # gradient updates
+  batch_size: 16 # datasets per update
+  micro_batch_size: 16 # datasets per forward pass, for gradient accumulation
   num_quantiles: 999 # size of the predicted quantile grid
 
-  optimizer: muon # muon = what TabICLv2 uses | adamw
-  muon_lr: 8.0e-4 # Muon's rate; it prefers ~8x AdamW's
-  lr: 3.0e-4 # AdamW rate, also used for Muon's auxiliary AdamW half
-  scheduler: cosine_with_restarts # cosine_with_restarts | constant
+  optimizer: adamw # NOT muon: `lr` is Muon's AUXILIARY rate, so the sweep would do nothing
+  muon_lr: 8.0e-5 # Muon's rate; it prefers ~8x AdamW's
+  scheduler: cosine_with_restarts # linear warmup then cosine decay, as both CPT papers use
   beta1: 0.9 # AdamW momentum
   beta2: 0.95 # AdamW variance decay
-  weight_decay: 0.01 # L2 pull toward zero
-  gradient_clipping: 10.0 # max gradient norm; TabICLv2 raised this from 1 to 10
-  warmup_proportion: 0.01 # share of steps spent ramping the rate up
+  weight_decay: 1.0e-4 # TabPFN-Wide's continued-pretraining value, not pretraining's 0.01
+  gradient_clipping: 1.0 # max gradient norm; TabICLv2 raised this from 1 to 10
+  warmup_proportion: 0.05 # share of steps spent ramping the rate up
   cosine_num_cycles: 1 # restarts in the schedule
   cosine_amplitude_decay: 1.0 # how much each cycle shrinks
   cosine_lr_end: 1.0e-7 # floor of the schedule
 
   amp: true # mixed precision, GPU only
   num_workers: 12 # CPU workers generating datasets
-  log_every: 250 # steps between log lines
+  log_every: 50 # steps between log lines
   save_temp_every: 250 # steps between rolling checkpoints; caps what a kill loses
-  save_perm_every: 25000 # steps between kept-forever checkpoints
+  save_perm_every: 2500 # steps between kept-forever checkpoints
   max_temp_checkpoints: 2 # rolling checkpoints retained
 
 # ----------------------------------------------------------------------------

@@ -5,7 +5,7 @@
     python -m src.utils.run_experiment 2 --submit   # Exp2 (only after Exp1's winner is filled in)
 
 WHICH EXPERIMENT, ALWAYS EXPLICIT. The experiment number is a REQUIRED argument, not a default,
-and it is printed at the top of every report — because "did I just submit Exp1 or Exp3?" is not
+and it is printed at the top of every report — because "did I just submit Exp1 or Exp2?" is not
 a question anyone should have to answer from memory. One invocation drives exactly one
 experiment's two phases (train -> benchmark) for both tracks.
 
@@ -177,9 +177,9 @@ def _benchmark_stage(exp: int, track: str, queued: set[str], train: Stage) -> St
 def unconfigured_tracks(exp: int, tracks: list[str]) -> list[str]:
     """Tracks whose config still holds `FILL_FROM_EXP1`. Empty for a runnable experiment.
 
-    Exp2 and Exp3 ship as templates: the prior mix and (for Exp2) the winning arm are blank
+    Exp2 and Exp3 ship as templates: the prior mix and (for Exp3) the winning arm are blank
     until Exp1 has picked a winner. Submitting one anyway would run for hours and measure the
-    wrong thing, so `run_experiment 2 --submit` must refuse until the holes are filled.
+    wrong thing, so `run_experiment 3 --submit` must refuse until the holes are filled.
     """
     from src.utils.config import find_placeholders, load_yaml
 

@@ -186,7 +186,7 @@ for pkg in numpy torch sklearn yaml pandas pyarrow tabicl src; do
 done
 
 # The architecture check that matters: our model must match the released
-# checkpoints, or Exp3 cannot warm-start. Cheap, and it fails here rather than
+# checkpoints, or Exp2 cannot warm-start. Cheap, and it fails here rather than
 # after a job has queued.
 python - <<'PY' || FAILED=1
 from src.models.architecture import build_model, describe, is_available

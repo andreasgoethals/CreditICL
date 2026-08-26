@@ -592,14 +592,14 @@ def test_optim_docstring_matches_the_configs():
         for p in (root / "config").glob("Exp*.yaml")
     }
     # PRETRAINING IS MUON, CONTINUED PRETRAINING IS ADAMW, and the split is deliberate. Exp1
-    # and Exp2 train from scratch and must match how the released weights were made. Exp3
+    # and Exp3 train from scratch and must match how the released weights were made. Exp2
     # continues FROM those weights, where both published recipes (Real-TabPFN, TabPFN-Wide)
     # use AdamW — and the deciding argument is mechanical: under Muon, `train.lr` is only the
-    # AUXILIARY AdamW rate, so Exp3's learning-rate sweep would move almost nothing.
-    pretrain = {v for k, v in chosen.items() if k.startswith(("Exp1", "Exp2"))}
-    assert pretrain == {"muon"}, f"Exp1/Exp2 must match upstream's optimiser, got {pretrain}"
-    cpt = {v for k, v in chosen.items() if k.startswith("Exp3")}
-    assert cpt == {"adamw"}, f"Exp3 continued pretraining should use AdamW, got {cpt}"
+    # AUXILIARY AdamW rate, so Exp2's learning-rate sweep would move almost nothing.
+    pretrain = {v for k, v in chosen.items() if k.startswith(("Exp1", "Exp3"))}
+    assert pretrain == {"muon"}, f"Exp1/Exp3 must match upstream's optimiser, got {pretrain}"
+    cpt = {v for k, v in chosen.items() if k.startswith("Exp2")}
+    assert cpt == {"adamw"}, f"Exp2 continued pretraining should use AdamW, got {cpt}"
     for name in pretrain | cpt:
         assert name.upper() in doc.upper(), f"configs use {name!r}; the docstring never says so"
 
@@ -663,7 +663,7 @@ def test_batch_and_features_match_upstream():
     import yaml
 
     root = Path(__file__).resolve().parents[1]
-    for name in ("Exp1_LGD", "Exp1_PD", "Exp2_LGD", "Exp2_PD"):
+    for name in ("Exp1_LGD", "Exp1_PD", "Exp3_LGD", "Exp3_PD"):
         cfg = yaml.safe_load((root / "config" / f"{name}.yaml").read_text(encoding="utf-8"))
         assert cfg["train"]["batch_size"] == 64, f"{name}: upstream uses --batch_size 64"
         assert cfg["prior"]["max_features"] == 100, f"{name}: upstream uses --max_features 100"
@@ -717,12 +717,12 @@ def test_batch_size_is_not_swept_in_any_experiment():
     root = Path(__file__).resolve().parents[1]
     for cfg_path in sorted((root / "config").glob("Exp*.yaml")):
         sweep = yaml.safe_load(cfg_path.read_text(encoding="utf-8")).get("sweep") or {}
-        # EXP3 IS ALLOWED TO SWEEP THE RATE. For Exp1 and Exp2 the optimisation settings are
-        # nuisance parameters and upstream has already chosen them. Exp3 has no such anchor:
+        # EXP2 IS ALLOWED TO SWEEP THE RATE. For Exp1 and Exp3 the optimisation settings are
+        # nuisance parameters and upstream has already chosen them. Exp2 has no such anchor:
         # the three published continued-pretraining rates span 3e-7 to 2e-5, so the rate is a
         # genuine unknown rather than a knob being fiddled with. Batch size stays fixed
         # everywhere — it is coupled to the rate, and sweeping both confounds the pair.
-        forbidden = ["batch"] if cfg_path.name.startswith("Exp3") else ["batch", ".lr"]
+        forbidden = ["batch"] if cfg_path.name.startswith("Exp2") else ["batch", ".lr"]
         offenders = [k for k in sweep if any(f in k for f in forbidden)]
         assert not offenders, (
             f"{cfg_path.name} sweeps {offenders}. Optimisation settings are nuisance "

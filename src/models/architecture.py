@@ -12,7 +12,7 @@ checkpoints. Three things follow, and all three matter:
 
 1. **"Same architecture as TabICLv2" becomes a fact**, not a claim about a reimplementation
    that nobody can verify by reading.
-2. **Exp3 can warm-start.** A checkpoint only loads into the code that saved it — parameter
+2. **Exp2 can warm-start.** A checkpoint only loads into the code that saved it — parameter
    names are how the numbers find their slots.
 3. **Their training loop and their Muon come with it**, so ours can be checked against theirs.
 
@@ -20,7 +20,7 @@ WHAT WAS HERE BEFORE, AND WHY IT IS GONE
 
 `nanotabiclv2.py` was vendored from NanoTabICL: a 665-line minimal *reimplementation* by the
 same lab, chosen because it is one self-contained file that needs nothing installed. That
-convenience cost the project Exp3 outright — **zero of its 390 parameter names matched the
+convenience cost the project Exp2 outright — **zero of its 390 parameter names matched the
 released checkpoint's 347** — and it made architectural identity unverifiable, because you
 cannot confirm a 665-line rewrite equals a 4,000-line model by reading it. It is kept only as
 an explicitly-selected fallback for environments where `tabicl` is not installed, and it must
@@ -47,7 +47,7 @@ _INSTALL_HINT = (
     "or, on its own:\n\n"
     "    pip install \"tabicl>=2.0\"\n\n"
     "Set `architecture: nanotabicl` to fall back to the vendored reimplementation, but ONLY\n"
-    "for a smoke test: its parameter names do not match the released checkpoints, so Exp3\n"
+    "for a smoke test: its parameter names do not match the released checkpoints, so Exp2\n"
     "cannot warm-start and no result from it is comparable to TabICLv2."
 )
 

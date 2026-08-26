@@ -111,18 +111,18 @@ def test_checkpoints_flag_clears_our_runs_but_not_the_released_weights(tmp_path,
     ckpt = tmp_path / "checkpoints"
     (ckpt / "exp1_lgd_arm_s0").mkdir(parents=True)
     (ckpt / "exp1_lgd_arm_s0" / "step-1500.ckpt").write_bytes(b"ours")
-    (ckpt / "exp3_pd_arm_s1").mkdir(parents=True)
-    (ckpt / "exp3_pd_arm_s1" / "step-900.ckpt").write_bytes(b"ours")
+    (ckpt / "exp2_pd_arm_s1").mkdir(parents=True)
+    (ckpt / "exp2_pd_arm_s1" / "step-900.ckpt").write_bytes(b"ours")
     (ckpt / "tabicl-regressor-v2-20260212.ckpt").write_bytes(b"RELEASED")
     monkeypatch.setattr("src.utils.paths.checkpoints_dir", lambda *a: ckpt)
 
     dirs = clean_run.run_checkpoint_dirs()
-    assert {d.name for d in dirs} == {"exp1_lgd_arm_s0", "exp3_pd_arm_s1"}
+    assert {d.name for d in dirs} == {"exp1_lgd_arm_s0", "exp2_pd_arm_s1"}
 
     for d in dirs:
         clean_run.wipe(d)
     assert not (ckpt / "exp1_lgd_arm_s0" / "step-1500.ckpt").exists()
-    assert not (ckpt / "exp3_pd_arm_s1" / "step-900.ckpt").exists()
+    assert not (ckpt / "exp2_pd_arm_s1" / "step-900.ckpt").exists()
     assert (ckpt / "tabicl-regressor-v2-20260212.ckpt").is_file(), "released weights must live"
 
     # and it is opt-in: a plain clean must not reach them

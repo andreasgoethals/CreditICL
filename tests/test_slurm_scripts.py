@@ -417,8 +417,8 @@ def test_phase_two_covers_every_arm_plus_a_reference_column():
 
 @pytest.mark.parametrize("exp,track", [(1, "LGD"), (1, "PD"), (2, "LGD"), (3, "LGD")])
 def test_phase_two_is_shared_by_all_three_experiments(exp, track):
-    """One benchmark, three experiments. The config is chosen by `EXP` and `TRACK`, so Exp2 and
-    Exp3 are scored by the same code and against the same reference column as Exp1."""
+    """One benchmark, three experiments. The config is chosen by `EXP` and `TRACK`, so Exp3 and
+    Exp2 are scored by the same code and against the same reference column as Exp1."""
     from src.utils.config import expand_with_seeds, load
 
     text = (ROOT / "scripts" / "slurm" / BENCH).read_text(encoding="utf-8")

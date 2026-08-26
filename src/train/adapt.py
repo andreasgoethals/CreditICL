@@ -58,7 +58,7 @@ def describe_strategies() -> str:
 #: `col_embedder` / `row_interactor` / `icl_predictor`; the vendored NanoTabICL fallback calls
 #: them `col_blocks` / `row_blocks` / `icl_blocks`. Resolved by lookup rather than hard-coded,
 #: because hard-coding one set made `icl_only` raise AttributeError on the other — which is
-#: exactly the arm Exp3 needs, and it would have failed only after the job had queued.
+#: exactly the arm Exp2 needs, and it would have failed only after the job had queued.
 _STACK_NAMES = {
     "col": ("col_embedder", "col_blocks"),
     "row": ("row_interactor", "row_blocks"),
@@ -139,7 +139,7 @@ def load_pretrained(model: nn.Module, ckpt_path: str | Path, *, strict: bool = F
     THE COMPATIBILITY QUESTION IS SETTLED, in the direction that matters. With
     `architecture: tabicl` — every real config — the released TabICLv2 checkpoints load
     **exactly**: 347/347 tensors for the regressor (with `bias_free_ln=True`) and 391/391
-    for the classifier. Warm-starting Exp3 works.
+    for the classifier. Warm-starting Exp2 works.
 
     It is settled the other way too: with `architecture: nanotabicl`, **zero** of its 390
     names match the released checkpoint's 347, because the reimplementation renames every

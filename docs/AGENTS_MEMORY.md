@@ -123,7 +123,7 @@ fixed, because the fix is one changelog line and the dead end was the hour.
   running. What it weakens is the separate claim that our control reproduces TabICLv2 - and
   therefore any absolute comparison against the released checkpoint, which is already framed
   as "2.5 % of their budget".
-- **Instead:** run Exp1 on the ranking question, and before Exp2 - where the absolute number is
+- **Instead:** run Exp1 on the ranking question, and before Exp3 - where the absolute number is
   the headline - install the pinned `tabicl` 2.1.1 with `xgboost` and drive
   `tabicl.prior.graph_scm` directly, exactly as the model class and the inference wrapper were
   switched from reimplementations to upstream. **"Transcribed from" is not "is".**
@@ -304,7 +304,7 @@ fixed, because the fix is one changelog line and the dead end was the hour.
   with the micro-batch drop 4->1, which changes the number of forward PASSES per step but not
   the datasets per step - total compute per step is unchanged by it. A proportional curriculum
   on our 12,500 steps costs **3.6x**, not 307x: ~9 h/arm becomes ~32 h, which is affordable for
-  Exp2 and not for 75 arms.
+  Exp3 and not for 75 arms.
 - **Why it matters anyway:** once `crediticl` went through upstream's wrapper, the context stopped
   being capped, and the wrapper hands over the whole training split - 47,089 rows on `heloc`
   against the <=1,024 we train on. 5 of 7 LGD datasets exceed the training length.

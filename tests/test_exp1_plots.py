@@ -226,7 +226,7 @@ def test_the_pd_notebook_does_not_draw_a_target_histogram():
 
 
 def test_both_notebooks_visualise_exp1_because_that_is_the_sweep():
-    """Exp2 runs one prior and Exp3 sweeps a mixture; the 32-prior sweep is Exp1, so that is
+    """Exp3 runs one prior and Exp2 sweeps a mixture; the 32-prior sweep is Exp1, so that is
     the config these figures describe. Exp2/Exp3 configs would also refuse to load."""
     for track in ("lgd", "pd"):
         nb = json.loads(
