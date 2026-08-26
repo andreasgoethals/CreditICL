@@ -300,10 +300,13 @@ def test_pd_dispatcher_reports_realised_rate(latent):
     assert meta["realised_base_rate"] == pytest.approx(float(y.mean()), abs=1e-4)
 
 
-def test_pd_dispatcher_rejects_single_class(latent):
-    """An all-zero target is unlearnable and would poison the batch statistics."""
-    with pytest.raises(ValueError, match="single-class"):
-        M.apply_pd_mechanism(PriorRNG(23), latent, {"base_rate_range": [0.0, 0.0]})
+def test_pd_dispatcher_flags_single_class_but_does_not_raise(latent):
+    """A single-class draw is unlearnable, but the mechanism must NOT raise: on 26-08-2026 the
+    raise escaped the dataloader and killed 6 PD arms. It reports `single_class` in meta and
+    lets `apply_pd_target` rescue it with a quantile cut, exactly as the quantile path does."""
+    y, meta = M.apply_pd_mechanism(PriorRNG(23), latent, {"base_rate_range": [0.0, 0.0]})
+    assert "single_class" in meta, "the mechanism must report whether the draw was single-class"
+    assert y.numel() == latent.numel()
 
 
 # -- ratio features ----------------------------------------------------------

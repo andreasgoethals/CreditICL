@@ -59,6 +59,20 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
 
+### 27-08-2026 - A rare single-class draw crashed 6 PD arms because the guard was on the wrong branch
+- **Tried:** the overnight Exp1 run. 8 LGD arms finished clean; 6 PD `mode=mechanism` arms died
+  with `ValueError: Vasicek mechanism produced a single-class target`.
+- **Result:** `apply_pd_mechanism` raised on a single-class draw, and the raise propagated
+  through the DataLoader worker and killed the arm (exit 1, no resume — it is not a signal).
+- **Why:** `apply_pd_target` HAS a single-class guard (quantile-cut to a floor base rate), but
+  the `mode: mechanism` branch returns EARLY, several lines before it. So the quantile path was
+  protected and the mechanism path was not — and only the mechanism path can produce the
+  degenerate Vasicek draw. A guard that protects one of two branches is worse than none,
+  because the tests on the quantile path pass and hide it.
+- **Instead:** the mechanism stops raising (reports `single_class` in meta) and its branch runs
+  the same rescue. **When two code paths share a failure mode, the guard belongs before they
+  fork, or on both — never on the one you happened to test first.**
+
 ### 26-08-2026 - Renaming a script to share it silently deleted the script it replaced
 - **Tried:** making phase 2 shared across the three experiments by writing it to
   `scripts/slurm/benchmark.slurm` and removing the old `benchmark_exp1.slurm`.

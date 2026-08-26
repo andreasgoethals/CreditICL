@@ -242,3 +242,47 @@ def test_metadata_records_every_component():
         assert key in meta, f"missing {key}"
     assert "missing_cols" not in meta, "missingness is the generator's job now, not the target's"
     assert meta["target"] == "pd"
+
+
+def test_mechanism_never_raises_on_a_single_class_draw():
+    """6 PD mechanism arms crashed overnight on 26-08-2026 with `Vasicek mechanism produced a
+    single-class target`. The exception escaped the dataloader and killed the whole arm. A
+    single-class draw is rare but real; it must be RESCUED (quantile-cut to a floor base rate,
+    exactly as the quantile-mode path already does), never raised.
+    """
+    import torch
+
+    from src.prior.rng import PriorRNG
+    from src.prior.targets.mechanisms import apply_pd_mechanism
+
+    # Near-constant latent: the regime that produced the crash.
+    raised = 0
+    for s in range(2000):
+        r = PriorRNG(s)
+        latent = torch.zeros(200) + r.randn(200) * 0.01
+        try:
+            apply_pd_mechanism(r, latent, {"woe_prob": 0.0})
+        except ValueError:
+            raised += 1
+    assert raised == 0, f"the mechanism raised {raised} times; it must never raise"
+
+
+def test_apply_pd_target_mechanism_branch_rescues_single_class():
+    """The mechanism branch returns early and never reached the quantile path's guard, so the
+    rescue had to be added to it. Every output must have both classes."""
+    import torch
+
+    from src.prior.rng import PriorRNG
+    from src.prior.targets.pd import apply_pd_target
+
+    rescued = 0
+    for s in range(2000):
+        r = PriorRNG(s)
+        X = r.randn(200, 6)
+        latent = torch.zeros(200) + r.randn(200) * 0.01
+        _, y, meta = apply_pd_target(
+            r, X, latent, {"mode": "mechanism", "mechanism": {"woe_prob": 0.0}}, max_features=32
+        )
+        assert int(torch.unique(y).numel()) >= 2, "a single-class target survived the rescue"
+        rescued += int(bool(meta.get("mechanism_single_class_rescued")))
+    assert rescued > 0, "the rescue never fired — the test is not exercising the guarded path"

@@ -5,6 +5,26 @@ reason is not obvious.
 
 ---
 
+## 27-08-2026 — the overnight run: 8 LGD arms clean, 6 PD mechanism arms crashed (fixed)
+
+- **`Vasicek mechanism produced a single-class target` no longer crashes an arm.** Overnight,
+  6 PD `mode=mechanism` arms died with exit 1: `apply_pd_mechanism` RAISED on a rare
+  single-class draw, and the exception escaped the DataLoader worker and killed the whole run.
+  The quantile-mode path already rescued single-class targets with a floor quantile-cut, but
+  the mechanism branch of `apply_pd_target` returns EARLY and never reached that guard. Fixed:
+  the mechanism reports `single_class` in meta instead of raising, and the mechanism branch
+  applies the same quantile-cut rescue. Verified: 0 raises over 3,000 degenerate draws, the
+  rescue fires and always yields >= 2 classes. LGD is unaffected.
+- The 8 completed arms are all LGD, all 12,500 steps, `completed: true`, loss 0.343 -> 0.066 —
+  training is healthy. No OOM, no walltime cutoffs.
+- Provenance note: the arms ran `commit da78f34` with `dirty=true`. The resolved config carries
+  the correct upstream-matched shape (1024 rows, 1-100 features, max_cat 200), but `base_impl`
+  is not in the logs, so which base implementation ran is not provable from the download alone
+  — confirm on the login node before trusting the numbers.
+- 836 tests pass.
+
+---
+
 ## 26-08-2026 — TabICLv2's real prior, the phase-2 collision, and one experiment per command
 
 - **`src/prior/upstream.py`: the base prior is imported, not transcribed.** The control arm

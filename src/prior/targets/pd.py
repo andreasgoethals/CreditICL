@@ -204,6 +204,14 @@ def apply_pd_target(
         meta.update(rule_meta)
         y, mech_meta = apply_pd_mechanism(rng, latent, cfg.get("mechanism", {}))
         meta.update(mech_meta)
+        # SAME GUARD AS THE QUANTILE PATH BELOW. The mechanism branch returns early and so
+        # never reached that guard; a single-class Vasicek draw then crashed the arm. Rescue
+        # it by quantile-cutting the scored latent to a floor base rate — deterministic, and
+        # identical in spirit to step 4 + the guard used for `mode: quantile`.
+        if float(y.sum()) < 2 or float(y.sum()) > y.numel() - 2:
+            zc = (latent - latent.mean()) / (latent.std() + 1e-8)
+            y = _quantile_cut(zc, 3.0 / max(y.numel(), 1))
+            meta["mechanism_single_class_rescued"] = True
         meta["mode"] = "mechanism"
         return X, y.float(), meta
 

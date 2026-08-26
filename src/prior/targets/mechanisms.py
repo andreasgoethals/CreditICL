@@ -511,7 +511,9 @@ def apply_pd_mechanism(
     meta.update(cohort_meta)
     meta.update(mech_meta)
 
-    # A single-class target is unlearnable and would poison the batch statistics.
-    if float(y.mean()) in (0.0, 1.0):
-        raise ValueError("Vasicek mechanism produced a single-class target")
+    # A single-class Vasicek draw is unlearnable, but it must NOT crash the run: raising here
+    # escaped the dataloader and killed 6 PD mechanism arms on 26-08-2026 (job 11529827). The
+    # caller (`apply_pd_target`) rescues it with the same quantile-cut the quantile-mode path
+    # already applies, so report it and return rather than raising.
+    meta["single_class"] = bool(float(y.mean()) in (0.0, 1.0))
     return y, meta
