@@ -122,11 +122,16 @@ set -e
 # EXIT 64 = saved and stopped early. Resubmit THIS arm only; it resumes from the checkpoint.
 if [[ "$RC" -eq 64 ]]; then
     echo "Arm ${SLURM_ARRAY_TASK_ID} incomplete — resubmitting to resume."
-    # BACK TO THE SAME PLACE. `--clusters=mindwell` was hard-coded, so an arm started
-    # on wICE would have resumed on Mindwell -- a different GPU mid-run, which makes
-    # the arm's own timings incomparable and can meet a different memory ceiling.
+    # BACK TO THE SAME PLACE, WITH THE SAME RESOURCES. Carry over cluster/partition AND the
+    # cores/mem this task was actually granted -- not the #SBATCH header default, which asks
+    # for the gpu_b200 ceiling (24 cores, 180G) that a lower-ceiling partition (wICE gpu_a100:
+    # 18 / 126000 MiB) rejects with "Requested node configuration is not available". PD runs on
+    # mindwell today so the header would work, but echoing the grant is strictly correct and
+    # costs nothing. (See the LGD script: an LGD wICE arm died on exactly this.)
     sbatch --clusters="${SLURM_CLUSTER_NAME:-mindwell}" \
            --partition="${SLURM_JOB_PARTITION:-gpu_b200}" \
+           --cpus-per-task="${SLURM_CPUS_PER_TASK}" \
+           --mem="${SLURM_MEM_PER_NODE}M" \
            --array="${SLURM_ARRAY_TASK_ID}" \
            "${SLURM_SUBMIT_DIR:-.}/scripts/slurm/pretrain_pd.slurm"
     exit 64

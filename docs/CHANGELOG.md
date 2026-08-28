@@ -7,6 +7,12 @@ reason is not obvious.
 
 ## 27-08-2026 — the overnight run: 8 LGD arms clean, 6 PD mechanism arms crashed (fixed)
 
+- **wICE resume fixed: the self-resubmit asks for the resources it was granted, not the b200
+  header default.** A drained LGD arm on wICE (gpu_a100) resubmitted with the `#SBATCH` gpu_b200
+  ceiling (24 cores, 180G), which wICE rejects (max 18 / 126000 MiB) — arm a40 died there
+  ("Requested node configuration is not available") after 11,500/12,500 steps. `pretrain_{lgd,pd}.slurm`
+  now pass `--cpus-per-task=$SLURM_CPUS_PER_TASK --mem=$SLURM_MEM_PER_NODE`M on the resume;
+  mindwell is unchanged.
 - **Exp2 and Exp3 renumbered (swapped) across the whole repo.** Continued pre-training is now
   **Exp2**; the long confirmation run of Exp1's winning prior is now **Exp3**. Config file
   *contents* were exchanged (filenames unchanged), and `src/`, `scripts/`, `tests/` and `docs/`

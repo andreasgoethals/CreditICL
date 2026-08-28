@@ -122,11 +122,18 @@ set -e
 # EXIT 64 = saved and stopped early. Resubmit THIS arm only; it resumes from the checkpoint.
 if [[ "$RC" -eq 64 ]]; then
     echo "Arm ${SLURM_ARRAY_TASK_ID} incomplete — resubmitting to resume."
-    # BACK TO THE SAME PLACE. `--clusters=mindwell` was hard-coded, so an arm started
-    # on wICE would have resumed on Mindwell -- a different GPU mid-run, which makes
-    # the arm's own timings incomparable and can meet a different memory ceiling.
+    # BACK TO THE SAME PLACE, WITH THE SAME RESOURCES. The cluster/partition carry over so a
+    # wICE arm resumes on wICE (a different GPU mid-run makes its timings incomparable). So do
+    # the cores and mem, and this is the part that bit us: the #SBATCH header asks for the
+    # gpu_b200 ceiling (24 cores, 180G), which wICE gpu_a100 REJECTS (max 18 / 126000 MiB).
+    # Arm a40 died exactly there -- "Requested node configuration is not available" -- after
+    # 11,500/12,500 steps, because the resubmit inherited the header default instead of what
+    # wICE had actually granted it. Echo THIS task's grant so the resume asks for what the
+    # partition allows. (On mindwell these equal the header, so nothing changes there.)
     sbatch --clusters="${SLURM_CLUSTER_NAME:-mindwell}" \
            --partition="${SLURM_JOB_PARTITION:-gpu_b200}" \
+           --cpus-per-task="${SLURM_CPUS_PER_TASK}" \
+           --mem="${SLURM_MEM_PER_NODE}M" \
            --array="${SLURM_ARRAY_TASK_ID}" \
            "${SLURM_SUBMIT_DIR:-.}/scripts/slurm/pretrain_lgd.slurm"
     exit 64
