@@ -172,6 +172,46 @@ The one thing to do differently.
 
 ## Runs
 
+## 29-08-2026 — Exp1 full sweep, 150 arms — **142/150 trained clean; only the two known bugs cost the other 8**
+
+**Submitted** 25-08-2026 22:38 (LGD), 26-08-2026 04:04 (PD), resubmitted through 29-08 | **jobs** 11529826 + 61791522 (LGD), 11529827 (PD) | **cluster** mindwell `gpu_b200` (arms 0–39) + wICE `gpu_a100` (arms 40–74)
+**Commit** da78f34 (early arms, dirty) → Vasicek fix pulled mid-run | **tfm-library pin** 21d555a6a24e | **GPUs** 1 × B200 or 1 × A100 per arm | **walltime** 12 h / 5.3–11.8 h used
+
+### Configuration
+- **Config file** `config/Exp1_{LGD,PD}.yaml`, all 75 arms per track (full prior grid × 3 seeds)
+- **The levers** — LGD: `atom_prob {0.6, 0.8} × mode {mechanism, quantile} × target_scaling {none, standard} × credit_fraction {0, 0.1, 0.2, 0.3}`; PD: `category_frequency {balanced, power_law} × mode {mechanism, quantile} × signal_strength {0.6, 1.0} × credit_fraction {0, 0.1, 0.2, 0.3}` (the `credit_fraction: 0` control collapses to one prior × 3 seeds)
+- **Budget** 12,500 steps × 64 = 800,000 datasets per arm
+- **Init** scratch, Muon — upstream stage 1
+- **Edited by hand mid-run** the Vasicek single-class guard (pulled ~28-08); the wICE resubmit fix landed *after* this download
+
+### Results
+| metric | LGD | PD |
+|---|---|---|
+| arms completed | 73 / 75 | 69 / 75 |
+| final train loss (range) | 0.051 – 0.070 | 0.136 – 0.186 |
+| wall-time / arm | 5.3 h (B200) – 11.8 h (A100) | 5.4 – 5.7 h |
+
+- **Prior ranking** — n/a yet. This is the TRAINING phase; *which prior wins* is Phase 2 (`benchmark.slurm`), not run.
+- **Progress curve** converged and flat by the end on every completed arm; no divergence.
+- **Throughput** ~0.63 steps/s (B200), ~0.29 (A100); mean GPU util ~88–90 %, compute-bound (fwd_bwd ≈ 97 %).
+- **Cost** 980 GPU-hours across 142 completed arms.
+- **Files** `output/<arm>/{summary,config.resolved}.json`, `output/{logs,manifests}/`.
+
+### Bugs and anomalies
+- **6 PD arms (a1–a6) crashed** `ValueError: Vasicek mechanism produced a single-class target` — all `mode=mechanism`, all *before* the guard was deployed. No mechanism arm has crashed since; the fix is confirmed live (a17–a74 mechanism arms completed clean).
+- **2 LGD wICE arms (a40, a73) stuck at 99.9 %** — drained at steps 12,460 / 12,487, then the self-resubmit was rejected by wICE's 18-core cap (see the 29-08 dead end). Fixed; they resume via `run_experiment`.
+- **False alarms, checked and cleared:** a first log scan flagged "299 CUDA errors / 299 NaN". Both were regex artifacts — `Inf` inside `INFO`, `cuDNN` in the startup banner. Strict re-scan: **0** CUDA errors, **0** NaN losses, **0** non-finite gradients, **0** walltime kills.
+
+### Interpretation
+- **Show:** all 150 priors train stably to a tight, converged loss band; the sweep machinery (prior mixing, two-cluster split, drain→resume) works. The only failures are two mechanical bugs, both now fixed.
+- **Think:** the tight LGD band (0.051–0.070) across very different priors means the per-arm budget is saturated — differences between priors will surface in Phase-2 *real-data* scores, not synthetic training loss.
+- **Test:** Phase 2 — score all 150 checkpoints on the real credit datasets against the reference column (released TabICLv2, TabPFN-v3, CatBoost, logistic/linear). That is where the Exp1 question is actually answered.
+
+### Next
+Finish the 8 remaining arms (`run_experiment 1 --submit`), then launch Phase 2 (`benchmark.slurm`, `EXP=1`) for the prior ranking.
+
+---
+
 ## 24-08-2026 (evening) — **the resilience chain worked, and arm 0 of Exp1 is finished**
 
 **Jobs** 11524582 (killed at 20 min) -> 11524593 (resumed, completed) | `gpu_b200`, node

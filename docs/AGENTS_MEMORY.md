@@ -33,6 +33,7 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 29-08-2026 | 11529826 + 61791522 (LGD), 11529827 (PD) — Exp1 full sweep, 150 arms | **142/150 trained clean; the 8 left are only the two known bugs** | 980 GPU-h. LGD loss 0.051–0.070, PD 0.136–0.186. 0 CUDA / NaN / walltime. Split mindwell 0–39, wICE 40–74 |
 | 25-08-2026 | 61776784 — GPU benchmark, wICE `gpu_a100` | **A100 is 1.93x slower, 2.72x cheaper/hour -> 29 % cheaper per arm** | 8.49 h/arm, 89 % of its own ceiling. Raw FLOPs say 5.28x; this workload is latency-bound |
 | 24-08-2026 | 11524582 -> 11524593 — Exp1 LGD arm 0, deliberate kill test | **Whole resilience chain fired; arm 0 COMPLETED across two jobs** | signal -> checkpoint -> exit 64 -> resubmit -> resume. 0.82 steps/s, 88.75 % GPU, loss 0.343 -> 0.059 |
 | 24-08-2026 | 11523286 — GPU benchmark, clean | **One arm is 4.4 h, so Exp1 is ~10 M credits and 1.8 days** | AMP is 2.07x. All 4 attention kernels work at the real shape — the 20-08 cuDNN crash was the benchmark's own oversized pass |
@@ -58,6 +59,17 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
+
+### 29-08-2026 - A drained wICE arm could not resume: the self-resubmit asked for b200 resources
+- **Tried:** LGD arms 40-74 ran on wICE `gpu_a100`; on a drain the script checkpoints (exit 64)
+  and `sbatch`-resubmits itself to resume from the checkpoint.
+- **Result:** 2 arms (a40, a73) died at **99.9 %** (steps 12,460 and 12,487 of 12,500). The
+  resubmit was REJECTED: *"you can at most request 18 cores and 126000 MiB"*. Both stuck, unresumed.
+- **Why:** the exit-64 path re-ran the same script, inheriting its `#SBATCH` gpu_b200 header
+  (24 cores, 180G). wICE `gpu_a100` caps at 18 / 126000 MiB — so only the RESUBMIT was rejected;
+  the initial launch was fine because `run_experiment` sets per-partition resources on the sbatch line.
+- **Instead:** the resubmit now echoes `--cpus-per-task=$SLURM_CPUS_PER_TASK --mem=$SLURM_MEM_PER_NODE`M,
+  the grant this task actually holds. Fixed in both `pretrain_{lgd,pd}.slurm`; mindwell unchanged.
 
 ### 27-08-2026 - A rare single-class draw crashed 6 PD arms because the guard was on the wrong branch
 - **Tried:** the overnight Exp1 run. 8 LGD arms finished clean; 6 PD `mode=mechanism` arms died
