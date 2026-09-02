@@ -5,6 +5,35 @@ reason is not obvious.
 
 ---
 
+## 02-09-2026 — Exp1 benchmarked (null result), and `credit_fraction` calibrated
+
+- **`credit_fraction` now realises its nominal value.** The credit/base coin-flip was re-drawn on
+  every filter-rejection attempt, so credit datasets — which pass the predictability filter more
+  often than base ones (base can draw unlearnable noise) — were over-represented: nominal 0.3
+  realised ~0.45. `sample()` now decides the type ONCE per slot and re-samples only the data
+  within it, so realised == nominal. The filter still shapes *which* dataset is kept, never the
+  ratio. 178 prior tests pass. (This affects future runs only; the completed Exp1 used the old
+  behaviour — see `docs/RUNS.md` 02-09.)
+- **Exp1 redesigned after the null: a sharper, smaller sweep.** Dropped `target_scaling` (the one
+  harmful knob) and the washed-out knobs (atom_prob, mode, signal_strength, category_frequency);
+  turned the credit signal UP by default; and swept the two untested levers instead — `filter.mode`
+  [tabicl, banded, "off"] and an aggressive-vs-mild credit-intensity range (LGD boundary mass
+  0.02–0.30 vs 0.15–0.60; PD default correlation rho 0.03–0.12 vs 0.12–0.30) — crossed with
+  `credit_fraction` [0, 0.5, 1.0] × 3 seeds = **45 arms/track** (was 75). Exp2/Exp3 re-pinned to the
+  new swept knobs. (YAML reads bare `off` as `false`, so the filter value is quoted.) 115 config tests pass.
+
+---
+
+## 01-09-2026 — Exp1 training complete (150/150); Phase 2 benchmarking begins
+
+- **OOD summary tells "skipped" apart from "failed".** A regression (LGD) checkpoint declining a
+  classification OOD task — or a PD net a regression one — is a deliberate task-type skip
+  (`status="skipped"`), but the text summary counted it under "N cells failed". A clean LGD arm
+  now reads "75 cells skipped (expected)", not "75 cells failed". Metrics were always computed
+  over `status=="ok"` only, so the numbers are unaffected — this is presentation only.
+
+---
+
 ## 27-08-2026 — the overnight run: 8 LGD arms clean, 6 PD mechanism arms crashed (fixed)
 
 - **wICE resume fixed: the self-resubmit asks for the resources it was granted, not the b200

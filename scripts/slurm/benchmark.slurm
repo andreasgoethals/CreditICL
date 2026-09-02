@@ -21,12 +21,12 @@
 #  ONE ARRAY TASK = ONE MODEL, scored on every real credit dataset and every out-of-domain
 #  suite, at every seed:
 #
-#      tasks 0-74   our 75 checkpoints, one per Exp1 arm
-#      task  75     THE REFERENCE COLUMN: released TabICLv2, CatBoost, logistic/linear
+#      tasks 0-44   our 45 checkpoints, one per Exp1 arm
+#      task  45     THE REFERENCE COLUMN: released TabICLv2, CatBoost, logistic/linear
 #
 #  Keeping the reference inside the same array is deliberate. It is scored by the same code,
 #  on the same day, with the same `--max-context-rows`, the same seeds and the same splits as
-#  the 75. Every previous comparison this project got wrong got it wrong by scoring the two
+#  the 45. Every previous comparison this project got wrong got it wrong by scoring the two
 #  sides through different paths.
 #
 #  Set TRACK=lgd or TRACK=pd. Logs and results are small and go to $VSC_DATA; the checkpoints
@@ -48,10 +48,10 @@
 #SBATCH --error=/dev/null
 #SBATCH --export=ALL
 #SBATCH --requeue
-# 0-75 fits Exp1 (75 arms + 1 reference). OVERRIDE IT for the others:
+# 0-45 fits Exp1 (45 arms + 1 reference). OVERRIDE IT for the others:
 #     Exp2: --array=0-60%8      Exp3: --array=0-10%8
 # Indices past the reference slot exit in seconds, so an oversized range is safe.
-#SBATCH --array=0-75%8
+#SBATCH --array=0-45%8
 
 sleep $((RANDOM % 30 + 1))
 
@@ -114,7 +114,7 @@ echo "grid has ${N_ARMS} arms; this task is index ${IDX}"
 
 # EXACTLY ONE index is the reference: the first past the grid. Anything beyond it exists only
 # because `--array` is a fixed range and the three experiments have different arm counts
-# (Exp1 75, Exp2 60, Exp3 10). Those tasks exit immediately rather than all racing to write the
+# (Exp1 45, Exp2 60, Exp3 10). Those tasks exit immediately rather than all racing to write the
 # same reference file.
 if [ "${IDX}" -gt "${N_ARMS}" ]; then
     echo "index ${IDX} is past the grid (${N_ARMS} arms) and past the reference slot. Nothing to do."
@@ -153,7 +153,7 @@ print(paths.results_dir() / '${TRACK}' / 'eval' / 'results_${REF_TAG}.csv')
     exit 0
 fi
 
-# ---------------------------------------------------------------------- one of our 75 arms --
+# ---------------------------------------------------------------------- one of our 45 arms --
 read -r RUN_NAME CKPT_DIR <<< "$(python -c "
 import sys
 from src.utils import paths

@@ -1,5 +1,5 @@
 # =============================================================================
-# EXPERIMENT 1 — PD — WHICH PRIOR? (screening, 25 priors x 3 seeds)
+# EXPERIMENT 1 — PD — WHICH PRIOR? (screening, 15 priors x 3 seeds = 45 arms)
 #
 # Every knob below carries at most a one-line note. The REASONING — why each
 # value, what evidence backs it, what upstream does — lives in
@@ -20,13 +20,17 @@ task: pd
 architecture: tabicl # the upstream TabICL class; see src/models/architecture.py
 
 # ----------------------------------------------------------------------------
-# THE SWEEP — every multi-value knob, crossed. This block IS the experiment
+# THE SWEEP — every multi-value knob, crossed. This block IS the experiment.
+# Redesigned 02-09-2026 after the first Exp1 was a clean null (docs/RUNS.md):
+# the washed-out knobs (category_frequency, signal_strength, mode) are dropped,
+# the credit-signal is turned UP by default (Vasicek factor model always on),
+# and the two untested levers are swept instead — the predictability filter,
+# and how strong the systematic default correlation is.
 # ----------------------------------------------------------------------------
 sweep:
-  prior.credit_fraction: [0.0, 0.1, 0.2, 0.3] # share of datasets from OUR prior; 0.0 = control
-  prior.credit.category_frequency: [balanced, power_law] # even category counts, or a few dominating
-  prior.credit.target.signal_strength: [1.0, 0.6] # 1.0 = undiluted; 0.6 is credit's weaker signal
-  prior.credit.target.mode: [mechanism, quantile] # Vasicek factor model, or a quantile cut on the latent
+  prior.credit_fraction: [0.0, 0.5, 1.0] # 0.0 = control; now truly calibrated (sampler fix, 02-09)
+  prior.filter.mode: [tabicl, banded, "off"] # upstream's filter | target credit's low-signal band | none ("off" quoted: YAML reads off as false)
+  prior.credit.target.mechanism.rho_range: [[0.03, 0.12], [0.12, 0.30]] # MILD (retail) vs AGGRESSIVE (corporate) default correlation
   seeds: [0, 1, 2] # repeats, so an effect can be told from noise
 
 # ----------------------------------------------------------------------------
@@ -56,14 +60,15 @@ prior:
 
   credit: # OUR credit-targeted path
     max_cat_size: 500 # credit has state, MSA, servicer — high cardinality
+    category_frequency: balanced # STRONG baseline (was swept, washed out) — hold at balanced
 
     target:
+      mode: mechanism # STRONG baseline: Vasicek one-factor default model always on (was swept)
       base_rate_range: [0.01, 0.30] # share of positives; real data is 6.7%-40%
       flip_pos_to_neg: 0.10 # defaults booked as non-default (cures) — the common direction
       flip_neg_to_pos: 0.01 # unobserved defaults — rarer
 
-      mechanism: # only read when mode: mechanism
-        rho_range: [0.03, 0.24] # Basel IRB asset correlation: QRRE 0.04, mortgage 0.15, corporate 0.12-0.24
+      mechanism: # the factor model — rho_range is SWEPT above (mild retail vs aggressive corporate)
         base_rate_range: [0.02, 0.30] # share of positives under the factor model
         woe_prob: 0.3 # chance of a scorecard-style monotone binning first
         cohort: { min_cohorts: 1, max_cohorts: 12 } # vintage blocks sharing an economic shock
@@ -93,7 +98,7 @@ prior:
       fraction: 0.3 # share of columns carrying no information
       kind_weights: { pure_noise: 1.0, duplicate: 1.0, shuffled: 1.0, constant: 0.5 } # kinds of junk
 
-  filter: # which generated datasets get discarded as unlearnable
+  filter: # which generated datasets get discarded as unlearnable — mode is SWEPT above
     quantile_band: [0.02, 0.30] # pseudo-R^2 band kept when mode: banded; PD is lower-signal than LGD
     remove_trivial: false # also drop datasets that are too easy
     trivial_threshold: 0.1 # what counts as too easy

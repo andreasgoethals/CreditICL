@@ -172,7 +172,55 @@ The one thing to do differently.
 
 ## Runs
 
-## 29-08-2026 — Exp1 full sweep, 150 arms — **142/150 trained clean; only the two known bugs cost the other 8**
+## 02-09-2026 — Exp1 Phase 2 benchmark — **NULL RESULT: the credit prior does not beat a no-credit control on either track**
+
+**Submitted** 01-09-2026 | **jobs** 61866150 (LGD), 61866151 (PD), preflight 61865246 | **cluster** wICE `gpu_a100` | ~154 tasks, **all END=OK**, ~17:25 → 01:49 (wICE shared, so slower than the ~1 h the compute alone needs)
+
+### Configuration
+- **Phase 2** `benchmark.slurm`, `EXP=1`, both tracks. Each of the 75 checkpoints/track scored on the 7 real credit datasets + the 50-dataset OOD suite, 3 eval seeds, 1024-row context cap. Task 75 = the shared reference column (released TabICLv2, TabPFN-3, CatBoost, linear/logistic), scored once.
+- **Ranking unit** the 25 distinct priors/track (levers minus training seed), each averaged over its 3 training-seed checkpoints. (Results CSVs are on lustre; this ranking was reconstructed from the per-arm bench logs.)
+
+### Results
+LGD (credit R², higher better; typical seed SD **0.008**):
+
+| | credit R² | OOD reg R² |
+|---|---|---|
+| best credit prior (cf 0.3, atom 0.8, mechanism, scale none) | 0.486 | 0.749 |
+| **control (no credit)** | **0.485** | 0.753 |
+| released TabICLv2 | 0.514 | 0.785 |
+| TabPFN-3 | 0.578 | 0.790 |
+| CatBoost | 0.530 | 0.727 |
+
+PD (credit ROC-AUC, higher better; typical seed SD **0.0005**):
+
+| | credit AUC | OOD cls AUC |
+|---|---|---|
+| **control (no credit) — rank 1** | **0.730** | 0.953 |
+| best credit prior | 0.730 | 0.953 |
+| released TabICLv2 | 0.736 | 0.956 |
+| TabPFN-3 | 0.759 | 0.954 |
+| CatBoost | 0.761 | 0.948 |
+
+- **credit vs control:** LGD +0.0004 (1/20 of a seed SD); PD the control is literally rank 1. **No credit benefit on either track.** `credit_fraction` (0/0.1/0.2/0.3) has no effect.
+- **0/25 priors beat the released TabICLv2** on either track.
+- **The one real lever effect:** `target_scaling=standard` hurts LGD (0.42–0.44 vs 0.48 for `scale=none`; OOD 0.58–0.60 vs 0.75) — a preprocessing artefact (standardising a bounded [0,1] target), not a credit finding.
+- **No OOD collapse:** the checkpoints keep general tabular ability (LGD OOD ~0.75 vs 0.785; PD OOD ~0.953 vs 0.956).
+
+### Bugs and anomalies
+- The quick log-parser's reference **OOD** number grabbed the classification AUC for the LGD regression row (cosmetic); the **credit** ranking — the actual result — is unaffected, and OOD is quoted here from the preflight reference log.
+- The full-run task 75 for LGD correctly SKIPPED (reference already scored in the preflight), leaving an empty log — expected.
+
+### Interpretation
+- **Show:** at 12,500 steps from scratch the credit-tailored prior is indistinguishable from the base prior on real credit data, with enough seed precision (SD 0.008 / 0.0005) to have caught a ≥0.005 R² / ≥0.002 AUC effect. Our small-budget models also sit below the released TabICLv2 and the strong baselines.
+- **Think:** either the budget (2.5 % of upstream) is too small for prior structure to express itself, or the credit mechanisms add no signal the base graph_scm prior lacks. The fair internal test (credit vs control, identical budget) is a clean null, so "a credit prior helps *from scratch*" is not supported.
+- **Test:** Exp2 (continued pre-training from the released weights) is the discriminating experiment — it starts from 0.514 / 0.736 (already above our from-scratch best) and asks whether credit knowledge helps a *strong* model. Exp3 (winning prior run long) has no winner distinct from the control to confirm.
+
+### Next
+Decide Exp2 vs Exp3 in light of the null. Only clear Exp1 signal to carry forward: `target_scaling=none` for LGD.
+
+---
+
+## 01-09-2026 — Exp1 full sweep, 150 arms — **COMPLETE: 150/150 trained clean (the 8 stragglers finished on resubmit)**
 
 **Submitted** 25-08-2026 22:38 (LGD), 26-08-2026 04:04 (PD), resubmitted through 29-08 | **jobs** 11529826 + 61791522 (LGD), 11529827 (PD) | **cluster** mindwell `gpu_b200` (arms 0–39) + wICE `gpu_a100` (arms 40–74)
 **Commit** da78f34 (early arms, dirty) → Vasicek fix pulled mid-run | **tfm-library pin** 21d555a6a24e | **GPUs** 1 × B200 or 1 × A100 per arm | **walltime** 12 h / 5.3–11.8 h used
@@ -187,14 +235,14 @@ The one thing to do differently.
 ### Results
 | metric | LGD | PD |
 |---|---|---|
-| arms completed | 73 / 75 | 69 / 75 |
+| arms completed | 75 / 75 | 75 / 75 |
 | final train loss (range) | 0.051 – 0.070 | 0.136 – 0.186 |
 | wall-time / arm | 5.3 h (B200) – 11.8 h (A100) | 5.4 – 5.7 h |
 
 - **Prior ranking** — n/a yet. This is the TRAINING phase; *which prior wins* is Phase 2 (`benchmark.slurm`), not run.
 - **Progress curve** converged and flat by the end on every completed arm; no divergence.
 - **Throughput** ~0.63 steps/s (B200), ~0.29 (A100); mean GPU util ~88–90 %, compute-bound (fwd_bwd ≈ 97 %).
-- **Cost** 980 GPU-hours across 142 completed arms.
+- **Cost** 1,011 GPU-hours across all 150 arms.
 - **Files** `output/<arm>/{summary,config.resolved}.json`, `output/{logs,manifests}/`.
 
 ### Bugs and anomalies

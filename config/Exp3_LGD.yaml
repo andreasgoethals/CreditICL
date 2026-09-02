@@ -55,10 +55,9 @@ prior:
     category_frequency: balanced # balanced | power_law (a few levels dominate)
 
     target:
-      atom_prob: FILL_FROM_EXP1 # Exp1's winning share of datasets with boundary atoms
-      target_scaling: FILL_FROM_EXP1 # Exp1's winner: none | standard
-      mode: FILL_FROM_EXP1 # Exp1's winner: mechanism | quantile
-      boundary_mass_range: [0.02, 0.45] # how much mass sits at 0 or 1, when atoms are present
+      atom_prob: 1.0 # strong baseline, matching Exp1 (was swept; washed out, now fixed)
+      mode: quantile # strong baseline, matching Exp1 (dial boundaries directly)
+      boundary_mass_range: FILL_FROM_EXP1 # Exp1's winning boundary-atom intensity ([0.02,0.30] mild | [0.15,0.60] aggressive)
       interior_shape_range: [0.4, 3.0] # Kumaraswamy shape span for the interior
       signal_strength: 1.0 # 1.0 = undiluted; lower makes the target harder to predict
 
@@ -82,7 +81,7 @@ prior:
       kind_weights: { pure_noise: 1.0, duplicate: 1.0, shuffled: 1.0, constant: 0.5 } # kinds of junk
 
   filter: # which generated datasets get discarded as unlearnable
-    mode: tabicl # tabicl = as shipped | off = keep all | banded = target credit's signal range
+    mode: FILL_FROM_EXP1 # Exp1's winner: tabicl | banded | off
     quantile_band: [0.05, 0.40] # pseudo-R^2 band kept when mode: banded
     remove_trivial: false # also drop datasets that are too easy
     trivial_threshold: 0.02 # what counts as too easy

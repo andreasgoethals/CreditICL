@@ -198,7 +198,9 @@ def run_ood(cfg: OODEvalConfig) -> pd.DataFrame:
 
     df = pd.DataFrame(rows)
     n_ok = int((df["status"] == "ok").sum()) if not df.empty else 0
-    log.info("[ood] finished: %d/%d cells OK", n_ok, len(df))
+    n_skip = int((df["status"] == "skipped").sum()) if not df.empty else 0
+    log.info("[ood] finished: %d ok, %d skipped (task type the checkpoint cannot score), "
+             "%d failed (of %d cells)", n_ok, n_skip, len(df) - n_ok - n_skip, len(df))
     return df
 
 
@@ -251,9 +253,18 @@ def ood_text_summary(df: pd.DataFrame, reference_model: str | None = None) -> st
                 f"(n={int(r['count'])}){delta}"
             )
 
-    failed = df[df["status"] != "ok"]
+    # A "skipped" cell is a deliberate task-type mismatch — an LGD (regression) checkpoint
+    # declining a classification OOD task, or a PD net declining a regression one — NOT a
+    # failure. Report the two apart, so a clean run does not read as "75 cells failed".
+    skipped = df[df["status"] == "skipped"]
+    if len(skipped):
+        lines.append(
+            f"\n{len(skipped)} cells skipped — the checkpoint's task type cannot score them "
+            f"(e.g. a regression net on a classification task). Expected, not a failure."
+        )
+    failed = df[~df["status"].isin(("ok", "skipped"))]
     if len(failed):
-        lines.append(f"\n{len(failed)} cells failed:")
+        lines.append(f"\n{len(failed)} cells FAILED:")
         for _, r in failed.head(8).iterrows():
             lines.append(f"  {r['dataset']:<24} {r['model']:<12} {r.get('error', '')[:60]}")
 

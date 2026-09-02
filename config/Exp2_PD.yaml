@@ -56,17 +56,16 @@ prior:
 
   credit: # OUR credit-targeted path
     max_cat_size: 500 # credit has state, MSA, servicer — high cardinality
-    category_frequency: FILL_FROM_EXP1 # Exp1's winner: balanced | power_law
+    category_frequency: balanced # strong baseline, matching Exp1 (was swept; washed out)
 
     target:
-      signal_strength: FILL_FROM_EXP1 # Exp1's winning signal dilution
-      mode: FILL_FROM_EXP1 # Exp1's winner: mechanism | quantile
+      mode: mechanism # strong baseline, matching Exp1 (Vasicek factor model always on)
       base_rate_range: [0.01, 0.30] # share of positives; real data is 6.7%-40%
       flip_pos_to_neg: 0.10 # defaults booked as non-default (cures) — the common direction
       flip_neg_to_pos: 0.01 # unobserved defaults — rarer
 
       mechanism: # only read when mode: mechanism
-        rho_range: [0.03, 0.24] # Basel IRB asset correlation: QRRE 0.04, mortgage 0.15, corporate 0.12-0.24
+        rho_range: FILL_FROM_EXP1 # Exp1's winning default correlation ([0.03,0.12] mild | [0.12,0.30] aggressive)
         base_rate_range: [0.02, 0.30] # share of positives under the factor model
         woe_prob: 0.3 # chance of a scorecard-style monotone binning first
         cohort: { min_cohorts: 1, max_cohorts: 12 } # vintage blocks sharing an economic shock
@@ -97,7 +96,7 @@ prior:
       kind_weights: { pure_noise: 1.0, duplicate: 1.0, shuffled: 1.0, constant: 0.5 } # kinds of junk
 
   filter: # which generated datasets get discarded as unlearnable
-    mode: tabicl # tabicl = as shipped | off = keep all | banded = target credit's signal range
+    mode: FILL_FROM_EXP1 # Exp1's winner: tabicl | banded | off
     quantile_band: [0.02, 0.30] # pseudo-R^2 band kept when mode: banded; PD is lower-signal than LGD
     remove_trivial: false # also drop datasets that are too easy
     trivial_threshold: 0.1 # what counts as too easy

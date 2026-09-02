@@ -57,16 +57,16 @@ def test_benchmark_is_blocked_until_every_arm_has_trained(fake_tree):
 
 
 def test_one_arm_short_still_blocks_the_benchmark(fake_tree):
-    """74 of 75 is not done. Scoring then would silently benchmark a partial sweep."""
-    _finish_arms(fake_tree, "lgd", range(74))
+    """44 of 45 is not done. Scoring then would silently benchmark a partial sweep."""
+    _finish_arms(fake_tree, "lgd", range(44))
     stages = {s.name: s for s in plan(1, ["lgd"])}
-    assert stages["exp1-lgd-train"].done == 74
+    assert stages["exp1-lgd-train"].done == 44
     assert stages["exp1-lgd-train"].state == "ready"
     assert stages["exp1-lgd-benchmark"].state == "blocked"
 
 
 def test_a_finished_sweep_unblocks_the_benchmark(fake_tree):
-    _finish_arms(fake_tree, "lgd", range(75))
+    _finish_arms(fake_tree, "lgd", range(45))
     stages = {s.name: s for s in plan(1, ["lgd"])}
     assert stages["exp1-lgd-train"].state == "done"
     assert not stages["exp1-lgd-train"].commands, "a finished stage must offer no command"
@@ -80,11 +80,11 @@ def test_after_a_drain_only_the_missing_arms_are_resubmitted(fake_tree):
     resubmitting the array would redo everything already trained."""
     from src.utils.run_experiment import plan as _plan
 
-    _finish_arms(fake_tree, "lgd", list(range(40)) + [50, 51])
+    _finish_arms(fake_tree, "lgd", list(range(40)) + [42, 43])
     train = next(s for s in _plan(1, ["lgd"]) if s.kind == "train")
     assert train.done == 42
     joined = " ".join(train.commands[0])
-    assert "--array=40-49,52-74%8" in joined, joined
+    assert "--array=40-41,44%8" in joined, joined
     # A scattered spec goes to ONE cluster: splitting it across two gains nothing.
     assert len(train.commands) == 1
 
@@ -106,8 +106,8 @@ def test_pd_and_lgd_are_treated_identically(fake_tree):
     """They were not, and the asymmetry was accidental: LGD got two sbatch commands and PD one
     because LGD was split across clusters. Same stages, same rules, same arm count."""
     stages = {s.name: s for s in plan(1, ["lgd", "pd"])}
-    assert {s.total for s in stages.values() if s.kind == "train"} == {75}
-    assert {s.total for s in stages.values() if s.kind == "benchmark"} == {76}
+    assert {s.total for s in stages.values() if s.kind == "train"} == {45}
+    assert {s.total for s in stages.values() if s.kind == "benchmark"} == {46}
     for track in ("lgd", "pd"):
         assert stages[f"exp1-{track}-benchmark"].state == "blocked"
 

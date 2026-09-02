@@ -128,8 +128,17 @@ class TaskGenerator:
         return n_rows, n_features
 
     # -- one candidate -------------------------------------------------------
-    def _sample_candidate(self, shape: tuple[int, int] | None = None) -> SyntheticTask:
-        use_credit = self.rng.boolean(self.credit_fraction)
+    def _sample_candidate(
+        self, shape: tuple[int, int] | None = None, use_credit: bool | None = None
+    ) -> SyntheticTask:
+        # `use_credit` is decided ONCE per slot by `sample()` and held across every rejection
+        # attempt. Re-drawing it per attempt (the behaviour until 02-09-2026) over-represented
+        # credit: credit datasets are structured and pass the predictability filter more often
+        # than base ones, which can draw unlearnable noise and get re-rolled — so a nominal
+        # `credit_fraction=0.3` realised ~0.45. Fixing the type and re-sampling only the DATA
+        # within it makes the realised fraction equal the nominal knob.
+        if use_credit is None:
+            use_credit = self.rng.boolean(self.credit_fraction)
         source = "credit" if use_credit else "base"
 
         n_rows, n_features = shape if shape is not None else self.sample_shape()
@@ -285,9 +294,12 @@ class TaskGenerator:
         forever. Fallbacks are counted in `meta` so a run that hits the cap often
         is visible in the logs instead of silently biasing the task stream.
         """
+        # Decide credit-vs-base ONCE for this slot, before the rejection loop, so the filter
+        # cannot skew the realised credit fraction above the nominal knob (see _sample_candidate).
+        use_credit = self.rng.boolean(self.credit_fraction)
         last: SyntheticTask | None = None
         for attempt in range(self.max_attempts):
-            task = self._sample_candidate(shape)
+            task = self._sample_candidate(shape, use_credit=use_credit)
             last = task
             if self.filter.accept(task.X, task.y, is_classif=not self.regression):
                 task.meta["filter_attempts"] = attempt + 1

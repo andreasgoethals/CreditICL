@@ -33,7 +33,8 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
-| 29-08-2026 | 11529826 + 61791522 (LGD), 11529827 (PD) — Exp1 full sweep, 150 arms | **142/150 trained clean; the 8 left are only the two known bugs** | 980 GPU-h. LGD loss 0.051–0.070, PD 0.136–0.186. 0 CUDA / NaN / walltime. Split mindwell 0–39, wICE 40–74 |
+| 02-09-2026 | 61866150 (LGD), 61866151 (PD) — Exp1 Phase 2, all 150 checkpoints scored, wICE `gpu_a100` | **NULL: credit prior ≈ no-credit control on BOTH tracks; 0/25 beat released TabICLv2** | LGD best 0.486 vs control 0.485 (seed SD 0.008) vs released 0.514; PD control IS rank 1 (0.730) vs released 0.736. `scale=standard` hurts LGD. No OOD loss. Fair internal test is a clean null |
+| 01-09-2026 | 11529826 + 61791522 (LGD), 11529827 (PD), +resubmits 11540142/43 — Exp1 full sweep, 150 arms | **COMPLETE: 150/150 arms, all healthy** | 1,011 GPU-h. LGD loss 0.051–0.070, PD 0.136–0.186. 0 CUDA / NaN / walltime. The 6 PD (Vasicek) + 2 wICE stragglers finished on resubmit |
 | 25-08-2026 | 61776784 — GPU benchmark, wICE `gpu_a100` | **A100 is 1.93x slower, 2.72x cheaper/hour -> 29 % cheaper per arm** | 8.49 h/arm, 89 % of its own ceiling. Raw FLOPs say 5.28x; this workload is latency-bound |
 | 24-08-2026 | 11524582 -> 11524593 — Exp1 LGD arm 0, deliberate kill test | **Whole resilience chain fired; arm 0 COMPLETED across two jobs** | signal -> checkpoint -> exit 64 -> resubmit -> resume. 0.82 steps/s, 88.75 % GPU, loss 0.343 -> 0.059 |
 | 24-08-2026 | 11523286 — GPU benchmark, clean | **One arm is 4.4 h, so Exp1 is ~10 M credits and 1.8 days** | AMP is 2.07x. All 4 attention kernels work at the real shape — the 20-08 cuDNN crash was the benchmark's own oversized pass |

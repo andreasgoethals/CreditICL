@@ -177,11 +177,13 @@ def test_no_two_sweep_arms_do_the_same_thing():
         prints = [effective_fingerprint(r) for r in runs]
         assert len(prints) == len(set(prints)), f"{name} still schedules duplicate arms"
 
+        # cf=0 kills every credit lever, so a control can still differ only by the FILTER
+        # (which applies to the base prior too) and the SEED — 3 filter modes x the seeds.
         controls = [r for r in runs if float(r["prior"].get("credit_fraction", 0)) == 0.0]
-        seeds = {r["seed"] for r in controls}
-        assert len(controls) == len(seeds), (
-            f"{name}: {len(controls)} control arms across {len(seeds)} seeds — "
-            f"one per seed is the most that can differ"
+        keys = {(r["prior"]["filter"]["mode"], r["seed"]) for r in controls}
+        assert len(controls) == len(keys), (
+            f"{name}: {len(controls)} control arms but only {len(keys)} distinct (filter, seed) — "
+            f"a credit lever is wrongly varying the control"
         )
 
 

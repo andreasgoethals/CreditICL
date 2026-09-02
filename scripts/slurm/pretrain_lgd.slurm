@@ -34,11 +34,11 @@
 # picks the checkpoint up. See docs/VSC.md.
 #SBATCH --requeue
 #SBATCH --signal=B:USR1@600
-# 0-74 = the 75 arms of Exp1. %8 caps how many run at once: gpu_b200 has 24 GPUs TOTAL
+# 0-44 = the 45 arms of Exp1. %8 caps how many run at once: gpu_b200 has 24 GPUs TOTAL
 # shared with every other user, and both MaxSubmitJobsPerUser and MaxTRESPerUser apply.
 # Check yours before raising it:
 #     sacctmgr show qos normal format=Name,MaxSubmitJobsPerUser%15,MaxTRESPerUser%30
-#SBATCH --array=0-74%8
+#SBATCH --array=0-44%8
 
 # Jitter the start so concurrent tasks do not hammer the filesystem at once.
 sleep $((RANDOM % 30 + 1))
@@ -142,7 +142,7 @@ fi
 
 
 # NO EVALUATION HERE. Phase 1 produces checkpoints; phase 2 scores them, and it is a
-# SEPARATE array so that all 75 arms and the reference column (released TabICLv2,
+# SEPARATE array so that all 45 arms and the reference column (released TabICLv2,
 # CatBoost, logistic/linear) are benchmarked by the same code, on the same day, with the
 # same context cap, seeds and splits. Every comparison this project got wrong, it got
 # wrong by scoring the two sides through different paths.

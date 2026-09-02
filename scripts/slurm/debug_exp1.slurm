@@ -67,16 +67,15 @@ source scripts/slurm/_activate_env.sh
 # cannot be silently lost. `CONFIG=x bash submit.sh` set the variable for the CALLING shell,
 # not for sbatch's environment, so the job never saw it.
 CONFIG="${1:-config/Exp1_LGD.yaml}"
-# Resolved from `--list` against config/Exp1_LGD.yaml on 17-08-2026, all at seed 0:
-#   0  cf=0.0  mechanism   the control: original prior only
-#   3  cf=0.3  mechanism   our loss-mechanism path at the highest mix
-#   9  cf=0.3  quantile    our marginal-shaping path
-#   1  cf=0.1  mechanism   the mixing path at a low share
+# Resolved from `--list` against config/Exp1_LGD.yaml on 02-09-2026, all at seed 0:
+#   0  cf=0.0  quantile   the control: original TabICL prior (filter=tabicl)
+#   3  cf=0.5  quantile   half-and-half mix, mild boundary atoms
+#   6  cf=1.0  quantile   pure credit prior, mild boundary atoms
+#  12  cf=1.0  quantile   pure credit prior, AGGRESSIVE boundary atoms
 # RE-RESOLVE THESE IF THE SWEEP CHANGES. An index that silently points at a different arm
 # is worse than a crash, which is why the mapping is written out rather than computed.
-# The quantile arm moved 11 -> 9 on 17-08-2026 when the sweep dropped 21 duplicate control
-# runs (96 -> 75). `test_debug_arms_point_where_the_comments_say` now checks this pairing.
-ARMS=(0 3 9 1)
+# `test_debug_arms_point_where_the_comments_say` checks this pairing.
+ARMS=(0 3 6 12)
 INDEX="${ARMS[$SLURM_ARRAY_TASK_ID]}"
 
 LOGDIR="${VSC_DATA}/CreditICL/output/logs"
@@ -226,7 +225,7 @@ if [ "$STATUS" -eq 0 ]; then
     # and 3, trained at 10,240 and 60,000 rows. We cannot follow: against a quadratic
     # row-attention cost a proportionate curriculum runs **307x our entire stage 1**,
     # because stage 1 is only 0.3 % of upstream total compute — the curriculum IS the
-    # expense, and 75 arms of it is unaffordable. So the mismatch is closed from the
+    # expense, and 45 arms of it is unaffordable. So the mismatch is closed from the
     # evaluation side instead.
     #
     # The SAME cap goes to `crediticl` and `tabiclv2`, so it is part of the

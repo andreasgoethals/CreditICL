@@ -320,7 +320,8 @@ def test_exp1_defines_many_priors_and_exp3_exactly_one():
         n_priors = 1
         for _, values in axes:
             n_priors *= len(values)
-        assert n_priors == 32, f"{track}: expected 32 Exp1 priors, got {n_priors}"
+        # 3 credit_fraction x 3 filter.mode x 2 aggressive-range = 18 (redesigned 02-09-2026; was 32).
+        assert n_priors == 18, f"{track}: expected 18 Exp1 priors, got {n_priors}"
 
         exp3 = [(k, v) for k, v in sweep_axes(_load(f"config/Exp3_{track}.yaml")) if k != "seeds"]
         assert exp3 == [("prior.credit_fraction", [0.0, PLACEHOLDER])], (

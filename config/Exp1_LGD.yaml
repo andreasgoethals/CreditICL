@@ -1,5 +1,5 @@
 # =============================================================================
-# EXPERIMENT 1 — LGD — WHICH PRIOR? (screening, 25 priors x 3 seeds)
+# EXPERIMENT 1 — LGD — WHICH PRIOR? (screening, 15 priors x 3 seeds = 45 arms)
 #
 # Every knob below carries at most a one-line note. The REASONING — why each
 # value, what evidence backs it, what upstream does — lives in
@@ -20,13 +20,16 @@ task: lgd
 architecture: tabicl # the upstream TabICL class; see src/models/architecture.py
 
 # ----------------------------------------------------------------------------
-# THE SWEEP — every multi-value knob, crossed. This block IS the experiment
+# THE SWEEP — every multi-value knob, crossed. This block IS the experiment.
+# Redesigned 02-09-2026 after the first Exp1 was a clean null (docs/RUNS.md):
+# the washed-out knobs (atom_prob, mode, target_scaling) are dropped, the
+# credit-signal is turned UP by default, and the two untested levers are swept
+# instead — the predictability filter, and how heavy the boundary atoms are.
 # ----------------------------------------------------------------------------
 sweep:
-  prior.credit_fraction: [0.0, 0.1, 0.2, 0.3] # share of datasets from OUR prior; 0.0 = control
-  prior.credit.target.atom_prob: [0.6, 0.8] # share of datasets carrying boundary atoms
-  prior.credit.target.target_scaling: [none, standard] # keep the [0,1] scale, or standardise it away
-  prior.credit.target.mode: [mechanism, quantile] # derive LGD from loan economics, or shape its marginal
+  prior.credit_fraction: [0.0, 0.5, 1.0] # 0.0 = control; now truly calibrated (sampler fix, 02-09)
+  prior.filter.mode: [tabicl, banded, "off"] # upstream's filter | target credit's low-signal band | none ("off" quoted: YAML reads off as false)
+  prior.credit.target.boundary_mass_range: [[0.02, 0.30], [0.15, 0.60]] # MILD vs AGGRESSIVE boundary atoms
   seeds: [0, 1, 2] # repeats, so an effect can be told from noise
 
 # ----------------------------------------------------------------------------
@@ -58,11 +61,12 @@ prior:
     category_frequency: balanced # balanced | power_law (a few levels dominate)
 
     target:
-      boundary_mass_range: [0.02, 0.45] # how much mass sits at 0 or 1, when atoms are present
+      atom_prob: 1.0 # STRONG baseline: every credit dataset carries boundary atoms
+      mode: quantile # dial the boundary marginal directly, so boundary_mass_range (swept) acts
       interior_shape_range: [0.4, 3.0] # Kumaraswamy shape span for the interior
       signal_strength: 1.0 # 1.0 = undiluted; lower makes the target harder to predict
 
-      mechanism: # only read when mode: mechanism
+      mechanism: # only read when mode: mechanism (unused while mode: quantile)
         mechanism_weights: { collateral: 0.4, workout: 0.35, segment_mixture: 0.25 } # which loss story
         cohort: { min_cohorts: 1, max_cohorts: 12 } # vintage blocks sharing an economic shock
 
@@ -81,7 +85,7 @@ prior:
       fraction: 0.3 # share of columns carrying no information
       kind_weights: { pure_noise: 1.0, duplicate: 1.0, shuffled: 1.0, constant: 0.5 } # kinds of junk
 
-  filter: # which generated datasets get discarded as unlearnable
+  filter: # which generated datasets get discarded as unlearnable — mode is SWEPT above
     quantile_band: [0.05, 0.40] # pseudo-R^2 band kept when mode: banded
     remove_trivial: false # also drop datasets that are too easy
     trivial_threshold: 0.02 # what counts as too easy
