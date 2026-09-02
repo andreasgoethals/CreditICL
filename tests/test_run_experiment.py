@@ -39,10 +39,10 @@ def _finish_arms(tmp_path, track, indices):
     from src.utils.config import expand_with_seeds, load, run_name
 
     runs = expand_with_seeds(load(ROOT / "config" / f"Exp1_{track.upper()}.yaml"))
+    man = tmp_path / "output" / "manifests"
+    man.mkdir(parents=True, exist_ok=True)
     for i in indices:
-        d = tmp_path / "output" / run_name(runs[i])
-        d.mkdir(parents=True, exist_ok=True)
-        (d / "summary.json").write_text(
+        (man / f"{run_name(runs[i])}__summary.json").write_text(
             json.dumps({"steps": 12_500, "completed": True}), encoding="utf-8"
         )
 

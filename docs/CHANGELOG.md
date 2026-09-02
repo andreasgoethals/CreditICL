@@ -21,6 +21,29 @@ reason is not obvious.
   0.02–0.30 vs 0.15–0.60; PD default correlation rho 0.03–0.12 vs 0.12–0.30) — crossed with
   `credit_fraction` [0, 0.5, 1.0] × 3 seeds = **45 arms/track** (was 75). Exp2/Exp3 re-pinned to the
   new swept knobs. (YAML reads bare `off` as `false`, so the filter value is quoted.) 115 config tests pass.
+- **Per-arm output folders eliminated — so the project can be re-run without an unbrowsable tree.**
+  Each arm used to get its own `output/<run_name>/` on the cluster holding just two small files
+  (`config.resolved.json`, `summary.json`); 45+ near-empty folders per track buried `logs/` and
+  `manifests/`. Both files now write FLAT into `manifests/` as `<run_name>__{config,summary}.json`,
+  beside the progress CSVs, via new `paths.run_summary_path`/`run_config_path`; `pretrain.py` no
+  longer creates a per-arm dir on VSC. Readers (`sweep_status`, `benchmark.slurm` PYCHECK) follow.
+  Big results were already on project storage (`results_dir` → lustre). 95 affected tests pass.
+- **Credit prior audited for soundness before the expensive rerun** (grounding checked against
+  `tfm-library` pin 665dd71). One behavioural change, plus honest relabelling:
+  - *Reject inference actually posed.* `apply_underwriting_selection` only truncated support
+    (context and query dropped identically) — relabelled honestly as that. A new `selection` shift
+    kind puts the approved (low-risk) book in the context and lets the query reach the rejected
+    region, the extrapolation reject inference is about. PD-only (LGD shift weights omit it).
+  - *Correlated defaults left as a shift signal, not a per-row feature.* Emitting the Vasicek
+    vintage factor as an observed macro covariate was considered and dropped, to keep PD and LGD
+    symmetric; the `pd_vasicek` docstring now says plainly that the correlation reaches a
+    row-permutation-invariant model through the cohort SHIFT, never within a single table.
+- **`rho`=0.30 aggressive PD arm now cited:** 0.30 = 0.24 (Basel corporate ceiling) × 1.25 (Basel III
+  large-financial-institution AVC multiplier). Comment + docstring say so; the swept value is unchanged.
+- **Honesty fixes from the audit:** Vasicek base rate is "exact IN EXPECTATION" (it varies with the
+  systematic draw); O'Prior's transfer findings flagged classification-only where the LGD track leans
+  on them (`mechanisms.py`, `shift.py`); stale library pins corrected (`PRIORS.md`, `EXPERIMENTAL_DESIGN.md`
+  → 665dd71). Exp2/Exp3 PD re-pinned to the same fixed prior.
 
 ---
 

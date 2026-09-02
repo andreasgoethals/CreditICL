@@ -113,7 +113,10 @@ def main() -> int:
         ckpt_dir = out_dir / "checkpoints"
         log_dir = Path(args.out_root) / "logs"
     elif paths.on_vsc():
-        out_dir = paths.outputs_dir() / run["_run_name"]
+        # SMALL per-arm files (resolved config, summary) go FLAT into manifests/, never a
+        # per-arm folder — 150 near-empty `output/<run>/` folders is what made the tree
+        # unbrowsable. So out_dir IS the shared manifests dir here; nothing per-arm is created.
+        out_dir = paths.manifests_dir()
         log_dir = paths.logs_dir()
         ckpt_dir = paths.resolve_writable(
             paths.checkpoints_dir() / run["_run_name"],
@@ -125,7 +128,11 @@ def main() -> int:
         log_dir = ROOT / "logs"
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "config.resolved.json").write_text(json.dumps(run, indent=2, default=str), encoding="utf-8")
+    # Resolved config (and the summary, below) are small and go FLAT into manifests/, one file
+    # per arm, not a per-arm folder — so the output tree stays browsable at 45+ arms.
+    cfg_path = paths.run_config_path(run["_run_name"])
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(json.dumps(run, indent=2, default=str), encoding="utf-8")
 
     print(f"=== {run['_run_name']} ===", flush=True)
     print(f"grid {index + 1}/{len(runs)}  levers: {json.dumps(run['_grid']['assignments'], default=str)}", flush=True)
@@ -145,7 +152,7 @@ def main() -> int:
     trainer.maybe_resume()
     summary = trainer.train()
 
-    (out_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    paths.run_summary_path(run["_run_name"]).write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps({"done": run["_run_name"], **summary}), flush=True)
 
     # EXIT 64 = "saved and stopped early, resume me". A walltime kill or an unannounced

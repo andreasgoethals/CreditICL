@@ -14,8 +14,7 @@ THE TWO TIERS, and why it matters here:
 
     personal data ($VSC_DATA)                                   SMALL, backed up
         output/logs/      timestamped run logs
-        output/manifests/ training progress CSVs
-        output/<run>/     metrics.jsonl, resolved configs
+        output/manifests/ progress CSVs + each arm's summary/config, flat (one file apiece)
 
 NEVER TOUCHED, at any protection level: `data/raw` (irreplaceable — the datasets
 themselves) and `checkpoints/` in the repo (the *downloaded* TabPFN/TabICL weights,
@@ -131,8 +130,9 @@ def find_artifacts(tasks: tuple[str, ...] = ("lgd", "pd")) -> list[Artifact]:
         for pipeline in ("data", "prior", "training", "eval"):
             candidates.append(("results", results_dir(task, pipeline)))
 
-    # Per-run output directories (metrics.jsonl, resolved config) sit directly under the
-    # output root alongside logs/ and manifests/, so pick them up separately.
+    # Legacy/local per-run output directories (from before summary+config moved flat into
+    # manifests/) sit directly under the output root beside logs/ and manifests/; the cluster
+    # no longer creates them, but sweep any that a local run or an older run left behind.
     out = outputs_dir()
     if out.is_dir():
         for child in sorted(out.iterdir()):

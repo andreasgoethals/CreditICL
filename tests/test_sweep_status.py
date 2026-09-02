@@ -51,16 +51,17 @@ def test_state_is_read_from_the_filesystem_not_from_slurm(tmp_path, monkeypatch)
     runs = expand_with_seeds(load(ROOT / "config" / "Exp1_LGD.yaml", allow_placeholders=True))
     monkeypatch.setattr(paths, "checkpoints_dir", lambda *a: tmp_path / "ckpt")
 
-    # arm 0 finished; arm 1 stopped early with a checkpoint; arm 2 never started.
-    d0 = tmp_path / run_name(runs[0])
-    d0.mkdir(parents=True)
-    (d0 / "summary.json").write_text(
+    # arm 0 finished; arm 1 stopped early with a checkpoint; arm 2 never started. Summaries are
+    # flat in manifests/ now (see paths.run_summary_path); the checkpoint stays per-arm.
+    man = tmp_path / "manifests"
+    man.mkdir(parents=True)
+    (man / f"{run_name(runs[0])}__summary.json").write_text(
         json.dumps({"steps": 12_500, "completed": True}), encoding="utf-8"
     )
     d1 = tmp_path / run_name(runs[1])
     (d1 / "checkpoints").mkdir(parents=True)
     (d1 / "checkpoints" / "step-3000.ckpt").write_bytes(b"x")
-    (d1 / "summary.json").write_text(
+    (man / f"{run_name(runs[1])}__summary.json").write_text(
         json.dumps({"steps": 3_000, "completed": False, "stopped_by_signal": "SIGUSR1"}),
         encoding="utf-8",
     )
@@ -80,9 +81,11 @@ def test_an_old_summary_without_the_completed_key_still_counts_as_done(tmp_path,
 
     runs = expand_with_seeds(load(ROOT / "config" / "Exp1_LGD.yaml", allow_placeholders=True))
     monkeypatch.setattr(paths, "checkpoints_dir", lambda *a: tmp_path / "ckpt")
-    d = tmp_path / run_name(runs[0])
-    d.mkdir(parents=True)
-    (d / "summary.json").write_text(json.dumps({"steps": 12_500}), encoding="utf-8")
+    man = tmp_path / "manifests"
+    man.mkdir(parents=True)
+    (man / f"{run_name(runs[0])}__summary.json").write_text(
+        json.dumps({"steps": 12_500}), encoding="utf-8"
+    )
 
     assert sweep_status.arm_states(ROOT / "config" / "Exp1_LGD.yaml", out_root=tmp_path)[0].state == DONE
 

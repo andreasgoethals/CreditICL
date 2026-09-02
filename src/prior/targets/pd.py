@@ -118,9 +118,14 @@ def apply_underwriting_selection(
 ) -> tuple[torch.Tensor, torch.Tensor, dict]:
     """Drop the rows an underwriting screen would have rejected.
 
-    This is the through-the-door / reject-inference problem: the observed book is
-    a truncated sample, selected on a score correlated with the outcome. It biases
-    every estimate learned from it, and no general-purpose prior produces it.
+    This is **support truncation**: the observed book is a biased sample, selected on a
+    score correlated with the outcome, so estimates learned from it are biased and no
+    general-purpose prior produces that. It is NOT reject inference — it removes the rejected
+    rows from the whole table, so context and query are truncated identically and the model
+    is never asked to extrapolate across the acceptance boundary. That extrapolation is posed
+    separately by the `selection` shift kind (`shift.py`), which withholds the rejected region
+    from the context while keeping it in the query. Only the quantile-mode path calls this;
+    the mechanism-mode arm poses the problem through the shift instead.
     """
     drop = float(cfg.get("selection_drop", 0.0))
     if drop <= 0.0 or X.shape[0] < 32:

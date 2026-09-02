@@ -56,6 +56,9 @@ from ..rng import PriorRNG
 #   other retail             rho = 0.03 - 0.16
 #   residential mortgage     rho = 0.15
 #   corporate                rho = 0.12 - 0.24
+# Basel III multiplies the correlation by 1.25 for exposures to large regulated financial
+# institutions, so the aggressive PD arm's 0.30 (= 0.24 x 1.25) is still a cited ceiling.
+# NB this default is only reached when `mechanism.rho_range` is absent; the configs sweep it.
 BASEL_RHO_RANGE = (0.03, 0.24)
 
 
@@ -324,7 +327,9 @@ def apply_lgd_mechanism(
 
     Sampling *which* mechanism, rather than fixing one, is the point: O'Prior's
     finding is that mechanism **diversity** drives transfer, so a prior offering one
-    mechanism — however faithful — is the weaker design.
+    mechanism — however faithful — is the weaker design. (O'Prior measured this on
+    classification only; carrying it to LGD regression is our extrapolation — a stated
+    limitation in docs/EXPERIMENTAL_DESIGN.md, not a result they reported.)
     """
     weights = cfg.get("mechanism_weights") or {
         "collateral": 0.4,
@@ -391,12 +396,19 @@ def pd_vasicek(
 
     Three properties this gives that a plain quantile cut on a latent does not:
 
-    * **the base rate is exact**, because the threshold is `Phi^-1(PD)`;
-    * **defaults are correlated** through `Z`, so the realised rate varies between
-      cohorts the way it does in a real book. A model trained only on independent
-      labels has never seen a bad year;
-    * **`rho` is a regulatory quantity** (0.03-0.24 across Basel exposure classes),
-      so the correlation is plausible rather than invented.
+    * **the base rate is exact IN EXPECTATION** — the threshold is `Phi^-1(PD)`, but the
+      realised rate deliberately varies with the systematic draw `Z` (a good year or a bad
+      one), the way a real book's does, and the cohort shock's SD is itself sampled. It is
+      not exact on any one sample, so `realised_base_rate` is reported alongside the target;
+    * **defaults are correlated** through `Z`, so the realised rate varies between cohorts the
+      way a real book's does. A row-permutation-invariant model cannot recover which rows share
+      a cohort, so this correlation is not learnable *within* one table — it reaches the model
+      through the cohort SHIFT instead (context = one economic state, query = another; see
+      `shift.py`), which is where "never seen a bad year" actually bites;
+    * **`rho` is a regulatory quantity** — 0.03-0.24 across Basel IRB exposure classes
+      (`BASEL_RHO_RANGE`); the aggressive sweep arm's 0.30 is 0.24 x 1.25, Basel III's
+      asset-correlation multiplier for large regulated financials, so it is cited, not
+      invented.
 
     `eps_i` is the **SCM latent**, not fresh noise — that is what keeps the features
     predictive. Using noise here would give a perfect-looking base rate and an

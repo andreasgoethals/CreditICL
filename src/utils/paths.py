@@ -166,6 +166,21 @@ def manifests_dir() -> Path:
     return outputs_dir() / "manifests"
 
 
+def run_summary_path(run_name: str) -> Path:
+    """A finished arm's summary, FLAT in manifests/ — no per-arm folder.
+
+    Until 02-09-2026 each arm got its own `output/<run_name>/` holding just two small files
+    (the resolved config and this summary); 150 near-empty folders made the output tree
+    unbrowsable. They now sit beside the progress/telemetry CSVs, one flat file per arm.
+    """
+    return manifests_dir() / f"{run_name}__summary.json"
+
+
+def run_config_path(run_name: str) -> Path:
+    """A run's resolved config, FLAT in manifests/ beside its summary (see run_summary_path)."""
+    return manifests_dir() / f"{run_name}__config.json"
+
+
 def figures_dir(notebook: str | None = None) -> Path:
     """Generated figures. One folder per notebook, plus a shared CAPTIONS.md."""
     root = outputs_dir() / "figures"

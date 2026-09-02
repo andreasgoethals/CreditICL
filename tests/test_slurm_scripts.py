@@ -450,10 +450,10 @@ def test_phase_two_applies_the_same_context_cap_to_both_branches():
 
 
 def test_phase_two_refuses_an_arm_that_never_finished():
-    """A SIGUSR1 checkpoint loads perfectly and is not a result. `summary.json` is the
-    authority, the same one `sweep_status` reads."""
+    """A SIGUSR1 checkpoint loads perfectly and is not a result. The arm summary is the
+    authority, the same one `sweep_status` reads (now flat in manifests/)."""
     text = (ROOT / "scripts" / "slurm" / BENCH).read_text(encoding="utf-8")
-    assert "summary.json" in text
+    assert "run_summary_path" in text
     assert 'data.get("completed")' in text
     assert "is NOT complete" in text
 

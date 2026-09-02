@@ -80,8 +80,9 @@ prior:
 
     shift: # context and predicted rows come from different populations
       shift_prob: 0.3 # share of datasets given a shift
-      kind_weights: { cohort: 1.0, covariate: 1.0, prior_prob: 1.0 } # time | feature range | base rate
+      kind_weights: { cohort: 1.0, covariate: 1.0, prior_prob: 1.0, selection: 1.0 } # time | feature range | base rate | reject inference
       prior_prob_range: [0.15, 0.45] # how far the base rate moves
+      selection_sharpness: 0.6 # reject-inference screen strength: context = approved (low-risk) book, query reaches the rejected region
 
     missingness:
       missing_col_fraction: 0.3 # share of columns that get missing values

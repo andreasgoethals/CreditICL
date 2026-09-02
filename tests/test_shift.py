@@ -130,6 +130,22 @@ def test_prior_prob_shift_moves_the_base_rate(table):
     pytest.skip("no prior_prob draw in 10 tries")
 
 
+def test_selection_shift_poses_reject_inference(table):
+    """Reject inference: the context is the approved (low-risk) book and the query reaches the
+    rejected region, so the query is systematically riskier than the context — and no row is
+    dropped, which is what separates it from support truncation."""
+    X, y = table
+    weights = {"selection": 1.0, "cohort": 0.0, "covariate": 0.0, "prior_prob": 0.0}
+    for seed in range(10):
+        Xo, yo, meta = apply_shift(PriorRNG(seed), X, y, {**CFG, "kind_weights": weights})
+        if meta["shift"] != "selection":
+            continue
+        assert meta["query_risk_mean"] > meta["context_risk_mean"], "query must be the riskier book"
+        assert torch.allclose(yo.sort().values, y.sort().values), "a row was dropped or invented"
+        return
+    pytest.skip("no selection draw in 10 tries")
+
+
 def test_tiny_tables_decline_gracefully():
     """Too few rows to split meaningfully must return the table unchanged, not crash."""
     rng = PriorRNG(6)

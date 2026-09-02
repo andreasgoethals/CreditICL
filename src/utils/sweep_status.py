@@ -93,7 +93,8 @@ def arm_states(config: Path, out_root: Path | None = None) -> list[ArmState]:
     for index, run in enumerate(runs):
         name = run_name(run)
         out_dir = root / name
-        summary = out_dir / "summary.json"
+        # Summary is flat in manifests/ now, not a per-arm folder (see paths.run_summary_path).
+        summary = root / "manifests" / f"{name}__summary.json"
         ckpt = _latest_checkpoint_name(paths.checkpoints_dir() / name) or _latest_checkpoint_name(
             out_dir / "checkpoints"
         )

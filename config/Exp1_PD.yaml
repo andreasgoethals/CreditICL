@@ -30,7 +30,7 @@ architecture: tabicl # the upstream TabICL class; see src/models/architecture.py
 sweep:
   prior.credit_fraction: [0.0, 0.5, 1.0] # 0.0 = control; now truly calibrated (sampler fix, 02-09)
   prior.filter.mode: [tabicl, banded, "off"] # upstream's filter | target credit's low-signal band | none ("off" quoted: YAML reads off as false)
-  prior.credit.target.mechanism.rho_range: [[0.03, 0.12], [0.12, 0.30]] # MILD (retail) vs AGGRESSIVE (corporate) default correlation
+  prior.credit.target.mechanism.rho_range: [[0.03, 0.12], [0.12, 0.30]] # MILD retail vs AGGRESSIVE corporate; 0.30 = Basel corp ceiling 0.24 x 1.25 (Basel III large-FI AVC multiplier)
   seeds: [0, 1, 2] # repeats, so an effect can be told from noise
 
 # ----------------------------------------------------------------------------
@@ -86,8 +86,9 @@ prior:
 
     shift: # context and predicted rows come from different populations
       shift_prob: 0.3 # share of datasets given a shift
-      kind_weights: { cohort: 1.0, covariate: 1.0, prior_prob: 1.0 } # time | feature range | base rate
+      kind_weights: { cohort: 1.0, covariate: 1.0, prior_prob: 1.0, selection: 1.0 } # time | feature range | base rate | reject inference
       prior_prob_range: [0.15, 0.45] # how far the base rate moves
+      selection_sharpness: 0.6 # reject-inference screen strength: context = approved (low-risk) book, query reaches the rejected region
 
     missingness:
       missing_col_fraction: 0.3 # share of columns that get missing values

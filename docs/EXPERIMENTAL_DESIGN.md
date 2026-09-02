@@ -1,6 +1,6 @@
 # Experimental design
 
-**Status:** proposal, 2026-08-05. Library pin `21d555a`.
+**Status:** proposal, 2026-08-05. Library pin `665dd71`.
 Sections marked **[OPEN]** need a decision before implementation.
 
 ---
@@ -198,19 +198,25 @@ frontier-scale confirmation is untested.
 small (~200 lines) but it is on the critical path, and a subtly wrong loop
 invalidates every arm equally and invisibly. Mitigation: §6.
 
-### 2.2 Matched compute — and where it breaks
+### 2.2 Matched compute — across arms, not across papers
 
-Follow O'Prior's protocol so our numbers are comparable to theirs:
+The comparison this project makes is **between arms** (credit prior vs original, filter on vs
+off), so every arm is trained on the **same compute** — the same optimizer steps and the same
+number of datasets consumed. That is the claim the design rests on, and it holds.
 
-| | value |
-|---|---|
-| synthetic datasets per prior | 40,000 |
-| rows per table | 512–1,024 |
-| features per table | 3–50 |
-| batch | 4 tables/step |
-| steps/epoch | 1,000 |
-| epochs | 10 |
-| hyperparameter tuning between conditions | **none** |
+What it is **not** is a match to O'Prior's *own* training protocol. The shipped configs follow
+**TabICLv2 stage-1** (1,024 rows/table, 1–100 features, batch 64, 12,500 steps), not O'Prior's
+(40,000 datasets, 3–50 features, batch 4). So our absolute numbers are **not directly comparable
+to O'Prior's** — only our arm-to-arm contrasts are. The values actually used, with O'Prior's for
+reference:
+
+| | this project | O'Prior (reference) |
+|---|---|---|
+| rows per table | 1,024 | 512–1,024 |
+| features per table | 1–100 | 3–50 |
+| batch | 64 tables/step | 4 tables/step |
+| steps | 12,500 | 10 × 1,000 |
+| hyperparameter tuning between conditions | **none** | none |
 
 **The trap.** Turning the predictability filter *off* makes generation
 **cheaper** (no rejection sampling), so wall-clock and credits are **not

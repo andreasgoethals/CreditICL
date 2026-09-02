@@ -4,7 +4,7 @@ A tabular foundation model never sees a real table during pretraining. It sees m
 **synthetic** ones from a generator called the **prior**. The prior decides what "a table" means
 to the model, so it decides what the model is good at. This project changes that generator.
 
-**Sources**, all inside this repository (pin `bbba8d4b`):
+**Sources**, all inside this repository (pin `665dd71`):
 
 - paper — `tfm-library/papers/2026/02_Qu_et_al._TabICLv2_*.pdf`
 - code — `tfm-library/repositories/TabICL.txt` (127 files), including **their own training

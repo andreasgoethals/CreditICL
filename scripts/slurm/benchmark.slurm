@@ -193,7 +193,7 @@ from src.utils import paths
 from src.utils.config import load
 
 ckpt, run_name, config = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
-summary = paths.outputs_dir() / run_name / "summary.json"
+summary = paths.run_summary_path(run_name)  # flat in manifests/, not a per-arm folder
 if not summary.is_file():
     raise SystemExit(f"FATAL: {summary} is missing — phase 1 never finished this arm.")
 data = json.loads(summary.read_text(encoding="utf-8"))

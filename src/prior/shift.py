@@ -4,7 +4,9 @@ THE GAP THIS FILLS
 
 O'Prior's ablations report that three things contribute **independently** to transfer:
 mechanism diversity, realism composition, and **shift-aware stress**. Our prior had the
-first two. This is the third, and it is the one that matters most for credit.
+first two. This is the third, and it is the one that matters most for credit. (O'Prior
+measured that independence on classification tasks only; the LGD track carries it over as a
+stated extrapolation, per docs/EXPERIMENTAL_DESIGN.md.)
 
 Every other part of the prior draws context and query rows from the *same* table, so a
 model can succeed by interpolating inside one population. Real credit scoring never
@@ -17,7 +19,7 @@ A prior without shift teaches the model to interpolate. A prior with it teaches 
 model to notice when the query rows do not look like the context, which is exactly the
 skill an in-context model needs on a real book.
 
-THREE KINDS, all standard in the credit literature:
+FOUR KINDS, all standard in the credit literature:
 
 * `cohort`   — context = early vintages, query = late ones. Uses the systematic factor
                already in `mechanisms.py`, so the query genuinely sits under a different
@@ -28,6 +30,13 @@ THREE KINDS, all standard in the credit literature:
 * `prior_prob` — the base rate itself changes: the query book defaults more, or less,
                than the context did. This is the dangerous case, because a model that
                anchors on the context's base rate is systematically wrong.
+* `selection` — reject inference: the context is the APPROVED book (an underwriting screen
+               kept the low-risk applicants) while the query reaches into the high-risk
+               region the screen turned away. The model must rank applicants the historical
+               policy never booked — the credit problem `apply_underwriting_selection`'s
+               support truncation only gestures at, because there the rejected region leaves
+               the whole table, whereas here it is withheld from the context but kept in the
+               query, which is what makes it an extrapolation.
 
 WHAT IS DELIBERATELY *NOT* DONE: the feature-to-target relationship is never broken.
 Shifting the inputs is a solvable problem a good model should handle; changing the
@@ -46,7 +55,7 @@ import torch
 
 from .rng import PriorRNG
 
-SHIFT_KINDS = ("cohort", "covariate", "prior_prob")
+SHIFT_KINDS = ("cohort", "covariate", "prior_prob", "selection")
 
 
 def _split_point(n_rows: int, train_frac: float) -> int:
@@ -71,7 +80,12 @@ def apply_shift(
     if shift_prob <= 0 or not rng.boolean(shift_prob):
         return X, y, {"shift": "none"}
 
-    weights = cfg.get("kind_weights") or {"cohort": 1.0, "covariate": 1.0, "prior_prob": 1.0}
+    weights = cfg.get("kind_weights") or {
+        "cohort": 1.0,
+        "covariate": 1.0,
+        "prior_prob": 1.0,
+        "selection": 1.0,
+    }
     kinds = [k for k in SHIFT_KINDS if weights.get(k, 0) > 0]
     if not kinds:
         return X, y, {"shift": "none"}
@@ -84,6 +98,8 @@ def apply_shift(
         return _cohort_shift(rng, X, y, cfg, cut)
     if kind == "covariate":
         return _covariate_shift(rng, X, y, cfg, cut)
+    if kind == "selection":
+        return _selection_shift(rng, X, y, cfg, cut)
     return _prior_prob_shift(rng, X, y, cfg, cut)
 
 
@@ -179,4 +195,50 @@ def _prior_prob_shift(
         "shift_cut": cut,
         "context_high_rate": round(ctx_rate, 4),
         "query_high_rate": round(qry_rate, 4),
+    }
+
+
+def _selection_shift(
+    rng: PriorRNG, X: torch.Tensor, y: torch.Tensor, cfg: dict[str, Any], cut: int
+) -> tuple[torch.Tensor, torch.Tensor, dict[str, Any]]:
+    """Reject inference: context = approved applicants, query = the through-the-door book.
+
+    An underwriting policy approves the low-risk applicants and rejects the high-risk ones,
+    so a book only ever holds approved loans — yet a scorecard fitted on it must still rank
+    the applicants the old policy turned away. We pose exactly that: score every row on a
+    NOISY risk proxy (the screen is informed but imperfect), put the lowest-risk (approved)
+    rows in the context, and let the query reach into the higher-risk region the context
+    barely covers. No row is dropped — the rejected region is absent from the *context* but
+    present in the *query*, so the task is extrapolation across the acceptance boundary, not
+    the support truncation `apply_underwriting_selection` does.
+
+    The feature-to-target relationship is untouched: only the split is selective, so the
+    region is unseen but learnable — the principle every kind here follows.
+    """
+    n = int(X.shape[0])
+    if float(y.std()) < 1e-9:
+        return X, y, {"shift": "none"}  # no risk gradient to select on
+
+    # Higher y = higher risk. A soft screen: risk proxy plus noise, so the approved book is
+    # not a clean cut and still contains some of the bad outcomes.
+    sharpness = float(cfg.get("selection_sharpness", 0.6))
+    z = (y - y.mean()) / (y.std() + 1e-8)
+    score = sharpness * z + (1.0 - sharpness) * rng.randn_like(z)
+    order = torch.argsort(score)  # ascending: approved (low risk) first
+    ctx = order[:cut][rng.randperm(cut)]
+    qry = order[cut:][rng.randperm(n - cut)]
+
+    # An approved book with none of the rare class teaches nothing about it. Decline the
+    # extreme (a hard screen on a low base rate) rather than hand over a single-class context.
+    if bool(((y == 0) | (y == 1)).all()):
+        pos = float(y[ctx].sum())
+        if pos < 1 or pos > len(ctx) - 1:
+            return X, y, {"shift": "none"}
+
+    order = torch.cat([ctx, qry])
+    return X[order], y[order], {
+        "shift": "selection",
+        "shift_cut": cut,
+        "context_risk_mean": round(float(y[ctx].float().mean()), 4),
+        "query_risk_mean": round(float(y[qry].float().mean()), 4),
     }
