@@ -5,6 +5,18 @@ reason is not obvious.
 
 ---
 
+## 03-09-2026 — Prior-mechanism visualisations for the reworked prior
+
+- **`src/visualize/mechanism_plots.py`: six figures of the adjusted prior**, wired into
+  `prior_visualisation_{lgd,pd}.ipynb`. They sample through `TaskGenerator` — the training code path
+  — so they can never show a stale pool the way the pre-generated pool sections can. LGD: boundary-
+  atom intensity (mild vs aggressive), distribution shift, informative missingness, filter modes.
+  PD: controlled imbalance, correlated defaults (ρ), reject inference (the `selection` shift),
+  distribution shift, missingness, filter modes. New style tokens `CREDIT_MILD`/`CREDIT_STRONG`
+  (intensity) and `CONTEXT`/`QUERY` (shift figures) — added to `style.py`, never picked in a notebook.
+
+---
+
 ## 02-09-2026 — Exp1 benchmarked (null result), and `credit_fraction` calibrated
 
 - **`credit_fraction` now realises its nominal value.** The credit/base coin-flip was re-drawn on

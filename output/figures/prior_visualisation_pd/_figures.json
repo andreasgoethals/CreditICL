@@ -46,5 +46,41 @@
     "stem": "08_shapes_by_variant",
     "name": "shapes_by_variant",
     "caption": "Left: distribution of rows per synthetic dataset. Right: distribution of features per synthetic dataset. One step histogram per prior variant, 20 bins."
+  },
+  {
+    "index": 9,
+    "stem": "09_adj_imbalance_control",
+    "name": "adj_imbalance_control",
+    "caption": "Per-task positive (default) rate over ~100 tasks from the original prior (grey) and our prior (blue). The shaded band marks the 6.7-22.1% range measured in the real PD datasets."
+  },
+  {
+    "index": 10,
+    "stem": "10_adj_correlated_defaults",
+    "name": "adj_correlated_defaults",
+    "caption": "Left: realised default rate over ~80 tasks with the target rate fixed at 15%, under mild versus aggressive asset correlation (SD in the legend). Right: standard deviation of the realised rate against the asset correlation rho, three values."
+  },
+  {
+    "index": 11,
+    "stem": "11_adj_reject_inference",
+    "name": "adj_reject_inference",
+    "caption": "Left: query (through-the-door) versus context (approved-book) default rate, one point per task with the selection shift, dashed line y = x. Right: distribution of the query-minus-context rate, dashed line at the mean."
+  },
+  {
+    "index": 12,
+    "stem": "12_adj_shift_kinds",
+    "name": "adj_shift_kinds",
+    "caption": "PD default rate in the context versus query rows, one panel per distribution-shift kind (~40 tasks each). Covariate shift moves the shown feature rather than the rate; selection is the reject-inference shift."
+  },
+  {
+    "index": 13,
+    "stem": "13_adj_informative_missingness",
+    "name": "adj_informative_missingness",
+    "caption": "Missing rate for non-defaulters versus defaulters, under missing-completely-at-random (grey, coupling 0) and target-coupled missingness (blue, coupling 2)."
+  },
+  {
+    "index": 14,
+    "stem": "14_adj_filter_modes",
+    "name": "adj_filter_modes",
+    "caption": "Distribution of ExtraTrees pseudo-R^2 over ~60 generated PD tasks, with the 'banded' keep-region shaded."
   }
 ]

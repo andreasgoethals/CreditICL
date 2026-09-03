@@ -10,52 +10,6 @@ These are the paper's captions: paste one straight under its figure. Pure descri
 Figures are PDFs, drawn at the width they will occupy on an A4 page; never rescale one
 in the document, because that rescales its text with it.
 
-## data_exploration
-
-**01_lgd_targets** — `lgd_targets`
-
-Histograms of the Loss Given Default target for each of the seven LGD datasets, ordered by sample size. Forty bins per panel. Dashed vertical lines mark the minimum and maximum observed values where more than 1% of observations fall exactly on them. Panel subtitles give the combined share of observations at the two boundaries.
-
-**02_boundary_mass_ranking** — `boundary_mass_ranking`
-
-Share of observations lying exactly at a boundary of the observed target range, per LGD dataset, ordered by total. Bars are split into mass at the minimum (blue) and at the maximum (orange). Percentages give the total per dataset.
-
-**03_pd_base_rates** — `pd_base_rates`
-
-Default rate per PD dataset, ordered by rate, on a logarithmic horizontal axis. The dashed vertical line marks a 50% rate. Percentages give the rate per dataset.
-
-**04_shapes** — `shapes`
-
-Number of rows against number of features for all 21 evaluation datasets, both axes logarithmic. Colour denotes task; each point is labelled with its dataset name.
-
-**05_type_mix** — `type_mix`
-
-Share of columns that are categorical, per dataset, ordered by share. Colour denotes task.
-
-**06_missingness** — `missingness`
-
-Share of cells that are missing, per dataset, ordered by share, measured after preprocessing. Colour denotes task.
-
-**07_feature_correlations_lgd_p1** — `feature_correlations_lgd_p1`
-
-Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. LGD datasets, page 1 of 2.
-
-**08_feature_correlations_lgd_p2** — `feature_correlations_lgd_p2`
-
-Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. LGD datasets, page 2 of 2.
-
-**09_feature_correlations_pd_p1** — `feature_correlations_pd_p1`
-
-Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. PD datasets, page 1 of 3.
-
-**10_feature_correlations_pd_p2** — `feature_correlations_pd_p2`
-
-Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. PD datasets, page 2 of 3.
-
-**11_feature_correlations_pd_p3** — `feature_correlations_pd_p3`
-
-Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. PD datasets, page 3 of 3.
-
 ## prior_visualisation_lgd
 
 **01_palette** — `palette`
@@ -98,6 +52,22 @@ Eigenvalue spectra of the feature correlation matrix for up to 40 synthetic data
 
 Left: distribution of rows per synthetic dataset. Right: distribution of features per synthetic dataset. One step histogram per prior variant, 20 bins.
 
+**11_adj_intensity_atoms** — `adj_intensity_atoms`
+
+Histogram of the pooled LGD target over ~50 synthetic tasks from each prior: the original TabICL prior (grey) and our prior at mild (light blue) and aggressive (dark blue) boundary intensity. Spikes at 0 and 1 are the boundary atoms; the panel subtitle gives the mean total boundary mass.
+
+**12_adj_shift_kinds** — `adj_shift_kinds`
+
+LGD target in the context rows (grey) versus the query rows (orange), one panel per distribution-shift kind, ~40 tasks each with that shift forced on. Cohort and prior-probability shifts move the target; covariate shift moves the shown feature instead, leaving the target relationship intact.
+
+**13_adj_informative_missingness** — `adj_informative_missingness`
+
+Missing rate as a function of the LGD outcome for a controlled dataset, under missing-completely-at-random (grey, coupling 0) and target-coupled missingness (blue, coupling 2). Under coupling the rate rises with the outcome; under MCAR it is flat.
+
+**14_adj_filter_modes** — `adj_filter_modes`
+
+Distribution of ExtraTrees pseudo-R^2 over ~60 generated LGD tasks. The shaded band is what filter mode 'banded' keeps; 'off' keeps all, 'tabicl' keeps the predictable tail.
+
 ## prior_visualisation_pd
 
 **01_palette** — `palette`
@@ -131,3 +101,27 @@ Eigenvalue spectra of the feature correlation matrix for up to 40 synthetic data
 **08_shapes_by_variant** — `shapes_by_variant`
 
 Left: distribution of rows per synthetic dataset. Right: distribution of features per synthetic dataset. One step histogram per prior variant, 20 bins.
+
+**09_adj_imbalance_control** — `adj_imbalance_control`
+
+Per-task positive (default) rate over ~100 tasks from the original prior (grey) and our prior (blue). The shaded band marks the 6.7-22.1% range measured in the real PD datasets.
+
+**10_adj_correlated_defaults** — `adj_correlated_defaults`
+
+Left: realised default rate over ~80 tasks with the target rate fixed at 15%, under mild versus aggressive asset correlation (SD in the legend). Right: standard deviation of the realised rate against the asset correlation rho, three values.
+
+**11_adj_reject_inference** — `adj_reject_inference`
+
+Left: query (through-the-door) versus context (approved-book) default rate, one point per task with the selection shift, dashed line y = x. Right: distribution of the query-minus-context rate, dashed line at the mean.
+
+**12_adj_shift_kinds** — `adj_shift_kinds`
+
+PD default rate in the context versus query rows, one panel per distribution-shift kind (~40 tasks each). Covariate shift moves the shown feature rather than the rate; selection is the reject-inference shift.
+
+**13_adj_informative_missingness** — `adj_informative_missingness`
+
+Missing rate for non-defaulters versus defaulters, under missing-completely-at-random (grey, coupling 0) and target-coupled missingness (blue, coupling 2).
+
+**14_adj_filter_modes** — `adj_filter_modes`
+
+Distribution of ExtraTrees pseudo-R^2 over ~60 generated PD tasks, with the 'banded' keep-region shaded.

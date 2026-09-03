@@ -179,6 +179,18 @@ REAL = "#c2410c"
 #: happened in the LGD boundary-mass figure. Magenta appears nowhere else in the palette, so a
 #: star can never be mistaken for a data point whatever colour the series behind it takes.
 STAR = "#e6007e"
+#: The two credit-prior INTENSITIES swept in Exp1 — mild retail vs aggressive corporate default
+#: correlation (PD), light vs heavy boundary atoms (LGD). Two shades of CREDIT's blue, so they read
+#: as "the same prior, turned up": mild lighter, aggressive deeper.
+CREDIT_MILD = "#7ba7d7"
+CREDIT_STRONG = "#173a63"
+
+#: Context (the rows the model conditions on) vs query (the rows it must predict), for the shift
+#: and reject-inference figures. Context is the recessive grey of the given book; query is warm,
+#: because the query is where the deviation the model has to handle lives.
+CONTEXT = "#94a3b8"
+QUERY = "#c2410c"
+
 #: For "this is wrong / out of range" annotations.
 WARN = "#b91c1c"
 #: Neutral ink for text, axes and annotations.

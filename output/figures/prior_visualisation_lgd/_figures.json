@@ -58,5 +58,29 @@
     "stem": "10_shapes_by_variant",
     "name": "shapes_by_variant",
     "caption": "Left: distribution of rows per synthetic dataset. Right: distribution of features per synthetic dataset. One step histogram per prior variant, 20 bins."
+  },
+  {
+    "index": 11,
+    "stem": "11_adj_intensity_atoms",
+    "name": "adj_intensity_atoms",
+    "caption": "Histogram of the pooled LGD target over ~50 synthetic tasks from each prior: the original TabICL prior (grey) and our prior at mild (light blue) and aggressive (dark blue) boundary intensity. Spikes at 0 and 1 are the boundary atoms; the panel subtitle gives the mean total boundary mass."
+  },
+  {
+    "index": 12,
+    "stem": "12_adj_shift_kinds",
+    "name": "adj_shift_kinds",
+    "caption": "LGD target in the context rows (grey) versus the query rows (orange), one panel per distribution-shift kind, ~40 tasks each with that shift forced on. Cohort and prior-probability shifts move the target; covariate shift moves the shown feature instead, leaving the target relationship intact."
+  },
+  {
+    "index": 13,
+    "stem": "13_adj_informative_missingness",
+    "name": "adj_informative_missingness",
+    "caption": "Missing rate as a function of the LGD outcome for a controlled dataset, under missing-completely-at-random (grey, coupling 0) and target-coupled missingness (blue, coupling 2). Under coupling the rate rises with the outcome; under MCAR it is flat."
+  },
+  {
+    "index": 14,
+    "stem": "14_adj_filter_modes",
+    "name": "adj_filter_modes",
+    "caption": "Distribution of ExtraTrees pseudo-R^2 over ~60 generated LGD tasks. The shaded band is what filter mode 'banded' keeps; 'off' keeps all, 'tabicl' keeps the predictable tail."
   }
 ]
