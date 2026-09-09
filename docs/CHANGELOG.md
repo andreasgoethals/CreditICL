@@ -5,6 +5,33 @@ reason is not obvious.
 
 ---
 
+## 08-09-2026 — OOD eval no longer feeds a phantom `-1` label to the model (fixes banded-arm CUDA crash)
+
+- **`src/eval/ood.py`.** `pandas.cat.codes` codes a missing classification target as `-1`; being
+  *finite* it slipped past the scorers' `isfinite` guards into `F.one_hot`, whose GPU device-side
+  assert (`idx_dim >= 0`) corrupted the CUDA context and killed the run — control arms included,
+  since the out-of-domain eval is prior-independent. Fetch now drops unlabelled rows before coding;
+  `load_ood_dataset` strips any surviving `-1`, so the existing cluster cache is safe with no
+  re-fetch. Classification-only — a negative regression target is a valid value. Root cause of the
+  15 Exp1 PD `filter=banded` arm crashes (job 11549669).
+
+---
+
+## 06-09-2026 — Notebooks restructured into levels; PD reject-inference softened
+
+- **Notebooks levelled.** Level 0 (whole project) renamed `0.1_data_exploration`,
+  `0.2_prior_visualisation_pd`, `0.3_prior_visualisation_lgd`. Level 1 (Experiment 1) added:
+  `1.1_pd_training` / `1.2_lgd_training` visualise each arm's training behaviour — loss, real-data
+  AUC/R², every logged metric, per-config small multiples, best/worst, telemetry, gradient flow —
+  from `<run>__progress.csv` / `__telemetry.csv` via new `src/visualize/training_plots.py`; and
+  `1.3_pd_results` / `1.4_lgd_results` show the phase-2 benchmark via new `src/visualize/results_plots.py`
+  (placeholder until it runs). 7 notebooks, all A4 / PDF / captioned.
+- **PD `selection_sharpness` 0.6 → 0.35** (Exp1/2/3_PD): at 0.6 the reject-inference screen left the
+  approved book ~1% defaults and rejected most datasets as single-class; 0.35 gives a realistic
+  ~6.5% approved / ~37% query split and ~4.5x more usable datasets.
+
+---
+
 ## 03-09-2026 — Prior-mechanism visualisations for the reworked prior
 
 - **`src/visualize/mechanism_plots.py`: six figures of the adjusted prior**, wired into

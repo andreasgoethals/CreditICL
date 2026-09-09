@@ -33,6 +33,7 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 07-09-2026 | 11549669 (PD, mindwell `gpu_b200`), 61898850 (LGD, wICE `gpu_a100`) — Exp1 phase-1 re-run, 90 arms | **PARTIAL 63/90; all 27 unfinished are `filter=banded`; 15 PD banded arms CRASHED (OOD `-1` → one_hot device assert)** | Root cause fixed in `src/eval/ood.py`. Non-banded 30/30 (PD) + 30/30 (LGD) done. Progress-eval only (phase-2 not run): cf=0.5 blend leads both tracks — PD AUC 0.723 vs control 0.721, LGD R² 0.392 vs 0.220; cf=1 trails. Suggestive, not the verdict |
 | 02-09-2026 | 61866150 (LGD), 61866151 (PD) — Exp1 Phase 2, all 150 checkpoints scored, wICE `gpu_a100` | **NULL: credit prior ≈ no-credit control on BOTH tracks; 0/25 beat released TabICLv2** | LGD best 0.486 vs control 0.485 (seed SD 0.008) vs released 0.514; PD control IS rank 1 (0.730) vs released 0.736. `scale=standard` hurts LGD. No OOD loss. Fair internal test is a clean null |
 | 01-09-2026 | 11529826 + 61791522 (LGD), 11529827 (PD), +resubmits 11540142/43 — Exp1 full sweep, 150 arms | **COMPLETE: 150/150 arms, all healthy** | 1,011 GPU-h. LGD loss 0.051–0.070, PD 0.136–0.186. 0 CUDA / NaN / walltime. The 6 PD (Vasicek) + 2 wICE stragglers finished on resubmit |
 | 25-08-2026 | 61776784 — GPU benchmark, wICE `gpu_a100` | **A100 is 1.93x slower, 2.72x cheaper/hour -> 29 % cheaper per arm** | 8.49 h/arm, 89 % of its own ceiling. Raw FLOPs say 5.28x; this workload is latency-bound |
@@ -60,6 +61,24 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
+
+### 08-09-2026 - A missing OOD label (`cat.codes` → -1) crashed 15 PD banded arms via a GPU one_hot assert
+- **Tried:** reading the re-run Exp1 phase-1 sweep (job 11549669) to find why 15 arms never finished.
+- **Result:** every one was PD `filter=banded`; each died `exit 134`,
+  `torch.AcceleratorError: CUDA error: device-side assert triggered` in `ScatterGatherKernel.cu`
+  (`idx_dim >= 0 && idx_dim < index_size`), surfacing async inside the column encoder. A hard abort,
+  so no summary and no self-resubmit — the arms sat dead, unlike the graceful walltime (exit 64) path.
+- **Why:** the ONLY scatter in the model is `F.one_hot(y_train.long(), max_classes)`, and a `>=10`
+  label diverts to mixed-radix, so the trigger is a **negative** label. Not the synthetic data (PD is
+  strictly {0,1}, verified in code) — the **progress-eval**, which feeds real+OOD context labels to the
+  model. `src/eval/ood.py` coded a missing classification target with `pandas.cat.codes`, which returns
+  **-1** for NaN; -1 is *finite*, so the eval's `isfinite` filter waved it into `one_hot`. Prior-independent
+  (control arms crashed too); PD-only (one_hot is classification; LGD's y-encoder is linear); banded-only
+  because those arms run 15-25 h and so trigger far more progress-evals, **not** because of banded data.
+- **Instead:** drop unlabelled rows before coding (fetch) and strip any surviving -1 (`load_ood_dataset`,
+  so the existing cache is safe without a re-fetch). **An async CUDA assert cannot be localised by its
+  Python stack; it took eliminating every other scatter and proving PD labels are {0,1} to reach the eval
+  path. A finite sentinel defeats an `isfinite` guard — the two must agree on what "invalid" means.**
 
 ### 29-08-2026 - A drained wICE arm could not resume: the self-resubmit asked for b200 resources
 - **Tried:** LGD arms 40-74 ran on wICE `gpu_a100`; on a drain the script checkpoints (exit 64)

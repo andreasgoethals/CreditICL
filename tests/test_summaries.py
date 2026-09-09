@@ -165,7 +165,7 @@ def test_data_summary_warns_against_tuning_to_missingness():
 
 
 @pytest.mark.parametrize(
-    "name", ["prior_visualisation_lgd", "prior_visualisation_pd", "data_exploration"]
+    "name", ["0.3_prior_visualisation_lgd", "0.2_prior_visualisation_pd", "0.1_data_exploration"]
 )
 def test_notebook_exists_ends_with_a_text_summary_and_holds_no_logic(name):
     """One notebook per task, each ending in text. The no-logic rule is what makes the
@@ -193,10 +193,13 @@ def test_notebook_exists_ends_with_a_text_summary_and_holds_no_logic(name):
 
 
 def test_the_old_combined_notebook_is_gone():
-    """Superseded by one notebook per task; leaving it would let the two drift."""
+    """Superseded by one numbered notebook per task; leaving the un-numbered ones would let
+    the copies drift."""
     import pathlib
 
-    assert not (pathlib.Path("notebooks") / "prior_visualisation.ipynb").exists()
+    for stale in ("prior_visualisation.ipynb", "prior_visualisation_lgd.ipynb",
+                  "prior_visualisation_pd.ipynb", "data_exploration.ipynb"):
+        assert not (pathlib.Path("notebooks") / stale).exists(), f"{stale} should be renamed"
 
 
 def test_data_notebook_does_not_show_the_prior_palette():
@@ -206,7 +209,7 @@ def test_data_notebook_does_not_show_the_prior_palette():
     import pathlib
 
     nb = json.loads(
-        (pathlib.Path("notebooks") / "data_exploration.ipynb").read_text(encoding="utf-8")
+        (pathlib.Path("notebooks") / "0.1_data_exploration.ipynb").read_text(encoding="utf-8")
     )
     body = "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
     assert "show_palette" not in body

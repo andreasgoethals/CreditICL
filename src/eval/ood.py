@@ -406,6 +406,18 @@ def fetch_ood_datasets(
             X_arr = X.to_numpy(dtype=np.float32)
 
             if kind == "classification":
+                # A MISSING TARGET IS NOT A CLASS. `pandas.cat.codes` codes NaN as -1, a
+                # negative label that is *finite* — so it survives the scorers' `isfinite`
+                # filter and reaches `F.one_hot`, which aborts on the GPU with a device-side
+                # assert (`idx_dim >= 0`) that kills the whole run. Drop those rows here, exactly
+                # as the regression branch below drops non-finite targets, so a code is only ever
+                # a real class.
+                labelled = y_s.notna().to_numpy()
+                if int(labelled.sum()) < 50:
+                    log.info("[ood] SKIP %s — fewer than 50 rows carry a label", ds.name)
+                    continue
+                if not labelled.all():
+                    X_arr, y_s = X_arr[labelled], y_s[labelled]
                 y_arr = y_s.astype("category").cat.codes.to_numpy().astype(np.int64)
                 n_classes = int(len(np.unique(y_arr)))
                 if n_classes < 2:
@@ -475,7 +487,18 @@ def load_ood_dataset(entry: OODDataset) -> tuple[np.ndarray, np.ndarray, list[in
             f"(compute nodes have no internet):\n    python -m src.utils.fetch_ood"
         )
     with np.load(path) as z:
-        return z["X"], z["y"], [int(i) for i in z["cat_indices"]]
+        X, y, cat = z["X"], z["y"], [int(i) for i in z["cat_indices"]]
+    # A cache written before the fetch dropped missing classification targets can still hold
+    # `-1` labels (pandas `cat.codes` codes NaN as -1). A negative class index is finite, so it
+    # slips past every `isfinite` guard and reaches `F.one_hot`, which aborts on the GPU with a
+    # device-side assert that takes the whole run down. Drop those rows on the way out, so every
+    # reader — the training progress hook and the final OOD eval alike — is safe on an existing
+    # cache without a re-fetch.
+    if entry.kind == "classification":
+        labelled = y >= 0
+        if not labelled.all():
+            X, y = X[labelled], y[labelled]
+    return X, y, [int(i) for i in cat]
 
 
 def ood_status() -> dict[str, Any]:

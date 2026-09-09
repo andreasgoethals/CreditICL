@@ -1,0 +1,20 @@
+[
+  {
+    "index": 1,
+    "stem": "01_overall_ranking",
+    "name": "overall_ranking",
+    "caption": "Mean real-data AUC per model across the evaluation datasets and seeds, sorted; bars coloured by kind (credit prior, control, external baseline) with standard-deviation whiskers."
+  },
+  {
+    "index": 2,
+    "stem": "02_per_dataset",
+    "name": "per_dataset",
+    "caption": "Best real-data AUC per model kind (credit prior, control, baseline), grouped bars, one group per evaluation dataset."
+  },
+  {
+    "index": 3,
+    "stem": "03_credit_vs_control",
+    "name": "credit_vs_control",
+    "caption": "Per-model real-data AUC per model, one column per kind (credit prior, control, baseline); each point is a model and the bar is the group mean."
+  }
+]

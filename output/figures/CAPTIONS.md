@@ -10,7 +10,111 @@ These are the paper's captions: paste one straight under its figure. Pure descri
 Figures are PDFs, drawn at the width they will occupy on an A4 page; never rescale one
 in the document, because that rescales its text with it.
 
-## prior_visualisation_lgd
+## 0.1_data_exploration
+
+**01_lgd_targets** — `lgd_targets`
+
+Histograms of the Loss Given Default target for each of the seven LGD datasets, ordered by sample size. Forty bins per panel. Dashed vertical lines mark the minimum and maximum observed values where more than 1% of observations fall exactly on them. Panel subtitles give the combined share of observations at the two boundaries.
+
+**02_boundary_mass_ranking** — `boundary_mass_ranking`
+
+Share of observations lying exactly at a boundary of the observed target range, per LGD dataset, ordered by total. Bars are split into mass at the minimum (blue) and at the maximum (orange). Percentages give the total per dataset.
+
+**03_pd_base_rates** — `pd_base_rates`
+
+Default rate per PD dataset, ordered by rate, on a logarithmic horizontal axis. The dashed vertical line marks a 50% rate. Percentages give the rate per dataset.
+
+**04_shapes** — `shapes`
+
+Number of rows against number of features for all 21 evaluation datasets, both axes logarithmic. Colour denotes task; each point is labelled with its dataset name.
+
+**05_type_mix** — `type_mix`
+
+Share of columns that are categorical, per dataset, ordered by share. Colour denotes task.
+
+**06_missingness** — `missingness`
+
+Share of cells that are missing, per dataset, ordered by share, measured after preprocessing. Colour denotes task.
+
+**07_feature_correlations_lgd_p1** — `feature_correlations_lgd_p1`
+
+Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. LGD datasets, page 1 of 2.
+
+**08_feature_correlations_lgd_p2** — `feature_correlations_lgd_p2`
+
+Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. LGD datasets, page 2 of 2.
+
+**09_feature_correlations_pd_p1** — `feature_correlations_pd_p1`
+
+Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. PD datasets, page 1 of 3.
+
+**10_feature_correlations_pd_p2** — `feature_correlations_pd_p2`
+
+Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. PD datasets, page 2 of 3.
+
+**11_feature_correlations_pd_p3** — `feature_correlations_pd_p3`
+
+Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. PD datasets, page 3 of 3.
+
+## 0.2_prior_visualisation_pd
+
+**01_palette** — `palette`
+
+Colour key. Grey denotes the unmodified TabICL prior, blue the credit-targeted prior, orange values measured from the real datasets, and red out-of-range or flagged values.
+
+**02_prior_realism_ranking** — `prior_realism_ranking`
+
+Distance between each prior variant's pooled target distribution and each real PD dataset's, as total variation over 40 fixed bins. Diamonds give the mean across datasets, dots one per dataset. Variants ordered by mean distance.
+
+**03_default_clustering** — `default_clustering`
+
+Left: distribution across synthetic datasets of the between-cohort standard deviation of the default rate, divided by the binomial standard error expected under independence; one violin per prior variant, stars for the real datasets, dashed line at the independence reference. Right: default rate per cohort for one dataset per variant and two real datasets. Cohorts are twelve contiguous blocks of rows.
+
+**04_base_rate_by_variant** — `base_rate_by_variant`
+
+Distribution of the positive-class rate per synthetic dataset, one step histogram per prior variant, 30 bins. The dashed vertical line marks a 50% rate; dotted lines mark rates measured from the real datasets. Legend gives the mean per variant.
+
+**05_difficulty_calibration** — `difficulty_calibration`
+
+Predictability of each synthetic dataset under a small ExtraTrees on a 70/30 split, one point per dataset and one column per prior variant, with the median marked. The shaded band spans the same measurement on the real credit datasets.
+
+**06_side_by_side_tables** — `side_by_side_tables`
+
+Eight rows of one synthetic dataset and one real credit dataset, shown as heatmaps with the target as the final column separated by a vertical rule. Each feature is rank-normalised within its own column, so shade encodes relative value rather than units.
+
+**07_spectrum_by_variant** — `spectrum_by_variant`
+
+Eigenvalue spectra of the feature correlation matrix for up to 40 synthetic datasets per prior variant, normalised by the largest eigenvalue and plotted against normalised eigenvalue rank. Faint lines are individual datasets; bold lines are the per-variant median.
+
+**08_shapes_by_variant** — `shapes_by_variant`
+
+Left: distribution of rows per synthetic dataset. Right: distribution of features per synthetic dataset. One step histogram per prior variant, 20 bins.
+
+**09_adj_imbalance_control** — `adj_imbalance_control`
+
+Per-task positive (default) rate over ~100 tasks from the original prior (grey) and our prior (blue). The shaded band marks the 6.7-22.1% range measured in the real PD datasets.
+
+**10_adj_correlated_defaults** — `adj_correlated_defaults`
+
+Left: realised default rate over ~80 tasks with the target rate fixed at 15%, under mild versus aggressive asset correlation (SD in the legend). Right: standard deviation of the realised rate against the asset correlation rho, three values.
+
+**11_adj_reject_inference** — `adj_reject_inference`
+
+Left: query (through-the-door) versus context (approved-book) default rate, one point per task with the selection shift, dashed line y = x. Right: distribution of the query-minus-context rate, dashed line at the mean.
+
+**12_adj_shift_kinds** — `adj_shift_kinds`
+
+PD default rate in the context versus query rows, one panel per distribution-shift kind (~40 tasks each). Covariate shift moves the shown feature rather than the rate; selection is the reject-inference shift.
+
+**13_adj_informative_missingness** — `adj_informative_missingness`
+
+Missing rate for non-defaulters versus defaulters, under missing-completely-at-random (grey, coupling 0) and target-coupled missingness (blue, coupling 2).
+
+**14_adj_filter_modes** — `adj_filter_modes`
+
+Distribution of ExtraTrees pseudo-R^2 over ~60 generated PD tasks, with the 'banded' keep-region shaded.
+
+## 0.3_prior_visualisation_lgd
 
 **01_palette** — `palette`
 
@@ -68,60 +172,90 @@ Missing rate as a function of the LGD outcome for a controlled dataset, under mi
 
 Distribution of ExtraTrees pseudo-R^2 over ~60 generated LGD tasks. The shaded band is what filter mode 'banded' keeps; 'off' keeps all, 'tabicl' keeps the predictable tail.
 
-## prior_visualisation_pd
+## 1.1_pd_training
 
-**01_palette** — `palette`
+**01_training_loss** — `training_loss`
 
-Colour key. Grey denotes the unmodified TabICL prior, blue the credit-targeted prior, orange values measured from the real datasets, and red out-of-range or flagged values.
+Training loss against optimisation step for every PD arm (grey), the mean across arms (black), and the best and worst arms by final real-data AUC (highlighted).
 
-**02_prior_realism_ranking** — `prior_realism_ranking`
+**02_metric_over_training** — `metric_over_training`
 
-Distance between each prior variant's pooled target distribution and each real PD dataset's, as total variation over 40 fixed bins. Diamonds give the mean across datasets, dots one per dataset. Variants ordered by mean distance.
+Real-data AUC, averaged over the evaluation datasets, against training step; one line per arm coloured by prior (credit versus control), with the across-arm mean in black.
 
-**03_default_clustering** — `default_clustering`
+**03_eval_metrics_p1** — `eval_metrics_p1`
 
-Left: distribution across synthetic datasets of the between-cohort standard deviation of the default rate, divided by the binomial standard error expected under independence; one violin per prior variant, stars for the real datasets, dashed line at the independence reference. Right: default rate per cohort for one dataset per variant and two real datasets. Cohorts are twelve contiguous blocks of rows.
+Each logged real-data evaluation metric, averaged over arms and datasets, against training step; the arrow in each panel title marks the improving direction.
 
-**04_base_rate_by_variant** — `base_rate_by_variant`
+**04_per_config_p1** — `per_config_p1`
 
-Distribution of the positive-class rate per synthetic dataset, one step histogram per prior variant, 30 bins. The dashed vertical line marks a 50% rate; dotted lines mark rates measured from the real datasets. Legend gives the mean per variant.
+Per-arm training curves against step: train loss (grey, left axis) and real-data AUC (blue, right axis), one panel per configuration.
 
-**05_difficulty_calibration** — `difficulty_calibration`
+**05_best_and_worst** — `best_and_worst`
 
-Predictability of each synthetic dataset under a small ExtraTrees on a 70/30 split, one point per dataset and one column per prior variant, with the median marked. The shaded band spans the same measurement on the real credit datasets.
+Train loss and real-data AUC against training step for the best and worst arm by final AUC.
 
-**06_side_by_side_tables** — `side_by_side_tables`
+**06_hardware** — `hardware`
 
-Eight rows of one synthetic dataset and one real credit dataset, shown as heatmaps with the target as the final column separated by a vertical rule. Each feature is rank-normalised within its own column, so shade encodes relative value rather than units.
+GPU utilisation, throughput and peak allocated memory against training step, pooled across arms; the dashed line marks 70 percent utilisation.
 
-**07_spectrum_by_variant** — `spectrum_by_variant`
+**07_gradient_flow** — `gradient_flow`
 
-Eigenvalue spectra of the feature correlation matrix for up to 40 synthetic datasets per prior variant, normalised by the largest eigenvalue and plotted against normalised eigenvalue rank. Faint lines are individual datasets; bold lines are the per-variant median.
+Mean per-block gradient L2 norm (column encoder, row encoder, ICL blocks, head) against training step, on a logarithmic axis.
 
-**08_shapes_by_variant** — `shapes_by_variant`
+## 1.2_lgd_training
 
-Left: distribution of rows per synthetic dataset. Right: distribution of features per synthetic dataset. One step histogram per prior variant, 20 bins.
+**01_training_loss** — `training_loss`
 
-**09_adj_imbalance_control** — `adj_imbalance_control`
+Training loss against optimisation step for every LGD arm (grey), the mean across arms (black), and the best and worst arms by final real-data R² (highlighted).
 
-Per-task positive (default) rate over ~100 tasks from the original prior (grey) and our prior (blue). The shaded band marks the 6.7-22.1% range measured in the real PD datasets.
+**02_metric_over_training** — `metric_over_training`
 
-**10_adj_correlated_defaults** — `adj_correlated_defaults`
+Real-data R², averaged over the evaluation datasets, against training step; one line per arm coloured by prior (credit versus control), with the across-arm mean in black.
 
-Left: realised default rate over ~80 tasks with the target rate fixed at 15%, under mild versus aggressive asset correlation (SD in the legend). Right: standard deviation of the realised rate against the asset correlation rho, three values.
+**03_eval_metrics_p1** — `eval_metrics_p1`
 
-**11_adj_reject_inference** — `adj_reject_inference`
+Each logged real-data evaluation metric, averaged over arms and datasets, against training step; the arrow in each panel title marks the improving direction.
 
-Left: query (through-the-door) versus context (approved-book) default rate, one point per task with the selection shift, dashed line y = x. Right: distribution of the query-minus-context rate, dashed line at the mean.
+**04_per_config_p1** — `per_config_p1`
 
-**12_adj_shift_kinds** — `adj_shift_kinds`
+Per-arm training curves against step: train loss (grey, left axis) and real-data R² (blue, right axis), one panel per configuration.
 
-PD default rate in the context versus query rows, one panel per distribution-shift kind (~40 tasks each). Covariate shift moves the shown feature rather than the rate; selection is the reject-inference shift.
+**05_best_and_worst** — `best_and_worst`
 
-**13_adj_informative_missingness** — `adj_informative_missingness`
+Train loss and real-data R² against training step for the best and worst arm by final R².
 
-Missing rate for non-defaulters versus defaulters, under missing-completely-at-random (grey, coupling 0) and target-coupled missingness (blue, coupling 2).
+**06_hardware** — `hardware`
 
-**14_adj_filter_modes** — `adj_filter_modes`
+GPU utilisation, throughput and peak allocated memory against training step, pooled across arms; the dashed line marks 70 percent utilisation.
 
-Distribution of ExtraTrees pseudo-R^2 over ~60 generated PD tasks, with the 'banded' keep-region shaded.
+**07_gradient_flow** — `gradient_flow`
+
+Mean per-block gradient L2 norm (column encoder, row encoder, ICL blocks, head) against training step, on a logarithmic axis.
+
+## 1.3_pd_results
+
+**01_overall_ranking** — `overall_ranking`
+
+Mean real-data AUC per model across the evaluation datasets and seeds, sorted; bars coloured by kind (credit prior, control, external baseline) with standard-deviation whiskers.
+
+**02_per_dataset** — `per_dataset`
+
+Best real-data AUC per model kind (credit prior, control, baseline), grouped bars, one group per evaluation dataset.
+
+**03_credit_vs_control** — `credit_vs_control`
+
+Per-model real-data AUC per model, one column per kind (credit prior, control, baseline); each point is a model and the bar is the group mean.
+
+## 1.4_lgd_results
+
+**01_overall_ranking** — `overall_ranking`
+
+Mean real-data R² per model across the evaluation datasets and seeds, sorted; bars coloured by kind (credit prior, control, external baseline) with standard-deviation whiskers.
+
+**02_per_dataset** — `per_dataset`
+
+Best real-data R² per model kind (credit prior, control, baseline), grouped bars, one group per evaluation dataset.
+
+**03_credit_vs_control** — `credit_vs_control`
+
+Per-model real-data R² per model, one column per kind (credit prior, control, baseline); each point is a model and the bar is the group mean.

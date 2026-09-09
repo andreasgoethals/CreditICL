@@ -218,7 +218,7 @@ def test_the_uninformative_figures_were_removed(gone):
 def test_the_pd_notebook_does_not_draw_a_target_histogram():
     """A PD target histogram is a bar at 0 and a bar at 1 — the default rate, drawn as a
     picture. The base-rate figure says it properly, and clustering says the part that matters."""
-    nb = json.loads((ROOT / "notebooks" / "prior_visualisation_pd.ipynb").read_text(encoding="utf-8"))
+    nb = json.loads((ROOT / "notebooks" / "0.2_prior_visualisation_pd.ipynb").read_text(encoding="utf-8"))
     code = "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
     assert "plot_target_shapes_by_variant" not in code
     assert "plot_target_comparison" in code or "plot_base_rate_by_variant" in code
@@ -228,9 +228,9 @@ def test_the_pd_notebook_does_not_draw_a_target_histogram():
 def test_both_notebooks_visualise_exp1_because_that_is_the_sweep():
     """Exp3 runs one prior and Exp2 sweeps a mixture; the 32-prior sweep is Exp1, so that is
     the config these figures describe. Exp2/Exp3 configs would also refuse to load."""
-    for track in ("lgd", "pd"):
+    for track, stem in (("lgd", "0.3_prior_visualisation_lgd"), ("pd", "0.2_prior_visualisation_pd")):
         nb = json.loads(
-            (ROOT / "notebooks" / f"prior_visualisation_{track}.ipynb").read_text(encoding="utf-8")
+            (ROOT / "notebooks" / f"{stem}.ipynb").read_text(encoding="utf-8")
         )
         code = "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
         assert f"config/Exp1_{track.upper()}.yaml" in code

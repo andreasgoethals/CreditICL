@@ -10,7 +10,8 @@ Every function samples with **exactly the same code path the training run uses**
 `TaskGenerator` from a config — so what you see is what the model trains on, not a
 demonstration built separately.
 
-`notebooks/prior_visualisation.ipynb` calls these and holds no logic of its own.
+`notebooks/0.2_prior_visualisation_pd.ipynb` and `0.3_prior_visualisation_lgd.ipynb`
+call these and hold no logic of their own.
 """
 
 from __future__ import annotations

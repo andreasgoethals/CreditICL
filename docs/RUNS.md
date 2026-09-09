@@ -172,6 +172,76 @@ The one thing to do differently.
 
 ## Runs
 
+## 07-09-2026 — Exp1 phase-1 re-run (90 arms) — **PARTIAL: 63/90 done; every unfinished arm is `filter=banded`; 15 PD banded arms crashed on an out-of-domain `-1` label**
+
+**Submitted** ~03-09-2026 | **jobs** 11549669 (PD, `--array=0-44%8`), 61898850 (LGD) | **cluster** PD mindwell `gpu_b200`, LGD wICE `gpu_a100`
+**Commit** 7d1cb02 (git_dirty=true) | **tfm-library pin** 21d555a6a24e | **GPUs** 1×B200 (PD) / 1×A100 (LGD) | **walltime** 12:00:00 req
+
+The re-run after the notebook levelling and `selection_sharpness 0.6→0.35` change. Read from the
+download of 07-09 (logs + manifests; results tier not pulled — phase 2 has not run).
+
+### Configuration
+- **Config** `config/Exp1_{PD,LGD}.yaml`, 45 arms/track = credit_fraction {0,0.5,1.0} × filter {tabicl,banded,off} × intensity {mild,aggressive} × seeds {0,1,2}, control-deduped at cf=0.
+- **Budget** 12,500 steps × 64 datasets = 800,000 datasets/arm.
+- **Edited by hand since 02-09:** notebooks restructured; `selection_sharpness` 0.6→0.35. Neither touches training or the model.
+
+### Results
+Completion (from `manifests/*__summary.json` `completed` flag, cross-checked against 63 `END status=OK` logs):
+
+| track | completed | banded, still running (partial) | banded, **dead** (crashed) |
+|---|---|---|---|
+| PD | 30 / 45 | 6 (cf=1, graceful) | **9** |
+| LGD | 33 / 45 | 12 | 0 |
+
+- **All 27 unfinished arms are `filter=banded`.** `off`/`tabicl` all finished. Banded rejects ~90 % of
+  candidate tables (by design — a strict predictability band), so it runs at **0.24 steps/s vs 0.63** and
+  needs many checkpoint→requeue cycles; nothing wrong with it.
+- **Progress-eval on the tracked real datasets** (monitoring only — small, 3–4 datasets, NOT the phase-2
+  benchmark), completed arms, mean over seeds:
+  - PD ROC-AUC: control cf=0 **0.721**, blend cf=0.5 **0.723**, full cf=1 **0.690**.
+  - LGD R²: control cf=0 **0.220**, blend cf=0.5 **0.392**, full cf=1 **0.319**.
+  - A half-credit blend leads on both; full credit trails (below control on PD). Suggestive of a
+    "some domain structure helps, too much over-specialises" shape — but it is the training monitor,
+    the cf=1 banded arms are undertrained, and phase 2 is the actual verdict.
+- **Throughput** off/tabicl ~0.63 steps/s; banded ~0.24. No OOM anywhere; no NaN.
+
+### Bugs and anomalies
+- **15 PD banded arms crashed with a CUDA device-side assert** (`exit 134`,
+  `ScatterGatherKernel.cu:409 idx_dim >= 0 && idx_dim < index_size`, surfacing async in the column
+  encoder). 9 wrote no summary (killed before the graceful path); 6 (cf=1) wrote partial summaries.
+  Because it is a hard abort, not the exit-64 signal path, **no self-resubmit fired** — the arms sat dead.
+- **Root cause: a missing out-of-domain classification label.** The only scatter in the model is
+  `F.one_hot(y_train.long(), max_classes=10)`; a `≥10` label diverts to mixed-radix, so the trigger is a
+  **negative** label. Synthetic PD labels are strictly {0,1} (verified in code, both control and credit).
+  The negative comes from the **progress-eval**: `src/eval/ood.py` coded a missing classification target
+  with `pandas.cat.codes`, which returns **-1** for NaN. `-1` is finite, so the eval's `np.isfinite`
+  filter passed it straight into `one_hot`, whose device-side assert corrupted the CUDA context and
+  killed the run a few steps later. **Prior-independent** (so control cf=0 arms crashed too — confirmed:
+  a1/a16/a31 are cf=0); **PD-only** (one_hot is the classification path; LGD's y-encoder is linear —
+  explains 9 PD vs 1 LGD); **banded-concentrated** only because banded arms run 15–25 h and thus far more
+  progress-eval cycles, each a fresh chance to draw a `-1` context row.
+- Verified empirically: `pd.Series([...,NaN]).astype("category").cat.codes → [...,-1]`, `np.isfinite(-1)`
+  is `True`, and `F.one_hot(tensor([-1]),10)` raises *"Class values must be non-negative"* (the CPU form
+  of the device assert). **Fixed** in `src/eval/ood.py`: fetch drops unlabelled rows before coding;
+  `load_ood_dataset` strips any surviving `-1` so the existing cache is safe without a re-fetch. Tests in
+  `tests/test_ood.py`.
+- The lone LGD casualty (a43, cf=1 banded) is a separate, rarer feature-side abort or coincidence; LGD
+  cannot hit the one_hot path. Not chased — it finished on resubmit and LGD has no `one_hot`.
+
+### Interpretation
+- **Show:** 63/90 arms trained cleanly; the credit prior is sound; the crash is a data-plumbing bug in
+  the OOD eval, not in the prior or the model, and not caused by `filter=banded`.
+- **Think:** the -1-from-`cat.codes` reaches `one_hot` mainly via a cached OOD dataset with exactly two
+  codes `{-1, c}` (one real class + NaN rows); the random per-eval context sample decides whether a `-1`
+  row is drawn, which is why the crash step varies across arms. The accidental `np.bincount` guard in the
+  progress hook catches the ≥2-real-class case but not this one.
+- **Test:** resubmit the 9 dead PD arms with the fix in place; they resume from checkpoint and should now
+  run through the OOD eval without aborting.
+
+### Next
+Resubmit only the unfinished arms (`sweep_status --resubmit`, after checking `squeue` to avoid
+double-submitting a running one); the 9 dead PD arms are indices 1,4,10,16,19,25,31,34,40. Then phase 2.
+
 ## 02-09-2026 — Exp1 Phase 2 benchmark — **NULL RESULT: the credit prior does not beat a no-credit control on either track**
 
 **Submitted** 01-09-2026 | **jobs** 61866150 (LGD), 61866151 (PD), preflight 61865246 | **cluster** wICE `gpu_a100` | ~154 tasks, **all END=OK**, ~17:25 → 01:49 (wICE shared, so slower than the ~1 h the compute alone needs)

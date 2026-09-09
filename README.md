@@ -133,14 +133,20 @@ and is shared by every arm, `lgd__credit_v1/` holds ours. So a difference betwee
 arms cannot come from the luck of the draw, and generation runs on cheap CPU nodes
 instead of making a GPU wait.
 
-Two notebooks, both with all logic in `src/visualize/`:
+The notebooks, all with logic in `src/visualize/` and every figure sized for A4. A
+**level-0** set describes the whole project; a **level-1** set covers Experiment 1:
 
-* **`prior_visualisation.ipynb`** — set `TASK`, run it, and it **discovers whichever
-  pools are on the machine** and compares them on shared axes. One notebook for any
-  number of variants: adding `credit_v2` needs no edit here, because the useful
-  question is never "what does `credit_v1` look like" but "how does it differ from
-  `original` and `credit_v2`". With no pools it falls back to generating live.
-* **`data_exploration.ipynb`** — the real datasets the prior is aimed at.
+* **`0.1_data_exploration.ipynb`** — the real datasets the prior is aimed at.
+* **`0.2_prior_visualisation_pd.ipynb`** / **`0.3_prior_visualisation_lgd.ipynb`** — what
+  the PD / LGD prior generates: they **discover whichever pools are on the machine** and
+  compare them on shared axes (falling back to live generation), plus the credit-mechanism
+  figures (`src/visualize/mechanism_plots.py`).
+* **`1.1_pd_training.ipynb`** / **`1.2_lgd_training.ipynb`** — the training behaviour of
+  every Exp1 arm (loss, real-data AUC/R², every logged metric, per-config, telemetry,
+  gradient flow), from the per-arm progress/telemetry manifests
+  (`src/visualize/training_plots.py`).
+* **`1.3_pd_results.ipynb`** / **`1.4_lgd_results.ipynb`** — the phase-2 benchmark scores
+  (`src/visualize/results_plots.py`); a placeholder until the benchmark has run.
 
 To look at cluster-generated pools locally, copy a **sample** rather than the lot — a
 full pool is 4.0 GB (LGD) / 5.4 GB (PD) *per variant*, and one shard (~200–270 MB) is
@@ -250,9 +256,12 @@ CreditICL/
 │   ├── CHANGELOG.md             one chapter per date
 │   └── TEMPLATE.md              the layout this project started from
 ├── logs/              timestamped run logs — INFORMATION ONLY, no results
-├── notebooks/
-│   ├── prior_visualisation.ipynb   compares ALL prior variants found on disk
-│   └── data_exploration.ipynb      the real datasets: boundary mass, base rates, leakage
+├── notebooks/          level 0 = whole project, level 1 = Experiment 1
+│   ├── 0.1_data_exploration.ipynb         the real datasets: boundary mass, base rates, leakage
+│   ├── 0.2_prior_visualisation_pd.ipynb   the PD prior + credit mechanisms
+│   ├── 0.3_prior_visualisation_lgd.ipynb  the LGD prior + credit mechanisms
+│   ├── 1.1_pd_training.ipynb / 1.2_lgd_training.ipynb  training behaviour per arm
+│   └── 1.3_pd_results.ipynb  / 1.4_lgd_results.ipynb   phase-2 benchmark scores
 ├── results/           OFFICIAL outputs
 │   ├── lgd/{data,prior,training,eval}/
 │   └── pd/{data,prior,training,eval}/

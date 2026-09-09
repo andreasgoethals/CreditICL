@@ -2,7 +2,7 @@
 
 WHAT REAL LGD LOOKS LIKE (measured from all 7 processed LGD datasets,
 2026-08-06 — total mass at *exactly* the min or max; see
-`notebooks/data_exploration.ipynb`, which regenerates these numbers):
+`notebooks/0.1_data_exploration.ipynb`, which regenerates these numbers):
 
     0001.heloc              n=58,862   73.0%   dominated by the boundaries
     0003.axa                n= 2,545   34.2%

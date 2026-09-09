@@ -271,6 +271,58 @@ def test_round_trip(ood_cache):
     assert len(y) == entry.n_rows and cat == []
 
 
+# -- missing classification targets never reach the model ---------------------
+# ROOT CAUSE of the Exp1 banded-arm crashes (job 11549669, 07-09-2026). `pandas.cat.codes`
+# codes a NaN classification target as -1. A negative class label is FINITE, so it slips past
+# every `np.isfinite` guard in the scorers and reaches `F.one_hot(y, max_classes)`, which aborts
+# on the GPU with a device-side assert (`idx_dim >= 0 && idx_dim < index_size`). That corrupts
+# the CUDA context and kills the whole run — on the CONTROL arm too, because the out-of-domain
+# eval is prior-independent, which is why credit_fraction=0 arms crashed as well.
+
+
+def test_missing_classification_targets_are_dropped_on_load(ood_cache):
+    """A cache written before the fetch dropped unlabelled rows can still hold the -1 codes, so
+    the load boundary must strip them — this is what makes an EXISTING cluster cache safe without
+    a re-fetch. The row was a missing target: unscoreable, so dropping it is the only right move."""
+    root = ood_cache.ood_root()
+    n = 200
+    X = np.zeros((n, 4), dtype=np.float32)
+    y = np.zeros(n, dtype=np.int64)
+    y[:5] = -1  # five rows whose target was missing at fetch time -> cat.codes made them -1
+    y[100:] = 1
+    e = ood_cache.OODDataset(name="has_missing_labels", openml_id=4242,
+                             kind="classification", n_rows=n, n_features=4, n_classes=3)
+    with (root / f"{e.slug}.npz").open("wb") as fh:
+        np.savez_compressed(fh, X=X, y=y, cat_indices=np.asarray([], dtype=np.int64))
+
+    Xo, yo, _ = ood_cache.load_ood_dataset(e)
+    assert (yo >= 0).all(), "a negative (missing-target) label must never reach F.one_hot"
+    assert len(yo) == n - 5 and len(Xo) == n - 5, "the five unlabelled rows are dropped, not kept"
+
+
+def test_negative_regression_targets_are_preserved_on_load(ood_cache):
+    """The -1 filter is CLASSIFICATION-ONLY. A regression target is a real number and -1.0 is a
+    perfectly valid value; filtering it would silently truncate the target distribution."""
+    entry = ood_cache.list_ood_datasets("regression")[0]
+    _, y, _ = ood_cache.load_ood_dataset(entry)
+    assert (y < 0).any(), "fixture sanity: the regression target spans negative values"
+    assert len(y) == entry.n_rows, "no regression row may be dropped by the classification guard"
+
+
+def test_the_fetcher_drops_missing_classification_targets():
+    """Pinned at the source, so no future edit reintroduces the -1. The classification branch
+    must drop unlabelled rows BEFORE `cat.codes` mints a phantom -1, exactly as the regression
+    branch already drops non-finite targets."""
+    # Match the STATEMENTS, not the prose: the explanatory comment also says "cat.codes", so
+    # anchor on the actual encoding call `.cat.codes.to_numpy()` and the actual drop `.notna()`.
+    text = pathlib.Path(ood.__file__).read_text(encoding="utf-8")
+    block = text[text.index("def fetch_ood_datasets"):]
+    clf_at = block.index('if kind == "classification":')
+    assert block.index(".notna()", clf_at) < block.index(".cat.codes.to_numpy()", clf_at), (
+        "missing targets must be dropped BEFORE cat.codes codes them as -1"
+    )
+
+
 def test_fetch_without_openml_names_the_install(ood_cache, monkeypatch):
     """openml is an optional extra; the error must say how to get it."""
     import builtins

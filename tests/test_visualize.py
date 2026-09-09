@@ -223,6 +223,6 @@ def test_real_data_figures_build():
 
 
 # Notebook structure is covered by tests/test_summaries.py, which knows about the
-# per-task split (prior_visualisation_lgd / _pd) and additionally checks that each one
+# per-task split (0.2/0.3_prior_visualisation) and additionally checks that each one
 # ENDS with a printed text summary. The old test here hard-coded the single combined
 # notebook name and broke when it was split.

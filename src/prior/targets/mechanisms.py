@@ -27,7 +27,7 @@ Every mechanism here is a standard credit-risk model, not an invention:
 WHAT IS DOMAIN THEORY AND WHAT IS OUR CHOICE. The functional forms below are
 textbook (Merton 1974 / Vasicek 2002 for the factor model; the Basel IRB asset
 correlations; the standard workout-LGD definition). The **parameter ranges** are ours,
-chosen to bracket what we measured in `data/raw` — see `notebooks/data_exploration`.
+chosen to bracket what we measured in `data/raw` — see `notebooks/0.1_data_exploration`.
 Where a range comes from a published regulatory value it says so inline. Nothing here
 is fitted to the evaluation data: these are priors, and fitting them to the test sets
 would be leakage.

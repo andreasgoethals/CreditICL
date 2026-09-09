@@ -221,7 +221,7 @@ def _selection_shift(
 
     # Higher y = higher risk. A soft screen: risk proxy plus noise, so the approved book is
     # not a clean cut and still contains some of the bad outcomes.
-    sharpness = float(cfg.get("selection_sharpness", 0.6))
+    sharpness = float(cfg.get("selection_sharpness", 0.35))
     z = (y - y.mean()) / (y.std() + 1e-8)
     score = sharpness * z + (1.0 - sharpness) * rng.randn_like(z)
     order = torch.argsort(score)  # ascending: approved (low risk) first
