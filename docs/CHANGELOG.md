@@ -1,7 +1,33 @@
 # Changelog
 
-One chapter per date, `DD-MM-YYYY`, newest first. Terse: what changed, and why if the
-reason is not obvious.
+Changes to the **repository** — one chapter per date, `DD-MM-YYYY`, newest first. Terse: what
+changed, and why if the reason is not obvious; the detail belongs in the commit. Its two siblings
+hold different things: [`RUNS.md`](RUNS.md) is the full write-up of each *cluster run*, and
+[`AGENTS_MEMORY.md`](AGENTS_MEMORY.md) is the one-line run index plus the **dead ends**. This file is
+a flat dated list, so the dates below are its table of contents.
+
+---
+
+## 09-09-2026 — Level-2 notebooks for Experiment 2 (fine-tuning); plot infra made experiment-aware
+
+- **Level 2 added:** `2.1_pd_finetuning` / `2.2_lgd_finetuning` (training behaviour of every Exp2
+  arm) and `2.3_pd_results` / `2.4_lgd_results` (benchmark). 11 notebooks now; all A4 / PDF /
+  captioned. Exp2 code (warm-start, freeze strategies, L2-SP) was already implemented and swept in
+  `config/Exp2_{PD,LGD}.yaml`; this fills in only the missing visualisation.
+- **`training_plots.py` / `results_plots.py` take an `exp` argument** (`"exp1"` default, so the
+  Level-1 notebooks are untouched). Loaders read the `exp{N}_` manifest/results prefix; `arm_label`
+  reads Exp2's fine-tuning levers (strategy, L2-SP, LR) instead of Exp1's prior levers.
+- **Two Exp2-specific figures:** `training_plots.real_vs_ood` (credit vs out-of-domain metric over
+  training — the generality-retention question L2-SP and freezing trade against), and
+  `results_plots.lever_effect` (headline metric grouped by each swept fine-tuning knob).
+- **Fixed `results_plots._kind`:** `"credit_fraction=0" in name` matched `credit_fraction=0p5` as a
+  substring, so every credit arm read as a control. Now boundary-anchored (also a latent Exp1 bug).
+- **`results_plots._model_col`** now groups on whichever column carries the run name
+  (`info_run_name`), since `model` is the constant `"crediticl"` for all 60 fine-tuning arms.
+- Config's fine-tuning defaults verified against `tfm-library` (pin `52dab01`): L2-SP α=0.003 is
+  Garg/Real-TabPFN's value, weight-decay 1e-4 is Kolberg/TabPFN-Wide's, warmup→cosine is near
+  universal; TabICL specifically is the architecture that degrades most under naive full SFT, so the
+  `full`/`icl_only`/`head_only` sweep is well-motivated. New tests: `tests/test_exp2_plots.py`.
 
 ---
 

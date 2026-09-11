@@ -259,3 +259,107 @@ Best real-data R² per model kind (credit prior, control, baseline), grouped bar
 **03_credit_vs_control** — `credit_vs_control`
 
 Per-model real-data R² per model, one column per kind (credit prior, control, baseline); each point is a model and the bar is the group mean.
+
+## 2.1_pd_finetuning
+
+**01_training_loss** — `training_loss`
+
+Training loss against optimisation step for every PD fine-tuning arm (grey), the mean across arms (black), and the best and worst arms by final real-data AUC (highlighted).
+
+**02_metric_over_training** — `metric_over_training`
+
+Real-data AUC, averaged over the evaluation datasets, against training step; one line per arm coloured by prior (credit versus continued-pretraining control), with the across-arm mean in black.
+
+**03_real_vs_ood** — `real_vs_ood`
+
+Mean AUC on the real-credit datasets (solid) and the out-of-domain suites (dashed) against training step, averaged across fine-tuning arms.
+
+**04_eval_metrics_p1** — `eval_metrics_p1`
+
+Each logged real-data evaluation metric, averaged over arms and datasets, against training step; the arrow in each panel title marks the improving direction.
+
+**05_per_config_p1** — `per_config_p1`
+
+Per-arm training curves against step: train loss (grey, left axis) and real-data AUC (blue, right axis), one panel per fine-tuning configuration.
+
+**06_best_and_worst** — `best_and_worst`
+
+Train loss and real-data AUC against training step for the best and worst fine-tuning arm by final AUC.
+
+**07_hardware** — `hardware`
+
+GPU utilisation, throughput and peak allocated memory against training step, pooled across arms; the dashed line marks 70 percent utilisation.
+
+**08_gradient_flow** — `gradient_flow`
+
+Mean per-block gradient L2 norm (column encoder, row encoder, ICL blocks, head) against training step on a logarithmic axis; a frozen stack sits on the floor.
+
+## 2.2_lgd_finetuning
+
+**01_training_loss** — `training_loss`
+
+Training loss against optimisation step for every LGD fine-tuning arm (grey), the mean across arms (black), and the best and worst arms by final real-data R-squared (highlighted).
+
+**02_metric_over_training** — `metric_over_training`
+
+Real-data R-squared, averaged over the evaluation datasets, against training step; one line per arm coloured by prior (credit versus continued-pretraining control), with the across-arm mean in black.
+
+**03_real_vs_ood** — `real_vs_ood`
+
+Mean R-squared on the real-credit datasets (solid) and the out-of-domain suites (dashed) against training step, averaged across fine-tuning arms.
+
+**04_eval_metrics_p1** — `eval_metrics_p1`
+
+Each logged real-data evaluation metric, averaged over arms and datasets, against training step; the arrow in each panel title marks the improving direction.
+
+**05_per_config_p1** — `per_config_p1`
+
+Per-arm training curves against step: train loss (grey, left axis) and real-data R-squared (blue, right axis), one panel per fine-tuning configuration.
+
+**06_best_and_worst** — `best_and_worst`
+
+Train loss and real-data R-squared against training step for the best and worst fine-tuning arm by final R-squared.
+
+**07_hardware** — `hardware`
+
+GPU utilisation, throughput and peak allocated memory against training step, pooled across arms; the dashed line marks 70 percent utilisation.
+
+**08_gradient_flow** — `gradient_flow`
+
+Mean per-block gradient L2 norm (column encoder, row encoder, ICL blocks, head) against training step on a logarithmic axis; a frozen stack sits on the floor.
+
+## 2.3_pd_results
+
+**01_overall_ranking** — `overall_ranking`
+
+Mean AUC per model across the real datasets and seeds, sorted, with bars coloured by model kind (credit prior, continued-pretraining control, external baseline).
+
+**02_per_dataset** — `per_dataset`
+
+Best AUC per model kind on each real dataset, grouped bars per dataset, so no single dataset is hidden behind an average.
+
+**03_credit_vs_control** — `credit_vs_control`
+
+Distribution of per-model mean AUC for credit-prior arms, control arms and external baselines; each point is one model and the bar is the group mean.
+
+**04_lever_effect** — `lever_effect`
+
+Mean AUC grouped by each fine-tuning lever in turn — credit fraction, freeze strategy, L2-SP alpha and learning rate — one panel per lever.
+
+## 2.4_lgd_results
+
+**01_overall_ranking** — `overall_ranking`
+
+Mean R-squared per model across the real datasets and seeds, sorted, with bars coloured by model kind (credit prior, continued-pretraining control, external baseline).
+
+**02_per_dataset** — `per_dataset`
+
+Best R-squared per model kind on each real dataset, grouped bars per dataset, so no single dataset is hidden behind an average.
+
+**03_credit_vs_control** — `credit_vs_control`
+
+Distribution of per-model mean R-squared for credit-prior arms, control arms and external baselines; each point is one model and the bar is the group mean.
+
+**04_lever_effect** — `lever_effect`
+
+Mean R-squared grouped by each fine-tuning lever in turn — credit fraction, freeze strategy, L2-SP alpha and learning rate — one panel per lever.

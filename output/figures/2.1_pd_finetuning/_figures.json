@@ -1,0 +1,50 @@
+[
+  {
+    "index": 1,
+    "stem": "01_training_loss",
+    "name": "training_loss",
+    "caption": "Training loss against optimisation step for every PD fine-tuning arm (grey), the mean across arms (black), and the best and worst arms by final real-data AUC (highlighted)."
+  },
+  {
+    "index": 2,
+    "stem": "02_metric_over_training",
+    "name": "metric_over_training",
+    "caption": "Real-data AUC, averaged over the evaluation datasets, against training step; one line per arm coloured by prior (credit versus continued-pretraining control), with the across-arm mean in black."
+  },
+  {
+    "index": 3,
+    "stem": "03_real_vs_ood",
+    "name": "real_vs_ood",
+    "caption": "Mean AUC on the real-credit datasets (solid) and the out-of-domain suites (dashed) against training step, averaged across fine-tuning arms."
+  },
+  {
+    "index": 4,
+    "stem": "04_eval_metrics_p1",
+    "name": "eval_metrics_p1",
+    "caption": "Each logged real-data evaluation metric, averaged over arms and datasets, against training step; the arrow in each panel title marks the improving direction."
+  },
+  {
+    "index": 5,
+    "stem": "05_per_config_p1",
+    "name": "per_config_p1",
+    "caption": "Per-arm training curves against step: train loss (grey, left axis) and real-data AUC (blue, right axis), one panel per fine-tuning configuration."
+  },
+  {
+    "index": 6,
+    "stem": "06_best_and_worst",
+    "name": "best_and_worst",
+    "caption": "Train loss and real-data AUC against training step for the best and worst fine-tuning arm by final AUC."
+  },
+  {
+    "index": 7,
+    "stem": "07_hardware",
+    "name": "hardware",
+    "caption": "GPU utilisation, throughput and peak allocated memory against training step, pooled across arms; the dashed line marks 70 percent utilisation."
+  },
+  {
+    "index": 8,
+    "stem": "08_gradient_flow",
+    "name": "gradient_flow",
+    "caption": "Mean per-block gradient L2 norm (column encoder, row encoder, ICL blocks, head) against training step on a logarithmic axis; a frozen stack sits on the floor."
+  }
+]

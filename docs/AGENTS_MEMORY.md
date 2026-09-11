@@ -8,7 +8,11 @@ what came out, and what is already known to fail.
 
 **Keep it short.** One line per run, four per dead end. Newest first, dates `DD-MM-YYYY`. Never
 delete an entry: a run you would otherwise repeat and a dead end you already paid for are both
-evidence.
+evidence. The **full** write-up of each run is in [`RUNS.md`](RUNS.md); repository edits are in
+[`CHANGELOG.md`](CHANGELOG.md).
+
+**Contents:** [How a run comes back to you](#how-a-run-comes-back-to-you) ·
+[Runs](#runs) (the index table) · [Dead ends](#dead-ends).
 
 ## How a run comes back to you
 

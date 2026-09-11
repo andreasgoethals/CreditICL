@@ -1,0 +1,26 @@
+[
+  {
+    "index": 1,
+    "stem": "01_overall_ranking",
+    "name": "overall_ranking",
+    "caption": "Mean AUC per model across the real datasets and seeds, sorted, with bars coloured by model kind (credit prior, continued-pretraining control, external baseline)."
+  },
+  {
+    "index": 2,
+    "stem": "02_per_dataset",
+    "name": "per_dataset",
+    "caption": "Best AUC per model kind on each real dataset, grouped bars per dataset, so no single dataset is hidden behind an average."
+  },
+  {
+    "index": 3,
+    "stem": "03_credit_vs_control",
+    "name": "credit_vs_control",
+    "caption": "Distribution of per-model mean AUC for credit-prior arms, control arms and external baselines; each point is one model and the bar is the group mean."
+  },
+  {
+    "index": 4,
+    "stem": "04_lever_effect",
+    "name": "lever_effect",
+    "caption": "Mean AUC grouped by each fine-tuning lever in turn \u2014 credit fraction, freeze strategy, L2-SP alpha and learning rate \u2014 one panel per lever."
+  }
+]

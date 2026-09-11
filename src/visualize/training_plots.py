@@ -3,7 +3,14 @@
 Reads the two CSVs each arm writes to `output/manifests/` — `<run>__progress.csv` (train
 loss and real/OOD evaluation metrics, sampled every `progress.every_datasets`) and
 `<run>__telemetry.csv` (GPU utilisation, throughput, per-block gradient norms) — and turns
-them into the training-behaviour figures for `1.1_pd_training` / `1.2_lgd_training`.
+them into the training-behaviour figures for `1.1_pd_training` / `1.2_lgd_training` (Exp1,
+`exp="exp1"`) and `2.1_pd_finetuning` / `2.2_lgd_finetuning` (Exp2, `exp="exp2"`).
+
+The two experiments differ only in which manifests are read (the `exp1_`/`exp2_` filename
+prefix) and how an arm's sweep levers are named (`arm_label` reads either Exp1's prior levers
+or Exp2's fine-tuning levers). Every curve, metric and ranking is computed identically, so one
+module serves both. Exp2 additionally cares about OUT-OF-DOMAIN retention — whether fine-tuning
+on credit degrades the model elsewhere — which `real_vs_ood` draws from the same progress CSVs.
 
 Every arm that has *started* leaves a progress CSV, so these work on a partial sweep: a run
 that is 15/45 done still has 15 curves to show. Nothing here needs the cluster — it reads
@@ -35,14 +42,14 @@ HIGHER_IS_BETTER = {"auc": True, "ap": True, "r2": True, "spearman": True, "kend
 # ---------------------------------------------------------------------------
 
 
-def _manifest_files(track: str, kind: str) -> list:
-    return sorted(paths.manifests_dir().glob(f"exp1_{track}__*__{kind}.csv"))
+def _manifest_files(track: str, kind: str, exp: str = "exp1") -> list:
+    return sorted(paths.manifests_dir().glob(f"{exp}_{track}__*__{kind}.csv"))
 
 
-def load_progress(track: str) -> dict[str, pd.DataFrame]:
-    """`{run_name: progress DataFrame}` for every started arm of `track`."""
+def load_progress(track: str, exp: str = "exp1") -> dict[str, pd.DataFrame]:
+    """`{run_name: progress DataFrame}` for every started arm of `track` in experiment `exp`."""
     out: dict[str, pd.DataFrame] = {}
-    for path in _manifest_files(track, "progress"):
+    for path in _manifest_files(track, "progress", exp):
         try:
             df = pd.read_csv(path)
         except (OSError, pd.errors.ParserError, pd.errors.EmptyDataError):
@@ -52,10 +59,10 @@ def load_progress(track: str) -> dict[str, pd.DataFrame]:
     return out
 
 
-def load_telemetry(track: str) -> dict[str, pd.DataFrame]:
-    """`{run_name: telemetry DataFrame}` for every started arm of `track`."""
+def load_telemetry(track: str, exp: str = "exp1") -> dict[str, pd.DataFrame]:
+    """`{run_name: telemetry DataFrame}` for every started arm of `track` in experiment `exp`."""
     out: dict[str, pd.DataFrame] = {}
-    for path in _manifest_files(track, "telemetry"):
+    for path in _manifest_files(track, "telemetry", exp):
         try:
             df = pd.read_csv(path)
         except (OSError, pd.errors.ParserError, pd.errors.EmptyDataError):
@@ -71,7 +78,14 @@ def load_telemetry(track: str) -> dict[str, pd.DataFrame]:
 
 
 def arm_label(run_name: str) -> str:
-    """A short, readable label from the sweep levers, e.g. `cf1·banded·aggr·s2`."""
+    """A short, readable label from the sweep levers.
+
+    Exp1 arms read `cf1·banded·aggr·s2` (prior levers); Exp2 arms read `cf0.5·icl·l2·lr1e-5`
+    (fine-tuning levers), because the two experiments sweep different knobs. The experiment is
+    taken from the `exp1_`/`exp2_` prefix the run name always carries.
+    """
+    if run_name.startswith("exp2"):
+        return _arm_label_exp2(run_name)
     cf = re.search(r"credit_fraction=([0-9p.]+)", run_name)
     fm = re.search(r"filter-mode=([a-z]+)", run_name)
     seed = re.search(r"__s(\d+)", run_name)
@@ -88,6 +102,35 @@ def arm_label(run_name: str) -> str:
         parts.append(fm.group(1))
     if cf and cf.group(1) not in ("0", "0.0"):
         parts.append(intensity)
+    if seed:
+        parts.append("s" + seed.group(1))
+    return "·".join(parts) or run_name[:20]
+
+
+#: How Exp2's freeze strategies read in a label — short enough for a small-multiple title.
+_STRATEGY_SHORT = {"full": "full", "icl_only": "icl", "head_only": "head", "scratch": "scratch"}
+
+
+def _arm_label_exp2(run_name: str) -> str:
+    """Label an Exp2 arm from its fine-tuning levers: credit fraction, freeze strategy,
+    L2-SP on/off, learning rate, seed — e.g. `cf0.5·icl·l2·lr1e-5`."""
+    cf = re.search(r"credit_fraction=([0-9p.]+)", run_name)
+    # A fixed set, matched explicitly: `[a-z_]+` is greedy and swallows the `__prior…` that
+    # follows `strategy=icl_only` in the run name.
+    strat = re.search(r"strategy=(full|icl_only|head_only|scratch)", run_name)
+    l2 = re.search(r"l2sp_alpha=([0-9pm.e+-]+)", run_name)
+    lr = re.search(r"-lr=([0-9pm.e+-]+)", run_name)
+    seed = re.search(r"__s(\d+)", run_name)
+    parts: list[str] = []
+    if cf:
+        parts.append("cf" + cf.group(1).replace("p", "."))
+    if strat:
+        parts.append(_STRATEGY_SHORT.get(strat.group(1), strat.group(1)))
+    if l2:
+        # `_fmt` writes 0.0 as "0" and 0.003 as "0p003"; only the latter is L2-SP on.
+        parts.append("l2" if l2.group(1) not in ("0", "0p0") else "noL2")
+    if lr:
+        parts.append("lr" + lr.group(1).replace("m", "-").replace("p", "."))
     if seed:
         parts.append("s" + seed.group(1))
     return "·".join(parts) or run_name[:20]
@@ -150,9 +193,9 @@ def rank_arms(runs: dict[str, pd.DataFrame], track: str) -> list[tuple[str, floa
 # ---------------------------------------------------------------------------
 
 
-def training_loss(track: str):
+def training_loss(track: str, exp: str = "exp1"):
     """Train loss vs step: every arm faint, the mean bold, best and worst arms highlighted."""
-    runs = load_progress(track)
+    runs = load_progress(track, exp)
     style.apply()
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.52))
     if not runs:
@@ -188,9 +231,9 @@ def training_loss(track: str):
 # ---------------------------------------------------------------------------
 
 
-def metric_over_training(track: str, metric: str | None = None):
+def metric_over_training(track: str, exp: str = "exp1", metric: str | None = None):
     """A real-data metric vs step (averaged over the real datasets): every arm + the mean."""
-    runs = load_progress(track)
+    runs = load_progress(track, exp)
     metric = metric or HEADLINE[track]
     style.apply()
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.52))
@@ -222,19 +265,65 @@ def metric_over_training(track: str, metric: str | None = None):
 
 
 # ---------------------------------------------------------------------------
+# 2b. Real-credit vs out-of-domain retention (the Exp2 question)
+# ---------------------------------------------------------------------------
+
+
+def real_vs_ood(track: str, exp: str = "exp1", metric: str | None = None):
+    """Headline metric on the real-credit datasets vs the out-of-domain suites, over training.
+
+    Fine-tuning on a narrow credit prior can lift credit scores while eroding the generality the
+    released model came with. Each arm contributes two curves — credit (solid) and OOD (dashed) —
+    both averaged over their datasets, so a gap opening up is the cost of specialisation made
+    visible. Degrades to the credit curve alone when no OOD columns were logged.
+    """
+    runs = load_progress(track, exp)
+    metric = metric or HEADLINE[track]
+    style.apply()
+    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.52))
+    if not runs:
+        _empty(ax, "no progress CSVs found in output/manifests/")
+        return fig
+
+    grid = _common_step_grid(runs)
+    real_stack, ood_stack = [], []
+    for df in runs.values():
+        for domain, stack in (("real", real_stack), ("ood", ood_stack)):
+            s = _mean_metric(df, metric, domain)
+            d = pd.DataFrame({"step": df["step"], "m": s}).dropna()
+            if len(d) >= 2:
+                stack.append(np.interp(grid, d["step"], d["m"], left=np.nan, right=np.nan))
+    if real_stack:
+        ax.plot(grid, np.nanmean(np.array(real_stack), axis=0), color=style.CREDIT, lw=2.2,
+                label=f"real credit (mean {metric})", zorder=4)
+    if ood_stack:
+        ax.plot(grid, np.nanmean(np.array(ood_stack), axis=0), color=style.WARN, lw=2.2,
+                ls="--", label=f"out-of-domain (mean {metric})", zorder=4)
+    else:
+        ax.text(0.5, 0.08, "no out-of-domain columns logged (progress.n_ood = 0?)",
+                ha="center", va="center", color=style.MUTED, fontsize=8, transform=ax.transAxes)
+    ax.set_xlabel("training step")
+    ax.set_ylabel(f"mean {metric}")
+    ax.legend(loc="lower right")
+    style.title(ax, "Credit vs out-of-domain during training", "does specialising cost generality?")
+    fig.suptitle(f"{track.upper()} credit vs out-of-domain {metric}")
+    return fig
+
+
+# ---------------------------------------------------------------------------
 # 3. Every logged evaluation metric
 # ---------------------------------------------------------------------------
 
 
-def metric_pages(track: str, per_page: int = 9) -> int:
-    runs = load_progress(track)
+def metric_pages(track: str, exp: str = "exp1", per_page: int = 9) -> int:
+    runs = load_progress(track, exp)
     n = len(available_metrics(runs)) if runs else 0
     return max(1, int(np.ceil(n / per_page)))
 
 
-def all_eval_metrics(track: str, page: int = 1, per_page: int = 9):
+def all_eval_metrics(track: str, page: int = 1, exp: str = "exp1", per_page: int = 9):
     """A grid, one panel per logged real-data metric, each the mean over arms and datasets."""
-    runs = load_progress(track)
+    runs = load_progress(track, exp)
     style.apply()
     metrics = available_metrics(runs) if runs else []
     pages = max(1, int(np.ceil(len(metrics) / per_page)))
@@ -271,14 +360,14 @@ def all_eval_metrics(track: str, page: int = 1, per_page: int = 9):
 # ---------------------------------------------------------------------------
 
 
-def config_pages(track: str, per_page: int = 12) -> int:
-    runs = load_progress(track)
+def config_pages(track: str, exp: str = "exp1", per_page: int = 12) -> int:
+    runs = load_progress(track, exp)
     return max(1, int(np.ceil(len(runs) / per_page)))
 
 
-def per_config(track: str, page: int = 1, per_page: int = 12):
+def per_config(track: str, page: int = 1, exp: str = "exp1", per_page: int = 12):
     """One panel per arm: its train loss (grey) and headline metric (blue, right axis)."""
-    runs = load_progress(track)
+    runs = load_progress(track, exp)
     metric = HEADLINE[track]
     names = sorted(runs, key=lambda n: (_is_control(n), n))
     pages = max(1, int(np.ceil(len(names) / per_page)))
@@ -316,9 +405,9 @@ def per_config(track: str, page: int = 1, per_page: int = 12):
 # ---------------------------------------------------------------------------
 
 
-def best_and_worst(track: str):
+def best_and_worst(track: str, exp: str = "exp1"):
     """The best and worst arm by final headline metric, loss and metric side by side."""
-    runs = load_progress(track)
+    runs = load_progress(track, exp)
     metric = HEADLINE[track]
     ranked = rank_arms(runs, track)
     style.apply()
@@ -349,9 +438,9 @@ def best_and_worst(track: str):
 # ---------------------------------------------------------------------------
 
 
-def hardware(track: str):
+def hardware(track: str, exp: str = "exp1"):
     """GPU utilisation, throughput and peak memory over the run, pooled across arms."""
-    tel = load_telemetry(track)
+    tel = load_telemetry(track, exp)
     style.apply()
     panels = [("gpu0_utilization_gpu", "GPU utilisation %", (0, 100)),
               ("steps_per_s", "throughput (steps/s)", None),
@@ -385,9 +474,14 @@ def hardware(track: str):
 # ---------------------------------------------------------------------------
 
 
-def gradient_flow(track: str):
-    """Per-block gradient norm over training — every stack should carry signal, none flat."""
-    tel = load_telemetry(track)
+def gradient_flow(track: str, exp: str = "exp1"):
+    """Per-block gradient norm over training — every stack should carry signal, none flat.
+
+    Under an Exp2 freeze strategy (`icl_only`, `head_only`) the frozen stacks legitimately sit on
+    the floor: this figure is where a reader confirms the freeze took, so a flat line is a result
+    there rather than a warning.
+    """
+    tel = load_telemetry(track, exp)
     style.apply()
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.50))
     blocks = [("grad_col", "column encoder"), ("grad_row", "row encoder"),
@@ -426,25 +520,28 @@ def gradient_flow(track: str):
 # ---------------------------------------------------------------------------
 
 
-def training_summary(track: str) -> str:
+def training_summary(track: str, exp: str = "exp1") -> str:
     """A text summary of the training runs, for the notebook's final cell."""
-    runs = load_progress(track)
-    tel = load_telemetry(track)
+    runs = load_progress(track, exp)
+    tel = load_telemetry(track, exp)
     if not runs:
-        return f"{track.upper()} training: no progress CSVs in output/manifests/ yet."
+        return f"{exp.upper()} {track.upper()} training: no progress CSVs in output/manifests/ yet."
     metric = HEADLINE[track]
     ranked = rank_arms(runs, track)
-    lines = [f"{track.upper()} TRAINING — {len(runs)} arms with progress data",
+    lines = [f"{exp.upper()} {track.upper()} TRAINING — {len(runs)} arms with progress data",
              f"  telemetry CSVs: {len(tel)}",
              f"  metrics logged: {', '.join(available_metrics(runs)) or 'none'}"]
     steps = [int(df['step'].max()) for df in runs.values() if len(df)]
     if steps:
-        lines.append(f"  furthest step reached: {max(steps):,} (of 12,500)")
+        lines.append(f"  furthest step reached: {max(steps):,}")
     if ranked:
         lines.append(f"  best  {metric}={ranked[0][1]:.4f}  {arm_label(ranked[0][0])}")
         lines.append(f"  worst {metric}={ranked[-1][1]:.4f}  {arm_label(ranked[-1][0])}")
         vals = np.array([v for _, v in ranked])
         lines.append(f"  {metric} across arms: mean {vals.mean():.4f}  sd {vals.std():.4f}")
+    ood = [n for n, df in runs.items() if _metric_cols(df, metric, "ood")]
+    if ood:
+        lines.append(f"  out-of-domain {metric} tracked on {len(ood)}/{len(runs)} arms")
     return "\n".join(lines)
 
 

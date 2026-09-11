@@ -14,6 +14,9 @@ Related, and deliberately separate:
 | [`AGENTS_MEMORY.md`](AGENTS_MEMORY.md) | the one-line index of runs, and the **dead ends** |
 | [`CHANGELOG.md`](CHANGELOG.md) | changes to the *repository*, not to what we know |
 
+**Contents:** [The workflow](#the-workflow) · [What gets logged](#what-gets-logged-and-why-each-thing-is-there)
+· [Entry template](#entry-template) · [Runs](#runs) (the dated write-ups, newest first).
+
 ---
 
 ## The workflow

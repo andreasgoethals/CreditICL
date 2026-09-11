@@ -61,6 +61,17 @@ project-specific belongs in `README.md` or another `docs/` file, not here.
 
 New `src/` subfolders need no permission — that is the obvious place to grow.
 
+## Contents
+
+[`config/`](#config) · [`data/`](#data) · [`docs/`](#docs) · [`notebooks/`](#notebooks) ·
+[`output/`](#output) · [`scripts/`](#scripts) · [`src/`](#src) · [`tests/`](#tests) ·
+[`tfm-library/`](#tfm-library) · [Root files](#root-files) · [Comments](#comments)
+
+*This project's specialisation of the template lives in the other `docs/` files — the science in
+[EXPERIMENTAL_DESIGN.md](EXPERIMENTAL_DESIGN.md), the prior in [PRIORS.md](PRIORS.md), config values
+in [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md), the cluster in [VSC.md](VSC.md). Generic changes to the
+rules below belong upstream at the template source, not here.*
+
 ---
 
 ## `config/`
@@ -136,11 +147,12 @@ Built from the VSC documentation in `tfm-library/`, but written about this proje
 | **project storage** | `/lustre1/project/stg_00211/<Project>/` | big files: datasets, checkpoints, caches, **`output/results/`** |
 | **personal data** | `$VSC_DATA/<Project>/` | the repository, and the rest of `output/` |
 
-**Both are backed up.** They differ in size and in convenience: `$VSC_DATA` is only 75 GiB but you
-can browse it directly, while project storage is large but has to be pulled down locally first
-(PowerShell, `scp`/`rsync`) before you can look at anything in it. So the big, rarely-read things
-go to project storage and everything you actually want to open stays on `$VSC_DATA`. Project
-storage also has a **low inode budget** — few big files, not thousands of small ones.
+They differ in backup, size and convenience: **`$VSC_DATA` is backed up** but only 75 GiB, and you
+can browse it directly; **project storage is not backed up** but large, and has to be pulled down
+locally first (PowerShell, `scp`/`rsync`) before you can look at anything in it. So the big,
+rarely-read, regenerable things go to project storage and everything you actually want to open (and
+keep) stays on `$VSC_DATA`. Project storage also has a **low inode budget** — few big files, not
+thousands of small ones. (This project adds a third tier, `$VSC_SCRATCH`; see [VSC.md](VSC.md).)
 
 `$VSC_SCRATCH` is purged after 30 days **without access**, and `mv` and timestamp-preserving
 `rsync` do not count as an access. Compute nodes have **no outbound internet**, so anything that

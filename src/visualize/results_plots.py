@@ -1,16 +1,23 @@
 """Level-1 RESULTS visualisation: how the trained arms score on the real datasets.
 
-Reads the benchmark output — `output/results/<task>/eval/results_<stamp>.csv`, one row per
+Reads the benchmark output — `output/results/<task>/eval/results_<tag>.csv`, one row per
 (dataset, model, seed) written by `scripts/evaluate.py` — and turns it into the final-scores
-figures for `1.3_pd_results` / `1.4_lgd_results`.
+figures for `1.3_pd_results` / `1.4_lgd_results` (Exp1, `exp="exp1"`) and
+`2.3_pd_results` / `2.4_lgd_results` (Exp2, `exp="exp2"`).
 
-The benchmark is phase 2 and only runs once every arm of a track has trained, so until then
-these degrade to a single "not scored yet" panel rather than an error: the notebook is meant
-to be safe to run at any point in the sweep. The notebooks call these and hold no logic.
+Each phase-2 array task writes its own `results_<tag>.csv` (arms tagged `exp{N}bench_<track>_a<i>`,
+the shared reference column `reference_<track>`), so an experiment's table is the concatenation of
+its arm files plus the reference. `exp` selects which arm files to read; the reference is shared
+across experiments and always included.
+
+The benchmark only runs once every arm of a track has trained, so until then these degrade to a
+single "not scored yet" panel rather than an error: the notebook is meant to be safe to run at
+any point in the sweep. The notebooks call these and hold no logic.
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -28,22 +35,55 @@ HIGHER_IS_BETTER = {"auc": True, "ap": True, "r2": True, "rmse": False, "mae": F
 BASELINES = ("catboost", "xgboost", "lightgbm", "tabpfn", "tabiclv2", "tabicl", "logreg",
              "linear", "mean", "gbm", "rf", "randomforest")
 
+# Sweep levers that identify an Exp2 arm, as they appear in a run name / benchmark tag.
+_LEVER_TOKENS = ("credit_fraction=", "strategy=", "l2sp_alpha=", "-lr=", "exp1_", "exp2_")
 
-def load_results(track: str) -> pd.DataFrame | None:
-    """The most recent per-(dataset, model, seed) results table, or `None` if none exist."""
+
+def load_results(track: str, exp: str = "exp1") -> pd.DataFrame | None:
+    """Per-(dataset, model, seed) results for `exp` on `track`, or `None` if none exist.
+
+    Concatenates the experiment's arm files (`results_<exp>bench_<track>_*.csv`) with the shared
+    reference (`results_reference_<track>.csv`). Falls back to every `results_*.csv` when the
+    tagged files are absent, so an older single-file run still renders.
+    """
     out = paths.results_dir(track, "eval")
-    files = sorted(out.glob("results_*.csv")) if out.exists() else []
+    if not out.exists():
+        return None
+    files = sorted(out.glob(f"results_{exp}bench_{track}_*.csv"))
+    ref = out / f"results_reference_{track}.csv"
+    if ref.is_file():
+        files.append(ref)
     if not files:
+        files = sorted(out.glob("results_*.csv"))
+    frames = []
+    for path in files:
+        try:
+            frames.append(pd.read_csv(path))
+        except (OSError, pd.errors.ParserError, pd.errors.EmptyDataError):
+            continue
+    if not frames:
         return None
-    try:
-        df = pd.read_csv(files[-1])
-    except (OSError, pd.errors.ParserError, pd.errors.EmptyDataError):
-        return None
+    df = pd.concat(frames, ignore_index=True)
     return df if len(df) else None
 
 
 def _model_col(df: pd.DataFrame) -> str:
-    for c in ("model", "arm", "run", "run_name", "tag", "checkpoint"):
+    """The column that best identifies an arm.
+
+    Prefers whichever column actually carries the sweep levers or an `exp{N}_` run name, because
+    the `model` column is the constant `"crediticl"` for every one of our arms — grouping on it
+    would collapse 60 fine-tuning arms into a single bar. Falls back to the first familiar name.
+    """
+    best, best_hits = None, 0
+    for c in df.columns:
+        if df[c].dtype != object:
+            continue
+        hits = int(df[c].astype(str).str.contains("|".join(map(re.escape, _LEVER_TOKENS))).sum())
+        if hits > best_hits:
+            best, best_hits = c, hits
+    if best is not None:
+        return best
+    for c in ("tag", "run_name", "run", "arm", "checkpoint", "model"):
         if c in df.columns:
             return c
     return df.columns[0]
@@ -54,7 +94,11 @@ def _kind(model: str) -> str:
     low = str(model).lower()
     if any(b in low for b in BASELINES) and "crediticl" not in low:
         return "baseline"
-    if "credit_fraction=0" in low or "cf0" in low or "cf=0" in low or low.endswith("control"):
+    # cf=0 EXACTLY: `credit_fraction=0__` and `cf0·`, not the `credit_fraction=0p5` of a 0.5 arm,
+    # which a bare `"credit_fraction=0" in low` substring test wrongly read as a control.
+    if (re.search(r"credit_fraction=0(?:\.0|p0)?(?=__|$)", low)
+            or re.search(r"(?:^|[^0-9])cf0(?:\.0)?(?=[^0-9.]|$)", low)
+            or low.endswith("control")):
         return "control"
     return "credit"
 
@@ -73,9 +117,9 @@ def available_metrics(df: pd.DataFrame) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def overall_ranking(track: str, metric: str | None = None):
+def overall_ranking(track: str, exp: str = "exp1", metric: str | None = None):
     """Mean headline score per model across datasets and seeds, sorted, coloured by kind."""
-    df = load_results(track)
+    df = load_results(track, exp)
     metric = metric or HEADLINE[track]
     style.apply()
     if df is None or metric not in df.columns:
@@ -106,9 +150,9 @@ def overall_ranking(track: str, metric: str | None = None):
 # ---------------------------------------------------------------------------
 
 
-def per_dataset(track: str, metric: str | None = None):
+def per_dataset(track: str, exp: str = "exp1", metric: str | None = None):
     """Headline score per dataset, model-kind best summarised, so no dataset is hidden by a mean."""
-    df = load_results(track)
+    df = load_results(track, exp)
     metric = metric or HEADLINE[track]
     style.apply()
     if df is None or metric not in df.columns or "dataset" not in df.columns:
@@ -143,9 +187,9 @@ def per_dataset(track: str, metric: str | None = None):
 # ---------------------------------------------------------------------------
 
 
-def credit_vs_control(track: str, metric: str | None = None):
+def credit_vs_control(track: str, exp: str = "exp1", metric: str | None = None):
     """The distribution of headline scores for credit-prior arms, control arms and baselines."""
-    df = load_results(track)
+    df = load_results(track, exp)
     metric = metric or HEADLINE[track]
     style.apply()
     if df is None or metric not in df.columns:
@@ -172,16 +216,74 @@ def credit_vs_control(track: str, metric: str | None = None):
     return fig
 
 
-def results_summary(track: str) -> str:
+# ---------------------------------------------------------------------------
+# 4. Which fine-tuning lever moved the score (Exp2)
+# ---------------------------------------------------------------------------
+
+#: The Exp2 sweep levers, and how each reads in a benchmark tag / run name.
+_LEVERS = (("credit_fraction", r"credit_fraction=([0-9p.]+)", "credit fraction"),
+           ("strategy", r"strategy=(full|icl_only|head_only|scratch)", "freeze strategy"),
+           ("l2sp_alpha", r"l2sp_alpha=([0-9pm.e+-]+)", "L2-SP alpha"),
+           ("lr", r"-lr=([0-9pm.e+-]+)", "learning rate"))
+
+
+def lever_effect(track: str, exp: str = "exp2", metric: str | None = None):
+    """One panel per fine-tuning lever: mean headline score grouped by that lever's value.
+
+    Reads the arm's swept levers out of its benchmark tag and averages the headline metric over
+    every arm that shares a value, so each panel isolates one knob — credit fraction, freeze
+    strategy, L2-SP on/off, learning rate. Degrades to a placeholder before the benchmark runs.
+    """
+    df = load_results(track, exp)
+    metric = metric or HEADLINE[track]
+    style.apply()
+    fig, axes = plt.subplots(2, 2, figsize=style.grid_figsize(2, 2, panel_ratio=0.72))
+    axes = np.atleast_1d(axes).ravel()
+    if df is None or metric not in df.columns:
+        for ax in axes:
+            ax.axis("off")
+        _empty(axes[0], "no benchmark results yet — this figure isolates each fine-tuning knob")
+        return fig
+
+    mc = _model_col(df)
+    names = df[mc].astype(str)
+    drawn = False
+    for ax, (_key, pattern, label) in zip(axes, _LEVERS):
+        vals = names.str.extract(pattern, expand=False)
+        d = df.assign(_lever=vals).dropna(subset=["_lever"])
+        if d["_lever"].nunique() < 2:
+            ax.axis("off")
+            continue
+        grp = d.groupby("_lever")[metric].mean().sort_index()
+        x = np.arange(len(grp))
+        ax.bar(x, grp.values, color=style.CREDIT, width=0.6)
+        ax.set_xticks(x)
+        ax.set_xticklabels([str(v).replace("p", ".").replace("m", "-") for v in grp.index],
+                           fontsize=7, rotation=20, ha="right")
+        ax.set_ylabel(metric, fontsize=8)
+        style.title(ax, label)
+        drawn = True
+    for ax in axes:
+        if not ax.has_data() and ax.axison:
+            ax.axis("off")
+    if not drawn:
+        _empty(axes[0], "results carry no recognisable sweep levers to group by")
+    fig.suptitle(f"{track.upper()} effect of each fine-tuning lever on {metric}")
+    return fig
+
+
+def results_summary(track: str, exp: str = "exp1") -> str:
     """Text summary of the benchmark, for the notebook's final cell."""
-    df = load_results(track)
+    df = load_results(track, exp)
     if df is None:
-        return (f"{track.upper()} RESULTS: no benchmark output in output/results/{track}/eval/ yet.\n"
+        return (f"{exp.upper()} {track.upper()} RESULTS: no benchmark output in "
+                f"output/results/{track}/eval/ yet.\n"
                 f"  The benchmark (phase 2) runs once every arm of the track has trained;\n"
-                f"  re-run this notebook after `run_experiment 1 --submit` finishes scoring.")
+                f"  re-run this notebook after the phase-2 array finishes scoring.")
     metric = HEADLINE[track]
     mc = _model_col(df)
-    lines = [f"{track.upper()} RESULTS — {df[mc].nunique()} models on {df['dataset'].nunique() if 'dataset' in df else '?'} datasets",
+    lines = [f"{exp.upper()} {track.upper()} RESULTS — {df[mc].nunique()} models on "
+             f"{df['dataset'].nunique() if 'dataset' in df else '?'} datasets",
              f"  metrics: {', '.join(available_metrics(df)) or 'none'}"]
     if metric in df.columns:
         per = df.groupby(mc)[metric].mean()
