@@ -33,7 +33,7 @@ from src.prior.rng import PriorRNG
 from src.prior.targets.pd import apply_informative_missingness
 from src.utils.config import expand_with_seeds, load
 from src.utils.target_stats import target_stats
-from src.visualize import style
+from src.visualize import literature, style
 
 # Real base rates measured in data/raw/pd (see docs/PRIORS.md / config comments): the
 # regime our controlled imbalance targets, drawn as a reference band.
@@ -129,6 +129,9 @@ def imbalance_control(config_path: str, n: int = 200, seed: int = 0):
     ax.axvspan(*REAL_PD_BAND, color=style.REAL, alpha=0.15, zorder=0)
     ax.annotate("real credit\n7–22%", (np.mean(REAL_PD_BAND), ax.get_ylim()[1] * 0.9),
                 color=style.REAL, fontsize=8, ha="center", weight="semibold")
+    # The base rate below which a default-threshold classifier collapses to the majority class,
+    # measured on real credit data — the regime our controlled imbalance deliberately reaches into.
+    literature.line(ax, "tanna_paradox", label="Tanna: collapse < 10%")
     ax.set_xlabel("positive (default) rate per task")
     ax.set_ylabel("number of tasks")
     ax.legend(loc="upper right")
@@ -183,6 +186,9 @@ def correlated_defaults(config_path: str, n: int = 200, seed: int = 0):
                        {**fixed, "credit.target.mechanism.rho_range": [r, r]})
         sds.append(float(np.std([_base_rate(t) for t in ts])))
     ax2.plot(rhos, sds, "o-", color=style.CREDIT)
+    # The Basel IRB corporate asset-correlation cap sits on this exact axis; our aggressive arm
+    # (ρ up to 0.30) reaches past it. External domain knowledge, so it draws amber and marked.
+    literature.line(ax2, "basel_corp", label="Basel corp 0.24")
     ax2.set_xlabel("asset correlation ρ")
     ax2.set_ylabel("SD of realised default rate")
     style.title(ax2, "Default clustering grows with ρ")

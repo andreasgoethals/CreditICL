@@ -191,12 +191,35 @@ CREDIT_STRONG = "#173a63"
 CONTEXT = "#94a3b8"
 QUERY = "#c2410c"
 
+#: A published value from the literature, overlaid on our own measurement as a reference — a Basel
+#: asset correlation, a TabICLv2 filtering rate, an LGD R² band. Teal, so it reads as "the paper
+#: said" and is never mistaken for our data (blue), the control (grey) or the real data (orange).
+REFERENCE = "#0d9488"
+#: The two LGD boundary atoms, given opposed meanings a reader can feel: mass at 0 is FULL RECOVERY
+#: (a good outcome, cool green) and mass at 1 is TOTAL LOSS (a bad outcome, deep rose). Distinct
+#: from REAL/WARN so a figure showing atoms and a real-data overlay stays legible.
+ATOM_LO = "#0f766e"
+ATOM_HI = "#9d174d"
+
+#: A value from OUTSIDE the tfm-library — credit-domain knowledge the library does not contain (a
+#: Basel asset correlation, the Merton/Vasicek default model). Amber, deliberately NOT the REFERENCE
+#: teal, so a reference line says at a glance whether the number is library-grounded (teal) or domain
+#: knowledge cited from beyond it (amber). The honesty distinction the whole project rests on, made
+#: visible on the axis rather than left to the caption.
+EXTERNAL = "#a16207"
+
 #: For "this is wrong / out of range" annotations.
 WARN = "#b91c1c"
 #: Neutral ink for text, axes and annotations.
 INK = "#1e293b"
 MUTED = "#64748b"
 GRID = "#e2e8f0"
+
+#: Named colormaps, both colour-blind-safe and monotone in lightness so they survive a greyscale
+#: photocopy — `CMAP_SEQ` for one-directional intensity (a correlation magnitude, a density),
+#: `CMAP_DIV` for a signed quantity around a meaningful zero (an effect, a difference from control).
+CMAP_SEQ = "cividis"
+CMAP_DIV = "RdBu_r"
 
 #: Ordered palette for when several things must be distinguished (e.g. 7 datasets). Okabe-Ito,
 #: which is colour-blind-safe AND separates in greyscale by lightness — a paper gets photocopied.
@@ -362,22 +385,80 @@ def annotate_value(ax: Any, x: float, y: float, text: str, *, color: str = INK) 
     )
 
 
+def reference_line(ax: Any, value: float, label: str | None = None, *, orient: str = "v",
+                   color: str = REFERENCE, top: bool = True) -> None:
+    """A published value from the literature, drawn as a labelled dashed line to compare against.
+
+    This is how a figure grounds itself: our measured distribution in the data colours, the value a
+    paper reports drawn over it in `REFERENCE` teal with a short label (a number, not a sentence —
+    the interpretation belongs in the caption). `orient="v"` draws a vertical line at `value` on the
+    x-axis, `"h"` a horizontal one on the y-axis.
+    """
+    if orient == "v":
+        ax.axvline(value, color=color, ls=(0, (4, 2)), lw=1.1, zorder=2.5)
+        if label:
+            lo, hi = ax.get_ylim()
+            y = hi - (hi - lo) * 0.04 if top else lo + (hi - lo) * 0.04
+            ax.annotate(label, (value, y), rotation=90, va="top" if top else "bottom", ha="right",
+                        fontsize=mpl.rcParams["font.size"] * 0.72, color=color)
+    else:
+        ax.axhline(value, color=color, ls=(0, (4, 2)), lw=1.1, zorder=2.5)
+        if label:
+            lo, hi = ax.get_xlim()
+            x = hi - (hi - lo) * 0.01
+            ax.annotate(label, (x, value), va="bottom", ha="right",
+                        fontsize=mpl.rcParams["font.size"] * 0.72, color=color)
+
+
+def callout(ax: Any, xy: tuple[float, float], text: str, *, xytext: tuple[float, float] = (16, 14),
+            color: str = INK) -> None:
+    """A short label with a thin leader to the point it describes — for the one mark worth naming."""
+    ax.annotate(
+        text, xy=xy, xytext=xytext, textcoords="offset points",
+        fontsize=mpl.rcParams["font.size"] * 0.78, color=color,
+        arrowprops=dict(arrowstyle="-", color=MUTED, lw=0.7,
+                        connectionstyle="arc3,rad=0.2"),
+    )
+
+
+def bar_value_labels(ax: Any, bars: Any, fmt: str = "{:.2f}", *, color: str = INK,
+                     horizontal: bool = False) -> None:
+    """Write each bar's value at its end, so the reader never has to trace back to an axis tick."""
+    size = mpl.rcParams["font.size"] * 0.72
+    for bar in bars:
+        if horizontal:
+            w = bar.get_width()
+            ax.annotate(fmt.format(w), (w, bar.get_y() + bar.get_height() / 2),
+                        xytext=(3, 0), textcoords="offset points", va="center", ha="left",
+                        fontsize=size, color=color)
+        else:
+            h = bar.get_height()
+            ax.annotate(fmt.format(h), (bar.get_x() + bar.get_width() / 2, h),
+                        xytext=(0, 2), textcoords="offset points", ha="center", va="bottom",
+                        fontsize=size, color=color)
+
+
 def show_palette() -> Any:
     """A swatch of the palette, so a notebook can document its own colour meanings."""
     apply()
     entries = [
-        ("our prior (credit)", CREDIT),
-        ("original TabICL prior", ORIGINAL),
-        ("real credit data", REAL),
-        ("problem / out of range", WARN),
+        ("our prior\n(credit)", CREDIT),
+        ("original\nTabICL prior", ORIGINAL),
+        ("real credit\ndata", REAL),
+        ("real-data\nmarker", STAR),
+        ("library\n(tfm-library)", REFERENCE),
+        ("external\n(domain)", EXTERNAL),
+        ("full recovery\n(atom at 0)", ATOM_LO),
+        ("total loss\n(atom at 1)", ATOM_HI),
+        ("out of\nrange", WARN),
     ]
-    fig, ax = plt.subplots(figsize=(WIDTH_FULL, 0.95))
+    fig, ax = plt.subplots(figsize=(WIDTH_FULL, 1.05))
     for i, (label, colour) in enumerate(entries):
         ax.add_patch(plt.Rectangle((i, 0), 0.85, 1, color=colour))
         ax.text(i + 0.425, -0.28, label, ha="center", va="top",
-                fontsize=mpl.rcParams["xtick.labelsize"], color=MUTED)
+                fontsize=mpl.rcParams["xtick.labelsize"] * 0.85, color=MUTED)
     ax.set_xlim(-0.1, len(entries))
-    ax.set_ylim(-1.1, 1)
+    ax.set_ylim(-1.4, 1)
     ax.axis("off")
     ax.set_title("What the colours mean")
     return fig

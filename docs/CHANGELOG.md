@@ -8,6 +8,51 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 16-09-2026 — Literature overlays drawn on the figures; credit-AUC landscape; provenance colours (analysis-only)
+
+- **The literature overlays are now actually drawn**, not just available. `literature.line` was
+  defined last chapter but no figure called it; it is now wired into the axis-honest places only —
+  Tanna's ~10% majority-collapse threshold on the two base-rate figures (`mechanism_plots.imbalance_control`,
+  `pool_plots.plot_base_rate_by_variant`) and Basel's 0.24 corporate cap on the ρ axis
+  (`correlated_defaults`). O'Prior's 0.791 is deliberately *not* overlaid on our credit-AUC curves — it
+  is measured on 52 general tasks, and mixing protocols would mislead (§3).
+- **Provenance is now a colour.** New `style.EXTERNAL` amber beside `REFERENCE` teal; `literature.line`
+  colours a value by its tag — teal for a tfm-library result, amber plus an automatic "(external)" mark
+  for domain knowledge — and the colour cannot be overridden by the caller. Palette key names both.
+- **`literature.py` grew 34 → 47 facts**, the 13 new ones each verified against the library text this
+  chapter: the only credit-domain benchmarks the library holds (Tanna 2026 — Home Credit TabICL 0.771 /
+  TabPFN 0.786, RandomForest 0.739; Lending Club XGBoost 0.718; Hollmann 2023 Credit-g 0.789), the
+  predictability filter's ExtraTrees/`p≥0.05` internals, and the HC/LC sizes and base rates.
+- **New `src/visualize/literature_plots.py`** with an honest credit-AUC *landscape* figure, added as a
+  "Where the field sits on credit data" section to all four results notebooks (now 8/8/9/9 figures) — the
+  library's own numbers under the papers' own full-dataset protocols, drawn on their own axis and captioned
+  as context, never as a scoreboard our arms sit on. New `tests/test_literature.py` cases lock the
+  provenance colouring and the landscape.
+- **No cluster code touched** — every change is under `src/visualize/`, `notebooks/`, `tests/`; the full
+  suite is green (894 passed).
+
+## 15-09-2026 — Notebooks and visualisation greatly expanded and grounded in tfm-library (analysis-only; no cluster code touched)
+
+- **New `src/visualize/literature.py`.** 34 citable facts from `tfm-library` (pin `52dab01`), each with
+  its exact source (paper path / code symbol) and an honesty tag — `paper-evaluated` / `code-supported`
+  / `editorial` / **`external`** (the credit-domain models the library does *not* contain: Merton/Vasicek,
+  Basel IRB, marked so a reader never mistakes them for library-grounded). A helper can overlay one as a
+  reference line (`literature.line`, wired onto the figures the next day); notebook summaries print the
+  sources (`literature.references_md`).
+- **`style.py`** gained `REFERENCE`/`ATOM_LO`/`ATOM_HI` colours, colour-blind-safe `CMAP_SEQ`/`CMAP_DIV`,
+  and `reference_line` / `callout` / `bar_value_labels` helpers; palette key extended. A4/PDF invariants
+  unchanged.
+- **`training_plots.py` +6 views** (credit-vs-control curve, metric-by-lever, per-dataset curves,
+  gradient-to-weight ratio, final-metric-by-lever) and **`results_plots.py` +3 views** (every-metric grid,
+  per-dataset heatmap, beats-the-reference). Both now share a `_with_identity` helper that **fixes a latent
+  bug**: the reference/baseline rows (blank run-name column) were misclassified as `credit`.
+- **All eight Level-1/2 notebooks rebuilt ~2× larger** (1.x training 18→34 cells, results 10→18; 2.x
+  36 and 20), every section fronted by literature-grounded markdown citing `tfm-library` by path; 92
+  figures across the eight (was ~44). Stories and every notebook rule intact (no logic in cells, ends
+  with a printed summary + references, PDF/A4, captions are pure description). New `tests/test_deep_plots.py`.
+- **No functionality that runs on the cluster was changed** — `src/visualize/` is imported by nothing in
+  `scripts/`, `src/train`, `src/eval`, `src/prior`, `src/models`.
+
 ## 09-09-2026 — Level-2 notebooks for Experiment 2 (fine-tuning); plot infra made experiment-aware
 
 - **Level 2 added:** `2.1_pd_finetuning` / `2.2_lgd_finetuning` (training behaviour of every Exp2

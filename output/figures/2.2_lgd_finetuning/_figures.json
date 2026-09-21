@@ -1,50 +1,98 @@
 [
   {
     "index": 1,
-    "stem": "01_training_loss",
-    "name": "training_loss",
-    "caption": "Training loss against optimisation step for every LGD fine-tuning arm (grey), the mean across arms (black), and the best and worst arms by final real-data R-squared (highlighted)."
+    "stem": "01_palette",
+    "name": "palette",
+    "caption": "The shared colour vocabulary used on every axis of this notebook: each swatch names the prior, data source, literature overlay or annotation it marks."
   },
   {
     "index": 2,
-    "stem": "02_metric_over_training",
-    "name": "metric_over_training",
-    "caption": "Real-data R-squared, averaged over the evaluation datasets, against training step; one line per arm coloured by prior (credit versus continued-pretraining control), with the across-arm mean in black."
+    "stem": "02_training_loss",
+    "name": "training_loss",
+    "caption": "Training loss against optimisation step for every LGD arm (grey), the mean across arms (black), and the best and worst arms by final real-data R-squared (highlighted)."
   },
   {
     "index": 3,
-    "stem": "03_real_vs_ood",
-    "name": "real_vs_ood",
-    "caption": "Mean R-squared on the real-credit datasets (solid) and the out-of-domain suites (dashed) against training step, averaged across fine-tuning arms."
+    "stem": "03_metric_over_training",
+    "name": "metric_over_training",
+    "caption": "Real-data R-squared, averaged over the evaluation datasets, against training step; one line per arm coloured by prior (credit versus control), with the across-arm mean in black."
   },
   {
     "index": 4,
-    "stem": "04_eval_metrics_p1",
+    "stem": "04_credit_vs_control_over_training",
+    "name": "credit_vs_control_over_training",
+    "caption": "Real-data R-squared against training step for credit-prior arms versus control arms; bold median lines with shaded inter-quartile bands across the arms in each group."
+  },
+  {
+    "index": 5,
+    "stem": "05_metric_by_lever_strategy",
+    "name": "metric_by_lever_strategy",
+    "caption": "Real-data R-squared against training step, one mean line per value of freeze strategy, averaged over the arms that share each value."
+  },
+  {
+    "index": 6,
+    "stem": "06_metric_by_lever_l2sp",
+    "name": "metric_by_lever_l2sp",
+    "caption": "Real-data R-squared against training step, one mean line per value of L2-SP, averaged over the arms that share each value."
+  },
+  {
+    "index": 7,
+    "stem": "07_metric_by_lever_credit_fraction",
+    "name": "metric_by_lever_credit_fraction",
+    "caption": "Real-data R-squared against training step, one mean line per value of credit fraction, averaged over the arms that share each value."
+  },
+  {
+    "index": 8,
+    "stem": "08_real_vs_ood",
+    "name": "real_vs_ood",
+    "caption": "Mean R-squared on the real-credit datasets (solid) and the out-of-domain suites (dashed) against training step, averaged across the fine-tuning arms."
+  },
+  {
+    "index": 9,
+    "stem": "09_eval_metrics_p1",
     "name": "eval_metrics_p1",
     "caption": "Each logged real-data evaluation metric, averaged over arms and datasets, against training step; the arrow in each panel title marks the improving direction."
   },
   {
-    "index": 5,
-    "stem": "05_per_config_p1",
+    "index": 10,
+    "stem": "10_per_dataset_p1",
+    "name": "per_dataset_p1",
+    "caption": "Real-data R-squared against training step, one panel per evaluation dataset, credit arms (blue) against control arms (grey)."
+  },
+  {
+    "index": 11,
+    "stem": "11_per_config_p1",
     "name": "per_config_p1",
-    "caption": "Per-arm training curves against step: train loss (grey, left axis) and real-data R-squared (blue, right axis), one panel per fine-tuning configuration."
+    "caption": "Per-arm training curves against step: train loss (grey, left axis) and real-data R-squared (blue, right axis), one panel per configuration."
   },
   {
-    "index": 6,
-    "stem": "06_best_and_worst",
+    "index": 12,
+    "stem": "12_final_metric_by_lever",
+    "name": "final_metric_by_lever",
+    "caption": "Final real-data R-squared of every finished arm as points, one column per swept lever, with a horizontal bar at each group mean."
+  },
+  {
+    "index": 13,
+    "stem": "13_best_and_worst",
     "name": "best_and_worst",
-    "caption": "Train loss and real-data R-squared against training step for the best and worst fine-tuning arm by final R-squared."
+    "caption": "Train loss and real-data R-squared against training step for the best and worst arm by final R-squared."
   },
   {
-    "index": 7,
-    "stem": "07_hardware",
+    "index": 14,
+    "stem": "14_hardware",
     "name": "hardware",
     "caption": "GPU utilisation, throughput and peak allocated memory against training step, pooled across arms; the dashed line marks 70 percent utilisation."
   },
   {
-    "index": 8,
-    "stem": "08_gradient_flow",
+    "index": 15,
+    "stem": "15_gradient_flow",
     "name": "gradient_flow",
-    "caption": "Mean per-block gradient L2 norm (column encoder, row encoder, ICL blocks, head) against training step on a logarithmic axis; a frozen stack sits on the floor."
+    "caption": "Mean per-block gradient L2 norm (column encoder, row encoder, ICL blocks, head) against training step on a logarithmic axis."
+  },
+  {
+    "index": 16,
+    "stem": "16_weight_gradient_ratios",
+    "name": "weight_gradient_ratios",
+    "caption": "Mean per-block ratio of gradient norm to weight norm against training step on a logarithmic axis, one line per architecture block."
   }
 ]

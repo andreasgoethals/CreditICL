@@ -105,7 +105,14 @@ knowing:
   (`0.1` data, `0.2`/`0.3` the PD/LGD prior); **level 1** covers Exp1 (`1.1`/`1.2` training behaviour,
   `1.3`/`1.4` benchmark); **level 2** covers Exp2 (`2.1`/`2.2` fine-tuning + out-of-domain retention,
   `2.3`/`2.4` benchmark + effect of each fine-tuning lever). Results notebooks show a placeholder
-  until phase 2 has run.
+  until phase 2 has run. Every figure and section is **grounded in the pinned `tfm-library`**:
+  `src/visualize/literature.py` holds the citable published values (each tagged paper-evaluated /
+  code-supported / *external*), drawn on axis-matched figures as reference lines — teal for a library
+  value, amber for external domain knowledge, so provenance shows on the axis — and printed in each
+  notebook's references block. `literature_plots.py` adds a credit-AUC *landscape* to the results
+  notebooks: the only credit-domain numbers the library holds (Tanna 2026 on Home Credit / Lending
+  Club, Hollmann 2023 on Credit-g), shown as context under the papers' own protocols, not a
+  like-for-like target.
 
 ## Repository layout
 

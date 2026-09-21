@@ -174,192 +174,400 @@ Distribution of ExtraTrees pseudo-R^2 over ~60 generated LGD tasks. The shaded b
 
 ## 1.1_pd_training
 
-**01_training_loss** — `training_loss`
+**01_palette** — `palette`
+
+The shared colour vocabulary used on every axis of this notebook: each swatch names the prior, data source, literature overlay or annotation it marks.
+
+**02_training_loss** — `training_loss`
 
 Training loss against optimisation step for every PD arm (grey), the mean across arms (black), and the best and worst arms by final real-data AUC (highlighted).
 
-**02_metric_over_training** — `metric_over_training`
+**03_metric_over_training** — `metric_over_training`
 
 Real-data AUC, averaged over the evaluation datasets, against training step; one line per arm coloured by prior (credit versus control), with the across-arm mean in black.
 
-**03_eval_metrics_p1** — `eval_metrics_p1`
+**04_credit_vs_control_over_training** — `credit_vs_control_over_training`
+
+Real-data AUC against training step for credit-prior arms versus control arms; bold median lines with shaded inter-quartile bands across the arms in each group.
+
+**05_metric_by_lever_filter** — `metric_by_lever_filter`
+
+Real-data AUC against training step, one mean line per value of filter mode, averaged over the arms that share each value.
+
+**06_metric_by_lever_credit_fraction** — `metric_by_lever_credit_fraction`
+
+Real-data AUC against training step, one mean line per value of credit fraction, averaged over the arms that share each value.
+
+**07_metric_by_lever_intensity** — `metric_by_lever_intensity`
+
+Real-data AUC against training step, one mean line per value of prior intensity, averaged over the arms that share each value.
+
+**08_eval_metrics_p1** — `eval_metrics_p1`
 
 Each logged real-data evaluation metric, averaged over arms and datasets, against training step; the arrow in each panel title marks the improving direction.
 
-**04_per_config_p1** — `per_config_p1`
+**09_per_dataset_p1** — `per_dataset_p1`
+
+Real-data AUC against training step, one panel per evaluation dataset, credit arms (blue) against control arms (grey).
+
+**10_per_config_p1** — `per_config_p1`
 
 Per-arm training curves against step: train loss (grey, left axis) and real-data AUC (blue, right axis), one panel per configuration.
 
-**05_best_and_worst** — `best_and_worst`
+**11_final_metric_by_lever** — `final_metric_by_lever`
+
+Final real-data AUC of every finished arm as points, one column per swept lever, with a horizontal bar at each group mean.
+
+**12_best_and_worst** — `best_and_worst`
 
 Train loss and real-data AUC against training step for the best and worst arm by final AUC.
 
-**06_hardware** — `hardware`
+**13_hardware** — `hardware`
 
 GPU utilisation, throughput and peak allocated memory against training step, pooled across arms; the dashed line marks 70 percent utilisation.
 
-**07_gradient_flow** — `gradient_flow`
+**14_gradient_flow** — `gradient_flow`
 
-Mean per-block gradient L2 norm (column encoder, row encoder, ICL blocks, head) against training step, on a logarithmic axis.
+Mean per-block gradient L2 norm (column encoder, row encoder, ICL blocks, head) against training step on a logarithmic axis.
+
+**15_weight_gradient_ratios** — `weight_gradient_ratios`
+
+Mean per-block ratio of gradient norm to weight norm against training step on a logarithmic axis, one line per architecture block.
 
 ## 1.2_lgd_training
 
-**01_training_loss** — `training_loss`
+**01_palette** — `palette`
 
-Training loss against optimisation step for every LGD arm (grey), the mean across arms (black), and the best and worst arms by final real-data R² (highlighted).
+The shared colour vocabulary used on every axis of this notebook: each swatch names the prior, data source, literature overlay or annotation it marks.
 
-**02_metric_over_training** — `metric_over_training`
+**02_training_loss** — `training_loss`
 
-Real-data R², averaged over the evaluation datasets, against training step; one line per arm coloured by prior (credit versus control), with the across-arm mean in black.
+Training loss against optimisation step for every LGD arm (grey), the mean across arms (black), and the best and worst arms by final real-data R-squared (highlighted).
 
-**03_eval_metrics_p1** — `eval_metrics_p1`
+**03_metric_over_training** — `metric_over_training`
+
+Real-data R-squared, averaged over the evaluation datasets, against training step; one line per arm coloured by prior (credit versus control), with the across-arm mean in black.
+
+**04_credit_vs_control_over_training** — `credit_vs_control_over_training`
+
+Real-data R-squared against training step for credit-prior arms versus control arms; bold median lines with shaded inter-quartile bands across the arms in each group.
+
+**05_metric_by_lever_filter** — `metric_by_lever_filter`
+
+Real-data R-squared against training step, one mean line per value of filter mode, averaged over the arms that share each value.
+
+**06_metric_by_lever_credit_fraction** — `metric_by_lever_credit_fraction`
+
+Real-data R-squared against training step, one mean line per value of credit fraction, averaged over the arms that share each value.
+
+**07_metric_by_lever_intensity** — `metric_by_lever_intensity`
+
+Real-data R-squared against training step, one mean line per value of prior intensity, averaged over the arms that share each value.
+
+**08_eval_metrics_p1** — `eval_metrics_p1`
 
 Each logged real-data evaluation metric, averaged over arms and datasets, against training step; the arrow in each panel title marks the improving direction.
 
-**04_per_config_p1** — `per_config_p1`
+**09_per_dataset_p1** — `per_dataset_p1`
 
-Per-arm training curves against step: train loss (grey, left axis) and real-data R² (blue, right axis), one panel per configuration.
+Real-data R-squared against training step, one panel per evaluation dataset, credit arms (blue) against control arms (grey).
 
-**05_best_and_worst** — `best_and_worst`
+**10_per_config_p1** — `per_config_p1`
 
-Train loss and real-data R² against training step for the best and worst arm by final R².
+Per-arm training curves against step: train loss (grey, left axis) and real-data R-squared (blue, right axis), one panel per configuration.
 
-**06_hardware** — `hardware`
+**11_final_metric_by_lever** — `final_metric_by_lever`
+
+Final real-data R-squared of every finished arm as points, one column per swept lever, with a horizontal bar at each group mean.
+
+**12_best_and_worst** — `best_and_worst`
+
+Train loss and real-data R-squared against training step for the best and worst arm by final R-squared.
+
+**13_hardware** — `hardware`
 
 GPU utilisation, throughput and peak allocated memory against training step, pooled across arms; the dashed line marks 70 percent utilisation.
 
-**07_gradient_flow** — `gradient_flow`
+**14_gradient_flow** — `gradient_flow`
 
-Mean per-block gradient L2 norm (column encoder, row encoder, ICL blocks, head) against training step, on a logarithmic axis.
+Mean per-block gradient L2 norm (column encoder, row encoder, ICL blocks, head) against training step on a logarithmic axis.
+
+**15_weight_gradient_ratios** — `weight_gradient_ratios`
+
+Mean per-block ratio of gradient norm to weight norm against training step on a logarithmic axis, one line per architecture block.
 
 ## 1.3_pd_results
 
-**01_overall_ranking** — `overall_ranking`
+**01_palette** — `palette`
 
-Mean real-data AUC per model across the evaluation datasets and seeds, sorted; bars coloured by kind (credit prior, control, external baseline) with standard-deviation whiskers.
+The shared colour vocabulary used on every axis of this notebook: each swatch names the prior, data source, literature overlay or annotation it marks.
 
-**02_per_dataset** — `per_dataset`
+**02_overall_ranking** — `overall_ranking`
 
-Best real-data AUC per model kind (credit prior, control, baseline), grouped bars, one group per evaluation dataset.
+Mean AUC per model across the real datasets and seeds, sorted, as horizontal bars coloured by model kind, with error bars for the across-seed spread.
 
-**03_credit_vs_control** — `credit_vs_control`
+**03_beats_reference** — `beats_reference`
 
-Per-model real-data AUC per model, one column per kind (credit prior, control, baseline); each point is a model and the bar is the group mean.
+Each trained arm's mean AUC minus the released TabICLv2's, one horizontal bar per arm, with a reference line at zero marking the frontier model.
+
+**04_metric_grid** — `metric_grid`
+
+One panel per benchmark metric, each a bar per model kind (credit, control, baseline); the arrow in each panel title marks the improving direction.
+
+**05_per_dataset** — `per_dataset`
+
+Best AUC per model kind on each real dataset, as grouped bars, one group per dataset.
+
+**06_per_dataset_heatmap** — `per_dataset_heatmap`
+
+Best AUC of each model kind on each dataset as an annotated heatmap, datasets on the vertical axis and kinds on the horizontal.
+
+**07_credit_vs_control** — `credit_vs_control`
+
+Distribution of per-model mean AUC for credit-prior arms, control arms and external baselines; one point per model with a bar at each group mean.
+
+**08_literature_landscape** — `literature_landscape`
+
+Reported ROC-AUC on real credit datasets drawn from the tfm-library, one horizontal bar per published result, each on its paper's own full-dataset protocol rather than the 1024-row in-context setting used elsewhere in this notebook.
 
 ## 1.4_lgd_results
 
-**01_overall_ranking** — `overall_ranking`
+**01_palette** — `palette`
 
-Mean real-data R² per model across the evaluation datasets and seeds, sorted; bars coloured by kind (credit prior, control, external baseline) with standard-deviation whiskers.
+The shared colour vocabulary used on every axis of this notebook: each swatch names the prior, data source, literature overlay or annotation it marks.
 
-**02_per_dataset** — `per_dataset`
+**02_overall_ranking** — `overall_ranking`
 
-Best real-data R² per model kind (credit prior, control, baseline), grouped bars, one group per evaluation dataset.
+Mean R-squared per model across the real datasets and seeds, sorted, as horizontal bars coloured by model kind, with error bars for the across-seed spread.
 
-**03_credit_vs_control** — `credit_vs_control`
+**03_beats_reference** — `beats_reference`
 
-Per-model real-data R² per model, one column per kind (credit prior, control, baseline); each point is a model and the bar is the group mean.
+Each trained arm's mean R-squared minus the released TabICLv2's, one horizontal bar per arm, with a reference line at zero marking the frontier model.
+
+**04_metric_grid** — `metric_grid`
+
+One panel per benchmark metric, each a bar per model kind (credit, control, baseline); the arrow in each panel title marks the improving direction.
+
+**05_per_dataset** — `per_dataset`
+
+Best R-squared per model kind on each real dataset, as grouped bars, one group per dataset.
+
+**06_per_dataset_heatmap** — `per_dataset_heatmap`
+
+Best R-squared of each model kind on each dataset as an annotated heatmap, datasets on the vertical axis and kinds on the horizontal.
+
+**07_credit_vs_control** — `credit_vs_control`
+
+Distribution of per-model mean R-squared for credit-prior arms, control arms and external baselines; one point per model with a bar at each group mean.
+
+**08_literature_landscape** — `literature_landscape`
+
+Reported ROC-AUC on real credit datasets drawn from the tfm-library, one horizontal bar per published result, each on its paper's own full-dataset protocol rather than the 1024-row in-context setting used elsewhere in this notebook.
 
 ## 2.1_pd_finetuning
 
-**01_training_loss** — `training_loss`
+**01_palette** — `palette`
 
-Training loss against optimisation step for every PD fine-tuning arm (grey), the mean across arms (black), and the best and worst arms by final real-data AUC (highlighted).
+The shared colour vocabulary used on every axis of this notebook: each swatch names the prior, data source, literature overlay or annotation it marks.
 
-**02_metric_over_training** — `metric_over_training`
+**02_training_loss** — `training_loss`
 
-Real-data AUC, averaged over the evaluation datasets, against training step; one line per arm coloured by prior (credit versus continued-pretraining control), with the across-arm mean in black.
+Training loss against optimisation step for every PD arm (grey), the mean across arms (black), and the best and worst arms by final real-data AUC (highlighted).
 
-**03_real_vs_ood** — `real_vs_ood`
+**03_metric_over_training** — `metric_over_training`
 
-Mean AUC on the real-credit datasets (solid) and the out-of-domain suites (dashed) against training step, averaged across fine-tuning arms.
+Real-data AUC, averaged over the evaluation datasets, against training step; one line per arm coloured by prior (credit versus control), with the across-arm mean in black.
 
-**04_eval_metrics_p1** — `eval_metrics_p1`
+**04_credit_vs_control_over_training** — `credit_vs_control_over_training`
+
+Real-data AUC against training step for credit-prior arms versus control arms; bold median lines with shaded inter-quartile bands across the arms in each group.
+
+**05_metric_by_lever_strategy** — `metric_by_lever_strategy`
+
+Real-data AUC against training step, one mean line per value of freeze strategy, averaged over the arms that share each value.
+
+**06_metric_by_lever_l2sp** — `metric_by_lever_l2sp`
+
+Real-data AUC against training step, one mean line per value of L2-SP, averaged over the arms that share each value.
+
+**07_metric_by_lever_credit_fraction** — `metric_by_lever_credit_fraction`
+
+Real-data AUC against training step, one mean line per value of credit fraction, averaged over the arms that share each value.
+
+**08_real_vs_ood** — `real_vs_ood`
+
+Mean AUC on the real-credit datasets (solid) and the out-of-domain suites (dashed) against training step, averaged across the fine-tuning arms.
+
+**09_eval_metrics_p1** — `eval_metrics_p1`
 
 Each logged real-data evaluation metric, averaged over arms and datasets, against training step; the arrow in each panel title marks the improving direction.
 
-**05_per_config_p1** — `per_config_p1`
+**10_per_dataset_p1** — `per_dataset_p1`
 
-Per-arm training curves against step: train loss (grey, left axis) and real-data AUC (blue, right axis), one panel per fine-tuning configuration.
+Real-data AUC against training step, one panel per evaluation dataset, credit arms (blue) against control arms (grey).
 
-**06_best_and_worst** — `best_and_worst`
+**11_per_config_p1** — `per_config_p1`
 
-Train loss and real-data AUC against training step for the best and worst fine-tuning arm by final AUC.
+Per-arm training curves against step: train loss (grey, left axis) and real-data AUC (blue, right axis), one panel per configuration.
 
-**07_hardware** — `hardware`
+**12_final_metric_by_lever** — `final_metric_by_lever`
+
+Final real-data AUC of every finished arm as points, one column per swept lever, with a horizontal bar at each group mean.
+
+**13_best_and_worst** — `best_and_worst`
+
+Train loss and real-data AUC against training step for the best and worst arm by final AUC.
+
+**14_hardware** — `hardware`
 
 GPU utilisation, throughput and peak allocated memory against training step, pooled across arms; the dashed line marks 70 percent utilisation.
 
-**08_gradient_flow** — `gradient_flow`
+**15_gradient_flow** — `gradient_flow`
 
-Mean per-block gradient L2 norm (column encoder, row encoder, ICL blocks, head) against training step on a logarithmic axis; a frozen stack sits on the floor.
+Mean per-block gradient L2 norm (column encoder, row encoder, ICL blocks, head) against training step on a logarithmic axis.
+
+**16_weight_gradient_ratios** — `weight_gradient_ratios`
+
+Mean per-block ratio of gradient norm to weight norm against training step on a logarithmic axis, one line per architecture block.
 
 ## 2.2_lgd_finetuning
 
-**01_training_loss** — `training_loss`
+**01_palette** — `palette`
 
-Training loss against optimisation step for every LGD fine-tuning arm (grey), the mean across arms (black), and the best and worst arms by final real-data R-squared (highlighted).
+The shared colour vocabulary used on every axis of this notebook: each swatch names the prior, data source, literature overlay or annotation it marks.
 
-**02_metric_over_training** — `metric_over_training`
+**02_training_loss** — `training_loss`
 
-Real-data R-squared, averaged over the evaluation datasets, against training step; one line per arm coloured by prior (credit versus continued-pretraining control), with the across-arm mean in black.
+Training loss against optimisation step for every LGD arm (grey), the mean across arms (black), and the best and worst arms by final real-data R-squared (highlighted).
 
-**03_real_vs_ood** — `real_vs_ood`
+**03_metric_over_training** — `metric_over_training`
 
-Mean R-squared on the real-credit datasets (solid) and the out-of-domain suites (dashed) against training step, averaged across fine-tuning arms.
+Real-data R-squared, averaged over the evaluation datasets, against training step; one line per arm coloured by prior (credit versus control), with the across-arm mean in black.
 
-**04_eval_metrics_p1** — `eval_metrics_p1`
+**04_credit_vs_control_over_training** — `credit_vs_control_over_training`
+
+Real-data R-squared against training step for credit-prior arms versus control arms; bold median lines with shaded inter-quartile bands across the arms in each group.
+
+**05_metric_by_lever_strategy** — `metric_by_lever_strategy`
+
+Real-data R-squared against training step, one mean line per value of freeze strategy, averaged over the arms that share each value.
+
+**06_metric_by_lever_l2sp** — `metric_by_lever_l2sp`
+
+Real-data R-squared against training step, one mean line per value of L2-SP, averaged over the arms that share each value.
+
+**07_metric_by_lever_credit_fraction** — `metric_by_lever_credit_fraction`
+
+Real-data R-squared against training step, one mean line per value of credit fraction, averaged over the arms that share each value.
+
+**08_real_vs_ood** — `real_vs_ood`
+
+Mean R-squared on the real-credit datasets (solid) and the out-of-domain suites (dashed) against training step, averaged across the fine-tuning arms.
+
+**09_eval_metrics_p1** — `eval_metrics_p1`
 
 Each logged real-data evaluation metric, averaged over arms and datasets, against training step; the arrow in each panel title marks the improving direction.
 
-**05_per_config_p1** — `per_config_p1`
+**10_per_dataset_p1** — `per_dataset_p1`
 
-Per-arm training curves against step: train loss (grey, left axis) and real-data R-squared (blue, right axis), one panel per fine-tuning configuration.
+Real-data R-squared against training step, one panel per evaluation dataset, credit arms (blue) against control arms (grey).
 
-**06_best_and_worst** — `best_and_worst`
+**11_per_config_p1** — `per_config_p1`
 
-Train loss and real-data R-squared against training step for the best and worst fine-tuning arm by final R-squared.
+Per-arm training curves against step: train loss (grey, left axis) and real-data R-squared (blue, right axis), one panel per configuration.
 
-**07_hardware** — `hardware`
+**12_final_metric_by_lever** — `final_metric_by_lever`
+
+Final real-data R-squared of every finished arm as points, one column per swept lever, with a horizontal bar at each group mean.
+
+**13_best_and_worst** — `best_and_worst`
+
+Train loss and real-data R-squared against training step for the best and worst arm by final R-squared.
+
+**14_hardware** — `hardware`
 
 GPU utilisation, throughput and peak allocated memory against training step, pooled across arms; the dashed line marks 70 percent utilisation.
 
-**08_gradient_flow** — `gradient_flow`
+**15_gradient_flow** — `gradient_flow`
 
-Mean per-block gradient L2 norm (column encoder, row encoder, ICL blocks, head) against training step on a logarithmic axis; a frozen stack sits on the floor.
+Mean per-block gradient L2 norm (column encoder, row encoder, ICL blocks, head) against training step on a logarithmic axis.
+
+**16_weight_gradient_ratios** — `weight_gradient_ratios`
+
+Mean per-block ratio of gradient norm to weight norm against training step on a logarithmic axis, one line per architecture block.
 
 ## 2.3_pd_results
 
-**01_overall_ranking** — `overall_ranking`
+**01_palette** — `palette`
 
-Mean AUC per model across the real datasets and seeds, sorted, with bars coloured by model kind (credit prior, continued-pretraining control, external baseline).
+The shared colour vocabulary used on every axis of this notebook: each swatch names the prior, data source, literature overlay or annotation it marks.
 
-**02_per_dataset** — `per_dataset`
+**02_overall_ranking** — `overall_ranking`
 
-Best AUC per model kind on each real dataset, grouped bars per dataset, so no single dataset is hidden behind an average.
+Mean AUC per model across the real datasets and seeds, sorted, as horizontal bars coloured by model kind, with error bars for the across-seed spread.
 
-**03_credit_vs_control** — `credit_vs_control`
+**03_beats_reference** — `beats_reference`
 
-Distribution of per-model mean AUC for credit-prior arms, control arms and external baselines; each point is one model and the bar is the group mean.
+Each trained arm's mean AUC minus the released TabICLv2's, one horizontal bar per arm, with a reference line at zero marking the frontier model.
 
-**04_lever_effect** — `lever_effect`
+**04_metric_grid** — `metric_grid`
+
+One panel per benchmark metric, each a bar per model kind (credit, control, baseline); the arrow in each panel title marks the improving direction.
+
+**05_per_dataset** — `per_dataset`
+
+Best AUC per model kind on each real dataset, as grouped bars, one group per dataset.
+
+**06_per_dataset_heatmap** — `per_dataset_heatmap`
+
+Best AUC of each model kind on each dataset as an annotated heatmap, datasets on the vertical axis and kinds on the horizontal.
+
+**07_credit_vs_control** — `credit_vs_control`
+
+Distribution of per-model mean AUC for credit-prior arms, control arms and external baselines; one point per model with a bar at each group mean.
+
+**08_lever_effect** — `lever_effect`
 
 Mean AUC grouped by each fine-tuning lever in turn — credit fraction, freeze strategy, L2-SP alpha and learning rate — one panel per lever.
 
+**09_literature_landscape** — `literature_landscape`
+
+Reported ROC-AUC on real credit datasets drawn from the tfm-library, one horizontal bar per published result, each on its paper's own full-dataset protocol rather than the 1024-row in-context setting used elsewhere in this notebook.
+
 ## 2.4_lgd_results
 
-**01_overall_ranking** — `overall_ranking`
+**01_palette** — `palette`
 
-Mean R-squared per model across the real datasets and seeds, sorted, with bars coloured by model kind (credit prior, continued-pretraining control, external baseline).
+The shared colour vocabulary used on every axis of this notebook: each swatch names the prior, data source, literature overlay or annotation it marks.
 
-**02_per_dataset** — `per_dataset`
+**02_overall_ranking** — `overall_ranking`
 
-Best R-squared per model kind on each real dataset, grouped bars per dataset, so no single dataset is hidden behind an average.
+Mean R-squared per model across the real datasets and seeds, sorted, as horizontal bars coloured by model kind, with error bars for the across-seed spread.
 
-**03_credit_vs_control** — `credit_vs_control`
+**03_beats_reference** — `beats_reference`
 
-Distribution of per-model mean R-squared for credit-prior arms, control arms and external baselines; each point is one model and the bar is the group mean.
+Each trained arm's mean R-squared minus the released TabICLv2's, one horizontal bar per arm, with a reference line at zero marking the frontier model.
 
-**04_lever_effect** — `lever_effect`
+**04_metric_grid** — `metric_grid`
+
+One panel per benchmark metric, each a bar per model kind (credit, control, baseline); the arrow in each panel title marks the improving direction.
+
+**05_per_dataset** — `per_dataset`
+
+Best R-squared per model kind on each real dataset, as grouped bars, one group per dataset.
+
+**06_per_dataset_heatmap** — `per_dataset_heatmap`
+
+Best R-squared of each model kind on each dataset as an annotated heatmap, datasets on the vertical axis and kinds on the horizontal.
+
+**07_credit_vs_control** — `credit_vs_control`
+
+Distribution of per-model mean R-squared for credit-prior arms, control arms and external baselines; one point per model with a bar at each group mean.
+
+**08_lever_effect** — `lever_effect`
 
 Mean R-squared grouped by each fine-tuning lever in turn — credit fraction, freeze strategy, L2-SP alpha and learning rate — one panel per lever.
+
+**09_literature_landscape** — `literature_landscape`
+
+Reported ROC-AUC on real credit datasets drawn from the tfm-library, one horizontal bar per published result, each on its paper's own full-dataset protocol rather than the 1024-row in-context setting used elsewhere in this notebook.

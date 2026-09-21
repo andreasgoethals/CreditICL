@@ -516,6 +516,243 @@ def gradient_flow(track: str, exp: str = "exp1"):
 
 
 # ---------------------------------------------------------------------------
+# 8. Deeper views — the comparison, the levers, and per-dataset behaviour
+# ---------------------------------------------------------------------------
+
+
+#: How each swept lever reads out of a run name, per experiment. Used to colour and group curves
+#: by the one knob a figure is about, rather than by the arm as a whole.
+def _lever_value(run_name: str, lever: str) -> str | None:
+    if lever == "intensity":  # Exp1's two prior intensities, read off the swept range
+        if "[0.12,0.3]" in run_name or "[0.15,0.6]" in run_name:
+            return "aggressive"
+        if "[0.03,0.12]" in run_name or "[0.02,0.3]" in run_name:
+            return "mild"
+        return None
+    pats = {"credit_fraction": r"credit_fraction=([0-9p.]+)", "filter": r"filter-mode=([a-z]+)",
+            "strategy": r"strategy=(full|icl_only|head_only|scratch)",
+            "l2sp": r"l2sp_alpha=([0-9pm.e+-]+)", "lr": r"-lr=([0-9pm.e+-]+)"}
+    m = re.search(pats.get(lever, r"(?!)"), run_name)
+    if not m:
+        return None
+    v = m.group(1)
+    if lever == "credit_fraction":
+        return "cf=" + v.replace("p", ".")
+    if lever == "l2sp":
+        return "L2-SP on" if v not in ("0", "0p0") else "L2-SP off"
+    if lever == "lr":
+        return "lr " + v.replace("m", "-").replace("p", ".")
+    return v
+
+
+def _real_datasets(runs: dict[str, pd.DataFrame], metric: str) -> list[str]:
+    """The real credit datasets that carry `metric`, in first-seen order."""
+    seen: list[str] = []
+    for df in runs.values():
+        for c in df.columns:
+            m = re.match(rf"real__(.+)__{re.escape(metric)}$", c)
+            if m and m.group(1) not in seen:
+                seen.append(m.group(1))
+    return seen
+
+
+def credit_vs_control_over_training(track: str, exp: str = "exp1", metric: str | None = None):
+    """The headline comparison as a curve: credit-prior arms vs control arms, median and IQR."""
+    runs = load_progress(track, exp)
+    metric = metric or HEADLINE[track]
+    style.apply()
+    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.52))
+    if not runs:
+        _empty(ax, "no progress CSVs found in output/manifests/")
+        return fig
+    grid = _common_step_grid(runs)
+    groups: dict[str, list] = {"credit prior": [], "control (cf=0)": []}
+    for name, df in runs.items():
+        s = _mean_metric(df, metric)
+        d = pd.DataFrame({"step": df["step"], "m": s}).dropna()
+        if len(d) < 2:
+            continue
+        arr = np.interp(grid, d["step"], d["m"], left=np.nan, right=np.nan)
+        groups["control (cf=0)" if _is_control(name) else "credit prior"].append(arr)
+    for label, colour in (("credit prior", style.CREDIT), ("control (cf=0)", style.ORIGINAL)):
+        stack = groups[label]
+        if not stack:
+            continue
+        arr = np.array(stack)
+        med = np.nanmedian(arr, axis=0)
+        lo, hi = np.nanpercentile(arr, [25, 75], axis=0)
+        ax.fill_between(grid, lo, hi, color=colour, alpha=0.16, lw=0)
+        ax.plot(grid, med, color=colour, lw=2.3, label=f"{label} (n={len(stack)})", zorder=4)
+    ax.set_xlabel("training step")
+    ax.set_ylabel(f"real-data {metric} (median, IQR band)")
+    ax.legend(loc="lower right")
+    style.title(ax, "Credit prior vs control", "median across arms, shaded IQR")
+    fig.suptitle(f"{track.upper()} credit vs control over training")
+    return fig
+
+
+def metric_by_lever(track: str, lever: str, exp: str = "exp1", metric: str | None = None):
+    """The headline metric over training, one mean line per value of a single swept lever."""
+    runs = load_progress(track, exp)
+    metric = metric or HEADLINE[track]
+    style.apply()
+    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.52))
+    if not runs:
+        _empty(ax, "no progress CSVs found")
+        return fig
+    grid = _common_step_grid(runs)
+    by_val: dict[str, list] = {}
+    for name, df in runs.items():
+        v = _lever_value(name, lever)
+        if v is None:
+            continue
+        s = _mean_metric(df, metric)
+        d = pd.DataFrame({"step": df["step"], "m": s}).dropna()
+        if len(d) < 2:
+            continue
+        by_val.setdefault(v, []).append(np.interp(grid, d["step"], d["m"], left=np.nan, right=np.nan))
+    if not by_val:
+        _empty(ax, f"no arms carry the '{lever}' lever")
+        return fig
+    for (v, stack), colour in zip(sorted(by_val.items()), style.SERIES):
+        ax.plot(grid, np.nanmean(np.array(stack), axis=0), color=colour, lw=1.9,
+                label=f"{v}  (n={len(stack)})")
+    ax.set_xlabel("training step")
+    ax.set_ylabel(f"real-data {metric} (mean)")
+    ax.legend(loc="lower right", title=lever.replace("_", " "))
+    style.title(ax, f"{metric.upper()} by {lever.replace('_', ' ')}")
+    fig.suptitle(f"{track.upper()} {metric} by {lever}")
+    return fig
+
+
+def per_dataset_pages(track: str, exp: str = "exp1", per_page: int = 6) -> int:
+    runs = load_progress(track, exp)
+    n = len(_real_datasets(runs, HEADLINE[track])) if runs else 0
+    return max(1, int(np.ceil(n / per_page)))
+
+
+def per_dataset_curves(track: str, page: int = 1, exp: str = "exp1", per_page: int = 6,
+                       metric: str | None = None):
+    """The headline metric over training, one panel per real dataset — credit (blue) vs control."""
+    runs = load_progress(track, exp)
+    metric = metric or HEADLINE[track]
+    style.apply()
+    datasets = _real_datasets(runs, metric) if runs else []
+    pages = max(1, int(np.ceil(len(datasets) / per_page)))
+    chunk = datasets[(page - 1) * per_page: page * per_page]
+    ncols = 3
+    nrows = max(1, int(np.ceil(len(chunk) / ncols)))
+    fig, axes = plt.subplots(nrows, ncols, figsize=style.grid_figsize(ncols, nrows, panel_ratio=0.84))
+    axes = np.atleast_1d(axes).ravel()
+    for ax in axes:
+        ax.axis("off")
+    if not chunk:
+        _empty(axes[0], "no per-dataset metrics logged yet")
+    grid = _common_step_grid(runs) if runs else np.array([0.0, 1.0])
+    for ax, ds in zip(axes, chunk):
+        ax.axis("on")
+        col = f"real__{ds}__{metric}"
+        cstack, ostack = [], []
+        for name, df in runs.items():
+            if col not in df:
+                continue
+            d = df[["step", col]].dropna()
+            if len(d) < 2:
+                continue
+            arr = np.interp(grid, d["step"], d[col], left=np.nan, right=np.nan)
+            (ostack if _is_control(name) else cstack).append(arr)
+        if cstack:
+            ax.plot(grid, np.nanmean(np.array(cstack), axis=0), color=style.CREDIT, lw=1.6)
+        if ostack:
+            ax.plot(grid, np.nanmean(np.array(ostack), axis=0), color=style.ORIGINAL, lw=1.4)
+        ax.set_xlabel("step")
+        style.title(ax, ds[:22])
+    fig.suptitle(f"{track.upper()} {metric} per dataset{style.page_suffix(page, pages)}")
+    return fig
+
+
+def weight_gradient_ratios(track: str, exp: str = "exp1"):
+    """Per-block gradient-to-weight ratio over training — the interpretable "is it learning?"."""
+    tel = load_telemetry(track, exp)
+    style.apply()
+    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.50))
+    blocks = [("gw_ratio_col", "column encoder"), ("gw_ratio_row", "row encoder"),
+              ("gw_ratio_icl", "ICL blocks"), ("gw_ratio_head", "head")]
+    have = False
+    for (col, label), colour in zip(blocks, style.SERIES):
+        allsteps = sorted({int(s) for df in tel.values() if col in df
+                           for s in df.dropna(subset=[col])["step"]})
+        if not allsteps:
+            continue
+        grid = np.array(allsteps)
+        stacks = []
+        for df in tel.values():
+            if col not in df:
+                continue
+            d = df.dropna(subset=[col])
+            if len(d) >= 2:
+                stacks.append(np.interp(grid, d["step"], d[col], left=np.nan, right=np.nan))
+        if stacks:
+            ax.plot(grid, np.nanmean(np.array(stacks), axis=0), color=colour, lw=1.6, label=label)
+            have = True
+    if not have:
+        _empty(ax, "no gradient-to-weight ratios logged (grad_every=0?)")
+        return fig
+    ax.set_yscale("log")
+    ax.set_xlabel("training step")
+    ax.set_ylabel("gradient / weight (log)")
+    ax.legend(loc="upper right")
+    style.title(ax, "Gradient-to-weight ratio", "a block far below the rest is frozen")
+    fig.suptitle(f"{track.upper()} gradient-to-weight ratio")
+    return fig
+
+
+def final_metric_by_lever(track: str, exp: str = "exp1", metric: str | None = None):
+    """Final headline metric of every finished arm, grouped by each swept lever in turn."""
+    runs = load_progress(track, exp)
+    metric = metric or HEADLINE[track]
+    style.apply()
+    levers = (("credit_fraction", "credit fraction"), ("filter", "filter mode"),
+              ("intensity", "prior intensity")) if exp == "exp1" else \
+             (("credit_fraction", "credit fraction"), ("strategy", "freeze strategy"),
+              ("l2sp", "L2-SP"), ("lr", "learning rate"))
+    n = len(levers)
+    ncols = min(n, 2)
+    nrows = int(np.ceil(n / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=style.grid_figsize(ncols, nrows, panel_ratio=0.72))
+    axes = np.atleast_1d(axes).ravel()
+    for ax in axes:
+        ax.axis("off")
+    finals = {name: _final(_mean_metric(df, metric)) for name, df in runs.items()} if runs else {}
+    finals = {k: v for k, v in finals.items() if not np.isnan(v)}
+    if not finals:
+        _empty(axes[0], "no finished arms to summarise yet")
+        return fig
+    jitter = np.random.default_rng(0)
+    for ax, (lever, label) in zip(axes, levers):
+        by: dict[str, list] = {}
+        for name, v in finals.items():
+            lv = _lever_value(name, lever)
+            if lv is not None:
+                by.setdefault(lv, []).append(v)
+        if not by:
+            continue
+        ax.axis("on")
+        xs = sorted(by)
+        for i, x in enumerate(xs):
+            vals = np.array(by[x])
+            ax.scatter(np.full(len(vals), i) + (jitter.random(len(vals)) - 0.5) * 0.16, vals,
+                       s=20, color=style.CREDIT, alpha=0.6, edgecolor="white", linewidth=0.3)
+            ax.plot([i - 0.22, i + 0.22], [vals.mean()] * 2, color=style.INK, lw=1.8, zorder=4)
+        ax.set_xticks(range(len(xs)))
+        ax.set_xticklabels(xs, fontsize=7, rotation=15, ha="right")
+        ax.set_ylabel(metric, fontsize=8)
+        style.title(ax, label)
+    fig.suptitle(f"{track.upper()} final {metric} by lever")
+    return fig
+
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 

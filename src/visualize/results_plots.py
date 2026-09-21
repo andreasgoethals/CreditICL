@@ -106,6 +106,25 @@ def _kind(model: str) -> str:
 _KIND_COLOUR = {"credit": style.CREDIT, "control": style.ORIGINAL, "baseline": style.REAL}
 
 
+def _with_identity(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
+    """`(df + an '__id__' column, '__id__')`, where the id identifies a model correctly for BOTH
+    our arms and the reference.
+
+    Our 60 fine-tuning arms all share `model = "crediticl"` and are told apart by the run name in
+    `info_run_name`; the reference and baselines (released TabICLv2, CatBoost, …) carry their name in
+    `model` and leave the run-name column blank. Grouping on either column alone therefore collapses
+    or misclassifies one side — so the id is the run name where it is present and `model` otherwise.
+    """
+    df = df.copy()
+    lever_col = _model_col(df)
+    ident = df[lever_col].astype(str)
+    if "model" in df.columns and lever_col != "model":
+        has_lever = ident.str.contains("|".join(map(re.escape, _LEVER_TOKENS)), na=False)
+        ident = ident.where(has_lever, df["model"].astype(str))
+    df["__id__"] = ident
+    return df, "__id__"
+
+
 def available_metrics(df: pd.DataFrame) -> list[str]:
     known = ["auc", "ap", "r2", "rmse", "mae", "pinball", "crps", "brier", "logloss", "ks",
              "calibration_slope", "boundary_mass_abs_err", "coverage_80"]
@@ -127,7 +146,7 @@ def overall_ranking(track: str, exp: str = "exp1", metric: str | None = None):
         _empty(ax, "no benchmark results in output/results/%s/eval/ yet" % track)
         return fig
 
-    mc = _model_col(df)
+    df, mc = _with_identity(df)
     agg = df.groupby(mc)[metric].agg(["mean", "std"]).reset_index()
     agg["kind"] = agg[mc].map(_kind)
     agg = agg.sort_values("mean", ascending=HIGHER_IS_BETTER.get(metric, True))
@@ -160,8 +179,7 @@ def per_dataset(track: str, exp: str = "exp1", metric: str | None = None):
         _empty(ax, "no per-dataset benchmark results yet")
         return fig
 
-    mc = _model_col(df)
-    df = df.copy()
+    df, mc = _with_identity(df)
     df["kind"] = df[mc].map(_kind)
     # Best score of each kind on each dataset — the fair per-dataset comparison.
     best = df.groupby(["dataset", "kind"])[metric].agg("max" if HIGHER_IS_BETTER.get(metric, True) else "min")
@@ -197,7 +215,7 @@ def credit_vs_control(track: str, exp: str = "exp1", metric: str | None = None):
         _empty(ax, "no benchmark results yet — this is the figure that answers the experiment")
         return fig
 
-    mc = _model_col(df)
+    df, mc = _with_identity(df)
     per_model = df.groupby(mc)[metric].mean().reset_index()
     per_model["kind"] = per_model[mc].map(_kind)
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.44))
@@ -272,6 +290,109 @@ def lever_effect(track: str, exp: str = "exp2", metric: str | None = None):
     return fig
 
 
+# ---------------------------------------------------------------------------
+# 5. Deeper views — every metric, every dataset, and the reference gap
+# ---------------------------------------------------------------------------
+
+
+def metric_grid(track: str, exp: str = "exp1"):
+    """One panel per benchmark metric, each a bar per model kind — the whole scoreboard at once."""
+    df = load_results(track, exp)
+    style.apply()
+    metrics = available_metrics(df) if df is not None else []
+    ncols = 3
+    nrows = max(1, int(np.ceil(len(metrics) / ncols)))
+    fig, axes = plt.subplots(nrows, ncols, figsize=style.grid_figsize(ncols, nrows, panel_ratio=0.82))
+    axes = np.atleast_1d(axes).ravel()
+    for ax in axes:
+        ax.axis("off")
+    if df is None or not metrics:
+        _empty(axes[0], "no benchmark results in output/results/ yet")
+        return fig
+    df, mc = _with_identity(df)
+    kinds = [k for k in ("credit", "control", "baseline") if df[mc].map(_kind).eq(k).any()]
+    dk = df.assign(_kind=df[mc].map(_kind))
+    for ax, metric in zip(axes, metrics):
+        ax.axis("on")
+        means = dk.groupby("_kind")[metric].mean()
+        vals = [means.get(k, np.nan) for k in kinds]
+        ax.bar(range(len(kinds)), vals, color=[_KIND_COLOUR[k] for k in kinds], width=0.66)
+        ax.set_xticks(range(len(kinds)))
+        ax.set_xticklabels(kinds, fontsize=7, rotation=15, ha="right")
+        arrow = "↑" if HIGHER_IS_BETTER.get(metric, True) else "↓"
+        style.title(ax, f"{metric}  ({arrow} better)")
+    fig.suptitle(f"{track.upper()} every metric by model kind")
+    return fig
+
+
+def per_dataset_heatmap(track: str, exp: str = "exp1", metric: str | None = None):
+    """Best headline score of each model kind on each dataset, as an annotated heatmap."""
+    df = load_results(track, exp)
+    metric = metric or HEADLINE[track]
+    style.apply()
+    if df is None or metric not in df.columns or "dataset" not in df.columns:
+        fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.35))
+        _empty(ax, "no per-dataset benchmark results yet")
+        return fig
+    df, mc = _with_identity(df)
+    d = df.assign(_kind=df[mc].map(_kind))
+    agg = "max" if HIGHER_IS_BETTER.get(metric, True) else "min"
+    piv = d.groupby(["dataset", "_kind"])[metric].agg(agg).unstack("_kind")
+    kinds = [k for k in ("credit", "control", "baseline") if k in piv.columns]
+    piv = piv[kinds]
+    fig, ax = plt.subplots(figsize=style.row_figsize(len(piv)))
+    im = ax.imshow(piv.values, aspect="auto", cmap=style.CMAP_SEQ)
+    ax.set_xticks(range(len(kinds)))
+    ax.set_xticklabels(kinds)
+    ax.set_yticks(range(len(piv)))
+    ax.set_yticklabels([str(v)[:18] for v in piv.index], fontsize=7)
+    ax.grid(False)
+    for i in range(len(piv)):
+        for j in range(len(kinds)):
+            v = piv.values[i, j]
+            if not np.isnan(v):
+                ax.text(j, i, f"{v:.2f}", ha="center", va="center", fontsize=6, color="white")
+    fig.colorbar(im, ax=ax, shrink=0.55, label=metric)
+    style.title(ax, f"Best {metric} per dataset and kind")
+    fig.suptitle(f"{track.upper()} {metric} heatmap")
+    return fig
+
+
+def beats_reference(track: str, exp: str = "exp1", metric: str | None = None):
+    """Every trained arm's headline score minus the released TabICLv2's — who clears the frontier."""
+    df = load_results(track, exp)
+    metric = metric or HEADLINE[track]
+    style.apply()
+    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.46))
+    if df is None or metric not in df.columns:
+        _empty(ax, "no benchmark results yet")
+        return fig
+    df, mc = _with_identity(df)
+    per = df.groupby(mc)[metric].mean()
+    is_ref = [("tabiclv2" in str(m).lower()) for m in per.index]
+    if not any(is_ref):
+        _empty(ax, "no released-TabICLv2 reference column in results yet")
+        return fig
+    ref = float(per[is_ref].mean())
+    ours = per[[_kind(m) in ("credit", "control") for m in per.index]]
+    if ours.empty:
+        _empty(ax, "no trained arms scored yet")
+        return fig
+    higher = HIGHER_IS_BETTER.get(metric, True)
+    order = ours.sort_values(ascending=not higher)
+    delta = order.values - ref
+    better = delta > 0 if higher else delta < 0
+    ax.barh(np.arange(len(order)), delta,
+            color=[style.CREDIT if b else style.MUTED for b in better])
+    ax.axvline(0, color=style.REFERENCE, lw=1.2)
+    ax.set_yticks([])
+    ax.set_xlabel(f"{metric} minus released TabICLv2 (right of 0 = beats it)")
+    n = int(better.sum())
+    style.title(ax, f"{n}/{len(order)} arms beat released TabICLv2")
+    fig.suptitle(f"{track.upper()} vs the released reference")
+    return fig
+
+
 def results_summary(track: str, exp: str = "exp1") -> str:
     """Text summary of the benchmark, for the notebook's final cell."""
     df = load_results(track, exp)
@@ -281,7 +402,7 @@ def results_summary(track: str, exp: str = "exp1") -> str:
                 f"  The benchmark (phase 2) runs once every arm of the track has trained;\n"
                 f"  re-run this notebook after the phase-2 array finishes scoring.")
     metric = HEADLINE[track]
-    mc = _model_col(df)
+    df, mc = _with_identity(df)
     lines = [f"{exp.upper()} {track.upper()} RESULTS — {df[mc].nunique()} models on "
              f"{df['dataset'].nunique() if 'dataset' in df else '?'} datasets",
              f"  metrics: {', '.join(available_metrics(df)) or 'none'}"]

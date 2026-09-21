@@ -1,26 +1,56 @@
 [
   {
     "index": 1,
-    "stem": "01_overall_ranking",
-    "name": "overall_ranking",
-    "caption": "Mean R-squared per model across the real datasets and seeds, sorted, with bars coloured by model kind (credit prior, continued-pretraining control, external baseline)."
+    "stem": "01_palette",
+    "name": "palette",
+    "caption": "The shared colour vocabulary used on every axis of this notebook: each swatch names the prior, data source, literature overlay or annotation it marks."
   },
   {
     "index": 2,
-    "stem": "02_per_dataset",
-    "name": "per_dataset",
-    "caption": "Best R-squared per model kind on each real dataset, grouped bars per dataset, so no single dataset is hidden behind an average."
+    "stem": "02_overall_ranking",
+    "name": "overall_ranking",
+    "caption": "Mean R-squared per model across the real datasets and seeds, sorted, as horizontal bars coloured by model kind, with error bars for the across-seed spread."
   },
   {
     "index": 3,
-    "stem": "03_credit_vs_control",
-    "name": "credit_vs_control",
-    "caption": "Distribution of per-model mean R-squared for credit-prior arms, control arms and external baselines; each point is one model and the bar is the group mean."
+    "stem": "03_beats_reference",
+    "name": "beats_reference",
+    "caption": "Each trained arm's mean R-squared minus the released TabICLv2's, one horizontal bar per arm, with a reference line at zero marking the frontier model."
   },
   {
     "index": 4,
-    "stem": "04_lever_effect",
+    "stem": "04_metric_grid",
+    "name": "metric_grid",
+    "caption": "One panel per benchmark metric, each a bar per model kind (credit, control, baseline); the arrow in each panel title marks the improving direction."
+  },
+  {
+    "index": 5,
+    "stem": "05_per_dataset",
+    "name": "per_dataset",
+    "caption": "Best R-squared per model kind on each real dataset, as grouped bars, one group per dataset."
+  },
+  {
+    "index": 6,
+    "stem": "06_per_dataset_heatmap",
+    "name": "per_dataset_heatmap",
+    "caption": "Best R-squared of each model kind on each dataset as an annotated heatmap, datasets on the vertical axis and kinds on the horizontal."
+  },
+  {
+    "index": 7,
+    "stem": "07_credit_vs_control",
+    "name": "credit_vs_control",
+    "caption": "Distribution of per-model mean R-squared for credit-prior arms, control arms and external baselines; one point per model with a bar at each group mean."
+  },
+  {
+    "index": 8,
+    "stem": "08_lever_effect",
     "name": "lever_effect",
     "caption": "Mean R-squared grouped by each fine-tuning lever in turn \u2014 credit fraction, freeze strategy, L2-SP alpha and learning rate \u2014 one panel per lever."
+  },
+  {
+    "index": 9,
+    "stem": "09_literature_landscape",
+    "name": "literature_landscape",
+    "caption": "Reported ROC-AUC on real credit datasets drawn from the tfm-library, one horizontal bar per published result, each on its paper's own full-dataset protocol rather than the 1024-row in-context setting used elsewhere in this notebook."
   }
 ]

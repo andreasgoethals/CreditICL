@@ -44,7 +44,7 @@ from src.prior.pool import POOL_VERSION, PoolReader, variant_dir
 from src.prior.rng import PriorRNG
 from src.utils.paths import prior_cache_dir
 from src.utils.target_stats import target_stats
-from src.visualize import style
+from src.visualize import literature, style
 
 #: Variants are drawn in this order when present, so `original` is always the
 #: leftmost/greyest reference rather than landing wherever the filesystem put it.
@@ -339,6 +339,9 @@ def plot_base_rate_by_variant(loaded: dict[str, list[SyntheticTask]], real_refer
     ax.axvline(0.5, color=style.MUTED, lw=1.2, ls="--", zorder=1)
     ax.annotate("balance", (0.5, 1.0), xycoords=("data", "axes fraction"), fontsize=6.5,
                 color=style.MUTED, ha="center", va="bottom")
+    # Below ~10% a default-threshold classifier collapses to the majority class on real credit
+    # data (Tanna 2026) — the danger zone the variants' left tails reach into.
+    literature.line(ax, "tanna_paradox", label="Tanna: collapse < 10%")
     ax.set_ylabel("tasks")
     # Legend OUTSIDE the axes, above it. Inside, it either sat on the bars or on the 50% line
     # depending on where the data happened to fall — which is a bug that reappears with new
