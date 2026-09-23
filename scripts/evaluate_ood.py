@@ -33,6 +33,7 @@ def main() -> int:
     ap.add_argument("--kinds", default="classification,regression")
     ap.add_argument("--test-size", type=float, default=0.2)
     ap.add_argument("--max-rows", type=int, default=10_000)
+    ap.add_argument("--max-context-rows", type=int, default=None)
     ap.add_argument("--reference", default=None,
                     help="model to report deltas against, e.g. the control checkpoint")
     ap.add_argument("--tag", default=None)
@@ -81,6 +82,7 @@ def main() -> int:
         crediticl_task=(task if "crediticl" in models else None),
         test_size=args.test_size,
         max_rows=args.max_rows,
+        max_context_rows=args.max_context_rows,
         model_kwargs=model_kwargs,
     )
     df = run_ood(cfg)
@@ -98,7 +100,8 @@ def main() -> int:
 
     log.info("results -> %s", out)
     log.info("log file -> %s", log_path)
-    return 0 if not df.empty and (df["status"] == "ok").any() else 1
+    return 0 if (not df.empty and (df["status"] == "ok").any()
+                 and df["status"].isin(["ok", "skipped"]).all()) else 1
 
 
 if __name__ == "__main__":

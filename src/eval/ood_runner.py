@@ -30,6 +30,7 @@ class OODEvalConfig:
     test_size: float = 0.2
     kinds: list[str] = field(default_factory=lambda: ["classification", "regression"])
     max_rows: int = 10_000
+    max_context_rows: int | None = None
     #: CC18 contains multiclass tasks, but every baseline here is binary (they were
     #: built for PD). True = score them one-vs-rest on the majority class and record
     #: that in the row; False = fail loudly rather than mis-score.
@@ -71,13 +72,6 @@ def evaluate_one_ood(
     }
     try:
         X, y, cat_indices = load_ood_dataset(entry)
-        # NaNs: the tree and linear baselines differ in tolerance, so impute here once
-        # rather than per baseline, keeping the comparison on identical inputs.
-        if not np.isfinite(X).all():
-            col_median = np.nanmedian(np.where(np.isfinite(X), X, np.nan), axis=0)
-            col_median = np.nan_to_num(col_median)
-            X = np.where(np.isfinite(X), X, col_median)
-
         if len(X) > cfg.max_rows:
             rng = np.random.default_rng(seed)
             keep = rng.choice(len(X), size=cfg.max_rows, replace=False)
@@ -101,6 +95,11 @@ def evaluate_one_ood(
                 y = (y == majority).astype(np.int64)
                 row["binarised_from_n_classes"] = n_classes
         Xtr, Xte, ytr, yte = _split(X, y, seed, cfg.test_size, stratify=is_clf)
+        # Fit imputation on training rows only; query statistics must not enter it.
+        if not np.isfinite(Xtr).all() or not np.isfinite(Xte).all():
+            med = np.nan_to_num(np.nanmedian(np.where(np.isfinite(Xtr), Xtr, np.nan), axis=0))
+            Xtr = np.where(np.isfinite(Xtr), Xtr, med)
+            Xte = np.where(np.isfinite(Xte), Xte, med)
         row.update({"n_train": len(Xtr), "n_test": len(Xte), "n_features": X.shape[1]})
 
         if not is_clf:
@@ -127,6 +126,9 @@ def evaluate_one_ood(
 
         task = "pd" if is_clf else "lgd"
         model = build(model_name, task, seed=seed, **cfg.model_kwargs.get(model_name, {}))
+        if cfg.max_context_rows is not None and hasattr(model, "max_context_rows"):
+            model.max_context_rows = cfg.max_context_rows
+        row["context_cap"] = cfg.max_context_rows
         model.fit(Xtr, ytr, cat_indices=cat_indices)
 
         if is_clf:
@@ -145,6 +147,9 @@ def evaluate_one_ood(
             pred = np.ravel(model.predict(Xte))
             row["r2"] = float(r2_score(yte, pred))
             row["rmse"] = float(np.sqrt(mean_squared_error(yte, pred)))
+
+        if not np.isfinite(row["roc_auc" if is_clf else "r2"]):
+            raise ValueError("Non-finite headline metric")
 
     except Exception as exc:  # noqa: BLE001 — one cell must not kill the sweep
         row["status"] = "failed"

@@ -55,8 +55,8 @@ if str(ROOT) not in sys.path:
 #: needs wICE. Set `--single-cluster` to put everything on Mindwell, which is simpler to reason
 #: about and slower by roughly the ratio of the two GPUs.
 SPLIT_LGD = [
-    ("mindwell", "gpu_b200", 24, "180G", "0-39"),
-    ("wice", "gpu_a100", 18, "120G", "40-74"),
+    ("mindwell", "gpu_b200", 24, "180G", 0, 40),
+    ("wice", "gpu_a100", 18, "120G", 40, None),
 ]
 
 
@@ -92,12 +92,11 @@ class Stage:
 def queued_job_names() -> set[str]:
     """Job names currently pending or running, so a re-run does not double-submit.
 
-    Best-effort: no `squeue` (a laptop, or a login node with a broken module) returns an empty
-    set, which makes this fall back to "submit it" rather than "silently skip it". Of the two
-    failure modes, a duplicate job you can cancel beats work that never starts.
+    Fail closed when the cross-cluster queue cannot be read. An unavailable scheduler
+    must never be interpreted as an empty queue and used to duplicate paid jobs.
     """
     names: set[str] = set()
-    for clusters in (["--clusters=all"], []):
+    for clusters in (["--clusters=all"],):
         try:
             out = subprocess.run(
                 ["squeue", "--me", "--noheader", "--format=%j", *clusters],
@@ -107,8 +106,8 @@ def queued_job_names() -> set[str]:
             continue
         if out.returncode == 0:
             names |= {line.strip() for line in out.stdout.splitlines() if line.strip()}
-            break
-    return names
+            return names
+    raise RuntimeError("Cannot read squeue across clusters; submission is blocked")
 
 
 def _train_stage(exp: int, track: str, queued: set[str], single_cluster: bool) -> Stage:
@@ -116,13 +115,13 @@ def _train_stage(exp: int, track: str, queued: set[str], single_cluster: bool) -
 
     cfg = ROOT / "config" / f"Exp{exp}_{track.upper()}.yaml"
     states = arm_states(cfg)
-    job_name = f"crediticl-{track}"
+    job_name = f"crediticl-exp{exp}-{track}"
     script = f"scripts/slurm/pretrain_{track}.slurm"
 
     stage = Stage(
         name=f"exp{exp}-{track}-train", exp=exp, track=track, kind="train",
         total=len(states), done=sum(1 for s in states if s.state == DONE),
-        queued=job_name in queued,
+        queued=job_name in queued or (exp == 1 and f"crediticl-{track}" in queued),
     )
     if stage.complete or stage.queued:
         return stage
@@ -133,7 +132,11 @@ def _train_stage(exp: int, track: str, queued: set[str], single_cluster: bool) -
 
     spec = array_spec(states)
     if track == "lgd" and not single_cluster and stage.done == 0:
-        for cluster, part, cores, mem, rng in SPLIT_LGD:
+        for cluster, part, cores, mem, start, end in SPLIT_LGD:
+            chunk = states[start:end]
+            if not chunk:
+                continue
+            rng = array_spec(chunk)
             stage.commands.append([
                 "sbatch", f"--clusters={cluster}", f"--partition={part}",
                 f"--cpus-per-task={cores}", f"--mem={mem}", f"--array={rng}%8", script,
@@ -144,32 +147,32 @@ def _train_stage(exp: int, track: str, queued: set[str], single_cluster: bool) -
         stage.commands.append(
             ["sbatch", "--clusters=mindwell", f"--array={spec}%8", script]
         )
+    for cmd in stage.commands:
+        cmd[1:1] = [f"--job-name={job_name}", f"--export=ALL,EXP={exp}"]
     return stage
 
 
 def _benchmark_stage(exp: int, track: str, queued: set[str], train: Stage) -> Stage:
-    from src.utils import paths
     from src.utils.config import expand_with_seeds, load
 
     cfg = ROOT / "config" / f"Exp{exp}_{track.upper()}.yaml"
     n_arms = len(expand_with_seeds(load(cfg, allow_placeholders=True)))
-    eval_dir = paths.results_dir() / track / "eval"
-
-    # One results file per arm, plus the shared reference column.
-    wanted = [f"results_exp{exp}bench_{track}_a{i}.csv" for i in range(n_arms)]
-    wanted.append(f"results_reference_{track}.csv")
-    done = sum(1 for name in wanted if (eval_dir / name).is_file())
+    from src.eval.benchmark_status import complete
+    missing = [i for i in range(n_arms + 1) if not complete(exp, track, i)]
+    done = n_arms + 1 - len(missing)
 
     stage = Stage(
         name=f"exp{exp}-{track}-benchmark", exp=exp, track=track, kind="benchmark",
-        total=len(wanted), done=done, queued="crediticl-bench" in queued,
+        total=n_arms + 1, done=done,
+        queued=f"crediticl-exp{exp}-{track}-bench" in queued or "crediticl-bench" in queued,
         blocked_by=None if train.complete else train.name,
     )
     if stage.complete or stage.queued or stage.blocked_by:
         return stage
     stage.commands.append([
         "sbatch", "--clusters=mindwell", f"--export=ALL,EXP={exp},TRACK={track}",
-        f"--array=0-{n_arms}%8", "scripts/slurm/benchmark.slurm",
+        f"--job-name=crediticl-exp{exp}-{track}-bench",
+        f"--array={','.join(map(str, missing))}%8", "scripts/slurm/benchmark.slurm",
     ])
     return stage
 
@@ -193,12 +196,21 @@ def unconfigured_tracks(exp: int, tracks: list[str]) -> list[str]:
 
 def plan(exp: int, tracks: list[str], single_cluster: bool = False) -> list[Stage]:
     """Every stage of ONE experiment, in dependency order, state read off the filesystem."""
-    queued = queued_job_names()
+    queue_error = None
+    try:
+        queued = queued_job_names()
+    except RuntimeError as exc:
+        queued, queue_error = set(), str(exc)
     stages: list[Stage] = []
     for track in tracks:
         train = _train_stage(exp, track, queued, single_cluster)
         stages.append(train)
         stages.append(_benchmark_stage(exp, track, queued, train))
+    if queue_error:
+        for stage in stages:
+            if not stage.complete:
+                stage.blocked_by = queue_error
+                stage.commands.clear()
     return stages
 
 
@@ -251,6 +263,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="WHICH EXPERIMENT to run (1, 2, or 3). Required, never a default.")
     ap.add_argument("--track", nargs="*", default=["lgd", "pd"], choices=["lgd", "pd"])
     ap.add_argument("--submit", action="store_true", help="actually sbatch what is ready")
+    ap.add_argument("--phase", choices=("all", "train", "benchmark"), default="all")
     ap.add_argument("--single-cluster", action="store_true",
                     help="keep everything on Mindwell instead of splitting LGD across two")
     args = ap.parse_args(argv)
@@ -263,6 +276,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     stages = plan(args.exp, args.track, args.single_cluster)
+    if args.phase != "all":
+        stages = [s for s in stages if s.kind == args.phase]
     print(render(stages, args.exp))
     if not args.submit:
         return 0

@@ -31,8 +31,9 @@ from src.visualize import style
 
 # Headline evaluation metric per task: the one curve a reader looks at first. Higher is better
 # for both (AUC for classification, R2 for regression), so "best/worst" is unambiguous.
-HEADLINE = {"pd": "auc", "lgd": "r2"}
+HEADLINE = {"pd": "roc_auc", "lgd": "r2"}
 HIGHER_IS_BETTER = {"auc": True, "ap": True, "r2": True, "spearman": True, "kendall": True,
+                    "roc_auc": True, "pr_auc": True,
                     "brier": False, "logloss": False, "rmse": False, "mae": False,
                     "pinball": False, "crps": False, "ks": True, "calibration_slope": True}
 
@@ -147,15 +148,19 @@ def _is_control(run_name: str) -> bool:
 
 def _metric_cols(df: pd.DataFrame, metric: str, domain: str = "real") -> list[str]:
     """Columns like `real__<dataset>__<metric>` for one metric and domain."""
-    return [c for c in df.columns if c.startswith(f"{domain}__") and c.endswith(f"__{metric}")]
+    cols = [c for c in df.columns if c.startswith(f"{domain}__") and c.endswith(f"__{metric}")]
+    alias = {"roc_auc": "auc", "pr_auc": "ap", "auc": "roc_auc", "ap": "pr_auc"}.get(metric)
+    if not cols and alias:
+        cols = [c for c in df.columns if c.startswith(f"{domain}__") and c.endswith(f"__{alias}")]
+    return cols
 
 
 def _mean_metric(df: pd.DataFrame, metric: str, domain: str = "real") -> pd.Series:
-    """The metric averaged over that domain's datasets, per step (NaN datasets ignored)."""
+    """A domain mean requires every tracked dataset; missing values remain visible."""
     cols = _metric_cols(df, metric, domain)
     if not cols:
         return pd.Series(dtype=float)
-    return df[cols].mean(axis=1, skipna=True)
+    return df[cols].mean(axis=1, skipna=False)
 
 
 def available_metrics(runs: dict[str, pd.DataFrame], domain: str = "real") -> list[str]:
@@ -488,7 +493,7 @@ def gradient_flow(track: str, exp: str = "exp1"):
               ("grad_icl", "ICL blocks"), ("grad_head", "head")]
     have = False
     for (col, label), colour in zip(blocks, style.SERIES):
-        grids, stacks = None, []
+        stacks = []
         allsteps = sorted({int(s) for df in tel.values() if col in df
                            for s in df.dropna(subset=[col])["step"]})
         if not allsteps:

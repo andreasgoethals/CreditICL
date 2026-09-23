@@ -175,6 +175,253 @@ The one thing to do differently.
 
 ## Runs
 
+## 23-09-2026 — Exp1 scheduler confirmation and recovery repair
+
+**Evidence:** Andreas's pasted login-node output at 10:30–10:39 CEST, following the downloaded
+snapshot audited below. No additional cluster jobs were launched during this repair.
+
+### Confirmed state
+
+| Work | State |
+|---|---|
+| PD array `11591462`, indices `1,4,10,16,19,25,31,34,40` | All FAILED, exit 134 |
+| LGD `11591463_13` / `_28` | COMPLETED, respectively 19:42:10 / 19:38:54 |
+| LGD `11591463_43` | RUNNING at 25:06:34 elapsed; keep it running |
+| Training totals | PD 36/45, LGD 44/45 |
+| Benchmarks | Cluster planner reports 0/46 per track |
+
+Hyperparameters and the resolved 45-arm grids are unchanged from the snapshot entry below.
+The repair preserves trained checkpoints and resumes unfinished PD arms; it is not a new sweep.
+
+### Code repairs
+
+- Synthetic validity is separate from statistical predictability. Invalid/constant targets,
+  including upstream's `-100` sentinel, are never a filter fallback. Invalid candidates have
+  bounded retries; only a valid candidate can be returned. Legitimate negative regression
+  targets remain allowed. Cached/generated batches are validated before CUDA transfer.
+- Monitoring uses configured development datasets and a common evaluation seed. TabICL's
+  internal inference AMP is explicitly disabled for the lightweight monitor; context scaling
+  uses float64 statistics. Non-finite predictions are errors. OOD target scaling and OOD
+  benchmark feature imputation use training/context rows only. Resumed CSVs preserve header
+  order, legacy curves are archived on resume, cadence aligns to the dataset count, and a final
+  monitor observation is requested at the last training step. These changes cannot repair old
+  monitoring measurements retroactively or prove the exact cause of every historic NaN.
+- The checkpoint diagnostic loader now uses the same architectural head width as the trainer
+  (ten classes for PD by default). Round-trip tests call the actual training model builder;
+  copying an obsolete two-class construction into both test sides had hidden the mismatch.
+- Training submissions and self-resubmissions carry the experiment number and distinct job
+  names. Fresh LGD splits respect the actual grid size. Scheduler lookup failure blocks
+  submission. `--phase train|benchmark` makes the requested phase explicit.
+- Benchmark jobs require the configured final checkpoint and apply the same 1,024-row TFM cap
+  to credit and OOD evaluations, for both our checkpoints and reference models. Reference OOD
+  work is restricted to its track's kind. Every configured credit dataset and the full cached
+  OOD task set must be represented. A paired-domain receipt checks complete cell coverage,
+  finite scores, protocol, run identity, checkpoint metadata and result/code fingerprints.
+  Missing/failed cells cannot be counted as complete merely because a CSV exists.
+- PD plots read production `roc_auc`/`pr_auc` names. Progress means no longer silently skip
+  failed dataset values. Prior-selection rankings exclude holdouts and incomplete configurations,
+  aggregate training seeds, and do not import legacy or other-experiment result files.
+
+### Interpretation and next actions
+
+The CPU reproduction demonstrates a real route to the observed classification abort, while the
+actual failed CUDA batches remain unavailable. Completed checkpoints are retained: these logs do
+not justify discarding the entire sweep. Resume the nine PD arms and allow LGD arm 43 to finish.
+Then benchmark all 45 checkpoints plus the shared reference task per track on credit and general
+datasets. Only after evaluation and development-set selection is Exp1 complete. Fill Exp2/Exp3
+placeholders from that decision; previously inspected holdouts remain a reporting limitation.
+
+### Validation
+
+- Full `.CreditICL/Scripts/python.exe -m pytest -q`: **912 passed, 1 skipped, 3 warnings in
+  538.38 s**. Git's installed Bash was placed on this process's PATH, so shell syntax coverage
+  ran rather than being skipped. The remaining skip is the upstream-unavailable branch
+  (upstream is installed); warnings are the three existing scheduler-order test fixtures.
+- The subsequent stale-grid loader refinement passed **44 focused tests**. New modules
+  pass Ruff, and all changed Python files pass Ruff's undefined/unused-name checks.
+- Full notebook runner: **11/11 OK, 135 PDF figures**. All eight experiment notebooks also
+  reran after the final plotting refinement; their text matches the complete combined summary.
+  All 15 shell scripts passed Bash syntax checks.
+- Snapshot replay reproduces exactly PD indices `1,4,10,16,19,25,31,34,40` and no LGD submission.
+- All **826 original downloaded files** retain their original SHA-256 fingerprints.
+  No data, checkpoint, submodule, installation, push or cluster job was modified/submitted.
+
+## 23-09-2026 — Exp1 rerun audit — 80/90 complete; one LGD arm progressing, nine PD arms crashed again
+
+**Snapshot** `C:\Users\U0152019\Downloads\output`; latest training line 23-09-2026 09:28:58 CEST.
+This is downloaded evidence, not a live scheduler observation.
+**Latest submissions** 22-09-2026 ~09:32 | **jobs** PD `11591462` (nine tasks), LGD `11591463`
+(tasks 13, 28, 43) | **cluster** Mindwell `gpu_b200`, one B200/task, 24 cores, 180 GiB, 72 h.
+**Recorded cluster commit** `7800d08`, dirty | **recorded library pin** `21d555a6a24e`.
+**Local audit commit** `56d00da` | **local library pin** `e5ce01614eebe520af303f2b5bfd212298eab2be`.
+Relevant generator, OOD loader, progress hook and launcher sources have no local diff from
+`7800d08`; uncommitted cluster changes cannot be reconstructed from the download.
+
+### Configuration
+
+- `config/Exp1_{PD,LGD}.yaml`: 45 arms/track; credit fraction {0, 0.5, 1}, filter
+  {tabicl, banded, off}, two intensities, three seeds, deduplicated no-credit controls.
+  All 90 downloaded run names and array indices match the current expanded grids.
+- Scratch initialization; 12,500 steps x 64 datasets = 800,000 nominal datasets/arm;
+  micro-batch 4; Muon; AMP; live prior generation. Resumes reseed worker streams, so
+  nominal dataset counts do not establish the number of distinct synthetic tasks.
+- Active LGD arm 43: seed 2, full credit, banded filter, boundary range [0.15, 0.6].
+  Logged levers, verbatim:
+  `grid levers: {"prior.credit.target.boundary_mass_range": [0.15, 0.6], "prior.credit_fraction": 1.0, "prior.filter.mode": "banded"}`.
+- No training configuration or source was changed during this audit.
+
+### Results
+
+| track | complete at 12,500 steps | incomplete in snapshot | latest log evidence |
+|---|---:|---|---|
+| LGD | 44/45 | arm 43 | 7,300/12,500 steps (58.4%), still progressing |
+| PD | 36/45 | arms 1,4,10,16,19,25,31,34,40 | all nine ended `FAILED exit_code=134` on 22-09 |
+| total | 80/90 (88.9%) | one progressing, nine crashed | 80 matching successful wrapper endings |
+
+Every completed summary records 800,000 datasets. Parameter counts are 28,544,991 (LGD)
+and 27,552,258 (PD), all trainable. All 12,326 training-metric JSONL records parse and their
+numeric values are finite. Latest recorded gradients are finite and nonzero in the column,
+row and ICL blocks for every arm. These checks establish recorded training health, not
+validity of every generated batch or every evaluation prediction.
+
+The active LGD job resumed from step 2,500. At 09:28:58 it had reached step 7,300, with its
+last logged checkpoint at 7,250. Recent telemetry median: 0.0554 steps/s. The log estimates
+25 h 55 min remaining, approximately **24-09-2026 11:24 CEST**, conditional on unchanged speed
+and no interruption. The last phase breakdown assigns 89.3% to waiting for data. Instantaneous
+GPU-utilization samples taken during work do not contradict this CPU/prior bottleneck.
+Its old incomplete summary still says step 1,622; summaries are not a live progress counter.
+
+There are **no phase-2 logs and no `results/` directory in this download**. That does not establish
+whether the separate project-storage results tier is empty. `All_Results.md` is stale: it claims
+no training CSVs exist, whereas the download contains 90.
+
+Monitoring only, using completed **off/tabicl** arms so failed banded controls do not create
+survivorship bias:
+
+| credit fraction | PD mean AUC, same four monitor datasets | LGD mean R2, same three finite monitor datasets |
+|---|---:|---:|
+| 0 | 0.7206 | 0.2883 |
+| 0.5 | 0.7230 | 0.4138 |
+| 1 | 0.6899 | 0.3444 |
+
+Equal-weight descriptive means over each arm's latest monitoring row, then over arms; six
+control arms and twelve per credit share. **Not dev-set rankings, significance tests, or final
+benchmark results.** The three LGD datasets in this sensitivity check are designated holdout;
+two of the four PD monitor datasets are also holdout. Do not use these means to fill
+`FILL_FROM_EXP1`. PD's half-credit gap is small; full-credit PD is weaker. LGD suggests a possible
+benefit worth measuring properly. Non-banded OOD monitor means decline with credit share
+(PD AUC 0.9970/0.9922/0.9748; LGD R2 0.5899/0.5317/0.4604). Those monitor suites have only eight
+tasks, binary reductions for multiclass PD, and whole-table target scaling for LGD; they cannot
+establish final OOD retention.
+
+Most completed monitor curves change little over their last two intervals; this is not proof
+of convergence on the final protocol. Twenty-one completed arms have their last monitor row
+before step 12,500 because of restart timing. Phase 2 must score the final weights.
+
+### Bugs and anomalies
+
+1. **Confirmed invalid-task fallback; strongly supported explanation for PD aborts.** Upstream
+   `GraphSCM.__call__` can return zero features and target `-100` when generation produces NaNs.
+   `TaskGenerator._finish` preserves this finite sentinel. The filter rejects a constant target,
+   but `TaskGenerator.sample` returns its last candidate after 40 rejections even if invalid.
+   A controlled CPU reproduction exercised upstream's invalid-output branch, all 40 rejections,
+   and its actual `OneHotAndLinear.forward`: the sampler returned `[-100.0]`, and the encoder
+   raised `Class values must be non-negative.` No training was run. This behavior is present in
+   the installed upstream code and `tfm-library/repositories/TabICL.txt` at the local pin above
+   (symbols `GraphSCM.__call__`, `OneHotAndLinear.forward`). It matches the remaining failures:
+   banded arms containing base-prior tasks (cf=0 or 0.5), while all six pure-credit PD banded arms
+   completed. The actual crashed batches were not saved, so their labels are not directly known.
+   Invalid regression fallbacks could also pass silently; their frequency and effect on completed
+   LGD training are unmeasured.
+2. **The earlier OOD-label explanation is insufficient.** The 22-09 jobs recorded `7800d08`,
+   which includes the OOD `-1` sanitizer. Their progress evaluations succeeded hundreds of
+   training steps before the aborts. The 07-09 entry's confident attribution should not be reused
+   as an established explanation. Keep the OOD sanitizer, but fix and test the synthetic
+   validity/fallback boundary before retrying. Do not clamp invalid labels to zero: that would
+   turn a failure marker into fabricated training labels.
+3. **Non-finite LGD monitoring predictions.** In 597 progress rows across all 30 seed-0/seed-2
+   LGD arms, one monitored dataset reports `pred_nonfinite_frac=0.002625` (one of 381 predictions)
+   and NaN R2/RMSE/pinball/CRPS. Seed-1 arms retain four finite R2 values; the other seeds retain
+   three. NaN-skipping averages therefore change the dataset population between seeds. The table
+   above explicitly uses the common three datasets. Cause is unlocalized without the relevant
+   inputs/checkpoints; an absent exception or `n_errors` column does not make evaluation clean.
+4. **Exp2/Exp3 dispatch still runs Exp1.** A read-only `_train_stage` reproduction for experiments
+   1, 2 and 3 emitted the same training-script commands without an experiment/config argument.
+   Both `scripts/slurm/pretrain_{pd,lgd}.slurm` hard-code `config/Exp1_*.yaml`, including on
+   self-resubmit. Once placeholders are filled, the documented Exp2/Exp3 command would run or
+   resume Exp1 instead. Fix initial submission and resubmission, and verify resolved commands.
+5. **Selection and provenance gates.** The progress hook selects small datasets including
+   holdouts, and `results_plots.overall_ranking` averages all datasets rather than the configured
+   dev subset. A dev-only selection report is required. Phase-2 tags are reused across reruns;
+   `_benchmark_stage` checks file existence, not checkpoint identity, valid cells or OOD completion.
+   Verify/archive older results before scoring the revised grid. Stale cluster result files are a
+   risk, not a fact established by this download. Temporal evaluation still raises
+   `NotImplementedError` in `src.eval.runner.make_split` despite being offered by the CLI.
+
+All 90 progress CSVs have consistent row widths. One failed PD arm has two step-625 rows after
+restart; they are not independent measurements. Resume-time header handling was not exhaustively
+validated here. `All_Results.md` and the absent result tier cannot settle the scientific outcome.
+
+### Interpretation
+
+The implementation has substantial working infrastructure and most training has finished, but
+neither this sweep nor the research project is finished. One active job is compatible with nine
+additional failed arms. Preserve completed checkpoints: the evidence justifies neither discarding
+all 80 nor claiming that all are scientifically validated. Close the validity/evaluation gaps,
+then use the frozen benchmark and dev-only selection to decide what deserves more compute.
+
+### Next
+
+**Now, on the VSC login node** (read-only; do not add `--submit` yet):
+
+```bash
+cd "$VSC_DATA/CreditICL"
+source scripts/slurm/_activate_env.sh
+squeue -M mindwell -u "$USER"
+sacct -M mindwell -j 11591462,11591463 --format=JobID%24,State,ExitCode,Elapsed
+python -m src.utils.run_experiment 1
+```
+
+Let LGD arm 43 continue if the scheduler and a fresh log tail still show progress. Do not duplicate
+it, delete its checkpoints, change its prior, or blindly resubmit the nine PD failures. Last saved
+PD steps in logs: 1000,3500,4000,1000,1750,1000,500,3250,2250 for indices
+1,4,10,16,19,25,31,34,40 respectively; checkpoint files themselves were not downloaded.
+
+After the invalid-task fix is tested and deployed, validate one failed PD arm with saved CPU-side
+batch diagnostics and synchronous CUDA errors. A new cluster run needs Andreas's authorization.
+Resume the other failed indices only after that validation.
+
+Next, phase 2 per completed track: **45 final checkpoints plus one shared reference task**, matching
+context cap, splits and evaluation seeds, and complete in-domain/OOD result rows. Check provenance
+and LGD non-finite predictions before accepting rankings. LGD can be benchmarked independently
+once its 45th arm finishes; it need not wait for PD training.
+
+Retrieve the separate results tier too. From the login node, if that results directory exists:
+
+```bash
+tar -czf "$VSC_DATA/CreditICL/output/crediticl_results_$(date +%Y%m%d_%H%M%S).tar.gz" \
+    -C /lustre1/project/stg_00211/CreditICL/output results
+```
+
+Select the prior on development datasets with paired comparisons across seeds. Exp2 is a
+60-arm/track, one-seed continued-pretraining sweep from released weights (10,000 steps), followed
+by seed confirmation of selected settings. Exp3 is the separate scratch-training confirmation:
+winner versus control, 100,000 steps, five seeds (normally ten arms/track). Both still contain
+`FILL_FROM_EXP1` and need the dispatch fix. With no clean Exp1 winner, explicitly choose whether
+to stop or carry a small candidate set before spending more credits. Resolve temporal/grouped
+evaluation and the already-inspected holdout issue before a confirmatory paper claim. Rebuild
+notebooks and `All_Results.md` from verified outputs after the evaluation checks.
+
+**Audit artifact:** `output/manifests/exp1_audit_20260923.json`: per-arm state, latest log/checkpoint
+evidence, parsing counts, descriptive monitoring calculations and SHA-256 fingerprints for all
+826 supplied files. Downloads was read without modification.
+**Validation:** controlled CPU fallback/encoder reproduction and read-only launch-command
+reproduction completed. `.CreditICL/Scripts/python.exe -m pytest -q`: **893 passed, 2 skipped,
+3 warnings in 563.31 s**. Skips: upstream-unavailable case (upstream is installed), and bash syntax
+check (bash unavailable locally). The three warnings come from scheduler-order test fixtures.
+The existing suite passes despite the reproduced gaps; it does not validate the actual failed
+CUDA batches. No notebooks or visualization source changed, so notebooks were not rerun.
+
 ## 07-09-2026 — Exp1 phase-1 re-run (90 arms) — **PARTIAL: 63/90 done; every unfinished arm is `filter=banded`; 15 PD banded arms crashed on an out-of-domain `-1` label**
 
 **Submitted** ~03-09-2026 | **jobs** 11549669 (PD, `--array=0-44%8`), 61898850 (LGD) | **cluster** PD mindwell `gpu_b200`, LGD wICE `gpu_a100`

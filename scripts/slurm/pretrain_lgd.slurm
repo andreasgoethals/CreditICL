@@ -46,6 +46,8 @@ sleep $((RANDOM % 30 + 1))
 set -euo pipefail
 export PYTHONUNBUFFERED=1
 export PYTHONIOENCODING=utf-8
+export EXP="${EXP:-1}"
+CONFIG="config/Exp${EXP}_LGD.yaml"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 export CREDITICL_OUTPUT_ROOT="${CREDITICL_OUTPUT_ROOT:-${VSC_DATA}/CreditICL}"
@@ -104,7 +106,7 @@ WORKERS=$(( ${SLURM_CPUS_PER_TASK:-8} - 1 ))
 echo "Dataloader workers: ${WORKERS} (from SLURM_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-unset})"
 
 python -u scripts/pretrain.py \
-    --config config/Exp1_LGD.yaml \
+    --config "${CONFIG}" \
     --index "${SLURM_ARRAY_TASK_ID}" \
     --num-workers "${WORKERS}" \
     --prior-source "${PRIOR_SOURCE:-generate}" &
@@ -122,6 +124,8 @@ set -e
 # EXIT 64 = saved and stopped early. Resubmit THIS arm only; it resumes from the checkpoint.
 if [[ "$RC" -eq 64 ]]; then
     echo "Arm ${SLURM_ARRAY_TASK_ID} incomplete — resubmitting to resume."
+    RESUME_TIME=()
+    if (( LIMIT_S > 0 )); then RESUME_TIME=(--time="$(( (LIMIT_S + 59) / 60 ))"); fi
     # BACK TO THE SAME PLACE, WITH THE SAME RESOURCES. The cluster/partition carry over so a
     # wICE arm resumes on wICE (a different GPU mid-run makes its timings incomparable). So do
     # the cores and mem, and this is the part that bit us: the #SBATCH header asks for the
@@ -131,6 +135,9 @@ if [[ "$RC" -eq 64 ]]; then
     # wICE had actually granted it. Echo THIS task's grant so the resume asks for what the
     # partition allows. (On mindwell these equal the header, so nothing changes there.)
     sbatch --clusters="${SLURM_CLUSTER_NAME:-mindwell}" \
+           --job-name="crediticl-exp${EXP}-lgd" \
+           --export="ALL,EXP=${EXP}" \
+           "${RESUME_TIME[@]}" \
            --partition="${SLURM_JOB_PARTITION:-gpu_b200}" \
            --cpus-per-task="${SLURM_CPUS_PER_TASK}" \
            --mem="${SLURM_MEM_PER_NODE}M" \

@@ -304,7 +304,7 @@ The shared colour vocabulary used on every axis of this notebook: each swatch na
 
 **02_overall_ranking** — `overall_ranking`
 
-Mean AUC per model across the real datasets and seeds, sorted, as horizontal bars coloured by model kind, with error bars for the across-seed spread.
+Mean ROC-AUC per configuration on development datasets, averaged over evaluation and training seeds. Error bars show the standard deviation across training seeds.
 
 **03_beats_reference** — `beats_reference`
 
@@ -338,7 +338,7 @@ The shared colour vocabulary used on every axis of this notebook: each swatch na
 
 **02_overall_ranking** — `overall_ranking`
 
-Mean R-squared per model across the real datasets and seeds, sorted, as horizontal bars coloured by model kind, with error bars for the across-seed spread.
+Mean R-squared per configuration on development datasets, averaged over evaluation and training seeds. Error bars show the standard deviation across training seeds.
 
 **03_beats_reference** — `beats_reference`
 
@@ -504,7 +504,7 @@ The shared colour vocabulary used on every axis of this notebook: each swatch na
 
 **02_overall_ranking** — `overall_ranking`
 
-Mean AUC per model across the real datasets and seeds, sorted, as horizontal bars coloured by model kind, with error bars for the across-seed spread.
+Mean ROC-AUC per configuration on development datasets, averaged over evaluation and training seeds. Error bars show the standard deviation across training seeds.
 
 **03_beats_reference** — `beats_reference`
 
@@ -542,7 +542,7 @@ The shared colour vocabulary used on every axis of this notebook: each swatch na
 
 **02_overall_ranking** — `overall_ranking`
 
-Mean R-squared per model across the real datasets and seeds, sorted, as horizontal bars coloured by model kind, with error bars for the across-seed spread.
+Mean R-squared per configuration on development datasets, averaged over evaluation and training seeds. Error bars show the standard deviation across training seeds.
 
 **03_beats_reference** — `beats_reference`
 

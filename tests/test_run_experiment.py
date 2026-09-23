@@ -123,13 +123,30 @@ def test_nothing_queued_is_submitted_twice(fake_tree, monkeypatch):
     assert not train.commands
 
 
-def test_a_broken_squeue_errs_towards_submitting(fake_tree, monkeypatch):
-    """No `squeue` on a laptop, and a login node can have a broken module. An empty answer must
-    mean "submit it" — a duplicate job can be cancelled, work that never starts cannot."""
+def test_a_broken_squeue_blocks_submission(fake_tree, monkeypatch):
+    """An unavailable scheduler is not an empty queue."""
     from src.utils import run_experiment as pipeline
 
-    monkeypatch.setattr(pipeline, "queued_job_names", set)
-    assert next(s for s in plan(1, ["lgd"]) if s.kind == "train").state == "ready"
+    def unavailable():
+        raise RuntimeError("Cannot read squeue")
+    monkeypatch.setattr(pipeline, "queued_job_names", unavailable)
+    stages = plan(1, ["lgd"])
+    assert all(s.state == "blocked" and not s.commands for s in stages)
+
+
+@pytest.mark.parametrize("exp", [1, 2, 3])
+def test_training_submission_carries_experiment_and_in_bounds_indices(fake_tree, exp):
+    from src.utils.run_experiment import _train_stage
+    stage = _train_stage(exp, "lgd", set(), False)
+    for cmd in stage.commands:
+        assert f"--export=ALL,EXP={exp}" in cmd
+        assert f"--job-name=crediticl-exp{exp}-lgd" in cmd
+        spec = next(c for c in cmd if c.startswith("--array=")).split("=", 1)[1].split("%")[0]
+        indices = []
+        for span in spec.split(","):
+            bounds = list(map(int, span.split("-")))
+            indices.extend(range(bounds[0], bounds[-1] + 1))
+        assert all(0 <= i < stage.total for i in indices)
 
 
 def test_the_report_says_what_to_do_next(fake_tree):

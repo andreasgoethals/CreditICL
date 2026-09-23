@@ -9,7 +9,7 @@
     "index": 2,
     "stem": "02_overall_ranking",
     "name": "overall_ranking",
-    "caption": "Mean AUC per model across the real datasets and seeds, sorted, as horizontal bars coloured by model kind, with error bars for the across-seed spread."
+    "caption": "Mean ROC-AUC per configuration on development datasets, averaged over evaluation and training seeds. Error bars show the standard deviation across training seeds."
   },
   {
     "index": 3,

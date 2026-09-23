@@ -37,6 +37,8 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 23-09-2026 | Scheduler follow-up for 11591462 / 11591463 at 10:30–10:39 | **Confirmed: nine PD FAILED 134; LGD 13/28 completed, 43 RUNNING; benchmark 0/46 per track** | Local fixes prepared; no new cluster jobs submitted. Resume unfinished training; preserve all checkpoints and successful logs. This is follow-up evidence for the snapshot below |
+| 23-09-2026 | Exp1 rerun snapshot; latest PD 11591462, LGD 11591463, Mindwell B200 | **80/90 complete: LGD 44/45, PD 36/45; nine PD crashes, one LGD progressing** | LGD a43 at 7300/12500 (09:28 CEST), conditional ETA 24-09 ~11:24. CPU reproduction proves invalid `-100` synthetic fallback reaches encoder; actual crashed batches unavailable. LGD monitor NaNs affect 30 arms. No results tier supplied; read RUNS.md before retrying |
 | 07-09-2026 | 11549669 (PD, mindwell `gpu_b200`), 61898850 (LGD, wICE `gpu_a100`) — Exp1 phase-1 re-run, 90 arms | **PARTIAL 63/90; all 27 unfinished are `filter=banded`; 15 PD banded arms CRASHED (OOD `-1` → one_hot device assert)** | Root cause fixed in `src/eval/ood.py`. Non-banded 30/30 (PD) + 30/30 (LGD) done. Progress-eval only (phase-2 not run): cf=0.5 blend leads both tracks — PD AUC 0.723 vs control 0.721, LGD R² 0.392 vs 0.220; cf=1 trails. Suggestive, not the verdict |
 | 02-09-2026 | 61866150 (LGD), 61866151 (PD) — Exp1 Phase 2, all 150 checkpoints scored, wICE `gpu_a100` | **NULL: credit prior ≈ no-credit control on BOTH tracks; 0/25 beat released TabICLv2** | LGD best 0.486 vs control 0.485 (seed SD 0.008) vs released 0.514; PD control IS rank 1 (0.730) vs released 0.736. `scale=standard` hurts LGD. No OOD loss. Fair internal test is a clean null |
 | 01-09-2026 | 11529826 + 61791522 (LGD), 11529827 (PD), +resubmits 11540142/43 — Exp1 full sweep, 150 arms | **COMPLETE: 150/150 arms, all healthy** | 1,011 GPU-h. LGD loss 0.051–0.070, PD 0.136–0.186. 0 CUDA / NaN / walltime. The 6 PD (Vasicek) + 2 wICE stragglers finished on resubmit |
@@ -65,6 +67,24 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
+
+### 23-09-2026 — Plot fixtures hid the PD metric-name mismatch
+- **Tried:** rendering the repaired PD plots against existing synthetic plot fixtures.
+- **Result:** three focused plot tests failed; fixtures used `auc`, while production CSVs contain `roc_auc`.
+- **Why:** the old tests duplicated the wrong schema and therefore missed empty production charts; the ranking fixture also lacked complete development/seed coverage.
+- **Instead:** test production column names and full development coverage; incomplete configurations must not produce a selection ranking. The fallback, monitor, launcher and benchmark fixes are now local code changes.
+
+### 23-09-2026 — Checkpoint loader metadata still needs the task class count
+- **Tried:** removing the prior class count while correcting the diagnostic loader's two-versus-ten architectural head mismatch.
+- **Result:** all four checkpoint round-trip tests raised `NameError` while constructing returned metadata; the weights themselves loaded correctly.
+- **Why:** `n_classes` also describes the task in the metadata, independently of architectural head width.
+- **Instead:** retain it for metadata only; use the production model builder's head width. Round-trip tests now exercise the actual trainer builder, and all four pass.
+
+### 23-09-2026 — PD retries still abort after the OOD-label sanitizer
+- **Tried:** cluster retries of the nine base-containing PD banded arms, latest array 11591462 on 22-09, after the earlier OOD-label fix.
+- **Result:** all nine failed again with exit 134; successful progress evaluations preceded training-time assertions. The older OOD attribution is insufficient.
+- **Why:** confirmed CPU path: upstream `GraphSCM` invalid output uses `y=-100`; after 40 rejections `TaskGenerator.sample` returns that invalid last candidate, and the upstream encoder rejects negative classes. Actual failed batches were not captured.
+- **Instead:** fix synthetic validity before fallback, preserve diagnostics, and validate one resumed PD arm before another array. Do not clamp invalid labels to zero. Also resolve LGD monitor NaNs and the Exp2/Exp3 scripts' hard-coded Exp1 config; details in RUNS.md. Source fixes are not part of this audit.
 
 ### 08-09-2026 - A missing OOD label (`cat.codes` → -1) crashed 15 PD banded arms via a GPU one_hot assert
 - **Tried:** reading the re-run Exp1 phase-1 sweep (job 11549669) to find why 15 arms never finished.

@@ -373,12 +373,13 @@ class Trainer:
         self.progress = ProgressTracker(
             ProgressConfig(
                 every_datasets=int(pcfg.get("every_datasets", 0)),
-                datasets=list(pcfg.get("datasets", []) or []),
+                datasets=list(pcfg.get("datasets") or cfg.get("eval", {}).get("dev_datasets", [])),
+                allowed_datasets=cfg.get("eval", {}).get("dev_datasets"),
                 n_datasets=int(pcfg.get("n_datasets", 4)),
                 n_ood=int(pcfg.get("n_ood", 4)),
                 context_rows=int(pcfg.get("context_rows", 512)),
                 max_test_rows=int(pcfg.get("max_test_rows", 2000)),
-                seed=self.seed,
+                seed=int(pcfg.get("seed", 0)),
             ),
             self.task,
             cfg.get("_run_name", "run"),
@@ -642,6 +643,14 @@ class Trainer:
         # to read first — if it dominates, the GPU is waiting for the prior.
         t_step = time.perf_counter()
         X, y, train_size = batch
+        # Validate before moving to CUDA: a negative class in one_hot aborts the
+        # CUDA context and destroys the useful error. This also guards cached priors.
+        if not torch.isfinite(X).all() or not torch.isfinite(y).all():
+            raise ValueError("Non-finite synthetic training batch; regenerate the prior cache")
+        if not self.regression:
+            n_classes = int(self.cfg.get("prior", {}).get("n_classes", 2))
+            if not ((y >= 0) & (y < n_classes) & (y == y.round())).all():
+                raise ValueError("Invalid synthetic class labels; regenerate the prior cache")
         # Not model.train(): that is recursive and would switch dropout back on
         # inside frozen blocks. Mirrors TabICL's `_set_training_mode`.
         set_training_mode(self.model, True, self.strategy)
@@ -953,7 +962,9 @@ class Trainer:
             if self.log_prior_every and self.step % self.log_prior_every == 0:
                 self._log_prior_report()
 
-            if self.progress is not None and self.progress.due(self.datasets_seen):
+            if self.progress is not None and self.progress.enabled and (
+                self.progress.due(self.datasets_seen) or self.step == self.max_steps
+            ):
                 self.progress.record(
                     dist.unwrap(self.model),
                     step=self.step,

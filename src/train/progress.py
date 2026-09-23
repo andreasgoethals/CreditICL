@@ -53,6 +53,8 @@ class ProgressConfig:
     #: Real credit datasets to score. Empty = auto-pick the smallest few, which keeps
     #: the hook fast; the full set is what the eval pipeline is for.
     datasets: list[str] = field(default_factory=list)
+    #: When provided by an experiment, monitoring may only use its development split.
+    allowed_datasets: list[str] | None = None
     n_datasets: int = 4
     #: Out-of-domain datasets to score, if the cache is present.
     n_ood: int = 4
@@ -72,6 +74,14 @@ class ProgressTracker:
         self.run_name = run_name
         self.path = Path(out_dir) / f"{run_name}__progress.csv"
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        if self.path.is_file():
+            with self.path.open(encoding="utf-8", newline="") as fh:
+                header = next(csv.reader(fh), [])
+            if "progress_protocol" not in header:
+                # Old curves used other splits/precision. Keep them as evidence, never
+                # append the new protocol to the same plotted series.
+                self.path.rename(self.path.with_name(
+                    f"{run_name}__progress_legacy_{time.time_ns()}.csv"))
         self._fieldnames: list[str] | None = None
         self._next_at = cfg.every_datasets
         self._cached_real: list[tuple[str, Any]] | None = None
@@ -93,6 +103,8 @@ class ProgressTracker:
         from src.data.pipeline import load_processed
 
         slugs = self.cfg.datasets or list_datasets(self.task)
+        if self.cfg.allowed_datasets is not None:
+            slugs = [s for s in slugs if s in self.cfg.allowed_datasets]
         loaded: list[tuple[str, Any]] = []
         for slug in slugs:
             try:
@@ -130,7 +142,8 @@ class ProgressTracker:
         return entries
 
     # -- the measurement -----------------------------------------------------
-    def _score(self, model, X: np.ndarray, y: np.ndarray, rng: np.random.Generator) -> dict[str, float]:
+    def _score(self, model, X: np.ndarray, y: np.ndarray, rng: np.random.Generator,
+               *, scale_target: bool = False) -> dict[str, float]:
         """Score one table with the CURRENT weights, in context. Pure numpy in, floats out."""
         import torch
 
@@ -158,8 +171,13 @@ class ProgressTracker:
             Xt, yt = Xt[keep_test], yt[keep_test]
         if len(yt) < 8 or len(yc) < 8:
             return {"skipped_nonfinite_target": 1.0}
+        if scale_target:
+            lo, hi = float(yc.min()), float(yc.max())
+            if hi - lo < 1e-12:
+                raise ValueError("Constant OOD context target")
+            yc, yt = (yc - lo) / (hi - lo), (yt - lo) / (hi - lo)
         # Impute from the CONTEXT only; using test statistics would leak.
-        med = np.nan_to_num(np.nanmedian(Xc, axis=0))
+        med = np.nan_to_num(np.nanmedian(np.where(np.isfinite(Xc), Xc, np.nan), axis=0))
         Xc = np.where(np.isfinite(Xc), Xc, med)
         Xt = np.where(np.isfinite(Xt), Xt, med)
         # STANDARDISE, context statistics only. Upstream's `PreprocessingPipeline` starts with
@@ -173,9 +191,20 @@ class ProgressTracker:
         device = next(model.parameters()).device
         x = torch.from_numpy(np.concatenate([Xc, Xt]).astype(np.float32)).unsqueeze(0).to(device)
         yy = torch.from_numpy(yc.astype(np.float32)).unsqueeze(0).to(device)
-        with torch.no_grad():
-            out = model(x, yy)
+        import inspect
+        inference_kwargs = {}
+        if "inference_config" in inspect.signature(model.forward).parameters:
+            from tabicl._model.inference_config import InferenceConfig
+            # TabICL enables its own fp16 autocast in eval mode, even outside the
+            # trainer's AMP context. Rare query outliers can overflow it after scaling.
+            inference_kwargs["inference_config"] = InferenceConfig(**{
+                k: {"use_amp": False} for k in ("COL_CONFIG", "ROW_CONFIG", "ICL_CONFIG")
+            })
+        with torch.no_grad(), torch.autocast(device_type=device.type, enabled=False):
+            out = model(x, yy, **inference_kwargs)
         q = out[0].float().cpu().numpy()
+        if not np.isfinite(q).all():
+            raise ValueError(f"Non-finite predictions in float32: fraction={float((~np.isfinite(q)).mean()):.6g}")
 
         if self.task == "lgd":
             from src.eval.metrics import lgd_metrics
@@ -228,6 +257,7 @@ class ProgressTracker:
             "datasets_seen": datasets_seen,
             "train_loss": round(float(train_loss), 6),
             "elapsed_s": round(elapsed_s, 1),
+            "progress_protocol": 2,
         }
         rng = np.random.default_rng(self.cfg.seed)
 
@@ -252,17 +282,11 @@ class ProgressTracker:
             for entry in self._ood_datasets():
                 try:
                     Xo, yo, _ = load_ood_dataset(entry)
-                    if self.task == "lgd":
-                        # OOD regression targets have arbitrary scales; the model predicts in
-                        # [0,1], so min-max the target the same way the OOD runner does.
-                        lo, hi = float(np.min(yo)), float(np.max(yo))
-                        if hi - lo < 1e-12:
-                            continue
-                        yo = ((yo - lo) / (hi - lo)).astype(np.float32)
-                    elif len(np.unique(yo)) > 2:
+                    if self.task == "pd" and len(np.unique(yo)) > 2:
                         yo = (yo == np.bincount(yo.astype(int)).argmax()).astype(np.float32)
                     for k, v in self._score(model, np.asarray(Xo, np.float32),
-                                            np.asarray(yo, np.float32), rng).items():
+                                            np.asarray(yo, np.float32), rng,
+                                            scale_target=self.task == "lgd").items():
                         row[f"ood__{entry.name}__{k}"] = round(v, 6)
                 except Exception as exc:  # noqa: BLE001 — a missing OOD file is not fatal
                     errors.append(f"ood/{entry.name}: {type(exc).__name__}: {exc}")
@@ -278,11 +302,16 @@ class ProgressTracker:
                 log.warning("[progress] skipped (training continues): %s", e)
 
         row["progress_eval_seconds"] = round(time.time() - started, 2)
-        self._append(row)
-        if was_training:
-            model.train()
+        try:
+            self._append(row)
+        except OSError as exc:
+            log.warning("[progress] could not save diagnostic: %s", exc)
+        finally:
+            if was_training:
+                model.train()
 
-        self._next_at = datasets_seen + self.cfg.every_datasets
+        interval = self.cfg.every_datasets
+        self._next_at = (datasets_seen // interval + 1) * interval if interval else 0
         headline = {k: v for k, v in row.items() if k.startswith(("real__", "ood__"))}
         log.info(
             "[progress] datasets=%s step=%d took %.1fs | %s",
@@ -300,7 +329,10 @@ class ProgressTracker:
         ragged rows that silently misalign.
         """
         new_file = not self.path.exists()
-        if new_file or self._fieldnames is None:
+        if not new_file and self._fieldnames is None:
+            with self.path.open("r", encoding="utf-8", newline="") as fh:
+                self._fieldnames = next(csv.reader(fh), [])
+        if new_file:
             self._fieldnames = list(row)
         missing = [k for k in row if k not in self._fieldnames]
         if missing and not new_file:

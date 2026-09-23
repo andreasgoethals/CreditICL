@@ -437,7 +437,7 @@ def test_the_reference_column_is_scored_once_and_reused():
     AND produce three slightly different reference columns to compare against."""
     text = (ROOT / "scripts" / "slurm" / BENCH).read_text(encoding="utf-8")
     assert 'REF_TAG="reference_${TRACK}"' in text, "the tag must not mention the experiment"
-    assert "already scored" in text and "FORCE_REFERENCE" in text
+    assert "src.eval.benchmark_status" in text and "FORCE_REFERENCE" in text
     assert "tabiclv2,tabpfn3,catboost,linear" in text
 
 
@@ -445,7 +445,7 @@ def test_phase_two_applies_the_same_context_cap_to_both_branches():
     """One variable, both branches. A cap applied to our column and not to the reference is
     not a measurement, it is a handicap."""
     text = (ROOT / "scripts" / "slurm" / BENCH).read_text(encoding="utf-8")
-    assert text.count('--max-context-rows "${CONTEXT_CAP}"') == 2
+    assert text.count('--max-context-rows "${CONTEXT_CAP}"') == 4
     assert text.count('--seeds "${SEEDS}"') >= 4
 
 
@@ -464,10 +464,7 @@ def test_phase_two_scores_our_checkpoints_not_the_released_ones():
     text = (ROOT / "scripts" / "slurm" / BENCH).read_text(encoding="utf-8")
     assert "--models crediticl" in text
     assert '--checkpoint "$CKPT"' in text
-    # A missing checkpoint is a CLEAN SKIP (exit 0), not a failure: on 25-08-2026 the array was
-    # submitted before phase 1 and 74 tasks died with a bare exit 2 because `ls` under
-    # `pipefail` killed the script before the guard. It must skip, and the `ls` must not abort.
+    # Require the configured FINAL checkpoint, never an earlier rolling checkpoint.
     assert "SKIPPED: no checkpoint under" in text
-    assert "|| true)" in text, "the ls pipeline must not kill the script under pipefail"
-    # numeric sort on the step: a lexical sort puts step-9500 after step-12500
-    assert "sort -t- -k2 -n" in text
+    assert 'CKPT="${CKPT_DIR}/step-${FINAL_STEP}.ckpt"' in text
+    assert 'if [ ! -f "$CKPT" ]' in text

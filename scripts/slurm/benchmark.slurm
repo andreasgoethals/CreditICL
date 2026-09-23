@@ -2,20 +2,20 @@
 # =============================================================================
 #  CreditICL — PHASE 2: benchmark every trained checkpoint. SHARED BY ALL THREE EXPERIMENTS.
 #
-#  PHASE 1 (pretrain_{lgd,pd}.slurm) produces 75 checkpoints and NOTHING ELSE.
+#  PHASE 1 (pretrain_{lgd,pd}.slurm) produces the configured training checkpoints.
 #  PHASE 2 is this script. It cannot start until phase 1 has finished, because it scores the
 #  checkpoints phase 1 wrote — that ordering is a fact about the data, not a convention.
 #
-#      python -m src.utils.sweep_status --config config/Exp1_LGD.yaml   # must say 75 done
+#      python -m src.utils.sweep_status --config config/Exp1_LGD.yaml   # must say 45 done
 #      sbatch --clusters=mindwell --export=ALL,EXP=1,TRACK=lgd scripts/slurm/benchmark.slurm
 #      sbatch --clusters=mindwell --export=ALL,EXP=2,TRACK=lgd scripts/slurm/benchmark.slurm
 #      sbatch --clusters=mindwell --export=ALL,EXP=3,TRACK=lgd scripts/slurm/benchmark.slurm
 #
-#  THE REFERENCE COLUMN IS SCORED ONCE, EVER. CatBoost, TabPFN-3, the released TabICLv2 and
+#  THE REFERENCE COLUMN IS REUSED UNDER THE SAME PROTOCOL. CatBoost, TabPFN-3, released TabICLv2 and
 #  logistic/linear regression do not depend on our prior, so their numbers are identical in
 #  Exp1, Exp2 and Exp3 — and re-running them per experiment would not only waste GPU time, it
 #  would introduce three slightly different reference columns to compare against. The last
-#  array index writes `reference_<track>` and SKIPS if that already exists; pass
+#  array index writes `reference_<track>` and skips only with a valid paired-domain receipt; pass
 #  `FORCE_REFERENCE=1` to rescore it deliberately.
 #
 #  ONE ARRAY TASK = ONE MODEL, scored on every real credit dataset and every out-of-domain
@@ -111,6 +111,12 @@ from src.utils.config import expand_with_seeds, load
 print(len(expand_with_seeds(load('${CONFIG}'))))
 ")
 echo "grid has ${N_ARMS} arms; this task is index ${IDX}"
+DATASETS=$(python -c "from src.utils.config import load; e=load('${CONFIG}')['eval']; print(','.join(sorted(set(e['dev_datasets'] + e['holdout_datasets']))))")
+KIND=classification
+if [[ "$TRACK" == "lgd" ]]; then KIND=regression; fi
+STATUS_ARGS=(--exp "$EXP" --track "$TRACK" --index "$IDX"
+             --context-cap "$CONTEXT_CAP" --seeds "$SEEDS"
+             --reference-models "${REFERENCE_MODELS:-tabiclv2,tabpfn3,catboost,linear}")
 
 # EXACTLY ONE index is the reference: the first past the grid. Anything beyond it exists only
 # because `--array` is a fixed range and the three experiments have different arm counts
@@ -118,6 +124,11 @@ echo "grid has ${N_ARMS} arms; this task is index ${IDX}"
 # same reference file.
 if [ "${IDX}" -gt "${N_ARMS}" ]; then
     echo "index ${IDX} is past the grid (${N_ARMS} arms) and past the reference slot. Nothing to do."
+    exit 0
+fi
+
+if [[ "${FORCE_REFERENCE:-0}" != "1" ]] && python -m src.eval.benchmark_status "${STATUS_ARGS[@]}"; then
+    echo "Complete credit and OOD benchmark already verified for this protocol."
     exit 0
 fi
 
@@ -129,27 +140,21 @@ if [ "${IDX}" -eq "${N_ARMS}" ]; then
     # never touch, so it is the "someone else's prior, properly trained" yardstick.
     MODELS="${REFERENCE_MODELS:-tabiclv2,tabpfn3,catboost,linear}"
     REF_TAG="reference_${TRACK}"
-    REF_FILE="$(python -c "
-from src.utils import paths
-print(paths.results_dir() / '${TRACK}' / 'eval' / 'results_${REF_TAG}.csv')
-")"
-    if [ -f "$REF_FILE" ] && [ "${FORCE_REFERENCE:-0}" != "1" ]; then
-        echo "reference already scored: ${REF_FILE}"
-        echo "It does not depend on our prior, so Exp1/2/3 all compare against THIS file."
-        echo "Pass FORCE_REFERENCE=1 to rescore."
-        exit 0
-    fi
     echo "models: ${MODELS}   ->  ${REF_TAG}"
     python scripts/evaluate.py \
         --task "${TRACK}" \
+        --datasets "${DATASETS}" \
         --models "${MODELS}" \
         --max-context-rows "${CONTEXT_CAP}" \
         --seeds "${SEEDS}" \
         --tag "${REF_TAG}"
     python scripts/evaluate_ood.py \
         --models "${MODELS}" \
+        --kinds "${KIND}" \
+        --max-context-rows "${CONTEXT_CAP}" \
         --seeds "${SEEDS}" \
         --tag "${REF_TAG}"
+    python -m src.eval.benchmark_status "${STATUS_ARGS[@]}" --write
     exit 0
 fi
 
@@ -165,14 +170,11 @@ print(name, paths.checkpoints_dir() / name)
 echo "arm ${IDX}: ${RUN_NAME}"
 echo "checkpoint dir: ${CKPT_DIR}"
 
-# The LAST permanent checkpoint, which for a completed arm is step-12500. Sorting numerically
-# on the step matters: a lexical sort puts step-9500 after step-12500.
-# `|| true`: under `set -o pipefail`, `ls` exits 2 when the glob matches nothing and would
-# kill the script THERE, before the graceful check below ever runs. That is exactly what
-# happened on 25-08 when the benchmark array was submitted before phase 1: 74 tasks each died
-# in ~1 s with a bare exit 2 instead of the clean skip intended here.
-CKPT="$(ls -1 "${CKPT_DIR}"/step-*.ckpt 2>/dev/null | sort -t- -k2 -n | tail -1 || true)"
-if [ -z "$CKPT" ]; then
+# Use the configured final checkpoint, never an older rolling checkpoint selected by a
+# lexical path sort. A missing final file cannot produce a completion receipt.
+FINAL_STEP=$(python -c "from src.utils.config import load; print(load('${CONFIG}')['train']['max_steps'])")
+CKPT="${CKPT_DIR}/step-${FINAL_STEP}.ckpt"
+if [ ! -f "$CKPT" ]; then
     # NOT a failure. This arm has not been trained yet. Exit 0 so it does not show as FAILED
     # and does not trigger a requeue; `pipeline.py` sees no result file and resubmits phase 2
     # once phase 1 has produced the checkpoint. Run phase 1 first:
@@ -209,6 +211,7 @@ PYCHECK
 echo "=== real credit datasets ==="
 python scripts/evaluate.py \
     --task "${TRACK}" \
+    --datasets "${DATASETS}" \
     --models crediticl \
     --checkpoint "$CKPT" \
     --max-context-rows "${CONTEXT_CAP}" \
@@ -219,9 +222,13 @@ echo "=== out of domain ==="
 # A prior that helps credit by destroying generality has to be visible, not inferred.
 python scripts/evaluate_ood.py \
     --models crediticl \
+    --kinds "${KIND}" \
+    --max-context-rows "${CONTEXT_CAP}" \
     --task "${TRACK}" \
     --checkpoint "$CKPT" \
     --seeds "${SEEDS}" \
     --tag "exp${EXP}bench_${TRACK}_a${IDX}"
+
+python -m src.eval.benchmark_status "${STATUS_ARGS[@]}" --write
 
 echo "arm ${IDX} benchmarked."

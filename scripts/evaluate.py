@@ -121,7 +121,7 @@ def main() -> int:
             log.info("wrote %s", sum_path)
             log.info("summary for %s:\n%s", task, summary.to_string(index=False))
 
-        if not df.empty and (df["status"] != "ok").any():
+        if df.empty or (df["status"] != "ok").any():
             exit_code = 1  # non-zero so a SLURM job surfaces partial failure
 
     return exit_code

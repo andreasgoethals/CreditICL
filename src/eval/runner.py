@@ -137,6 +137,7 @@ def evaluate_one(
         "seed": seed,
         "split": split,
         "status": "failed",
+        "context_cap": max_context_rows,
     }
     started = time.time()
 
@@ -172,6 +173,8 @@ def evaluate_one(
             model.max_context_rows = int(max_context_rows)
         report = model.fit(X[train_idx], y[train_idx], ds.cat_indices)
         preds = model.predict(X[test_idx])
+        if not np.isfinite(preds).all():
+            raise ValueError("Non-finite predictions")
         y_test = y[test_idx]
 
         if task == "pd":
@@ -179,10 +182,14 @@ def evaluate_one(
         else:
             q = model.predict_quantiles(X[test_idx])
             if q is not None:
+                if not np.isfinite(q[0]).all():
+                    raise ValueError("Non-finite predicted quantiles")
                 row.update(lgd_metrics(y_test, preds, quantiles=q[0], levels=q[1], decoding="median"))
             else:
                 row.update(lgd_metrics(y_test, preds, decoding="point"))
 
+        if not np.isfinite(row["roc_auc" if task == "pd" else "r2"]):
+            raise ValueError("Non-finite headline metric")
         row.update(
             {
                 "status": "ok",

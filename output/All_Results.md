@@ -136,14 +136,14 @@ original (live):
 
 credit (live):
   shape          rows 1024 to 1024 (median 1024) | features 100 to 100 (median 100)
-  base rate      1.6% to 57.8% (median 15.7%)
-  below 5%       11.0% of datasets
+  base rate      1.4% to 45.6% (median 15.7%)
+  below 5%       10.8% of datasets
   below 10%      29.0% of datasets
 
 --- AGAINST THE REAL DATASETS ------------------------------------------------
 real base rate: algorithmwatch=37.8%, bank_status=22.6%, cobranded=24.6%, german=30.0%, gmsc=6.7%, hackerearth=23.6%, hmeq=19.9%, home_credit=8.1%, lendingclub=16.0%, loan_default=9.3%, myhom=40.0%, taiwan_creditcard=22.1%, thomas=26.4%, vehicle_loan=21.7%
   original (live): range [0.016, 0.995] spans 14/14 | median 0.500 | 3/14 datasets have >=10% of draws within 5pp
-  credit (live): range [0.016, 0.578] spans 14/14 | median 0.157 | 12/14 datasets have >=10% of draws within 5pp
+  credit (live): range [0.014, 0.456] spans 14/14 | median 0.157 | 12/14 datasets have >=10% of draws within 5pp
 
   Read the LAST column, not the first. A range can span a real value on
   the strength of a few outlier draws while placing almost no mass near it,
@@ -228,20 +228,20 @@ datasets sampled : original (live)=500, credit (live)=500
 
 original (live):
   shape          rows 1024 to 1024 (median 1024) | features 100 to 100 (median 100)
-  in [0,1]       0.6% of datasets
+  in [0,1]       1.0% of datasets
   boundary mass  0.2% to 100.0% (median 1.0%)
-    at its own min       mean 6.2%  (NOT 0)
-    at its own max       mean 4.4%  (NOT 1)
+    at its own min       mean 6.9%  (NOT 0)
+    at its own max       mean 3.8%  (NOT 1)
     target is not on [0,1], so these are scale-free ties at the extremes,
       largely the +-4 SD outlier clamp — not recovery or loss.
-  any atoms      49.8% of datasets
+  any atoms      48.0% of datasets
 
 credit (live):
   shape          rows 1024 to 1024 (median 1024) | features 100 to 100 (median 100)
   in [0,1]       100.0% of datasets
   boundary mass  6.9% to 58.7% (median 32.1%)
-    at 0 (full recovery) mean 16.5%
-    at 1 (total loss)    mean 15.2%
+    at 0 (full recovery) mean 16.4%
+    at 1 (total loss)    mean 15.1%
   any atoms      100.0% of datasets
 
 --- AGAINST THE REAL DATASETS ------------------------------------------------
@@ -272,10 +272,10 @@ Distance from 7 real datasets (total variation, 0 = identical).
 Lower is better. This is the ranking Exp1 exists to refine with training.
 
   variant                         mean    best   worst
-  credit (live)                  0.341   0.258   0.460
-  original (live)                0.428   0.169   0.659
+  credit (live)                  0.340   0.257   0.457
+  original (live)                0.446   0.182   0.690
 
-Closest to real data: credit (live) (mean 0.341).
+Closest to real data: credit (live) (mean 0.340).
 A CAVEAT THAT MATTERS: looking like real data is not the same as training a better
 model. This ranking says which priors are worth the compute; Exp1's training runs are
 what decide which one actually helps.

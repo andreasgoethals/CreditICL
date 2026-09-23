@@ -59,9 +59,9 @@ def test_intensity_reads_mild_from_the_narrow_range():
 
 def _write_progress(man, arm, with_ood=True):
     cols = {"step": [0, 100, 200], "train_loss": [0.7, 0.5, 0.45],
-            "real__german__auc": [0.60, 0.68, 0.71], "real__hmeq__auc": [0.70, 0.80, 0.85]}
+            "real__german__roc_auc": [0.60, 0.68, 0.71], "real__hmeq__roc_auc": [0.70, 0.80, 0.85]}
     if with_ood:
-        cols["ood__letter__auc"] = [0.80, 0.74, 0.70]
+        cols["ood__letter__roc_auc"] = [0.80, 0.74, 0.70]
     pd.DataFrame(cols).to_csv(man / f"{arm}__progress.csv", index=False)
 
 
@@ -106,10 +106,10 @@ def _results_df():
         for ds in ("german", "hmeq"):
             rows.append({"dataset": ds, "model": "crediticl", "seed": 0,
                          "info_run_name": f"exp2_pd__prior-credit_fraction={cf}__train-lr=1em06__s0",
-                         "auc": 0.70 + (0.02 if cf != "0" else 0.0), "brier": 0.1})
+                         "roc_auc": 0.70 + (0.02 if cf != "0" else 0.0), "brier": 0.1})
     for ds, a in (("german", 0.735), ("hmeq", 0.9)):  # the reference: name in `model`, blank run-name
         rows.append({"dataset": ds, "model": "tabiclv2", "seed": 0, "info_run_name": "",
-                     "auc": a, "brier": 0.09})
+                     "roc_auc": a, "brier": 0.09})
     return pd.DataFrame(rows)
 
 
@@ -127,8 +127,10 @@ def test_new_results_views_build_with_a_reference(monkeypatch):
     df = _results_df()
     monkeypatch.setattr(rp, "load_results", lambda track, exp="exp1": df)
     for fn in (rp.metric_grid, rp.per_dataset_heatmap, rp.beats_reference,
-               rp.overall_ranking, rp.credit_vs_control):
+               rp.credit_vs_control):
         assert _drew(fn("pd", "exp2")), fn.__name__
+    # This partial fixture cannot be used to choose a prior.
+    assert not _drew(rp.overall_ranking("pd", "exp2"))
 
 
 def test_new_results_views_degrade_before_the_benchmark(monkeypatch):

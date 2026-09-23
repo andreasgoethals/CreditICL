@@ -27,12 +27,13 @@ import pandas as pd
 from src.utils import paths
 from src.visualize import style
 
-HEADLINE = {"pd": "auc", "lgd": "r2"}
+HEADLINE = {"pd": "roc_auc", "lgd": "r2"}
 HIGHER_IS_BETTER = {"auc": True, "ap": True, "r2": True, "rmse": False, "mae": False,
+                    "roc_auc": True, "pr_auc": True,
                     "pinball": False, "crps": False, "brier": False, "logloss": False}
 
 # Names that are external baselines rather than one of our trained arms.
-BASELINES = ("catboost", "xgboost", "lightgbm", "tabpfn", "tabiclv2", "tabicl", "logreg",
+BASELINES = ("catboost", "xgboost", "lightgbm", "tabpfn", "tabpfn3", "tabiclv2", "tabicl", "logreg",
              "linear", "mean", "gbm", "rf", "randomforest")
 
 # Sweep levers that identify an Exp2 arm, as they appear in a run name / benchmark tag.
@@ -43,18 +44,22 @@ def load_results(track: str, exp: str = "exp1") -> pd.DataFrame | None:
     """Per-(dataset, model, seed) results for `exp` on `track`, or `None` if none exist.
 
     Concatenates the experiment's arm files (`results_<exp>bench_<track>_*.csv`) with the shared
-    reference (`results_reference_<track>.csv`). Falls back to every `results_*.csv` when the
-    tagged files are absent, so an older single-file run still renders.
+    reference (`results_reference_<track>.csv`). Other experiment and legacy CSVs are
+    excluded so old results cannot be mistaken for this experiment's benchmark.
     """
     out = paths.results_dir(track, "eval")
     if not out.exists():
         return None
-    files = sorted(out.glob(f"results_{exp}bench_{track}_*.csv"))
+    from src.eval.selection import ROOT
+    from src.utils.config import expand_with_seeds, load
+    cfg = load(ROOT / f"config/Exp{int(exp.removeprefix('exp'))}_{track.upper()}.yaml",
+               allow_placeholders=True)
+    files = [out / f"results_{exp}bench_{track}_a{i}.csv"
+             for i in range(len(expand_with_seeds(cfg)))]
+    files = [p for p in files if p.is_file()]
     ref = out / f"results_reference_{track}.csv"
     if ref.is_file():
         files.append(ref)
-    if not files:
-        files = sorted(out.glob("results_*.csv"))
     frames = []
     for path in files:
         try:
@@ -64,6 +69,8 @@ def load_results(track: str, exp: str = "exp1") -> pd.DataFrame | None:
     if not frames:
         return None
     df = pd.concat(frames, ignore_index=True)
+    if "status" in df:
+        df = df[df["status"].eq("ok")]
     return df if len(df) else None
 
 
@@ -126,7 +133,7 @@ def _with_identity(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
 
 
 def available_metrics(df: pd.DataFrame) -> list[str]:
-    known = ["auc", "ap", "r2", "rmse", "mae", "pinball", "crps", "brier", "logloss", "ks",
+    known = ["roc_auc", "pr_auc", "auc", "ap", "r2", "rmse", "mae", "pinball", "crps", "brier", "logloss", "ks",
              "calibration_slope", "boundary_mass_abs_err", "coverage_80"]
     return [m for m in known if m in df.columns]
 
@@ -137,7 +144,7 @@ def available_metrics(df: pd.DataFrame) -> list[str]:
 
 
 def overall_ranking(track: str, exp: str = "exp1", metric: str | None = None):
-    """Mean headline score per model across datasets and seeds, sorted, coloured by kind."""
+    """Development-only configuration ranking, with variation over training seeds."""
     df = load_results(track, exp)
     metric = metric or HEADLINE[track]
     style.apply()
@@ -146,8 +153,13 @@ def overall_ranking(track: str, exp: str = "exp1", metric: str | None = None):
         _empty(ax, "no benchmark results in output/results/%s/eval/ yet" % track)
         return fig
 
-    df, mc = _with_identity(df)
-    agg = df.groupby(mc)[metric].agg(["mean", "std"]).reset_index()
+    from src.eval.selection import development_ranking
+    agg = development_ranking(df, track, exp, metric)
+    mc = "configuration"
+    if agg.empty:
+        fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.30))
+        _empty(ax, "No complete development-set configuration scores yet")
+        return fig
     agg["kind"] = agg[mc].map(_kind)
     agg = agg.sort_values("mean", ascending=HIGHER_IS_BETTER.get(metric, True))
     fig, ax = plt.subplots(figsize=style.row_figsize(len(agg)))
@@ -156,11 +168,11 @@ def overall_ranking(track: str, exp: str = "exp1", metric: str | None = None):
             error_kw={"elinewidth": 0.8, "ecolor": style.MUTED})
     ax.set_yticks(y)
     ax.set_yticklabels([str(m)[:34] for m in agg[mc]], fontsize=7)
-    ax.set_xlabel(f"real-data {metric} (mean over datasets and seeds)")
+    ax.set_xlabel(f"development {metric} (mean; error bars: training-seed SD)")
     ax.legend(handles=style.legend_patches({k: _KIND_COLOUR[k] for k in ("credit", "control", "baseline")}),
               loc="lower right")
     style.title(ax, f"Ranking by {metric}")
-    fig.suptitle(f"{track.upper()} benchmark ranking")
+    fig.suptitle(f"{track.upper()} development benchmark ranking")
     return fig
 
 
@@ -407,13 +419,17 @@ def results_summary(track: str, exp: str = "exp1") -> str:
              f"{df['dataset'].nunique() if 'dataset' in df else '?'} datasets",
              f"  metrics: {', '.join(available_metrics(df)) or 'none'}"]
     if metric in df.columns:
-        per = df.groupby(mc)[metric].mean()
         per_kind = df.assign(kind=df[mc].map(_kind)).groupby("kind")[metric].mean()
         for k in ("credit", "control", "baseline"):
             if k in per_kind:
                 lines.append(f"  {k:<9} mean {metric} = {per_kind[k]:.4f}")
-        top = per.sort_values(ascending=not HIGHER_IS_BETTER.get(metric, True)).index[0]
-        lines.append(f"  best model: {top}  ({metric}={per[top]:.4f})")
+        from src.eval.selection import development_ranking
+        ranking = development_ranking(df, track, exp)
+        if not ranking.empty:
+            top = ranking.iloc[0]
+            lines.append(f"  development leader: {top['configuration']} ({metric}={top['mean']:.4f})")
+        else:
+            lines.append("  prior selection: no complete development configuration scores yet")
     return "\n".join(lines)
 
 

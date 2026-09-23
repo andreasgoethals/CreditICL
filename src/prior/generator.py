@@ -108,6 +108,11 @@ class TaskGenerator:
             trivial_threshold=float(fcfg.get("trivial_threshold", 0.1)),
         )
         self.max_attempts = int(cfg.get("max_filter_attempts", 40))
+        self.max_invalid_attempts = int(cfg.get("max_invalid_attempts", 100))
+        if min(self.max_attempts, self.max_invalid_attempts) < 1:
+            raise ValueError("prior attempt limits must be positive")
+        self.invalid_candidates = 0
+        self.filter_fallbacks = 0
 
     # -- sizes ---------------------------------------------------------------
     def group_summary(self) -> dict:
@@ -283,31 +288,55 @@ class TaskGenerator:
         returns straight out of `upstream.sample_control` — cannot drift from the credit
         arms on NaN handling or dtype."""
         X = torch.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
-        y = torch.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0)
+        # Missing features have an explicit zero-imputation convention. Targets do not:
+        # replacing a bad target invents a label and can hide upstream's failure sentinel.
         return SyntheticTask(X=X.float(), y=y.float(), source=meta["source"], meta=meta)
+
+    def _valid(self, task: SyntheticTask) -> bool:
+        """Hard validity is independent of the optional predictability filter."""
+        y = task.y
+        if (task.X.ndim != 2 or y.ndim != 1 or len(y) != len(task.X)
+                or len(y) < 2 or not torch.isfinite(y).all()
+                or not torch.isfinite(task.X).all() or torch.unique(y).numel() < 2):
+            return False
+        # GraphSCM returns y=-100 on invalid graphs. It must never reach one_hot,
+        # even after exhausting the statistical filter. Negative regression values
+        # are legitimate, so do not clamp or reject them as a class label.
+        return self.regression or bool(((y >= 0) & (y < self.n_classes) & (y == y.round())).all())
 
     # -- public --------------------------------------------------------------
     def sample(self, shape: tuple[int, int] | None = None) -> SyntheticTask:
         """Rejection-sample until a task passes the predictability filter.
 
-        Falls back to the last candidate after `max_attempts` rather than looping
-        forever. Fallbacks are counted in `meta` so a run that hits the cap often
-        is visible in the logs instead of silently biasing the task stream.
+        Falls back only to a valid candidate after exhausting the statistical filter.
+        Invalid graphs have a separate bounded retry budget and never enter training.
         """
         # Decide credit-vs-base ONCE for this slot, before the rejection loop, so the filter
         # cannot skew the realised credit fraction above the nominal knob (see _sample_candidate).
         use_credit = self.rng.boolean(self.credit_fraction)
         last: SyntheticTask | None = None
-        for attempt in range(self.max_attempts):
+        attempts = invalid = 0
+        while attempts < self.max_attempts and invalid < self.max_invalid_attempts:
             task = self._sample_candidate(shape, use_credit=use_credit)
+            if not self._valid(task):
+                invalid += 1
+                self.invalid_candidates += 1
+                continue
+            attempts += 1
             last = task
             if self.filter.accept(task.X, task.y, is_classif=not self.regression):
-                task.meta["filter_attempts"] = attempt + 1
+                task.meta["filter_attempts"] = attempts
+                task.meta["invalid_attempts"] = invalid
                 return task
-        assert last is not None
-        last.meta["filter_attempts"] = self.max_attempts
+        if last is None:
+            raise RuntimeError(f"Prior produced {invalid} invalid tasks without a valid candidate "
+                               f"(task={self.task}, source={'credit' if use_credit else 'base'})")
+        last.meta["filter_attempts"] = attempts
+        last.meta["invalid_attempts"] = invalid
         last.meta["filter_fallback"] = True
+        self.filter_fallbacks += 1
         return last
 
     def filter_summary(self) -> dict[str, float]:
-        return self.filter.stats.summary()
+        return {**self.filter.stats.summary(), "invalid_candidates": self.invalid_candidates,
+                "filter_fallbacks": self.filter_fallbacks}

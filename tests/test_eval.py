@@ -412,15 +412,16 @@ def test_checkpoint_round_trip_uses_the_architecture_that_saved_it(tmp_path, tas
     import torch
 
     from src.eval.crediticl_baseline import load_our_checkpoint
-    from src.models.architecture import build_model
+    from src.train.loop import Trainer
 
     small = {"embed_dim": 32, "col_num_blocks": 1, "row_num_blocks": 1, "icl_num_blocks": 1,
              "col_nhead": 2, "row_nhead": 2, "icl_nhead": 2}
     cfg = {"task": task, "architecture": architecture, "model": small,
            "train": {"num_quantiles": 17}, "prior": {"n_classes": 2}}
-    # mirrors Trainer._build_model: the head is the only thing the task changes
-    small_built = dict(small, num_quantiles=17) if task == "lgd" else dict(small, max_classes=2)
-    model = build_model(task, architecture=architecture, **small_built)
+    trainer = Trainer.__new__(Trainer)
+    trainer.cfg, trainer.regression, trainer.num_quantiles = cfg, task == "lgd", 17
+    trainer.task = task
+    model = trainer._build_model()
 
     ckpt = tmp_path / "step-10.ckpt"
     torch.save({"step": 10, "config": cfg, "model": model.state_dict()}, ckpt)
@@ -441,15 +442,14 @@ def test_checkpoint_round_trip_uses_the_architecture_that_saved_it(tmp_path, tas
 def test_tabicl_round_trip(tmp_path, task):
     """The architecture every real config uses — the exact case that broke on the cluster.
 
-    Both sides are built from ONE config through the same two lines the trainer uses, because
-    that is the invariant being tested: save and load must agree. Writing the save side by
-    hand instead made this test fail on a 10-vs-2 class head, which is a real issue but a
-    different one — see `test_pd_head_size_is_pinned`.
+    The save side calls the actual production builder: a copied implementation previously
+    forced two classes on BOTH sides and concealed the real trainer's ten-class mismatch.
     """
     import torch
 
     from src.eval.crediticl_baseline import load_our_checkpoint
-    from src.models.architecture import build_model, is_available
+    from src.models.architecture import is_available
+    from src.train.loop import Trainer
 
     if not is_available("tabicl"):
         pytest.skip("upstream tabicl not installed here")
@@ -457,13 +457,10 @@ def test_tabicl_round_trip(tmp_path, task):
     cfg = {"task": task, "architecture": "tabicl", "model": {},
            "train": {"num_quantiles": 999}, "prior": {"n_classes": 2}}
 
-    # verbatim from Trainer._build_model — if that changes, this must change with it
-    mcfg = dict(cfg["model"])
-    if task == "lgd":
-        mcfg.setdefault("num_quantiles", cfg["train"]["num_quantiles"])
-    else:
-        mcfg.setdefault("max_classes", cfg["prior"]["n_classes"])
-    model = build_model(task, architecture="tabicl", **mcfg)
+    trainer = Trainer.__new__(Trainer)
+    trainer.cfg, trainer.regression, trainer.num_quantiles = cfg, task == "lgd", 999
+    trainer.task = task
+    model = trainer._build_model()
 
     ckpt = tmp_path / "step-1500.ckpt"
     torch.save({"step": 1500, "config": cfg, "model": model.state_dict()}, ckpt)

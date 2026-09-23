@@ -73,7 +73,7 @@ def test_model_column_prefers_the_lever_bearing_column_over_constant_model():
     df = pd.DataFrame({
         "model": ["crediticl", "crediticl", "catboost"],
         "info_run_name": [ARM, CONTROL, ""],
-        "auc": [0.72, 0.70, 0.71],
+        "roc_auc": [0.72, 0.70, 0.71],
     })
     assert rp._model_col(df) == "info_run_name"
 
@@ -89,9 +89,9 @@ def test_kind_separates_control_from_credit_by_the_fraction():
 
 def _progress(with_ood: bool) -> pd.DataFrame:
     cols = {"step": [0, 100, 200], "train_loss": [0.7, 0.5, 0.45],
-            "real__german__auc": [0.60, 0.68, 0.71]}
+            "real__german__roc_auc": [0.60, 0.68, 0.71]}
     if with_ood:
-        cols["ood__letter__auc"] = [0.80, 0.74, 0.70]  # OOD drifting DOWN as credit rises
+        cols["ood__letter__roc_auc"] = [0.80, 0.74, 0.70]  # OOD drifting DOWN as credit rises
     return pd.DataFrame(cols)
 
 
@@ -144,7 +144,7 @@ def test_lever_effect_groups_the_score_by_each_finetuning_lever(isolated_output)
             name = (f"exp2_pd__init-strategy={strat}__prior-credit_fraction=0p5__"
                     f"train-l2sp_alpha=0p003__train-lr={lr}__s0")
             rows.append({"dataset": "german", "model": "crediticl", "seed": 0,
-                         "info_run_name": name, "auc": 0.70 if lr == "1em06" else 0.73})
+                         "info_run_name": name, "roc_auc": 0.70 if lr == "1em06" else 0.73})
     pd.DataFrame(rows).to_csv(out / "results_exp2bench_pd_a0.csv", index=False)
 
     fig = rp.lever_effect("pd", "exp2")

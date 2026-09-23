@@ -8,6 +8,11 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 23-09-2026
+
+- Reject invalid synthetic tasks before fallback/CUDA; fix development-only monitoring, PD plots, paired benchmark validation, and automatic resubmission. Remove the one-off recovery document and cleanup helper.
+- Record the Exp1 output audit: 80/90 complete, repeated PD crashes, reproduced invalid-task fallback, LGD monitor NaNs, and recovery/next-experiment blockers.
+
 ## 16-09-2026 — Literature overlays drawn on the figures; credit-AUC landscape; provenance colours (analysis-only)
 
 - **The literature overlays are now actually drawn**, not just available. `literature.line` was

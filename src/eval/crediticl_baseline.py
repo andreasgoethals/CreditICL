@@ -84,8 +84,8 @@ def load_our_checkpoint(
     # happen, so the two must be read together.
     if regression:
         mcfg.setdefault("num_quantiles", num_quantiles)
-    else:
-        mcfg.setdefault("max_classes", n_classes)
+    # Classification head width is architectural (normally 10), not prior.n_classes.
+    # Let the same builder/defaults as Trainer choose it; explicit legacy overrides remain.
     model = build_model(task, architecture=architecture, **mcfg)
     state = payload.get("model") or payload.get("state_dict")
     if state is None:
@@ -149,8 +149,9 @@ def standardise_from_context(
     Constant columns get std 1.0 rather than 0: dividing by a zero std is the other way to
     manufacture a NaN, and a column with no variation carries no information anyway.
     """
-    mean = np.nanmean(x_context, axis=0, keepdims=True)
-    std = np.nanstd(x_context, axis=0, keepdims=True)
+    context64 = np.asarray(x_context, dtype=np.float64)
+    mean = np.nanmean(context64, axis=0, keepdims=True)
+    std = np.nanstd(context64, axis=0, keepdims=True)
     mean = np.nan_to_num(mean)
     std = np.nan_to_num(std)
     std[std < 1e-12] = 1.0
