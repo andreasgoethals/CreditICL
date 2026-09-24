@@ -262,8 +262,15 @@ def test_fallback_generates_live_when_there_are_no_pools(tmp_path, monkeypatch):
     importlib.reload(pp)
 
     loaded, source = pp.load_variants_or_generate("lgd", n=4)
+    # Provenance is the returned `source`, printed once by the notebook and reported by the
+    # summary — not a "(live)" suffix on every variant name, which cluttered every legend and
+    # broke the colour lookup keyed on the name (the control was drawn orange, our prior green).
     assert source == "live"
-    assert loaded and all("(live)" in k for k in loaded), "live arms must be labelled"
+    assert set(loaded) == {"original", "credit"}
+    from src.visualize import style
+
+    assert pp.variant_color("original") == style.ORIGINAL
+    assert pp.variant_color("credit") == style.CREDIT
 
 
 def test_fallback_prefers_pools_when_they_exist(pools):

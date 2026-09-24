@@ -37,6 +37,7 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 24-09-2026 | Exp1 final download, 19:41; last jobs PD 11604659 / 11613401 / 11613402, LGD 11591463_43 | **COMPLETE: 90/90 arms, all `END status=OK`; phase 2 not run** | ≈1,354 GPU-h (PD 587, LGD 767; banded arms 5–7× the rest). PD monitor (german+myhom, final step): control 0.672, cf 0.5 0.669, cf 1 0.646; OOD 0.997/0.992/0.975. LGD monitor unusable (base_model NaN in 30/45). Monitoring protocols differ — do not rank on them; phase 2 decides |
 | 24-09-2026 | Exp1 snapshot at 09:31 CEST; PD 11598087 → 11604654–61, LGD 11591463_43 | **86/90 complete: PD 42/45, LGD 44/45; four advancing, no new training crashes** | Six PD retries completed; all eight overnight walltime continuations resumed at the exact saved step. Remaining PD a19=11000, a25=12250, a40=7700; LGD a43=12200 of 12500. Conditional finish today ~17:30–18:30 plus queue delay. New PD monitor: 160 finite rows; old LGD monitor still has NaNs in 30 arms. Final benchmark results were not in this download |
 | 23-09-2026 | Exp1 PD retry 11598087, Mindwell; indices 1,4,10,16,19,25,31,34,40 | **SUBMITTED at 12:22 CEST; execution/results not yet supplied** | Updated launcher submitted only the nine unfinished PD arms; counts remain PD 36/45, LGD 44/45 with LGD still running. Failed-log cleanup returned without error at 12:23; checkpoints and successful logs were outside its scope |
 | 23-09-2026 | Scheduler follow-up for 11591462 / 11591463 at 10:30–10:39 | **Confirmed: nine PD FAILED 134; LGD 13/28 completed, 43 RUNNING; benchmark 0/46 per track** | Local fixes prepared; no new cluster jobs submitted. Resume unfinished training; preserve all checkpoints and successful logs. This is follow-up evidence for the snapshot below |
@@ -69,6 +70,30 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
+
+### 24-09-2026 — A fixed seed does not reproduce the PD prior across processes
+- **Tried:** quoting 0.2's PD prior numbers from one run and checking them against the next run with the same seed.
+- **Result:** they moved (original prior median base rate 50.5 % → 50.0 %, share below 10 % 4.2 % → 3.0 %, predictability median 0.06 → 0.34); within one process the draws repeat exactly, across fresh processes two different sequences appear, and `PYTHONHASHSEED=0` selects one of them.
+- **Why:** the installed upstream `tabicl/prior/graph_lib/_dataset.py` builds `feature_groups = list(set(...))` — a set of strings, ordered by the per-process hash seed. The column order of our own tables changes too, for a different reason: `TaskGenerator` shuffles them with torch's global generator, which is unseeded outside training.
+- **Instead:** quote PD prior numbers only to the precision that survives a rerun (the notebooks now do). For reproducible training and figures, set `PYTHONHASHSEED` in the job scripts and the notebook runner, or sort the groups — not done: it changes what the cluster runs.
+
+### 24-09-2026 — Pooled context/query histograms showed no distribution shift at all
+- **Tried:** drawing each shift kind as ONE histogram of every task's context rows against one of every task's query rows (40 tasks pooled).
+- **Result:** context and query coincided for cohort and prior-probability shift — the figure "showed" no shift — and its caption claimed the opposite.
+- **Why:** a prior-probability shift goes up or down at random per task, so pooling cancels it; the cohort shift really is ~absent (PD mild ρ; LGD `quantile` mode has no vintages).
+- **Instead:** one point per task, context mean against query mean, with the same prior's no-shift tasks as the noise yardstick (`mechanism_plots.shift_kinds`). It also exposed that PD's prior-probability shift leaves <1 % defaults in 82 % of queries.
+
+### 24-09-2026 — Clipping a standardised target to [0, 1] invented boundary atoms
+- **Tried:** comparing the original prior's pooled target with real LGD targets after `np.clip(y, 0, 1)`.
+- **Result:** every negative standardised value became an exact 0, so the original prior looked closest to `axa` (the most mass at 0) and 0.1 further from real data than it is.
+- **Why:** the original prior's regression target is standard-scaled (TabICLv2), not on [0, 1]; a clip is not a rescale.
+- **Instead:** min-max scale a target that is not already on [0, 1] (`exp1_plots._unit_target`); the means become 0.34 (credit) against 0.36 (original).
+
+### 24-09-2026 — A common step span truncated every PD curve to step 4,001
+- **Tried:** averaging finished arms only over the span every arm logged (latest first log to earliest last log), to stop end-of-curve jumps.
+- **Result:** all PD aggregates lost their first 4,000 steps.
+- **Why:** three cf = 0.5 `banded` PD arms' progress logs were restarted under the development-only protocol and begin at steps 3,251-4,001.
+- **Instead:** a union grid, and each GROUP's statistic drawn only where all of that group's arms have a value (`training_plots._complete`) — a group starts late or stops early instead of jumping.
 
 ### 24-09-2026 — Averaging Exp1 monitoring curves mixed holdout data into "which prior is best"
 - **Tried:** averaging each arm's `real__*` progress columns into one training curve — first over every column (skipna off), then over the datasets valid in every arm.

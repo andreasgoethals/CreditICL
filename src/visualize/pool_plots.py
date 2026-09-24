@@ -167,8 +167,10 @@ def load_variants_or_generate(
     empty dict flowing into every plot and failing with matplotlib's unhelpful
     "Number of rows must be a positive integer, not 0".
 
-    Live variants are labelled `... (live)` so a figure can never be mistaken for one
-    made from the pools the model actually trained on.
+    Live variants are named plainly, `original` and `credit`; where they came from is the
+    returned `source`, which the notebook prints once and `summaries.prior_summary` reports.
+    They used to be called `original (live)` / `credit (live)`, which put the provenance into
+    every legend and tick label, and broke the colour lookup keyed on the variant's name.
     """
     variants = discover_pools(task)
     if variants:
@@ -185,7 +187,7 @@ def load_variants_or_generate(
     print(f"no pools found for {task} — generating {n} datasets per arm live from {cfg}")
     original, _ = sample_tasks(cfg, n=n, credit_fraction=0.0, seed=seed)
     ours, _ = sample_tasks(cfg, n=n, credit_fraction=1.0, seed=seed)
-    return {"original (live)": original, "credit (live)": ours}, "live"
+    return {"original": original, "credit": ours}, "live"
 
 
 def _require_variants(loaded: dict[str, list[SyntheticTask]]) -> None:
@@ -201,12 +203,21 @@ def _require_variants(loaded: dict[str, list[SyntheticTask]]) -> None:
 
 
 def variant_color(variant: str, index: int = 0) -> str:
-    """`original` is always the grey reference; ours get distinct colours."""
-    if variant == "original":
-        return style.ORIGINAL
-    if variant == "credit_v1":
-        return style.CREDIT
-    return style.SERIES[(index + 1) % len(style.SERIES)]
+    """`original` is always the grey reference, our prior always blue; see `style.variant_colour`."""
+    return style.variant_colour(variant, index)
+
+
+def informative_columns(X: Any) -> np.ndarray:
+    """Indices of the columns that actually vary.
+
+    Every generated table is ZERO-PADDED to `max_features` (100) columns — a draw with 68 real
+    features carries 32 all-zero ones — so `n_features` is 100 for every task and says nothing,
+    and a correlation spectrum over the padded matrix is mostly the padding's zero eigenvalues.
+    """
+    X = np.asarray(X, dtype=float)
+    with np.errstate(invalid="ignore"):
+        sd = np.nanstd(X, axis=0)
+    return np.flatnonzero(np.isfinite(sd) & (sd > 1e-12))
 
 
 # ---------------------------------------------------------------------------
@@ -225,11 +236,14 @@ def variant_summary(loaded: dict[str, list[SyntheticTask]], task: str) -> pd.Dat
     rows = []
     for variant, tasks in loaded.items():
         stats = [target_stats(t.y) for t in tasks]
+        informative = [len(informative_columns(t.X)) for t in tasks]
         rec: dict[str, Any] = {
             "variant": variant,
             "n_sampled": len(tasks),
             "rows_median": int(np.median([t.n_rows for t in tasks])),
-            "features_median": int(np.median([t.n_features for t in tasks])),
+            # Columns that vary, not the padded width: every table is padded to 100 columns.
+            "features_median": int(np.median(informative)),
+            "features_range": f"{min(informative)}-{max(informative)}",
         }
         if task == "lgd":
             boundary = np.array([s["frac_at_min"] + s["frac_at_max"] for s in stats])
@@ -280,10 +294,10 @@ def plot_boundary_mass_by_variant(loaded: dict[str, list[SyntheticTask]], real_r
         colour = variant_color(variant, i)
         # Step histograms, not filled bars: four filled histograms hide each other.
         ax1.hist(boundary, bins=30, histtype="step", lw=2.2, color=colour,
-                 label=f"{variant} (mean {boundary.mean():.3f})")
+                 label=f"{style.variant_label(variant)} (mean {boundary.mean():.3f})")
         ax2.scatter(
             [s["frac_at_min"] for s in stats], [s["frac_at_max"] for s in stats],
-            s=26, alpha=0.5, color=colour, edgecolor="none", label=variant,
+            s=26, alpha=0.5, color=colour, edgecolor="none", label=style.variant_label(variant),
         )
 
     if real_reference:
@@ -332,22 +346,21 @@ def plot_base_rate_by_variant(loaded: dict[str, list[SyntheticTask]], real_refer
     )
     ax = axes[0][0]
 
+    bins = np.linspace(0.0, 1.0, 41)
     for i, (variant, tasks) in enumerate(loaded.items()):
         rates = np.array([float((t.y > 0.5).float().mean()) for t in tasks])
-        ax.hist(rates, bins=30, histtype="step", lw=2.0, color=variant_color(variant, i),
-                label=f"{variant}  (mean {rates.mean():.0%})")
-    ax.axvline(0.5, color=style.MUTED, lw=1.2, ls="--", zorder=1)
-    ax.annotate("balance", (0.5, 1.0), xycoords=("data", "axes fraction"), fontsize=6.5,
-                color=style.MUTED, ha="center", va="bottom")
+        ax.hist(rates, bins=bins, histtype="step", lw=1.8, color=variant_color(variant, i),
+                label=f"{style.variant_label(variant)} (median {np.median(rates):.0%})")
+    ax.axvline(0.5, color=style.MUTED, lw=1.0, ls=":", zorder=1, label="balance (50%)")
     # Below ~10% a default-threshold classifier collapses to the majority class on real credit
-    # data (Tanna 2026) — the danger zone the variants' left tails reach into.
-    literature.line(ax, "tanna_paradox", label="Tanna: collapse < 10%")
-    ax.set_ylabel("tasks")
+    # data (Tanna 2026). In the LEGEND: a rotated label beside the line was written across the bars.
+    literature.line(ax, "tanna_paradox", label="Tanna: collapse below 10%", inline=False)
+    ax.set_xlim(0, 1)
+    ax.set_ylabel("number of tasks")
     # Legend OUTSIDE the axes, above it. Inside, it either sat on the bars or on the 50% line
     # depending on where the data happened to fall — which is a bug that reappears with new
     # data rather than one you can fix once.
-    ax.legend(loc="lower left", bbox_to_anchor=(0.0, 1.02), ncol=max(1, len(loaded)),
-              fontsize=7, frameon=False)
+    ax.legend(loc="lower left", bbox_to_anchor=(0.0, 1.02), ncol=2, fontsize=7, frameon=False)
 
     if has_real:
         strip = axes[1][0]
@@ -358,15 +371,13 @@ def plot_base_rate_by_variant(loaded: dict[str, list[SyntheticTask]], real_refer
         strip.set_yticks([0])
         # The row is labelled on the AXIS, so no floating text can drift onto anything.
         strip.set_yticklabels(["real"], fontsize=7, color=style.STAR)
-        strip.set_xlabel("positive (default) rate")
+        strip.set_xlabel("default rate per dataset")
         strip.grid(visible=False)
         for side in ("left", "right", "top"):
             strip.spines[side].set_visible(False)
-        strip.annotate(f"{rates.min():.0%}-{rates.max():.0%}",
-                       (rates.max(), 0), xytext=(6, 0), textcoords="offset points",
-                       fontsize=6.5, color=style.STAR, va="center", ha="left")
+        strip.xaxis.set_major_formatter(mpl.ticker.PercentFormatter(1.0, decimals=0))
     else:
-        ax.set_xlabel("positive (default) rate")
+        ax.set_xlabel("default rate per dataset")
 
     # NO heading. The legend already occupies the space above the axes, and a title there
     # collides with it — as it did. The caption names the figure, which is the policy anyway:
@@ -374,30 +385,31 @@ def plot_base_rate_by_variant(loaded: dict[str, list[SyntheticTask]], real_refer
     return fig
 
 
-def shape_pages(n_per: int = 10) -> int:
-    """How many figures `plot_target_shapes_by_variant` needs for `n_per` draws.
+def shape_pages(n_per: int = 5) -> int:
+    """How many figures `plot_target_shapes_by_variant` needs for `n_per` draws per variant.
 
-    Exposed so a notebook can loop over pages without knowing the page size, which is a
-    property of A4 and lives in `style`.
+    Five draws fit one figure; more are split over pages, because the constraint is the panel
+    WIDTH — ten panels across the page are thumbnails however tall the figure is.
     """
     return max(1, len(style.paginate(list(range(n_per)))))
 
 
 def plot_target_shapes_by_variant(
-    loaded: dict[str, list[SyntheticTask]], n_per: int = 10, page: int = 1
+    loaded: dict[str, list[SyntheticTask]], n_per: int = 5, page: int = 1
 ):
-    """One row of target histograms per variant — the visual gist, side by side.
+    """The target of individual tasks, one row per variant: what a single draw actually looks like.
 
-    This is the compromise that replaces one-notebook-per-variant: not 100 panels for
-    one variant, but a handful for each of them, on the same figure, so differences in shape
-    are seen rather than remembered.
+    Every panel is one task's target histogram, with its axes: the share of rows on y, the
+    target's own values on x. An unbounded target (the original prior standard-scales its target)
+    gets its own range and its two end values as ticks; a target on [0, 1] gets 0, 0.5 and 1, so
+    the boundary atoms sit visibly on the edges. The rows show the same draw indices, so a column
+    compares the two priors on the same random seed.
 
-    PAGINATED, because `grid_figsize` only guarantees the grid fits the page WIDTH. Ten panels
-    across A4's 160 mm is 0.63 in each — page-correct and unreadable, and making the figure
-    taller cannot help because the constraint is horizontal. So the answer is the one a journal
-    uses: `n_per=10` becomes two figures of five, each captioned "(page N of M)". Ask
-    `shape_pages(n_per)` for the count and call this once per page.
+    Axes were missing before — no ticks, no labels — so a panel could not say where 0 and 1 were
+    or how tall an atom was, which is the whole content of the figure.
     """
+    from matplotlib.ticker import PercentFormatter
+
     _require_variants(loaded)
     style.apply()
     pages = style.paginate(list(range(n_per)))
@@ -408,64 +420,108 @@ def plot_target_shapes_by_variant(
     n_var, n_cols = len(loaded), len(columns)
     fig, axes = plt.subplots(
         n_var, n_cols,
-        figsize=style.grid_figsize(n_cols, n_var, panel_ratio=1.1), squeeze=False,
+        figsize=style.grid_figsize(n_cols, n_var, panel_ratio=0.95), squeeze=False,
     )
+    small = mpl.rcParams["xtick.labelsize"] * 0.85
     for r, (variant, tasks) in enumerate(loaded.items()):
         colour = variant_color(variant, r)
+        bounded_row = True
         for c, draw in enumerate(columns):
             ax = axes[r][c]
-            ax.set_xticks([])
-            ax.set_yticks([])
-            ax.grid(visible=False)
             # `draw` indexes the FULL set of draws, not this page — so page 2 shows draws
             # 5..9 rather than repeating 0..4 with different data.
             if draw >= len(tasks):
                 ax.axis("off")
                 continue
-            ax.hist(tasks[draw].y.numpy(), bins=25, color=colour)
-            for sp in ax.spines.values():
-                sp.set_linewidth(0.4)
-                sp.set_color(style.GRID)
-        axes[r][0].set_ylabel(
-            variant, fontsize=mpl.rcParams["xtick.labelsize"], color=style.INK,
-            rotation=0, ha="right", va="center", labelpad=8,
-        )
-    fig.suptitle(f"Target shapes{style.page_suffix(page, n_pages)}")
+            y = np.asarray(tasks[draw].y, dtype=float).ravel()
+            lo, hi = float(np.nanmin(y)), float(np.nanmax(y))
+            bounded = lo >= -1e-6 and hi <= 1 + 1e-6
+            bounded_row &= bounded
+            edges = np.linspace(0.0, 1.0, 26) if bounded else np.linspace(lo, hi + 1e-9, 26)
+            ax.hist(y, bins=edges, weights=np.full(y.size, 1.0 / max(y.size, 1)),
+                    color=colour, linewidth=0)
+            if bounded:
+                ax.set_xlim(-0.03, 1.03)
+                ax.set_xticks([0.0, 0.5, 1.0])
+                ax.set_xticklabels(["0", "0.5", "1"])
+            else:
+                # Two significant figures, not one decimal: a narrow standardised range printed
+                # with "%.1f" came out as the useless pair "-0.0" and "0.0".
+                ax.set_xticks([lo, hi])
+                ax.set_xticklabels([f"{lo:.2g}", f"{hi:.2g}"])
+            ax.yaxis.set_major_formatter(PercentFormatter(1.0, decimals=0))
+            ax.yaxis.set_major_locator(mpl.ticker.MaxNLocator(3))
+            ax.tick_params(labelsize=small)
+            ax.grid(axis="y")
+        axes[r][0].set_title(style.variant_label(variant), loc="left", fontsize=9)
+        axes[r][0].set_ylabel("share of rows", fontsize=small)
+        axes[r][n_cols // 2].set_xlabel(
+            "LGD target (0 = full recovery, 1 = total loss)" if bounded_row
+            else "target, on its own standardised scale", fontsize=small)
+    if n_pages > 1:
+        fig.suptitle(f"Target of single tasks{style.page_suffix(page, n_pages)}")
     return fig
 
 
-def plot_spectrum_by_variant(loaded: dict[str, list[SyntheticTask]], n_curves: int = 40):
-    """Correlation spectra, one colour per variant, medians drawn bold.
+def _spectrum(X: Any, grid: np.ndarray, *, max_cols: int = 100, max_rows: int = 2000,
+              seed: int = 0) -> np.ndarray | None:
+    """One table's correlation spectrum on `grid`: eigenvalues over the largest, against rank over
+    the number of columns — computed on the columns that VARY, so zero padding does not pose as
+    independent features. A table wider than `max_cols` is reduced to a random `max_cols` of its
+    columns, so real tables are measured at the width the prior generates."""
+    X = np.asarray(X, dtype=float)
+    rng = np.random.default_rng(seed)
+    if X.shape[0] > max_rows:
+        X = X[rng.choice(X.shape[0], size=max_rows, replace=False)]
+    cols = informative_columns(X)
+    if cols.size > max_cols:
+        cols = np.sort(rng.choice(cols, size=max_cols, replace=False))
+    if cols.size < 2:
+        return None
+    X = np.nan_to_num(X[:, cols], nan=0.0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        C = np.nan_to_num(np.corrcoef(X, rowvar=False))
+    ev = np.sort(np.linalg.eigvalsh(C))[::-1]
+    ev = np.clip(ev / max(ev[0], 1e-9), 0.0, 1.0)
+    return np.interp(grid, np.arange(1, len(ev) + 1) / len(ev), ev)
 
-    O'Prior's central measurement. If two variants' spectra sit on top of each other,
-    they teach a similar dependence structure however different the targets look.
+
+def plot_spectrum_by_variant(loaded: dict[str, list[SyntheticTask]], n_curves: int = 40,
+                             real: dict[str, Any] | None = None):
+    """Feature-correlation spectra: each prior against the real datasets, medians drawn bold.
+
+    O'Prior's central measurement. A spectrum that falls steeply means a few directions carry most
+    of the variance — strongly dependent features; a flat one means near-independent columns. Two
+    priors whose medians coincide teach a similar dependence structure however different their
+    targets look, and the real datasets say which of them is the realistic one.
+
+    Measured on the columns that vary: every generated table is zero-padded to 100 columns, and the
+    padding's zero eigenvalues used to pull every synthetic spectrum down to zero at a third of the
+    rank axis. Real tables wider than 100 columns are measured on a random 100 of them.
     """
     _require_variants(loaded)
     style.apply()
-    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.62))
-    grid = np.linspace(0, 1, 50)
-    for i, (variant, tasks) in enumerate(loaded.items()):
-        colour = variant_color(variant, i)
-        curves = []
-        for t in tasks:
-            X = t.X.numpy()
-            if X.shape[1] < 2:
-                continue
-            with np.errstate(invalid="ignore", divide="ignore"):
-                C = np.nan_to_num(np.corrcoef(X, rowvar=False))
-            ev = np.sort(np.linalg.eigvalsh(C))[::-1]
-            ev = ev / max(ev[0], 1e-9)
-            curves.append(np.interp(grid, np.arange(1, len(ev) + 1) / len(ev), ev))
+    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.50))
+    grid = np.linspace(0, 1, 60)
+    series = [(style.variant_label(v), variant_color(v, i), [t.X for t in tasks])
+              for i, (v, tasks) in enumerate(loaded.items())]
+    if real:
+        series.append(("real datasets", style.REAL, [getattr(d, "X", d) for d in real.values()]))
+    for label, colour, tables in series:
+        curves = [c for c in (_spectrum(X, grid) for X in tables) if c is not None]
         if not curves:
             continue
         for c in curves[:n_curves]:
-            ax.plot(grid, c, color=colour, alpha=0.12, lw=0.8)
-        ax.plot(grid, np.median(curves, axis=0), color=colour, lw=2.6, label=variant)
-    ax.set_xlabel("eigenvalue rank (normalised)")
-    ax.set_ylabel("eigenvalue / largest")
+            ax.plot(grid, c, color=colour, alpha=0.10 if label != "real datasets" else 0.35,
+                    lw=0.7)
+        ax.plot(grid, np.median(curves, axis=0), color=colour, lw=2.2,
+                label=f"{label} (median of {len(curves)})")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    ax.set_xlabel("eigenvalue rank ÷ number of varying columns")
+    ax.set_ylabel("eigenvalue ÷ largest eigenvalue")
     ax.grid(axis="x")
-    ax.legend()
-    style.title(ax, "Correlation spectrum")
+    style.legend_below(ax, ncol=3)
     return fig
 
 
@@ -541,11 +597,12 @@ def plot_shapes_by_variant(loaded: dict[str, list[SyntheticTask]]):
     for i, (variant, tasks) in enumerate(loaded.items()):
         colour = variant_color(variant, i)
         axes[0].hist([t.n_rows for t in tasks], bins=20, histtype="step", lw=2.2,
-                     color=colour, label=variant)
-        axes[1].hist([t.n_features for t in tasks], bins=20, histtype="step", lw=2.2,
-                     color=colour, label=variant)
+                     color=colour, label=style.variant_label(variant))
+        # Varying columns, not the padded width — every generated table is padded to 100.
+        axes[1].hist([len(informative_columns(t.X)) for t in tasks], bins=20, histtype="step",
+                     lw=2.2, color=colour, label=style.variant_label(variant))
     axes[0].set_xlabel("rows per task")
-    axes[1].set_xlabel("features per task")
+    axes[1].set_xlabel("varying features per task")
     axes[0].set_ylabel("number of tasks")
     # ONE legend, on the figure, below both panels. Two per-axes legends each carried
     # "original (live)" and "credit (live)" — long labels that overlapped the histograms and

@@ -10,7 +10,27 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 24-09-2026
 
+- Exp1 phase 1 complete (90/90): final download recorded; `output/manifests` refreshed and notebooks
+  1.1–1.4 re-run on it; 1.1/1.2 prose and captions updated to the finished run.
 - Audit the new Exp1 snapshot: 86/90 complete, successful overnight checkpoint continuation, four remaining ETAs, and persistent legacy LGD monitoring NaNs.
+- **Notebook prose rewritten figure by figure**: *what it shows · why it matters · what it says*, with
+  the sweep's numbers; no prose about colours, A4 or pagination; colour-key sections removed.
+- **Prior figures coloured by meaning**: `style.variant_colour`/`variant_label`; live variants are now
+  `original`/`credit` — the `(live)` suffix broke the lookup, drawing the control orange and ours green.
+- **Figures carry no second heading line**; legends sit below the data (`style.legend_below`), labels
+  never collide (`style.place_labels`), every axis is labelled, placeholders are one compact line.
+- Training curves: a group mean is drawn only where every arm has a value (`_complete`) — ends differ,
+  and three PD banded logs start at step 4,001; the loss is smoothed and coloured by credit fraction.
+- New: `metric_by_levers` (all levers on one y axis), `gradient_health` (norm + ratio), per-configuration
+  seed panels, metric pages by theme with correct goals (`style.METRIC_GOAL`; "↑" was drawn over errors
+  and coverages), `predictability_scores/plot_predictability` (priors and real data on the filter's own
+  pseudo-R², replacing the filter and difficulty figures), `plot_leakage_screen`, per-task shift scatter.
+- Removed from the notebooks: palettes, the table-shape check (every task is 1,024 × 100 by padding),
+  LGD mechanism decomposition (Exp1 runs `quantile` mode), PD realism ranking and imbalance duplicate,
+  reject-inference duplicate (now the shift figure's selection panel), hardware (numbers in the summary).
+- Fixes in the figures and summaries: realism distance min-max scales a standardised target instead of
+  clipping it (clipping invented atoms); spectra drop zero-padded columns and add the real datasets;
+  0.1's leakage top five sorts across tasks; the LGD prior summary describes `quantile` mode.
 - **Notebooks restructured into three numbered chapters** — `notebooks/0. General/`, `1. Experiment 1/`,
   `2. Experiment 2/` — with a story map in `notebooks/README.md` and a previous/next line in every notebook.
   Stems keep their `X.Y_` prefix, so `output/figures/<notebook>/` and the alphabetical summaries are

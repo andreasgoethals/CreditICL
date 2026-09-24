@@ -29,21 +29,22 @@ missing cells      0.0% to 22.7% (median 0.7%)  —  6/14 have NONE left (pre-im
 base rate          6.7% to 40.0% (median 22.4%)
   gmsc                       6.7%   (1 default per 14 non-defaults)
   home_credit                8.1%   (1 default per 11 non-defaults)
-  loan_default               9.3%   (1 default per 10 non-defaults)
-  lendingclub               16.0%   (1 default per 5 non-defaults)
+  loan_default               9.3%   (1 default per 9.8 non-defaults)
+  lendingclub               16.0%   (1 default per 5.2 non-defaults)
   hmeq                      19.9%   (1 default per 4 non-defaults)
-  vehicle_loan              21.7%   (1 default per 4 non-defaults)
-  taiwan_creditcard         22.1%   (1 default per 4 non-defaults)
-  bank_status               22.6%   (1 default per 3 non-defaults)
-  hackerearth               23.6%   (1 default per 3 non-defaults)
-  cobranded                 24.6%   (1 default per 3 non-defaults)
-  thomas                    26.4%   (1 default per 3 non-defaults)
-  german                    30.0%   (1 default per 2 non-defaults)
-  algorithmwatch            37.8%   (1 default per 2 non-defaults)
-  myhom                     40.0%   (1 default per 1 non-defaults)
+  vehicle_loan              21.7%   (1 default per 3.6 non-defaults)
+  taiwan_creditcard         22.1%   (1 default per 3.5 non-defaults)
+  bank_status               22.6%   (1 default per 3.4 non-defaults)
+  hackerearth               23.6%   (1 default per 3.2 non-defaults)
+  cobranded                 24.6%   (1 default per 3.1 non-defaults)
+  thomas                    26.4%   (1 default per 2.8 non-defaults)
+  german                    30.0%   (1 default per 2.3 non-defaults)
+  algorithmwatch            37.8%   (1 default per 1.6 non-defaults)
+  myhom                     40.0%   (1 default per 1.5 non-defaults)
 
-Every dataset is below the 50% balance point that TabICL's prior sits
-near, most by a wide margin. That gap is what the PD arm addresses.
+Every dataset is below 50%. TabICL's unmodified prior spreads its tasks'
+base rates over the whole [0, 1] with a median near 50% (notebook 0.2), so
+real books sit in its left tail. That gap is what the PD arm addresses.
 
 --- LGD -----------------------------------------------------------------------
 rows      594 to 5.886e+04 (median 4637)
@@ -67,16 +68,19 @@ overfitting to it.
 
 --- LEAKAGE SCREEN -----------------------------------------------------------
 single-feature |correlation| with the target, top 5:
-  0007.cobranded           mvar1                        0.421
-  0009.bank_status         Credit Score                 0.399
-  0007.cobranded           mvar8                        0.369
-  0007.cobranded           mvar6                        0.358
-  0013.hmeq                DELINQ                       0.354
+  0007.lgd_lendingclub     months_since_origination     0.754
+  0002.loss2               REO_Appraisal_Amount         0.711
+  0005.base_modelisation   DT_DECHEANCE_TERME           0.596
+  0005.base_modelisation   topbaloispur_cor             0.589
+  0001.heloc               DefPrinBal                   0.518
 
 Nothing above 0.9. No single-feature smoking gun.
 A high correlation is a POINTER, not proof: a single strong predictor can
 be legitimate. Conversely this screen only looks at one feature at a time,
 so it cannot see leakage spread across several columns.
+
+--- FEATURE DEPENDENCE (mean |r| between features) --------------------------
+  heloc 0.23, taiwan_creditcard 0.20, cobranded 0.17, loan_default 0.15, gmsc 0.14, loss2 0.14, lendingclub 0.13, myhom 0.13, base_modelisation 0.12, home_credit 0.12, base_model 0.11, hmeq 0.11, lgd_lendingclub 0.10, thomas 0.10, vehicle_loan 0.09, hackerearth 0.08, german 0.08, lgd_freddie 0.07, bank_status 0.07, axa 0.06, algorithmwatch 0.05
 
 --- IMPLICATIONS FOR THE PRIOR -----------------------------------------------
 1. LGD boundary mass varies by a factor of ~40 across datasets, so the prior
@@ -84,8 +88,9 @@ so it cannot see leakage spread across several columns.
 2. LGD targets are genuinely bounded — clipping to [0,1] encodes a real
    constraint that the original prior does not have.
 3. PD base rates sit far below balance, so imbalance is sampled, not fixed.
-4. Real features come in correlated blocks, which is why the prior builds
-   features through random DAGs rather than independently.
+4. Feature dependence differs by book (mean |r| from 0.05 to 0.23), so the prior
+   should produce both strongly blocked and nearly independent tables —
+   which random causal graphs of varying size do.
 5. Missingness is mostly pre-imputed away here, so do NOT tune the prior's
    missingness rate to these numbers — they measure the upstream pipeline.
 
@@ -96,7 +101,7 @@ References (tfm-library pin e5ce016):
   - papers/2026/06_Purucker_BeyondIID Table E.3  [paper-evaluated]
   - papers/2026/05_Bouadi_ShapingThePrior §benchmarks  [paper-evaluated]
 
-0.1_data_exploration: 11 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\0.1_data_exploration
+0.1_data_exploration: 10 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\0.1_data_exploration
   01  pd_base_rates
   02  lgd_targets
   03  boundary_mass_ranking
@@ -104,10 +109,9 @@ References (tfm-library pin e5ce016):
   05  type_mix
   06  missingness
   07  feature_correlations_lgd_p1
-  08  feature_correlations_lgd_p2
-  09  feature_correlations_pd_p1
-  10  feature_correlations_pd_p2
-  11  feature_correlations_pd_p3
+  08  feature_correlations_pd_p1
+  09  feature_correlations_pd_p2
+  10  leakage_screen
 ```
 
 ---
@@ -115,40 +119,37 @@ References (tfm-library pin e5ce016):
 ## 0.2_prior_visualisation_pd
 
 ```
-pools found: none - will generate live
+pools found: none - generating live
 no pools found for pd — generating 500 datasets per arm live from config/Exp1_PD.yaml
-source = live
-{'original (live)': 500, 'credit (live)': 500}
-FOCUS (detail plots) = credit (live)
+source = live | {'original': 500, 'credit': 500}
 real PD datasets loaded: 14
 reference: measured from 14 real PD datasets
-real-data difficulty: {'gmsc': 0.856, 'taiwan_creditcard': 0.771, 'vehicle_loan': 0.587, 'lendingclub': 0.636, 'myhom': 0.58, 'hackerearth': 0.734, 'cobranded': 0.802, 'german': 0.806, 'bank_status': 0.719, 'thomas': 0.639, 'loan_default': 0.661, 'home_credit': 0.696, 'hmeq': 0.899, 'algorithmwatch': 0.642}
 
 ==============================================================================
 PRIOR SUMMARY — PD
 ==============================================================================
 data source      : live  ('pool' = the files training reads; 'live' = generated on the fly now)
-variants compared: original (live), credit (live)
-datasets sampled : original (live)=500, credit (live)=500
+variants compared: original, credit
+datasets sampled : original=500, credit=500
 
 --- PER VARIANT --------------------------------------------------------------
 
-original (live):
-  shape          rows 1024 to 1024 (median 1024) | features 100 to 100 (median 100)
+original:
+  shape          rows 1024 to 1024 (median 1024) | varying features 3 to 98 (median 48.5) (padded to 100)
   base rate      1.6% to 99.5% (median 50.0%)
   below 5%       1.8% of datasets
   below 10%      3.0% of datasets
 
-credit (live):
-  shape          rows 1024 to 1024 (median 1024) | features 100 to 100 (median 100)
-  base rate      1.4% to 45.6% (median 15.7%)
-  below 5%       10.8% of datasets
-  below 10%      29.0% of datasets
+credit:
+  shape          rows 1024 to 1024 (median 1024) | varying features 3 to 100 (median 83) (padded to 100)
+  base rate      1.3% to 45.6% (median 15.6%)
+  below 5%       10.6% of datasets
+  below 10%      29.4% of datasets
 
 --- AGAINST THE REAL DATASETS ------------------------------------------------
 real base rate: algorithmwatch=37.8%, bank_status=22.6%, cobranded=24.6%, german=30.0%, gmsc=6.7%, hackerearth=23.6%, hmeq=19.9%, home_credit=8.1%, lendingclub=16.0%, loan_default=9.3%, myhom=40.0%, taiwan_creditcard=22.1%, thomas=26.4%, vehicle_loan=21.7%
-  original (live): range [0.016, 0.995] spans 14/14 | median 0.500 | 3/14 datasets have >=10% of draws within 5pp
-  credit (live): range [0.014, 0.456] spans 14/14 | median 0.157 | 12/14 datasets have >=10% of draws within 5pp
+  original: range [0.016, 0.995] spans 14/14 | median 0.500 | 3/14 datasets have >=10% of draws within 5pp
+  credit: range [0.013, 0.456] spans 14/14 | median 0.156 | 12/14 datasets have >=10% of draws within 5pp
 
   Read the LAST column, not the first. A range can span a real value on
   the strength of a few outlier draws while placing almost no mass near it,
@@ -165,21 +166,11 @@ Caveat: this describes the PRIOR, not downstream performance. Whether a
 closer-looking prior actually transfers is what the training and evaluation
 pipelines measure.
 
-
-==============================================================================
-PRIOR REALISM RANKING — PD
-==============================================================================
-Distance from 14 real datasets (total variation, 0 = identical).
-Lower is better. This is the ranking Exp1 exists to refine with training.
-
-  variant                         mean    best   worst
-  credit (live)                  0.096   0.001   0.239
-  original (live)                0.277   0.099   0.433
-
-Closest to real data: credit (live) (mean 0.096).
-A CAVEAT THAT MATTERS: looking like real data is not the same as training a better
-model. This ranking says which priors are worth the compute; Exp1's training runs are
-what decide which one actually helps.
+PREDICTABILITY — the filter's pseudo-R² (banded keeps [0.02, 0.3])
+  original prior  120 unfiltered tasks | median 0.34 | banded keeps 18% | tabicl rejects 32%
+  credit prior    120 unfiltered tasks | median 0.57 | banded keeps 6% | tabicl rejects 3%
+  real datasets   14 | median 0.06 | inside the band 50%
+    loan_default -0.04, myhom -0.01, home_credit -0.01, vehicle_loan -0.00, lendingclub 0.01, algorithmwatch 0.02, thomas 0.03, gmsc 0.10, taiwan_creditcard 0.14, hackerearth 0.17, bank_status 0.17, german 0.19, cobranded 0.20, hmeq 0.43
 
 References (tfm-library pin e5ce016):
   - NanoTabICL.txt rand_converter; TabICL.txt CategoricalConverter; §E.6  [paper-described]
@@ -195,21 +186,15 @@ References (tfm-library pin e5ce016):
   - EXTERNAL — not in tfm-library (Merton 1974; Vasicek 2002)  [external]
   - EXTERNAL — Basel Committee IRB formula  [external]
 
-0.2_prior_visualisation_pd: 14 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\0.2_prior_visualisation_pd
-  01  palette
-  02  base_rate_by_variant
-  03  prior_realism_ranking
-  04  default_clustering
-  05  adj_imbalance_control
-  06  adj_correlated_defaults
-  07  adj_reject_inference
-  08  adj_shift_kinds
-  09  adj_informative_missingness
-  10  adj_filter_modes
-  11  difficulty_calibration
-  12  side_by_side_tables
-  13  spectrum_by_variant
-  14  shapes_by_variant
+0.2_prior_visualisation_pd: 8 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\0.2_prior_visualisation_pd
+  01  base_rate_by_variant
+  02  default_clustering
+  03  correlated_defaults
+  04  shift_kinds
+  05  informative_missingness
+  06  predictability
+  07  side_by_side_tables
+  08  spectrum_by_variant
 ```
 
 ---
@@ -217,46 +202,43 @@ References (tfm-library pin e5ce016):
 ## 0.3_prior_visualisation_lgd
 
 ```
-pools found: none - will generate live
+pools found: none - generating live
 no pools found for lgd — generating 500 datasets per arm live from config/Exp1_LGD.yaml
-source = live
-{'original (live)': 500, 'credit (live)': 500}
-FOCUS (detail plots) = credit (live)
+source = live | {'original': 500, 'credit': 500}
 real LGD datasets loaded: 7
 reference: measured from 7 real LGD datasets
-real-data difficulty: {'heloc': 0.08, 'loss2': 0.39, 'axa': 0.173, 'base_model': 0.27, 'base_modelisation': -4.763, 'lgd_freddie': 0.21, 'lgd_lendingclub': 0.699}
 
 ==============================================================================
 PRIOR SUMMARY — LGD
 ==============================================================================
 data source      : live  ('pool' = the files training reads; 'live' = generated on the fly now)
-variants compared: original (live), credit (live)
-datasets sampled : original (live)=500, credit (live)=500
+variants compared: original, credit
+datasets sampled : original=500, credit=500
 
 --- PER VARIANT --------------------------------------------------------------
 
-original (live):
-  shape          rows 1024 to 1024 (median 1024) | features 100 to 100 (median 100)
-  in [0,1]       0.6% of datasets
+original:
+  shape          rows 1024 to 1024 (median 1024) | varying features 3 to 95 (median 54) (padded to 100)
+  in [0,1]       1.0% of datasets
   boundary mass  0.2% to 100.0% (median 1.0%)
-    at its own min       mean 6.2%  (NOT 0)
-    at its own max       mean 4.4%  (NOT 1)
+    at its own min       mean 6.9%  (NOT 0)
+    at its own max       mean 3.8%  (NOT 1)
     target is not on [0,1], so these are scale-free ties at the extremes,
       largely the +-4 SD outlier clamp — not recovery or loss.
-  any atoms      49.8% of datasets
+  any atoms      48.0% of datasets
 
-credit (live):
-  shape          rows 1024 to 1024 (median 1024) | features 100 to 100 (median 100)
+credit:
+  shape          rows 1024 to 1024 (median 1024) | varying features 13 to 100 (median 86) (padded to 100)
   in [0,1]       100.0% of datasets
-  boundary mass  5.9% to 58.0% (median 32.4%)
-    at 0 (full recovery) mean 16.0%
-    at 1 (total loss)    mean 16.0%
+  boundary mass  6.2% to 58.7% (median 32.4%)
+    at 0 (full recovery) mean 15.9%
+    at 1 (total loss)    mean 15.7%
   any atoms      100.0% of datasets
 
 --- AGAINST THE REAL DATASETS ------------------------------------------------
 real boundary mass: axa=34.2%, base_model=22.4%, base_modelisation=27.6%, heloc=73.0%, lgd_freddie=19.5%, lgd_lendingclub=1.8%, loss2=7.3%
-  original (live): range [0.002, 1.000] spans 7/7 | median 0.010 | 2/7 datasets have >=10% of draws within 5pp
-  credit (live): range [0.059, 0.580] spans 5/7 | median 0.324 | 4/7 datasets have >=10% of draws within 5pp
+  original: range [0.002, 1.000] spans 7/7 | median 0.010 | 2/7 datasets have >=10% of draws within 5pp
+  credit: range [0.062, 0.587] spans 5/7 | median 0.324 | 4/7 datasets have >=10% of draws within 5pp
 
   Read the LAST column, not the first. A range can span a real value on
   the strength of a few outlier draws while placing almost no mass near it,
@@ -264,10 +246,12 @@ real boundary mass: axa=34.2%, base_model=22.4%, base_modelisation=27.6%, heloc=
 
 --- WHAT THIS MEANS ----------------------------------------------------------
 The original TabICL prior standard-scales its target, so it puts almost
-nothing inside [0,1] and produces boundary atoms only by chance ties. Our
-prior derives LGD from credit economics (collateral coverage, workout
-cashflows, portfolio segments), so the atoms at 0 and 1 EMERGE from
-over-collateralisation and total loss rather than being dialled in.
+nothing inside [0,1] and produces boundary atoms only by chance ties at the
++-4 SD outlier clamp. Our prior, in this config's 'quantile' mode, sets the
+atoms DIRECTLY: the share of rows at 0 and the share at 1 are each drawn
+uniformly from boundary_mass_range [0.02, 0.3], and the interior follows a
+Kumaraswamy curve. The collateral / workout / segment loss stories exist in
+the code ('mechanism' mode) but are not used by this experiment.
 
 Caveat: this describes the PRIOR, not downstream performance. Whether a
 closer-looking prior actually transfers is what the training and evaluation
@@ -278,16 +262,23 @@ pipelines measure.
 PRIOR REALISM RANKING — LGD
 ==============================================================================
 Distance from 7 real datasets (total variation, 0 = identical).
-Lower is better. This is the ranking Exp1 exists to refine with training.
+Each task's target on [0, 1] first: min-max scaled where it is not (the original
+prior's is standardised). Lower is better.
 
-  variant                         mean    best   worst
-  credit (live)                  0.341   0.257   0.454
-  original (live)                0.428   0.169   0.659
+  variant            mean   closest real dataset       farthest real dataset
+  credit            0.340   lgd_freddie       0.260   lgd_lendingclub   0.456
+  original          0.351   lgd_freddie       0.073   heloc             0.579
 
-Closest to real data: credit (live) (mean 0.341).
+Closest to real data: credit (mean 0.340).
 A CAVEAT THAT MATTERS: looking like real data is not the same as training a better
 model. This ranking says which priors are worth the compute; Exp1's training runs are
 what decide which one actually helps.
+
+PREDICTABILITY — the filter's pseudo-R² (banded keeps [0.05, 0.4])
+  original prior  120 unfiltered tasks | median 0.72 | banded keeps 14% | tabicl rejects 24%
+  credit prior    120 unfiltered tasks | median 0.72 | banded keeps 16% | tabicl rejects 0%
+  real datasets   7 | median 0.42 | inside the band 43%
+    axa 0.20, lgd_freddie 0.22, heloc 0.34, loss2 0.42, base_model 0.43, base_modelisation 0.43, lgd_lendingclub 0.74
 
 References (tfm-library pin e5ce016):
   - TabICL.txt outlier_removing(threshold=4)  [code-supported]
@@ -299,21 +290,16 @@ References (tfm-library pin e5ce016):
   - TabICL.txt should_filter  [code-supported]
   - papers/2026/06_Purucker_BeyondIID Table E.3  [paper-evaluated]
 
-0.3_prior_visualisation_lgd: 14 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\0.3_prior_visualisation_lgd
-  01  palette
+0.3_prior_visualisation_lgd: 9 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\0.3_prior_visualisation_lgd
+  01  target_shapes_by_variant
   02  boundary_mass_sources
   03  prior_realism_ranking
-  04  target_shapes_by_variant_p1
-  05  target_shapes_by_variant_p2
-  06  mechanism_decomposition
-  07  adj_intensity_atoms
-  08  adj_shift_kinds
-  09  adj_informative_missingness
-  10  adj_filter_modes
-  11  difficulty_calibration
-  12  side_by_side_tables
-  13  spectrum_by_variant
-  14  shapes_by_variant
+  04  intensity_atoms
+  05  shift_kinds
+  06  informative_missingness
+  07  predictability
+  08  side_by_side_tables
+  09  spectrum_by_variant
 ```
 
 ---
@@ -328,27 +314,30 @@ References (tfm-library pin e5ce016):
 EXP1 PD TRAINING — development-split monitoring
 
 A. THE RUN
-  arms: 45 scheduled | 45 started | 42 finished | 3 unfinished
-    unfinished: cf0.5·banded·mild·s1     10,625 / 12,500 steps
-    unfinished: cf0.5·banded·aggr·s1     11,875 / 12,500 steps
-    unfinished: cf0.5·banded·aggr·s2      7,500 / 12,500 steps
+  arms: 45 scheduled | 45 started | 45 finished | 0 unfinished
   development datasets averaged (2): german, myhom
   holdout datasets monitored but never averaged: hmeq, thomas
   development datasets not carried by every arm: gmsc, lendingclub, taiwan_creditcard
   arms monitored before the development-only protocol: 36 of 45
-  median speed by filter: banded 0.12 steps/s (~29 h) | off 0.64 steps/s (~5 h) | tabicl 0.63 steps/s (~6 h)
+  group curves are drawn only where all their arms have a value: finished arms' logs start at step 625-4,001 and end at 11,904-12,500
+  median speed by filter: off 0.64 steps/s (~5 h) | tabicl 0.63 steps/s (~6 h) | banded 0.12 steps/s (~29 h)
+  GPU utilisation, median per arm: 92% (range 88-94%)
+  peak allocated GPU memory: 13.1-13.1 GB per arm
+  final training loss by credit fraction (each on its own prior's tasks): cf 0 0.295 | cf 0.5 0.199 | cf 1 0.066
 
-B. THE ANSWER — final development ROC-AUC, 42 finished arms
-  by credit fraction: cf=0 0.6718 ±0.0107 (n=9) | cf=0.5 0.6708 ±0.0113 (n=15) | cf=1 0.6459 ±0.0143 (n=18)
-  by filter mode: tabicl 0.6632 ±0.0159 (n=15) | banded 0.6532 ±0.0171 (n=12) | off 0.6633 ±0.0183 (n=15)
-  by prior intensity: mild 0.6555 ±0.0185 (n=17) | aggressive 0.6591 ±0.0172 (n=16)
-  credit prior minus control: -0.0146
+B. THE ANSWER — final development ROC-AUC, 45 finished arms
+  by credit fraction: cf=0 0.6718 ±0.0107 (n=9) | cf=0.5 0.6693 ±0.0114 (n=18) | cf=1 0.6459 ±0.0143 (n=18)
+  by filter mode: off 0.6633 ±0.0183 (n=15) | tabicl 0.6632 ±0.0159 (n=15) | banded 0.6549 ±0.0162 (n=15)
+  by prior intensity: mild 0.6556 ±0.0180 (n=18) | aggressive 0.6597 ±0.0166 (n=18)
+  credit prior minus control: -0.0142
   best  ROC-AUC = 0.6876  cf0.5·tabicl·mild·s2
   worst ROC-AUC = 0.6250  cf1·banded·aggr·s0
-  seed noise: median range over a configuration's seeds = 0.0190
+  seed noise: median range over a configuration's seeds = 0.0195
+  best seed within a configuration: seed 2 in 12 of 15, seed 0 in 2 of 15, seed 1 in 1 of 15
 
 C. WHERE IT HOLDS
-  out-of-domain ROC-AUC over 8 suites, 42 finished arms: credit datasets 0.6604 | out-of-domain 0.9855
+  credit arms  (36): real credit 0.6576 | out-of-domain (8 suites) 0.9833
+  control arms (9): real credit 0.6718 | out-of-domain (8 suites) 0.9968
   metrics logged: roc_auc, pr_auc
 
 References (tfm-library pin e5ce016):
@@ -356,37 +345,26 @@ References (tfm-library pin e5ce016):
   - papers/2026/02_Qu_TabICLv2 §Data filtering, Fig. 10  [paper-evaluated]
   - TabICL.txt should_filter  [code-supported]
   - NanoTabICL.txt rand_dataset_filtered  [code-supported]
-  - papers/2026/05_Bouadi_ShapingThePrior Table 2  [paper-evaluated]
-  - papers/2025/10_Zhang_Mitra  [paper-evaluated]
-  - SYNTHESIS.md (editorial)  [editorial]
   - EXTERNAL — not in tfm-library (Merton 1974; Vasicek 2002)  [external]
+  - EXTERNAL — Basel Committee IRB formula  [external]
 
-1.1_pd_training: 25 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\1.1_pd_training
-  01  palette
-  02  sweep_map
-  03  monitoring_coverage
-  04  throughput
-  05  training_loss
-  06  gradient_flow
-  07  weight_gradient_ratios
-  08  metric_over_training
-  09  credit_vs_control_over_training
-  10  metric_by_lever_credit_fraction
-  11  metric_by_lever_filter
-  12  metric_by_lever_intensity
-  13  final_metric_by_lever
-  14  lever_interaction
-  15  seed_spread
-  16  per_dataset_p1
-  17  per_dataset_p2
-  18  real_vs_ood
-  19  eval_metrics_p1
-  20  per_config_p1
-  21  per_config_p2
-  22  per_config_p3
-  23  per_config_p4
-  24  best_and_worst
-  25  hardware
+1.1_pd_training: 16 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\1.1_pd_training
+  01  sweep_map
+  02  monitoring_coverage
+  03  throughput
+  04  training_loss
+  05  gradient_health
+  06  metric_over_training
+  07  credit_vs_control_over_training
+  08  metric_by_levers
+  09  final_metric_by_lever
+  10  lever_interaction
+  11  seed_spread
+  12  per_dataset_p1
+  13  real_vs_ood
+  14  eval_metrics_p1
+  15  per_config_p1
+  16  best_and_worst
 ```
 
 ---
@@ -397,64 +375,56 @@ References (tfm-library pin e5ce016):
 EXP1 LGD TRAINING — development-split monitoring
 
 A. THE RUN
-  arms: 45 scheduled | 45 started | 44 finished | 1 unfinished
-    unfinished: cf1·banded·aggr·s2       11,876 / 12,500 steps
+  arms: 45 scheduled | 45 started | 45 finished | 0 unfinished
   development datasets averaged (1): base_model
   holdout datasets monitored but never averaged: axa, base_modelisation, loss2
-  finished arms without a development score: 29 of 44 (a monitor that logged only missing values)
+  finished arms without a development score: 30 of 45 (seed 0: 15, seed 2: 15) — a monitor that logged only missing values
   arms monitored before the development-only protocol: 45 of 45
-  median speed by filter: banded 0.15 steps/s (~23 h) | off 0.65 steps/s (~5 h) | tabicl 0.64 steps/s (~5 h)
+  group curves are drawn only where all their arms have a value: finished arms' logs start at step 625-625 and end at 11,876-12,500
+  median speed by filter: off 0.65 steps/s (~5 h) | tabicl 0.64 steps/s (~5 h) | banded 0.15 steps/s (~23 h)
+  GPU utilisation, median per arm: 93% (range 87-95%)
+  peak allocated GPU memory: 13.1-13.1 GB per arm
+  final training loss by credit fraction (each on its own prior's tasks): cf 0 0.093 | cf 0.5 0.064 | cf 1 0.032
 
 B. THE ANSWER — final development R², 15 finished arms
   by credit fraction: cf=0 -0.0289 ±0.0773 (n=3) | cf=0.5 0.1881 ±0.0256 (n=6) | cf=1 0.0151 ±0.0565 (n=6)
-  by filter mode: tabicl 0.0753 ±0.1074 (n=5) | banded 0.0640 ±0.1046 (n=5) | off 0.0872 ±0.1077 (n=5)
+  by filter mode: off 0.0872 ±0.1077 (n=5) | tabicl 0.0753 ±0.1074 (n=5) | banded 0.0640 ±0.1046 (n=5)
   by prior intensity: mild 0.1202 ±0.0858 (n=6) | aggressive 0.0829 ±0.1038 (n=6)
   credit prior minus control: +0.1304
   best  R² = 0.2177  cf0.5·tabicl·mild·s1
   worst R² = -0.1003  cf1·tabicl·aggr·s1
+  seed noise: not measurable — one scored seed per configuration
 
 C. WHERE IT HOLDS
-  out-of-domain R² over 8 suites, 15 finished arms: credit datasets 0.0755 | out-of-domain 0.5085
+  credit arms  (12): real credit 0.1016 | out-of-domain (8 suites) 0.4900
+  control arms (3): real credit -0.0289 | out-of-domain (8 suites) 0.5827
   metrics logged: r2, rmse, mae, pinball, crps, brier, calibration_slope, spearman, kendall, boundary_mass_abs_err, coverage_80, pit_mean, bias, boundary_mass_err_0, boundary_mass_err_1, coverage_50, coverage_90, mae_boundary, mae_interior, nan_predictions, pit_uniformity_error, pred_mass_at_0, pred_mass_at_1, pred_max, pred_min, pred_nonfinite_frac, pred_out_of_unit, true_mass_at_0, true_mass_at_1
 
 References (tfm-library pin e5ce016):
   - papers/2026/02_Qu_TabICLv2 §4.1  [paper-evaluated]
-  - papers/2026/02_Qu_TabICLv2 §Data filtering, Fig. 10  [paper-evaluated]
+  - papers/2026/02_Qu_TabICLv2 §Data filtering  [paper-evaluated]
   - TabICL.txt should_filter  [code-supported]
   - NanoTabICL.txt rand_dataset_filtered  [code-supported]
-  - papers/2026/05_Bouadi_ShapingThePrior Table 2  [paper-evaluated]
-  - papers/2025/10_Zhang_Mitra  [paper-evaluated]
-  - SYNTHESIS.md (editorial)  [editorial]
-  - EXTERNAL — not in tfm-library (Merton 1974; Vasicek 2002)  [external]
 
-1.2_lgd_training: 27 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\1.2_lgd_training
-  01  palette
-  02  sweep_map
-  03  monitoring_coverage
-  04  throughput
-  05  training_loss
-  06  gradient_flow
-  07  weight_gradient_ratios
-  08  metric_over_training
-  09  credit_vs_control_over_training
-  10  metric_by_lever_credit_fraction
-  11  metric_by_lever_filter
-  12  metric_by_lever_intensity
-  13  final_metric_by_lever
-  14  lever_interaction
-  15  seed_spread
-  16  per_dataset_p1
-  17  real_vs_ood
-  18  eval_metrics_p1
-  19  eval_metrics_p2
-  20  eval_metrics_p3
-  21  eval_metrics_p4
-  22  per_config_p1
-  23  per_config_p2
-  24  per_config_p3
-  25  per_config_p4
-  26  best_and_worst
-  27  hardware
+1.2_lgd_training: 18 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\1.2_lgd_training
+  01  sweep_map
+  02  monitoring_coverage
+  03  throughput
+  04  training_loss
+  05  gradient_health
+  06  metric_over_training
+  07  credit_vs_control_over_training
+  08  metric_by_levers
+  09  final_metric_by_lever
+  10  lever_interaction
+  11  seed_spread
+  12  per_dataset_p1
+  13  real_vs_ood
+  14  eval_metrics_p1
+  15  eval_metrics_p2
+  16  eval_metrics_p3
+  17  per_config_p1
+  18  best_and_worst
 ```
 
 ---
@@ -481,20 +451,16 @@ CREDIT-DOMAIN LITERATURE LANDSCAPE (tfm-library pin e5ce016)
 References (tfm-library pin e5ce016):
   - papers/2026/05_Tanna_DataPresentation Table 3  [paper-evaluated]
   - papers/2023/09_Hollmann_TabPFN Table 2  [paper-evaluated]
-  - papers/2026/05_Tanna_DataPresentation §5.1  [paper-evaluated]
   - papers/2026/05_Tanna_DataPresentation Table 1  [paper-evaluated]
-  - SYNTHESIS.md (editorial)  [editorial]
-  - papers/2026/05_Bouadi_ShapingThePrior Table 2  [paper-evaluated]
 
-1.3_pd_results: 8 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\1.3_pd_results
-  01  palette
-  02  overall_ranking
-  03  credit_vs_control
-  04  beats_reference
-  05  metric_grid
-  06  per_dataset
-  07  per_dataset_heatmap
-  08  literature_landscape
+1.3_pd_results: 7 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\1.3_pd_results
+  01  overall_ranking
+  02  credit_vs_control
+  03  beats_reference
+  04  metric_grid
+  05  per_dataset
+  06  per_dataset_heatmap
+  07  literature_landscape
 ```
 
 ---
@@ -508,20 +474,17 @@ EXP1 LGD RESULTS — the benchmark
   re-run this notebook after the phase-2 array finishes scoring.
 
 References (tfm-library pin e5ce016):
-  - papers/2026/05_Bouadi_ShapingThePrior §benchmarks  [paper-evaluated]
   - SYNTHESIS.md; TabICLv2 §I.7  [editorial+paper]
   - papers/2026/02_Qu_TabICLv2 §I; NanoTabICLv2(out_dim=999)  [paper+code]
-  - SYNTHESIS.md (editorial)  [editorial]
-  - NanoTabICL.txt rand_kumaraswamy_act; TabICL.txt KumaraswamyWarping; §E.6  [code+paper]
+  - papers/2026/05_Bouadi_ShapingThePrior §benchmarks  [paper-evaluated]
 
-1.4_lgd_results: 7 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\1.4_lgd_results
-  01  palette
-  02  overall_ranking
-  03  credit_vs_control
-  04  beats_reference
-  05  metric_grid
-  06  per_dataset
-  07  per_dataset_heatmap
+1.4_lgd_results: 6 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\1.4_lgd_results
+  01  overall_ranking
+  02  credit_vs_control
+  03  beats_reference
+  04  metric_grid
+  05  per_dataset
+  06  per_dataset_heatmap
 ```
 
 ---
@@ -534,37 +497,33 @@ References (tfm-library pin e5ce016):
 
 ```
 EXP2 PD TRAINING — development-split monitoring
-  no progress CSVs in output/manifests/ yet.
+  no progress logs in output/manifests/ yet.
 
 References (tfm-library pin e5ce016):
   - papers/2026/02_Qu_TabICLv2 §4.1  [paper-evaluated]
-  - papers/2026/06_Purucker_BeyondIID Limitation 2  [paper-evaluated]
-  - SYNTHESIS.md (editorial)  [editorial]
+  - papers/2026/02_Qu_TabICLv2 §Data filtering, Fig. 10  [paper-evaluated]
   - TabICL.txt should_filter  [code-supported]
-  - papers/2025/10_Zhang_Mitra  [paper-evaluated]
+  - NanoTabICL.txt rand_dataset_filtered  [code-supported]
+  - EXTERNAL — not in tfm-library (Merton 1974; Vasicek 2002)  [external]
+  - EXTERNAL — Basel Committee IRB formula  [external]
 
-2.1_pd_finetuning: 21 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\2.1_pd_finetuning
-  01  palette
-  02  sweep_map
-  03  monitoring_coverage
-  04  throughput
-  05  training_loss
-  06  gradient_flow
-  07  weight_gradient_ratios
-  08  metric_over_training
-  09  credit_vs_control_over_training
-  10  metric_by_lever_credit_fraction
-  11  metric_by_lever_strategy
-  12  metric_by_lever_l2sp
-  13  metric_by_lever_lr
-  14  real_vs_ood
-  15  final_metric_by_lever
-  16  lever_interaction
-  17  per_dataset_p1
-  18  eval_metrics_p1
-  19  per_config_p1
-  20  best_and_worst
-  21  hardware
+2.1_pd_finetuning: 16 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\2.1_pd_finetuning
+  01  sweep_map
+  02  monitoring_coverage
+  03  throughput
+  04  training_loss
+  05  gradient_health
+  06  metric_over_training
+  07  credit_vs_control_over_training
+  08  metric_by_levers
+  09  final_metric_by_lever
+  10  lever_interaction
+  11  seed_spread
+  12  per_dataset_p1
+  13  real_vs_ood
+  14  eval_metrics_p1
+  15  per_config_p1
+  16  best_and_worst
 ```
 
 ---
@@ -573,37 +532,31 @@ References (tfm-library pin e5ce016):
 
 ```
 EXP2 LGD TRAINING — development-split monitoring
-  no progress CSVs in output/manifests/ yet.
+  no progress logs in output/manifests/ yet.
 
 References (tfm-library pin e5ce016):
   - papers/2026/02_Qu_TabICLv2 §4.1  [paper-evaluated]
-  - papers/2026/06_Purucker_BeyondIID Limitation 2  [paper-evaluated]
-  - SYNTHESIS.md (editorial)  [editorial]
+  - papers/2026/02_Qu_TabICLv2 §Data filtering  [paper-evaluated]
   - TabICL.txt should_filter  [code-supported]
-  - papers/2025/10_Zhang_Mitra  [paper-evaluated]
+  - NanoTabICL.txt rand_dataset_filtered  [code-supported]
 
-2.2_lgd_finetuning: 21 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\2.2_lgd_finetuning
-  01  palette
-  02  sweep_map
-  03  monitoring_coverage
-  04  throughput
-  05  training_loss
-  06  gradient_flow
-  07  weight_gradient_ratios
-  08  metric_over_training
-  09  credit_vs_control_over_training
-  10  metric_by_lever_credit_fraction
-  11  metric_by_lever_strategy
-  12  metric_by_lever_l2sp
-  13  metric_by_lever_lr
-  14  real_vs_ood
-  15  final_metric_by_lever
-  16  lever_interaction
-  17  per_dataset_p1
-  18  eval_metrics_p1
-  19  per_config_p1
-  20  best_and_worst
-  21  hardware
+2.2_lgd_finetuning: 16 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\2.2_lgd_finetuning
+  01  sweep_map
+  02  monitoring_coverage
+  03  throughput
+  04  training_loss
+  05  gradient_health
+  06  metric_over_training
+  07  credit_vs_control_over_training
+  08  metric_by_levers
+  09  final_metric_by_lever
+  10  lever_interaction
+  11  seed_spread
+  12  per_dataset_p1
+  13  real_vs_ood
+  14  eval_metrics_p1
+  15  per_config_p1
+  16  best_and_worst
 ```
 
 ---
@@ -630,21 +583,17 @@ CREDIT-DOMAIN LITERATURE LANDSCAPE (tfm-library pin e5ce016)
 References (tfm-library pin e5ce016):
   - papers/2026/05_Tanna_DataPresentation Table 3  [paper-evaluated]
   - papers/2023/09_Hollmann_TabPFN Table 2  [paper-evaluated]
-  - papers/2026/05_Tanna_DataPresentation §5.1  [paper-evaluated]
   - papers/2026/05_Tanna_DataPresentation Table 1  [paper-evaluated]
-  - SYNTHESIS.md (editorial)  [editorial]
-  - papers/2026/05_Bouadi_ShapingThePrior Table 2  [paper-evaluated]
 
-2.3_pd_results: 9 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\2.3_pd_results
-  01  palette
-  02  overall_ranking
-  03  credit_vs_control
-  04  beats_reference
-  05  metric_grid
-  06  lever_effect
-  07  per_dataset
-  08  per_dataset_heatmap
-  09  literature_landscape
+2.3_pd_results: 8 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\2.3_pd_results
+  01  overall_ranking
+  02  credit_vs_control
+  03  beats_reference
+  04  metric_grid
+  05  lever_effect
+  06  per_dataset
+  07  per_dataset_heatmap
+  08  literature_landscape
 ```
 
 ---
@@ -658,19 +607,16 @@ EXP2 LGD RESULTS — the benchmark
   re-run this notebook after the phase-2 array finishes scoring.
 
 References (tfm-library pin e5ce016):
-  - papers/2026/05_Bouadi_ShapingThePrior §benchmarks  [paper-evaluated]
   - SYNTHESIS.md; TabICLv2 §I.7  [editorial+paper]
   - papers/2026/02_Qu_TabICLv2 §I; NanoTabICLv2(out_dim=999)  [paper+code]
-  - SYNTHESIS.md (editorial)  [editorial]
-  - NanoTabICL.txt rand_kumaraswamy_act; TabICL.txt KumaraswamyWarping; §E.6  [code+paper]
+  - papers/2026/05_Bouadi_ShapingThePrior §benchmarks  [paper-evaluated]
 
-2.4_lgd_results: 8 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\2.4_lgd_results
-  01  palette
-  02  overall_ranking
-  03  credit_vs_control
-  04  beats_reference
-  05  metric_grid
-  06  lever_effect
-  07  per_dataset
-  08  per_dataset_heatmap
+2.4_lgd_results: 7 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output\figures\2.4_lgd_results
+  01  overall_ranking
+  02  credit_vs_control
+  03  beats_reference
+  04  metric_grid
+  05  lever_effect
+  06  per_dataset
+  07  per_dataset_heatmap
 ```

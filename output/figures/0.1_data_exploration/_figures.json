@@ -3,66 +3,60 @@
     "index": 1,
     "stem": "01_pd_base_rates",
     "name": "pd_base_rates",
-    "caption": "Default rate per PD dataset, ordered by rate, on a logarithmic horizontal axis. The dashed vertical line marks a 50% rate. Percentages give the rate per dataset."
+    "caption": "Default rate per PD dataset as horizontal bars, sorted by rate, with the rate written on each bar; the dashed vertical line marks the 10% base rate below which a default-threshold classifier collapses to the majority class (Tanna 2026)."
   },
   {
     "index": 2,
     "stem": "02_lgd_targets",
     "name": "lgd_targets",
-    "caption": "Histograms of the Loss Given Default target for each of the seven LGD datasets, ordered by sample size. Forty bins per panel. Dashed vertical lines mark the minimum and maximum observed values where more than 1% of observations fall exactly on them. Panel subtitles give the combined share of observations at the two boundaries."
+    "caption": "Histograms of the LGD target for each of the seven LGD datasets, share of rows per bin, 40 bins on [0, 1], ordered by sample size; dashed vertical lines mark exact minimum or maximum values holding more than 1% of rows, and panel titles give the share of rows at exactly 0 or 1."
   },
   {
     "index": 3,
     "stem": "03_boundary_mass_ranking",
     "name": "boundary_mass_ranking",
-    "caption": "Share of observations lying exactly at a boundary of the observed target range, per LGD dataset, ordered by total. Bars are split into mass at the minimum (blue) and at the maximum (orange). Percentages give the total per dataset."
+    "caption": "Share of rows lying exactly at 0 (full recovery) and exactly at 1 (total loss) per LGD dataset, as stacked horizontal bars ordered by the total, which is written at the end of each bar."
   },
   {
     "index": 4,
     "stem": "04_shapes",
     "name": "shapes",
-    "caption": "Number of rows against number of features for all 21 evaluation datasets, both axes logarithmic. Colour denotes task; each point is labelled with its dataset name."
+    "caption": "Number of rows against number of features for all 21 evaluation datasets on logarithmic axes, one labelled point per dataset coloured by task; dotted lines mark 1,024 rows and 100 features, the size of a generated table."
   },
   {
     "index": 5,
     "stem": "05_type_mix",
     "name": "type_mix",
-    "caption": "Share of columns that are categorical, per dataset, ordered by share. Colour denotes task."
+    "caption": "Share of columns that are categorical per dataset, all 21 evaluation datasets, as horizontal bars sorted by share and coloured by task."
   },
   {
     "index": 6,
     "stem": "06_missingness",
     "name": "missingness",
-    "caption": "Share of cells that are missing, per dataset, ordered by share, measured after preprocessing. Colour denotes task."
+    "caption": "Share of cells that are missing per dataset after preprocessing, all 21 evaluation datasets, as horizontal bars sorted by share and coloured by task."
   },
   {
     "index": 7,
     "stem": "07_feature_correlations_lgd_p1",
     "name": "feature_correlations_lgd_p1",
-    "caption": "Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. LGD datasets, page 1 of 2."
+    "caption": "Pearson correlation matrices between the features of each LGD dataset on a random 5,000-row sample with constant columns removed, colour scale from -1 to 1, datasets ordered by mean absolute correlation, which is given under each panel."
   },
   {
     "index": 8,
-    "stem": "08_feature_correlations_lgd_p2",
-    "name": "feature_correlations_lgd_p2",
-    "caption": "Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. LGD datasets, page 2 of 2."
+    "stem": "08_feature_correlations_pd_p1",
+    "name": "feature_correlations_pd_p1",
+    "caption": "Pearson correlation matrices between the features of each PD dataset on a random 5,000-row sample with constant columns removed, colour scale from -1 to 1, datasets ordered by mean absolute correlation, which is given under each panel."
   },
   {
     "index": 9,
-    "stem": "09_feature_correlations_pd_p1",
-    "name": "feature_correlations_pd_p1",
-    "caption": "Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. PD datasets, page 1 of 3."
+    "stem": "09_feature_correlations_pd_p2",
+    "name": "feature_correlations_pd_p2",
+    "caption": "Pearson correlation matrices between the features of each PD dataset on a random 5,000-row sample with constant columns removed, colour scale from -1 to 1, datasets ordered by mean absolute correlation, which is given under each panel."
   },
   {
     "index": 10,
-    "stem": "10_feature_correlations_pd_p2",
-    "name": "feature_correlations_pd_p2",
-    "caption": "Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. PD datasets, page 2 of 3."
-  },
-  {
-    "index": 11,
-    "stem": "11_feature_correlations_pd_p3",
-    "name": "feature_correlations_pd_p3",
-    "caption": "Pearson correlation matrices between features, one panel per dataset, computed on the first 5,000 rows with constant columns removed. Colour scale spans -1 to 1. Panel headings give the dataset and the number of columns retained. PD datasets, page 3 of 3."
+    "stem": "10_leakage_screen",
+    "name": "leakage_screen",
+    "caption": "Largest absolute Pearson correlation between a single feature and the target per dataset, all 21 evaluation datasets, as horizontal bars labelled with that feature and coloured by task; the dashed line marks the 0.9 flag threshold."
   }
 ]

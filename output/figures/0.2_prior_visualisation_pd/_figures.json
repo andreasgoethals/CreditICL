@@ -1,86 +1,20 @@
 [
   {
     "index": 1,
-    "stem": "01_palette",
-    "name": "palette",
-    "caption": "Colour key. Grey denotes the unmodified TabICL prior, blue the credit-targeted prior, orange values measured from the real datasets, and red out-of-range or flagged values."
+    "stem": "01_base_rate_by_variant",
+    "name": "base_rate_by_variant",
+    "caption": "Distribution of the default rate per generated task for the original and the credit prior, 500 tasks each, as step histograms over 40 bins; the strip below marks the 14 real PD datasets, the dotted line a 50% rate and the dashed line the 10% threshold of Tanna 2026."
   },
   {
     "index": 2,
-    "stem": "02_base_rate_by_variant",
-    "name": "base_rate_by_variant",
-    "caption": "Distribution of the positive-class rate per synthetic dataset, one step histogram per prior variant, 30 bins. The dashed vertical line marks a 50% rate; dotted lines mark rates measured from the real datasets. Legend gives the mean per variant."
+    "stem": "02_default_clustering",
+    "name": "default_clustering",
+    "caption": "Left: between-cohort standard deviation of the default rate divided by its binomial standard error under independence, one violin per prior and stars for the real datasets, the dashed line at the independence value of 1. Right: default rate per cohort, twelve contiguous blocks of rows, for one task of each prior and two real datasets."
   },
   {
     "index": 3,
-    "stem": "03_prior_realism_ranking",
-    "name": "prior_realism_ranking",
-    "caption": "Distance between each prior variant's pooled target distribution and each real PD dataset's, as total variation over 40 fixed bins. Diamonds give the mean across datasets, dots one per dataset. Variants ordered by mean distance."
-  },
-  {
-    "index": 4,
-    "stem": "04_default_clustering",
-    "name": "default_clustering",
-    "caption": "Left: distribution across synthetic datasets of the between-cohort standard deviation of the default rate, divided by the binomial standard error expected under independence; one violin per prior variant, stars for the real datasets, dashed line at the independence reference. Right: default rate per cohort for one dataset per variant and two real datasets. Cohorts are twelve contiguous blocks of rows."
-  },
-  {
-    "index": 5,
-    "stem": "05_adj_imbalance_control",
-    "name": "adj_imbalance_control",
-    "caption": "Per-task positive (default) rate over ~100 tasks from the original prior (grey) and our prior (blue). The shaded band marks the 6.7-22.1% range measured in the real PD datasets."
-  },
-  {
-    "index": 6,
-    "stem": "06_adj_correlated_defaults",
-    "name": "adj_correlated_defaults",
-    "caption": "Left: realised default rate over ~80 tasks with the target rate fixed at 15%, under mild versus aggressive asset correlation (SD in the legend). Right: standard deviation of the realised rate against the asset correlation rho, three values."
-  },
-  {
-    "index": 7,
-    "stem": "07_adj_reject_inference",
-    "name": "adj_reject_inference",
-    "caption": "Left: query (through-the-door) versus context (approved-book) default rate, one point per task with the selection shift, dashed line y = x. Right: distribution of the query-minus-context rate, dashed line at the mean."
-  },
-  {
-    "index": 8,
-    "stem": "08_adj_shift_kinds",
-    "name": "adj_shift_kinds",
-    "caption": "PD default rate in the context versus query rows, one panel per distribution-shift kind (~40 tasks each). Covariate shift moves the shown feature rather than the rate; selection is the reject-inference shift."
-  },
-  {
-    "index": 9,
-    "stem": "09_adj_informative_missingness",
-    "name": "adj_informative_missingness",
-    "caption": "Missing rate for non-defaulters versus defaulters, under missing-completely-at-random (grey, coupling 0) and target-coupled missingness (blue, coupling 2)."
-  },
-  {
-    "index": 10,
-    "stem": "10_adj_filter_modes",
-    "name": "adj_filter_modes",
-    "caption": "Distribution of ExtraTrees pseudo-R^2 over ~60 generated PD tasks, with the 'banded' keep-region shaded."
-  },
-  {
-    "index": 11,
-    "stem": "11_difficulty_calibration",
-    "name": "difficulty_calibration",
-    "caption": "Predictability of each synthetic dataset under a small ExtraTrees on a 70/30 split, one point per dataset and one column per prior variant, with the median marked. The shaded band spans the same measurement on the real credit datasets."
-  },
-  {
-    "index": 12,
-    "stem": "12_side_by_side_tables",
-    "name": "side_by_side_tables",
-    "caption": "Eight rows of one synthetic dataset and one real credit dataset, shown as heatmaps with the target as the final column separated by a vertical rule. Each feature is rank-normalised within its own column, so shade encodes relative value rather than units."
-  },
-  {
-    "index": 13,
-    "stem": "13_spectrum_by_variant",
-    "name": "spectrum_by_variant",
-    "caption": "Eigenvalue spectra of the feature correlation matrix for up to 40 synthetic datasets per prior variant, normalised by the largest eigenvalue and plotted against normalised eigenvalue rank. Faint lines are individual datasets; bold lines are the per-variant median."
-  },
-  {
-    "index": 14,
-    "stem": "14_shapes_by_variant",
-    "name": "shapes_by_variant",
-    "caption": "Left: distribution of rows per synthetic dataset. Right: distribution of features per synthetic dataset. One step histogram per prior variant, 20 bins."
+    "stem": "03_correlated_defaults",
+    "name": "correlated_defaults",
+    "caption": "Left: histogram of the realised default rate over 80 generated tasks with the target rate fixed at 15%, under mild and aggressive asset correlation, standard deviations in the legend. Right: standard deviation of the realised rate against the asset correlation rho at five values, with the Basel IRB corporate cap of 0.24 dashed."
   }
 ]

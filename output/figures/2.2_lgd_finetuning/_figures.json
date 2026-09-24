@@ -1,128 +1,98 @@
 [
   {
     "index": 1,
-    "stem": "01_palette",
-    "name": "palette",
-    "caption": "The shared colour vocabulary used on every axis of this notebook: each swatch names the prior, data source, literature overlay or annotation it marks."
+    "stem": "01_sweep_map",
+    "name": "sweep_map",
+    "caption": "Final development R\u00b2 of every scheduled LGD arm as a heatmap, one row per configuration grouped by credit fraction and one column per seed; grey cells have no development score, hatched cells are still training with the share of steps done."
   },
   {
     "index": 2,
-    "stem": "02_sweep_map",
-    "name": "sweep_map",
-    "caption": "Final development R\u00b2 of every LGD arm as a heatmap, one row per configuration grouped by credit fraction and one column per seed; hatched cells are arms still training, annotated with the share trained."
+    "stem": "02_monitoring_coverage",
+    "name": "monitoring_coverage",
+    "caption": "Monitoring coverage of every LGD arm: one row per real dataset labelled development or holdout, one column per arm grouped by credit fraction, each cell coloured by whether its score enters the development mean, is not carried by every arm, is holdout, holds only missing values or was not monitored."
   },
   {
     "index": 3,
-    "stem": "03_monitoring_coverage",
-    "name": "monitoring_coverage",
-    "caption": "Monitoring coverage of every LGD arm: one row per real dataset labelled development or holdout, one column per arm in sweep order, cells coloured by whether the dataset enters the development mean, is holdout, is missing or was not monitored."
+    "stem": "03_throughput",
+    "name": "throughput",
+    "caption": "Training speed per LGD arm in steps per second (left) and the implied hours for the full run (right), grouped by freeze strategy; points are arms coloured and shaped by credit fraction and bars are group medians with their value."
   },
   {
     "index": 4,
-    "stem": "04_throughput",
-    "name": "throughput",
-    "caption": "Training speed per LGD arm in steps per second (left) and the implied hours for the full run (right), grouped by freeze strategy; points are arms coloured by credit fraction and bars are group medians."
+    "stem": "04_training_loss",
+    "name": "training_loss",
+    "caption": "Training loss against optimisation step for every LGD arm, a rolling mean over three logged batches coloured by credit fraction and dotted while unfinished, with the median of the finished arms of each credit fraction bold."
   },
   {
     "index": 5,
-    "stem": "05_training_loss",
-    "name": "training_loss",
-    "caption": "Training loss against optimisation step for every LGD arm (grey), the mean of the finished arms (black), and the best and worst arms by final development R\u00b2 (highlighted)."
+    "stem": "05_gradient_health",
+    "name": "gradient_health",
+    "caption": "Mean per-block gradient L2 norm (left) and ratio of gradient norm to weight norm (right) against training step on logarithmic axes, one line per architecture block (column encoder, row encoder, ICL blocks), averaged over all arms."
   },
   {
     "index": 6,
-    "stem": "06_gradient_flow",
-    "name": "gradient_flow",
-    "caption": "Mean per-block gradient L2 norm (column encoder, row encoder, ICL blocks, head) against training step on a logarithmic axis."
+    "stem": "06_metric_over_training",
+    "name": "metric_over_training",
+    "caption": "Development R\u00b2 averaged over the development datasets every arm scored, against training step; one line per arm coloured by credit fraction and dotted while unfinished, with the mean of the finished arms of each credit fraction bold."
   },
   {
     "index": 7,
-    "stem": "07_weight_gradient_ratios",
-    "name": "weight_gradient_ratios",
-    "caption": "Mean per-block ratio of gradient norm to weight norm against training step on a logarithmic axis, one line per architecture block."
+    "stem": "07_credit_vs_control_over_training",
+    "name": "credit_vs_control_over_training",
+    "caption": "Development R\u00b2 against training step for credit-prior arms and control arms: median lines with shaded inter-quartile bands over the finished arms of each group."
   },
   {
     "index": 8,
-    "stem": "08_metric_over_training",
-    "name": "metric_over_training",
-    "caption": "Development R\u00b2 averaged over the development datasets every arm carries, against training step; one line per arm coloured by credit fraction, dotted while unfinished, with the mean of the finished arms in black."
+    "stem": "08_metric_by_levers",
+    "name": "metric_by_levers",
+    "caption": "Development R\u00b2 against training step, one panel per swept lever with one mean line per lever value over the finished arms sharing it, all panels on a shared vertical axis."
   },
   {
     "index": 9,
-    "stem": "09_credit_vs_control_over_training",
-    "name": "credit_vs_control_over_training",
-    "caption": "Development R\u00b2 against training step for credit-prior arms versus control arms: median lines with shaded inter-quartile bands across the finished arms in each group."
+    "stem": "09_final_metric_by_lever",
+    "name": "final_metric_by_lever",
+    "caption": "Final development R\u00b2 of every finished arm as points coloured and shaped by credit fraction, one panel per swept lever, with a horizontal bar at each group mean."
   },
   {
     "index": 10,
-    "stem": "10_metric_by_lever_credit_fraction",
-    "name": "metric_by_lever_credit_fraction",
-    "caption": "Development R\u00b2 against training step, one mean line per value of credit fraction, averaged over the finished arms that share each value."
+    "stem": "10_lever_interaction",
+    "name": "lever_interaction",
+    "caption": "Final development R\u00b2 against each lever other than credit fraction, one series per credit fraction: points are finished arms, lines join the per-value means, whiskers show one standard deviation over seeds, and the grey band is the control mean plus or minus one standard deviation."
   },
   {
     "index": 11,
-    "stem": "11_metric_by_lever_strategy",
-    "name": "metric_by_lever_strategy",
-    "caption": "Development R\u00b2 against training step, one mean line per value of freeze strategy, averaged over the finished arms that share each value."
+    "stem": "11_seed_spread",
+    "name": "seed_spread",
+    "caption": "Final development R\u00b2 of every configuration's seeds as points on one horizontal axis, configurations sorted by their mean with the range and mean marked per row; the dashed line is the control mean."
   },
   {
     "index": 12,
-    "stem": "12_metric_by_lever_l2sp",
-    "name": "metric_by_lever_l2sp",
-    "caption": "Development R\u00b2 against training step, one mean line per value of L2-SP, averaged over the finished arms that share each value."
+    "stem": "12_per_dataset_p1",
+    "name": "per_dataset_p1",
+    "caption": "Monitored R\u00b2 against training step, one panel per real dataset labelled with its side of the split and the number of finished arms that scored it, credit-prior arms against control arms."
   },
   {
     "index": 13,
-    "stem": "13_metric_by_lever_lr",
-    "name": "metric_by_lever_lr",
-    "caption": "Development R\u00b2 against training step, one mean line per value of learning rate, averaged over the finished arms that share each value."
+    "stem": "13_real_vs_ood",
+    "name": "real_vs_ood",
+    "caption": "Development R\u00b2 on the real-credit datasets (solid) and on the out-of-domain suites (dashed) against training step, averaged separately over credit-prior and control arms."
   },
   {
     "index": 14,
-    "stem": "14_real_vs_ood",
-    "name": "real_vs_ood",
-    "caption": "Development R\u00b2 on the real-credit datasets (solid) and the out-of-domain suites (dashed) against training step, averaged separately over credit-prior and control arms."
+    "stem": "14_eval_metrics_p1",
+    "name": "eval_metrics_p1",
+    "caption": "Each logged development metric against training step, one panel per metric and one figure per metric group, credit-prior and control means over the finished arms; the title marks the improving direction or target value, drawn as a dashed line."
   },
   {
     "index": 15,
-    "stem": "15_final_metric_by_lever",
-    "name": "final_metric_by_lever",
-    "caption": "Final development R\u00b2 of every finished arm as points coloured by credit fraction, one panel per swept lever, with a horizontal bar at each group mean."
+    "stem": "15_per_config_p1",
+    "name": "per_config_p1",
+    "caption": "Development R\u00b2 against training step, one panel per configuration in sweep-map order with one line per seed, all panels on shared axes; lines that stop early belong to unfinished arms."
   },
   {
     "index": 16,
-    "stem": "16_lever_interaction",
-    "name": "lever_interaction",
-    "caption": "Final development R\u00b2 against each lever other than credit fraction, one series per credit fraction: points are finished arms, lines join the per-value means and whiskers show one standard deviation over seeds; the grey band is the control mean plus or minus one standard deviation."
-  },
-  {
-    "index": 17,
-    "stem": "17_per_dataset_p1",
-    "name": "per_dataset_p1",
-    "caption": "Monitored R\u00b2 against training step, one panel per real dataset labelled with its role, credit arms (blue) against control arms (grey); holdout datasets are shown but never averaged."
-  },
-  {
-    "index": 18,
-    "stem": "18_eval_metrics_p1",
-    "name": "eval_metrics_p1",
-    "caption": "Each logged development metric against training step, one panel per metric, credit-prior (blue) and control (grey) means over the finished arms; the arrow in each title marks the improving direction."
-  },
-  {
-    "index": 19,
-    "stem": "19_per_config_p1",
-    "name": "per_config_p1",
-    "caption": "Per-arm training curves against step in sweep-map order: train loss (grey) and development R\u00b2 (blue, right axis), one panel per arm, unfinished arms labelled with the share trained."
-  },
-  {
-    "index": 20,
-    "stem": "20_best_and_worst",
+    "stem": "16_best_and_worst",
     "name": "best_and_worst",
-    "caption": "Train loss and development R\u00b2 against training step for the best and worst finished arm by final development R\u00b2."
-  },
-  {
-    "index": 21,
-    "stem": "21_hardware",
-    "name": "hardware",
-    "caption": "GPU utilisation, throughput and peak allocated memory against training step, pooled across arms; the dashed line marks 70 percent utilisation."
+    "caption": "Training loss (a rolling mean over three logged batches) and development R\u00b2 against training step for the best and the worst finished arm by final development score."
   }
 ]

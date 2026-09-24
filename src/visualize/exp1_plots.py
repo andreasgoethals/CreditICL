@@ -1,4 +1,11 @@
-"""Figures for Exp1, whose question is: **which of our 32 priors is best?**
+"""Figures for the prior notebooks (0.2 PD, 0.3 LGD), which prepare Exp1's question: **which
+prior?** Exp1 sweeps 15 priors (credit fraction × filter mode × intensity) at 3 seeds each; these
+figures compare the two poles — the original prior (credit fraction 0) and ours (credit fraction 1)
+— against the real datasets before any of that compute is spent.
+
+Colours are by MEANING (`style.variant_colour`): the original prior grey, ours blue, real data
+orange, real-data markers magenta — never by a variant's position in a dict, which is what drew the
+control orange and our prior green here before.
 
 WHAT THIS REPLACED, AND WHY
 
@@ -66,6 +73,23 @@ def distribution_distance(a: np.ndarray, b: np.ndarray, bins: int = 40) -> float
     return float(0.5 * np.abs(pa - pb).sum())
 
 
+def _unit_target(y: Any) -> np.ndarray:
+    """A task's target on [0, 1] for a distance to real LGD data: unchanged when it already lies in
+    [0, 1] (our prior, the real books), min-max scaled when it does not (the original prior, which
+    standard-scales its target).
+
+    It used to be CLIPPED to [0, 1], which turned every negative standardised value into an
+    exact 0 — manufacturing a boundary atom the original prior does not have, and making it look
+    closest to `axa`, the real book with the most mass at 0. Min-max scaling keeps the shape and
+    puts atoms only where the target itself has ties.
+    """
+    y = np.asarray(y, dtype=float).ravel()
+    lo, hi = float(np.nanmin(y)), float(np.nanmax(y))
+    if lo >= -1e-6 and hi <= 1 + 1e-6:
+        return np.clip(y, 0.0, 1.0)
+    return (y - lo) / (hi - lo) if hi > lo else np.zeros_like(y)
+
+
 def _real_targets(task: str, datasets: dict[str, Any] | None) -> dict[str, np.ndarray]:
     """{name: y} for the real datasets, as plain arrays in [0,1]."""
     if not datasets:
@@ -108,38 +132,36 @@ def plot_prior_realism_ranking(
     rows = []
     for name, tasks in variants.items():
         # Pool every synthetic target for this variant into one distribution: the question is
-        # what the variant produces ON AVERAGE, not what one draw did.
-        pooled = np.concatenate([np.asarray(t.y, dtype=float).ravel() for t in tasks])
-        pooled = np.clip(pooled, 0.0, 1.0)
+        # what the variant produces ON AVERAGE, not what one draw did. Each task on [0, 1] first.
+        pooled = np.concatenate([_unit_target(t.y) for t in tasks])
         per_real = {r: distribution_distance(pooled, y) for r, y in reals.items()}
         rows.append((name, float(np.mean(list(per_real.values()))), per_real))
     rows.sort(key=lambda r: r[1])
 
-    fig, ax = plt.subplots(figsize=style.row_figsize(len(rows), per_row=0.30, base=1.3))
-    labels = [r[0] for r in rows]
+    fig, ax = plt.subplots(figsize=style.row_figsize(len(rows), per_row=0.34, base=1.05))
+    labels = [style.variant_label(r[0]) for r in rows]
     ypos = np.arange(len(rows))
-    for i, (_, mean_d, per_real) in enumerate(rows):
+    for i, (name, mean_d, per_real) in enumerate(rows):
         values = list(per_real.values())
+        colour = style.variant_colour(name, i)
         # A guide line per row. Without it the eye cannot carry a dot at x=0.6 back to its
         # label three rows up, which is the one thing this chart is for.
-        ax.plot([min(values), max(values)], [i, i], color=style.GRID, linewidth=3.0,
+        ax.plot([min(values), max(values)], [i, i], color=colour, alpha=0.25, linewidth=3.0,
                 solid_capstyle="round", zorder=1)
         # Every real dataset as a dot, so the SPREAD is visible: a prior that matches one
         # dataset and misses six is not a good prior, and a mean alone would hide that.
-        ax.scatter(values, np.full(len(values), i), s=18, color=style.MUTED, alpha=0.85,
-                   zorder=2, linewidths=0)
-        ax.scatter([mean_d], [i], s=58, color=style.CREDIT, zorder=3, marker="D",
-                   edgecolors="white", linewidths=0.8)
+        ax.scatter(values, np.full(len(values), i), s=18, color=colour, alpha=0.85,
+                   zorder=2, linewidths=0, label="one real dataset" if i == 0 else None)
+        ax.scatter([mean_d], [i], s=62, color=style.INK, zorder=3, marker="D",
+                   edgecolors="white", linewidths=0.8, label="mean over datasets" if i == 0 else None)
     ax.set_yticks(ypos)
     ax.set_yticklabels(labels)
-    ax.invert_yaxis()
-    ax.set_xlabel("distance from real credit targets  (total variation, 0 = identical)")
-    ax.set_xlim(left=0)
+    ax.set_ylim(len(rows) - 0.5, -0.5)
+    ax.set_xlabel("total-variation distance from a real dataset's target (0 = identical, 1 = disjoint)")
+    ax.set_xlim(0, max(0.5, max(max(r[2].values()) for r in rows) * 1.08))
     ax.grid(visible=True, axis="x")
     ax.grid(visible=False, axis="y")
-    # Subtitle deliberately short. A long one wraps to three bold lines and eats a third of a
-    # 2.2 in figure; the detail belongs in the note underneath, where it costs one grey line.
-    style.title(ax, "Distance from real targets")
+    style.legend_below(ax, ncol=2)
     return fig
 
 
@@ -249,7 +271,7 @@ def plot_default_clustering(
             per = max(len(y) // max(len(rates), 1), 1)
             expected.append(float(np.sqrt(base * (1 - base) / per)))
         if observed:
-            rows.append((name, observed, expected, style.SERIES[i % len(style.SERIES)]))
+            rows.append((name, observed, expected, style.variant_colour(name, i)))
 
     # LEFT: the clustering ratio per variant.
     for i, (_name, observed, expected, colour) in enumerate(rows):
@@ -274,22 +296,16 @@ def plot_default_clustering(
         if real_ratios:
             ax_spread.scatter(
                 np.full(len(real_ratios), len(rows)), real_ratios, marker="*", s=90,
-                color=style.STAR, zorder=5, label="real",
+                color=style.STAR, zorder=5, label="real datasets",
             )
-    ax_spread.axhline(1.0, color=style.MUTED, linestyle="--", linewidth=0.9)
-    # OUTSIDE the plotting area, in the right margin. At x=0.02 the label sat on top of the
-    # first violin and was unreadable against a filled shape; `clip_on=False` past the right
-    # edge puts it where nothing is ever drawn.
-    ax_spread.annotate(" independent", (1.0, 1.0), xycoords=("axes fraction", "data"),
-                       fontsize=6.5, color=style.MUTED, va="center", ha="left",
-                       annotation_clip=False)
-    labels = [r[0] for r in rows] + (["real"] if real else [])
+    ax_spread.axhline(1.0, color=style.MUTED, linestyle="--", linewidth=0.9,
+                      label="independent rows (ratio 1)")
+    labels = [style.variant_label(r[0]) for r in rows] + (["real datasets"] if real else [])
     ax_spread.set_xticks(range(len(labels)))
-    ax_spread.set_xticklabels(labels, rotation=20, ha="right")
-    # No y-label: the heading already says "Cohort spread / chance", and saying it twice in a
-    # figure this small is a third of the left margin for nothing.
-    ax_spread.set_ylabel("")
-    style.title(ax_spread, "Cohort spread / chance")
+    ax_spread.set_xticklabels(labels)
+    ax_spread.set_ylabel("between-cohort SD ÷ binomial SD")
+    ax_spread.set_ylim(bottom=0)
+    style.title(ax_spread, "Clustering of defaults")
 
     # RIGHT: one concrete example per variant, so the abstraction is grounded.
     for i, (name, tasks) in enumerate(variants.items()):
@@ -298,7 +314,8 @@ def plot_default_clustering(
             continue
         rates = cohort_rates(np.asarray(pick.y))
         ax_example.plot(np.arange(1, rates.size + 1), rates, marker="o", markersize=3,
-                        color=style.SERIES[i % len(style.SERIES)], label=name)
+                        color=style.variant_colour(name, i),
+                        label=f"one {style.variant_label(name)} task")
     _labelled: set[str] = set()
     for y in list(_real_targets("pd", real).values())[:2]:
         rates = cohort_rates(y)
@@ -306,15 +323,14 @@ def plot_default_clustering(
         # legend twice, which reads as two different things.
         ax_example.plot(np.arange(1, rates.size + 1), rates, marker="*", markersize=7,
                         color=style.STAR, linestyle=":",
-                        label="real" if "real" not in _labelled else None)
+                        label=None if (real and "real" not in _labelled) else "_nolegend_")
         _labelled.add("real")
-    ax_example.set_xlabel("cohort")
-    ax_example.set_ylabel("default rate")
-    # White background: `legend.frameon` is off project-wide, so an unbacked legend floated
-    # over the data and the reference line behind it.
-    ax_example.legend(loc="best", fontsize=7, frameon=True, framealpha=0.9,
-                      edgecolor="none", facecolor="white")
-    style.title(ax_example, "Example datasets")
+    ax_example.set_xlabel("cohort (twelve contiguous blocks of rows)")
+    ax_example.set_ylabel("default rate in the cohort")
+    ax_example.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(1.0, decimals=0))
+    ax_example.set_ylim(bottom=0)
+    style.title(ax_example, "Default rate by cohort")
+    style.legend_below(fig, ncol=4)
     return fig
 
 
@@ -353,8 +369,8 @@ def plot_difficulty_calibration(
             scores_per_variant[name] = scores
 
     positions = np.arange(len(scores_per_variant))
-    for i, (_name, scores) in enumerate(scores_per_variant.items()):
-        colour = style.SERIES[i % len(style.SERIES)]
+    for i, (name, scores) in enumerate(scores_per_variant.items()):
+        colour = style.variant_colour(name, i)
         jitter = (np.random.default_rng(i).random(len(scores)) - 0.5) * 0.30
         ax.scatter(np.full(len(scores), i) + jitter, scores, s=16, color=colour, alpha=0.75,
                    linewidths=0, zorder=3)
@@ -363,39 +379,29 @@ def plot_difficulty_calibration(
         ax.plot([i - 0.17, i + 0.17], [np.median(scores)] * 2, color=style.INK, linewidth=1.6,
                 zorder=4, solid_capstyle="butt")
 
+    shown = [s for scores in scores_per_variant.values() for s in scores if np.isfinite(s)]
     if real_scores:
         values = np.asarray(list(real_scores.values()), dtype=float)
-        # 10th-90th percentile, not min-max. One small real dataset scores R^2 = -4.8 under a
-        # contiguous 70/30 split, and a min-max band would stretch from -4.8 to 0.7 — which
-        # covers everything and therefore says nothing. The outlier is reported in the text
-        # summary instead of being allowed to flatten the figure.
+        # 10th-90th percentile, not min-max: one small real dataset scores R^2 = -4.8, and a
+        # min-max band would cover everything and therefore say nothing. In the LEGEND, never as
+        # text on the axes, where it sat on the points.
         lo, hi = (float(np.percentile(values, 10)), float(np.percentile(values, 90)))
-        ax.axhspan(lo, hi, color=style.REAL, alpha=0.12, zorder=1)
+        ax.axhspan(lo, hi, color=style.REAL, alpha=0.12, zorder=1,
+                   label="real datasets, 10th-90th percentile")
         ax.axhline(float(np.median(values)), color=style.REAL, linestyle="--", linewidth=1.0,
-                   zorder=3)
-        # Anchored INSIDE the axes. At x=0.99 with ha="right" the text ran off the right edge
-        # of the figure, because `constrained_layout` sizes to the axes and not to an
-        # annotation hanging outside them.
-        ax.annotate("real credit data", (0.985, hi), xycoords=("axes fraction", "data"),
-                    ha="right", va="bottom", fontsize=7, color=style.REAL,
-                    annotation_clip=False,
-                    bbox=dict(facecolor="white", edgecolor="none", pad=1.0, alpha=0.85))
-        n_out = int(np.sum((values < lo) | (values > hi)))
-        if n_out:
-            ax.annotate(f"{n_out} real dataset(s) outside the band",
-                        (0.99, 0.02), xycoords="axes fraction", ha="right", va="bottom",
-                        fontsize=6.5, color=style.MUTED)
-        # Clip the view to the interesting region. An R^2 of -4.8 on the axis compresses every
-        # real difference into a few pixels.
-        finite = [s for scores in scores_per_variant.values() for s in scores if np.isfinite(s)]
-        if finite:
-            floor = min(-0.2, float(np.percentile(finite, 2)))
-            ax.set_ylim(bottom=max(floor, -1.0))
+                   zorder=3, label="real datasets, median")
+        shown += [lo, hi]
+    # The view is the data's range — never a fixed one (it ran to 20 before, flattening every
+    # point onto the zero line) and never below -1, where one outlier would do the same.
+    if shown:
+        top = min(1.02, max(shown) + 0.05)
+        bottom = max(-1.0, min(shown) - 0.05)
+        ax.set_ylim(bottom, top if top > bottom else bottom + 1.0)
 
     ax.set_xticks(positions)
-    ax.set_xticklabels(list(scores_per_variant), rotation=20, ha="right")
-    ax.set_ylabel("R²" if task == "lgd" else "ROC AUC")
-    style.title(ax, "Task difficulty")
+    ax.set_xticklabels([style.variant_label(n) for n in scores_per_variant])
+    ax.set_ylabel("R²" if task == "lgd" else "ROC-AUC")
+    style.legend_below(ax, ncol=2)
     return fig
 
 
@@ -433,12 +439,29 @@ def _quick_score(task_obj: Any, task: str) -> float | None:
 # ---------------------------------------------------------------------------
 
 
+def _texture_columns(X: np.ndarray, n_cols: int) -> list[int]:
+    """The `n_cols` columns with the most distinct values, in their original order.
+
+    The first `n_cols` columns of a real table are often one-hot flags or IDs, which render as a
+    flat white panel; a generated table is zero-padded, so its tail columns are empty. Neither says
+    anything about texture. The columns that vary most are the fair sample of both.
+    """
+    counts = []
+    for c in range(X.shape[1]):
+        col = X[:, c]
+        col = col[np.isfinite(col)]
+        counts.append(len(np.unique(col)) if col.size else 0)
+    order = np.argsort(counts)[::-1][:n_cols]
+    return sorted(int(c) for c in order if counts[c] > 1)
+
+
 def plot_side_by_side_tables(
     synthetic: Any,
     real: Any | None = None,
-    n_rows: int = 8,
+    n_rows: int = 12,
     n_cols: int = 7,
     task: str = "lgd",
+    real_name: str | None = None,
 ):
     """One real table and one synthetic table, same layout, a few rows each.
 
@@ -452,9 +475,9 @@ def plot_side_by_side_tables(
     are — not the individual numbers.
     """
     style.apply()
-    panels = [("our synthetic prior", synthetic, style.CREDIT)]
+    panels = [("credit prior, one generated task", synthetic, style.CREDIT)]
     if real is not None:
-        panels.append(("real credit data", real, style.REAL))
+        panels.append((f"{real_name or 'real credit data'}, real", real, style.REAL))
 
     fig, axes = plt.subplots(1, len(panels), figsize=style.grid_figsize(len(panels), 1,
                                                                         panel_ratio=1.05),
@@ -463,8 +486,13 @@ def plot_side_by_side_tables(
         ax = axes[0][i]
         X = np.asarray(obj.X, dtype=float)
         y = np.asarray(obj.y, dtype=float).ravel()
-        X = X[:n_rows, :n_cols]
-        y = y[:n_rows]
+        # A fixed random sample of rows (seed 0), not the head: a real table's first rows encode
+        # whatever its file order encodes.
+        rows = np.sort(np.random.default_rng(0).choice(len(y), size=min(n_rows, len(y)),
+                                                       replace=False))
+        cols = _texture_columns(X[rows], n_cols) or list(range(min(n_cols, X.shape[1])))
+        X = X[np.ix_(rows, cols)]
+        y = y[rows]
         # Per-column rank normalisation, so one wide-scale column does not flatten the rest to
         # a single shade. The texture is what matters, not the units.
         shown = np.zeros_like(X)
@@ -473,20 +501,26 @@ def plot_side_by_side_tables(
             finite = np.isfinite(col)
             if finite.sum() > 1 and np.ptp(col[finite]) > 0:
                 shown[:, c] = (col - np.nanmin(col)) / (np.nanmax(col) - np.nanmin(col) + 1e-12)
-        grid = np.column_stack([shown, y])
+        # The target on the same 0-1 shade scale as the features: LGD is on [0, 1] already, a
+        # default flag is 0 or 1, and anything else is min-max scaled like a feature.
+        yr = np.ptp(y[np.isfinite(y)]) if np.isfinite(y).any() else 0.0
+        y_shown = (y - np.nanmin(y)) / yr if yr > 0 and (np.nanmin(y) < 0 or np.nanmax(y) > 1) else y
+        grid = np.column_stack([shown, y_shown])
         ax.imshow(grid, aspect="auto", cmap="Blues", vmin=0, vmax=1)
         # A line before the last column: the target is not a feature and should not read as one.
         ax.axvline(X.shape[1] - 0.5, color=style.INK, linewidth=1.2)
         ax.set_xticks(list(range(X.shape[1])) + [X.shape[1]])
-        ax.set_xticklabels([f"f{c}" for c in range(X.shape[1])] + ["y"],
+        ax.set_xticklabels([f"f{c}" for c in cols] + ["y"],
                            fontsize=mpl.rcParams["xtick.labelsize"] * 0.85)
+        ax.set_xlabel("feature (the most varied columns) and target y",
+                      fontsize=mpl.rcParams["xtick.labelsize"])
         # Row NUMBERS, not target values. The target is already the last column, so printing
         # it again down the side said the same thing twice and invited the reader to think the
         # left-hand numbers were a different quantity.
         ax.set_yticks(range(len(y)))
         ax.set_yticklabels([str(r + 1) for r in range(len(y))],
                            fontsize=mpl.rcParams["ytick.labelsize"] * 0.85)
-        ax.set_ylabel("row", fontsize=mpl.rcParams["ytick.labelsize"])
+        ax.set_ylabel("row (random sample)", fontsize=mpl.rcParams["ytick.labelsize"])
         ax.grid(visible=False)
         # All four spines, so the coloured frame closes. The project style hides top and right,
         # which left these panels framed on two sides and looking unfinished.
@@ -494,8 +528,7 @@ def plot_side_by_side_tables(
             sp.set_visible(True)
             sp.set_color(colour)
             sp.set_linewidth(1.2)
-        style.title(ax, label, f"{X.shape[1]} features + target")
-    fig.suptitle("One table each")
+        ax.set_title(label, loc="left", fontsize=9)
     return fig
 
 
@@ -527,26 +560,31 @@ def plot_boundary_mass_sources(
     ]
     for i, name in enumerate(names):
         ax = axes[0][i]
-        colour = style.SERIES[i % len(style.SERIES)]
+        colour = style.variant_colour(name, i)
         pts = [(s["frac_at_min"], s["frac_at_max"])
                for s in (target_stats(t.y) for t in variants[name])]
         if pts:
             xs, ys = zip(*pts)
-            ax.scatter(xs, ys, s=14, color=colour, alpha=0.6, linewidths=0, zorder=2)
+            ax.scatter(xs, ys, s=14, color=colour, alpha=0.6, linewidths=0, zorder=2,
+                       label="one synthetic task" if i == 0 else None)
         # STARS ON TOP, IN MAGENTA. Two separate visibility failures were stacked here: at
         # s=55 behind s=26 dots the stars were buried, and `style.REAL` is orange — the same
         # hue as the credit variant's own points, so where they overlapped nothing was
         # distinguishable. `style.STAR` appears nowhere else in the palette.
-        for rx, ry in real_points:
+        for k, (rx, ry) in enumerate(real_points):
             ax.scatter([rx], [ry], marker="*", s=90, color=style.STAR, zorder=5,
-                       edgecolors="white", linewidths=0.7)
+                       edgecolors="white", linewidths=0.7,
+                       label="one real dataset" if (i == 0 and k == 0) else None)
         # The line where the two atoms are equal. Above it a book is loss-heavy, below it
         # recovery-heavy, and which side a prior sits on is the readable fact.
-        ax.plot([0, 1], [0, 1], color=style.MUTED, linewidth=0.8, linestyle=":", zorder=1)
+        ax.plot([0, 1], [0, 1], color=style.MUTED, linewidth=0.8, linestyle=":", zorder=1,
+                label="equal mass at 0 and at 1" if i == 0 else None)
         ax.set_xlim(-0.02, 1.02)
         ax.set_ylim(-0.02, 1.02)
-        ax.set_xlabel("mass at 0 (full recovery)")
-        style.title(ax, name)
-    axes[0][0].set_ylabel("mass at 1 (total loss)")
-    fig.suptitle("Mass at 0 vs at 1")
+        # At the target's MINIMUM and MAXIMUM: 0 and 1 for our prior and the real books, but the
+        # original prior standard-scales its target, so there they are its own extremes.
+        ax.set_xlabel("share of rows at the minimum (0 on [0, 1])")
+        ax.set_title(style.variant_label(name), loc="left", fontsize=9)
+    axes[0][0].set_ylabel("share at the maximum (1 on [0, 1])")
+    style.legend_below(fig, ncol=3)
     return fig

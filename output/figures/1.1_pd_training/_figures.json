@@ -1,152 +1,98 @@
 [
   {
     "index": 1,
-    "stem": "01_palette",
-    "name": "palette",
-    "caption": "The shared colour vocabulary used on every axis of this notebook: each swatch names the prior, data source, literature overlay or annotation it marks."
+    "stem": "01_sweep_map",
+    "name": "sweep_map",
+    "caption": "Final development ROC-AUC of every scheduled PD arm as a heatmap, one row per configuration grouped by credit fraction and one column per seed; grey cells have no development score."
   },
   {
     "index": 2,
-    "stem": "02_sweep_map",
-    "name": "sweep_map",
-    "caption": "Final development ROC-AUC of every PD arm as a heatmap, one row per configuration grouped by credit fraction and one column per seed; hatched cells are arms still training, annotated with the share trained."
+    "stem": "02_monitoring_coverage",
+    "name": "monitoring_coverage",
+    "caption": "Monitoring coverage of every PD arm: one row per real dataset labelled development or holdout, one column per arm grouped by credit fraction, each cell coloured by whether its score enters the development mean, is not carried by every arm, is holdout, holds only missing values or was not monitored."
   },
   {
     "index": 3,
-    "stem": "03_monitoring_coverage",
-    "name": "monitoring_coverage",
-    "caption": "Monitoring coverage of every PD arm: one row per real dataset labelled development or holdout, one column per arm in sweep order, cells coloured by whether the dataset enters the development mean, is holdout, is missing or was not monitored."
+    "stem": "03_throughput",
+    "name": "throughput",
+    "caption": "Training speed per PD arm in steps per second (left) and the implied hours for the full run (right), grouped by filter mode; points are arms coloured and shaped by credit fraction and bars are group medians with their value."
   },
   {
     "index": 4,
-    "stem": "04_throughput",
-    "name": "throughput",
-    "caption": "Training speed per PD arm in steps per second (left) and the implied hours for the full run (right), grouped by filter mode; points are arms coloured by credit fraction and bars are group medians."
+    "stem": "04_training_loss",
+    "name": "training_loss",
+    "caption": "Training loss against optimisation step for every PD arm, a rolling mean over three logged batches coloured by credit fraction, with the median of each credit fraction bold."
   },
   {
     "index": 5,
-    "stem": "05_training_loss",
-    "name": "training_loss",
-    "caption": "Training loss against optimisation step for every PD arm (grey), the mean of the finished arms (black), and the best and worst arms by final development ROC-AUC (highlighted)."
+    "stem": "05_gradient_health",
+    "name": "gradient_health",
+    "caption": "Mean per-block gradient L2 norm (left) and ratio of gradient norm to weight norm (right) against training step on logarithmic axes, one line per architecture block (column encoder, row encoder, ICL blocks), averaged over all arms."
   },
   {
     "index": 6,
-    "stem": "06_gradient_flow",
-    "name": "gradient_flow",
-    "caption": "Mean per-block gradient L2 norm (column encoder, row encoder, ICL blocks, head) against training step on a logarithmic axis."
+    "stem": "06_metric_over_training",
+    "name": "metric_over_training",
+    "caption": "Development ROC-AUC averaged over the development datasets every arm scored, against training step; one line per arm coloured by credit fraction, with the mean of each credit fraction bold."
   },
   {
     "index": 7,
-    "stem": "07_weight_gradient_ratios",
-    "name": "weight_gradient_ratios",
-    "caption": "Mean per-block ratio of gradient norm to weight norm against training step on a logarithmic axis, one line per architecture block."
+    "stem": "07_credit_vs_control_over_training",
+    "name": "credit_vs_control_over_training",
+    "caption": "Development ROC-AUC against training step for credit-prior arms and control arms: median lines with shaded inter-quartile bands over the finished arms of each group."
   },
   {
     "index": 8,
-    "stem": "08_metric_over_training",
-    "name": "metric_over_training",
-    "caption": "Development ROC-AUC averaged over the development datasets every arm carries, against training step; one line per arm coloured by credit fraction, dotted while unfinished, with the mean of the finished arms in black."
+    "stem": "08_metric_by_levers",
+    "name": "metric_by_levers",
+    "caption": "Development ROC-AUC against training step, one panel per swept lever with one mean line per lever value over the finished arms sharing it, all panels on a shared vertical axis."
   },
   {
     "index": 9,
-    "stem": "09_credit_vs_control_over_training",
-    "name": "credit_vs_control_over_training",
-    "caption": "Development ROC-AUC against training step for credit-prior arms versus control arms: median lines with shaded inter-quartile bands across the finished arms in each group."
+    "stem": "09_final_metric_by_lever",
+    "name": "final_metric_by_lever",
+    "caption": "Final development ROC-AUC of every finished arm as points coloured and shaped by credit fraction, one panel per swept lever, with a horizontal bar at each group mean."
   },
   {
     "index": 10,
-    "stem": "10_metric_by_lever_credit_fraction",
-    "name": "metric_by_lever_credit_fraction",
-    "caption": "Development ROC-AUC against training step, one mean line per value of credit fraction, averaged over the finished arms that share each value."
+    "stem": "10_lever_interaction",
+    "name": "lever_interaction",
+    "caption": "Final development ROC-AUC against each lever other than credit fraction, one series per credit fraction: points are finished arms, lines join the per-value means, whiskers show one standard deviation over seeds, and the grey band is the control mean plus or minus one standard deviation."
   },
   {
     "index": 11,
-    "stem": "11_metric_by_lever_filter",
-    "name": "metric_by_lever_filter",
-    "caption": "Development ROC-AUC against training step, one mean line per value of filter mode, averaged over the finished arms that share each value."
-  },
-  {
-    "index": 12,
-    "stem": "12_metric_by_lever_intensity",
-    "name": "metric_by_lever_intensity",
-    "caption": "Development ROC-AUC against training step, one mean line per value of prior intensity, averaged over the finished arms that share each value."
-  },
-  {
-    "index": 13,
-    "stem": "13_final_metric_by_lever",
-    "name": "final_metric_by_lever",
-    "caption": "Final development ROC-AUC of every finished arm as points coloured by credit fraction, one panel per swept lever, with a horizontal bar at each group mean."
-  },
-  {
-    "index": 14,
-    "stem": "14_lever_interaction",
-    "name": "lever_interaction",
-    "caption": "Final development ROC-AUC against each lever other than credit fraction, one series per credit fraction: points are finished arms, lines join the per-value means and whiskers show one standard deviation over seeds; the grey band is the control mean plus or minus one standard deviation."
-  },
-  {
-    "index": 15,
-    "stem": "15_seed_spread",
+    "stem": "11_seed_spread",
     "name": "seed_spread",
     "caption": "Final development ROC-AUC of every configuration's seeds as points on one horizontal axis, configurations sorted by their mean with the range and mean marked per row; the dashed line is the control mean."
   },
   {
-    "index": 16,
-    "stem": "16_per_dataset_p1",
+    "index": 12,
+    "stem": "12_per_dataset_p1",
     "name": "per_dataset_p1",
-    "caption": "Monitored ROC-AUC against training step, one panel per real dataset labelled with its role, credit arms (blue) against control arms (grey); holdout datasets are shown but never averaged."
+    "caption": "Monitored ROC-AUC against training step, one panel per real dataset labelled with its side of the split and the number of finished arms that scored it, credit-prior arms against control arms."
   },
   {
-    "index": 17,
-    "stem": "17_per_dataset_p2",
-    "name": "per_dataset_p2",
-    "caption": "Monitored ROC-AUC against training step, one panel per real dataset labelled with its role, credit arms (blue) against control arms (grey); holdout datasets are shown but never averaged."
-  },
-  {
-    "index": 18,
-    "stem": "18_real_vs_ood",
+    "index": 13,
+    "stem": "13_real_vs_ood",
     "name": "real_vs_ood",
-    "caption": "Development ROC-AUC on the real-credit datasets (solid) and the out-of-domain suites (dashed) against training step, averaged separately over credit-prior and control arms."
+    "caption": "Development ROC-AUC on the real-credit datasets (solid) and on the out-of-domain suites (dashed) against training step, averaged separately over credit-prior and control arms."
   },
   {
-    "index": 19,
-    "stem": "19_eval_metrics_p1",
+    "index": 14,
+    "stem": "14_eval_metrics_p1",
     "name": "eval_metrics_p1",
-    "caption": "Each logged development metric against training step, one panel per metric, credit-prior (blue) and control (grey) means over the finished arms; the arrow in each title marks the improving direction."
+    "caption": "Each logged development metric against training step, one panel per metric and one figure per metric group, credit-prior and control means over the finished arms; the title marks the improving direction or target value, drawn as a dashed line."
   },
   {
-    "index": 20,
-    "stem": "20_per_config_p1",
+    "index": 15,
+    "stem": "15_per_config_p1",
     "name": "per_config_p1",
-    "caption": "Per-arm training curves against step in sweep-map order: train loss (grey) and development ROC-AUC (blue, right axis), one panel per arm, unfinished arms labelled with the share trained."
+    "caption": "Development ROC-AUC against training step, one panel per configuration in sweep-map order with one line per seed, all panels on shared axes."
   },
   {
-    "index": 21,
-    "stem": "21_per_config_p2",
-    "name": "per_config_p2",
-    "caption": "Per-arm training curves against step in sweep-map order: train loss (grey) and development ROC-AUC (blue, right axis), one panel per arm, unfinished arms labelled with the share trained."
-  },
-  {
-    "index": 22,
-    "stem": "22_per_config_p3",
-    "name": "per_config_p3",
-    "caption": "Per-arm training curves against step in sweep-map order: train loss (grey) and development ROC-AUC (blue, right axis), one panel per arm, unfinished arms labelled with the share trained."
-  },
-  {
-    "index": 23,
-    "stem": "23_per_config_p4",
-    "name": "per_config_p4",
-    "caption": "Per-arm training curves against step in sweep-map order: train loss (grey) and development ROC-AUC (blue, right axis), one panel per arm, unfinished arms labelled with the share trained."
-  },
-  {
-    "index": 24,
-    "stem": "24_best_and_worst",
+    "index": 16,
+    "stem": "16_best_and_worst",
     "name": "best_and_worst",
-    "caption": "Train loss and development ROC-AUC against training step for the best and worst finished arm by final development ROC-AUC."
-  },
-  {
-    "index": 25,
-    "stem": "25_hardware",
-    "name": "hardware",
-    "caption": "GPU utilisation, throughput and peak allocated memory against training step, pooled across arms; the dashed line marks 70 percent utilisation."
+    "caption": "Training loss (a rolling mean over three logged batches) and development ROC-AUC against training step for the best and the worst finished arm by final development score."
   }
 ]

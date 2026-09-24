@@ -39,19 +39,36 @@ def _fmt_range(values: list[float], pct: bool = False) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _credit_target(config: str | None) -> dict[str, Any]:
+    """The credit prior's target block of the config's first arm, `{}` without a config."""
+    if not config:
+        return {}
+    try:
+        from src.utils.config import expand_with_seeds, load
+
+        return dict(expand_with_seeds(load(config))[0]["prior"]["credit"]["target"])
+    except Exception:  # noqa: BLE001 — a summary never fails on a config it cannot read
+        return {}
+
+
 def prior_summary(
     loaded: dict[str, list[Any]],
     task: str,
     *,
     source: str = "unknown",
     reference: dict[str, Any] | None = None,
+    config: str | None = None,
 ) -> str:
     """Text summary of a prior-visualisation notebook.
 
     Reports, per variant, the quantities the research question turns on, and then says
     explicitly whether our prior covers the real datasets — which is the one
-    conclusion a reader should walk away with.
+    conclusion a reader should walk away with. Pass `config` so the closing paragraph describes the
+    target construction that config actually uses (the LGD `quantile` mode sets the boundary atoms
+    directly; only `mechanism` mode derives them from collateral, workout and segment stories).
     """
+    from src.visualize.pool_plots import informative_columns
+
     lines: list[str] = []
     lines.append(_rule(f"PRIOR SUMMARY — {task.upper()}"))
     lines.append(f"data source      : {source}  ('pool' = the files training reads; "
@@ -64,9 +81,11 @@ def prior_summary(
         if not tasks:
             continue
         rows = [t.n_rows for t in tasks]
-        feats = [t.n_features for t in tasks]
+        # Columns that VARY: every generated table is zero-padded to 100 columns.
+        feats = [len(informative_columns(t.X)) for t in tasks]
         lines.append(f"\n{variant}:")
-        lines.append(f"  shape          rows {_fmt_range(rows)} | features {_fmt_range(feats)}")
+        lines.append(f"  shape          rows {_fmt_range(rows)} | varying features {_fmt_range(feats)}"
+                     f" (padded to {tasks[0].n_features})")
 
         if task == "lgd":
             stats = [target_stats(t.y) for t in tasks]
@@ -145,7 +164,19 @@ def prior_summary(
         )
 
     lines.append("\n--- WHAT THIS MEANS " + "-" * 58)
-    if task == "lgd":
+    target = _credit_target(config)
+    if task == "lgd" and target.get("mode", "quantile") in ("quantile", "censor"):
+        lo, hi = target.get("boundary_mass_range", [0.02, 0.25])
+        lines.append(
+            "The original TabICL prior standard-scales its target, so it puts almost\n"
+            "nothing inside [0,1] and produces boundary atoms only by chance ties at the\n"
+            f"+-4 SD outlier clamp. Our prior, in this config's '{target.get('mode', 'quantile')}' mode, "
+            "sets the\natoms DIRECTLY: the share of rows at 0 and the share at 1 are each drawn\n"
+            f"uniformly from boundary_mass_range [{lo:g}, {hi:g}], and the interior follows a\n"
+            "Kumaraswamy curve. The collateral / workout / segment loss stories exist in\n"
+            "the code ('mechanism' mode) but are not used by this experiment."
+        )
+    elif task == "lgd":
         lines.append(
             "The original TabICL prior standard-scales its target, so it puts almost\n"
             "nothing inside [0,1] and produces boundary atoms only by chance ties. Our\n"
@@ -228,14 +259,20 @@ def data_summary(
             lines.append(f"\nbase rate          {_fmt_range(list(per.values()), pct=True)}")
             for name, v in sorted(per.items(), key=lambda kv: kv[1]):
                 odds = (1 - v) / max(v, 1e-9)
-                lines.append(f"  {name:24} {v:6.1%}   (1 default per {odds:.0f} non-defaults)")
+                # One decimal below ten, trailing zero dropped: 40% is "1 per 1.5", not "1 per 1".
+                shown = f"{odds:.1f}".rstrip("0").rstrip(".") if odds < 10 else f"{odds:.0f}"
+                lines.append(f"  {name:24} {v:6.1%}   (1 default per {shown} non-defaults)")
             lines.append(
-                "\nEvery dataset is below the 50% balance point that TabICL's prior sits\n"
-                "near, most by a wide margin. That gap is what the PD arm addresses."
+                "\nEvery dataset is below 50%. TabICL's unmodified prior spreads its tasks'\n"
+                "base rates over the whole [0, 1] with a median near 50% (notebook 0.2), so\n"
+                "real books sit in its left tail. That gap is what the PD arm addresses."
             )
 
     if leakage is not None and len(leakage):
         lines.append("\n--- LEAKAGE SCREEN " + "-" * 59)
+        # Sorted over BOTH tasks before the top five are taken: the caller concatenates one frame
+        # per task, and the head of that listed PD features only, missing lgd_lendingclub's 0.75.
+        leakage = leakage.sort_values("|corr with target|", ascending=False)
         flagged = leakage[leakage["suspicious"]] if "suspicious" in leakage else leakage.iloc[:0]
         lines.append(f"single-feature |correlation| with the target, top {min(5, len(leakage))}:")
         for _, r in leakage.head(5).iterrows():
@@ -253,15 +290,36 @@ def data_summary(
             "so it cannot see leakage spread across several columns."
         )
 
+    # Feature dependence per dataset, measured the way the correlation figures measure it — the
+    # mean absolute off-diagonal correlation — so the implication below states numbers, not a
+    # hope. Some books have strong blocks and some are close to independent columns.
+    dependence: dict[str, float] = {}
+    try:
+        from src.visualize.data_plots import _correlation_matrix, _mean_abs_offdiag
+
+        for datasets in datasets_by_task.values():
+            for slug, d in datasets.items():
+                dependence[slug.split(".", 1)[-1]] = _mean_abs_offdiag(_correlation_matrix(d))
+    except Exception:  # noqa: BLE001 — a summary never fails on one unreadable table
+        dependence = {}
+    if dependence:
+        ranked = sorted(dependence.items(), key=lambda kv: -kv[1])
+        lines.append("\n--- FEATURE DEPENDENCE (mean |r| between features) " + "-" * 26)
+        lines.append("  " + ", ".join(f"{k} {v:.2f}" for k, v in ranked))
+
     lines.append("\n--- IMPLICATIONS FOR THE PRIOR " + "-" * 47)
+    dep_line = ("4. Feature dependence differs by book (mean |r| from "
+                f"{min(dependence.values()):.2f} to {max(dependence.values()):.2f}), so the prior\n"
+                "   should produce both strongly blocked and nearly independent tables —\n"
+                "   which random causal graphs of varying size do.\n") if dependence else (
+                "4. Feature dependence could not be measured on this machine.\n")
     lines.append(
         "1. LGD boundary mass varies by a factor of ~40 across datasets, so the prior\n"
         "   must span a range, not hit one value.\n"
         "2. LGD targets are genuinely bounded — clipping to [0,1] encodes a real\n"
         "   constraint that the original prior does not have.\n"
         "3. PD base rates sit far below balance, so imbalance is sampled, not fixed.\n"
-        "4. Real features come in correlated blocks, which is why the prior builds\n"
-        "   features through random DAGs rather than independently.\n"
+        + dep_line +
         "5. Missingness is mostly pre-imputed away here, so do NOT tune the prior's\n"
         "   missingness rate to these numbers — they measure the upstream pipeline."
     )
@@ -364,7 +422,7 @@ def realism_summary(loaded: dict[str, Any], real: dict[str, Any], task: str) -> 
     """
     import numpy as np
 
-    from src.visualize.exp1_plots import _real_targets, distribution_distance
+    from src.visualize.exp1_plots import _real_targets, _unit_target, distribution_distance
 
     lines = [_rule(f"PRIOR REALISM RANKING — {task.upper()}")]
     reals = _real_targets(task, real)
@@ -373,17 +431,21 @@ def realism_summary(loaded: dict[str, Any], real: dict[str, Any], task: str) -> 
         return "\n".join(lines)
 
     lines.append(f"Distance from {len(reals)} real datasets (total variation, 0 = identical).")
-    lines.append("Lower is better. This is the ranking Exp1 exists to refine with training.")
+    lines.append("Each task's target on [0, 1] first: min-max scaled where it is not (the original")
+    lines.append("prior's is standardised). Lower is better.")
     lines.append("")
     rows = []
     for name, tasks in loaded.items():
-        pooled = np.clip(np.concatenate([np.asarray(t.y).ravel() for t in tasks]), 0.0, 1.0)
-        per = [distribution_distance(pooled, y) for y in reals.values()]
-        rows.append((name, float(np.mean(per)), float(np.min(per)), float(np.max(per))))
+        pooled = np.concatenate([_unit_target(t.y) for t in tasks])
+        per = {r: distribution_distance(pooled, y) for r, y in reals.items()}
+        best_name = min(per, key=per.get)
+        worst_name = max(per, key=per.get)
+        rows.append((name, float(np.mean(list(per.values()))), per[best_name], best_name,
+                     per[worst_name], worst_name))
     rows.sort(key=lambda r: r[1])
-    lines.append(f"  {'variant':<28} {'mean':>7} {'best':>7} {'worst':>7}")
-    for name, mean_d, best, worst in rows:
-        lines.append(f"  {name:<28} {mean_d:7.3f} {best:7.3f} {worst:7.3f}")
+    lines.append(f"  {'variant':<16} {'mean':>6}   closest real dataset       farthest real dataset")
+    for name, mean_d, best, bname, worst, wname in rows:
+        lines.append(f"  {name:<16} {mean_d:6.3f}   {bname:<16} {best:6.3f}   {wname:<16} {worst:6.3f}")
     lines.append("")
     winner, best_mean = rows[0][0], rows[0][1]
     lines.append(f"Closest to real data: {winner} (mean {best_mean:.3f}).")

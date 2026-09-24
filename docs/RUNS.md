@@ -175,6 +175,72 @@ The one thing to do differently.
 
 ## Runs
 
+## 24-09-2026 (evening) — Exp1 phase 1, final download — **COMPLETE: 90/90 arms trained; phase 2 not yet run**
+
+**Snapshot** `C:\Users\U0152019\Downloads\output`, downloaded 19:41 CEST; logs 498 files (25 MB),
+manifests 369 (7.6 MB). Last training line: PD a40, 17:34:13. **Final jobs** PD a25 `11604659`
+(END OK 10:00), LGD a43 `11591463_43` (END OK 10:57), and two automatic continuations after the
+noon walltime: PD a19 `11613402` (12:06 → 12:38) and PD a40 `11613401` (12:05 → 17:34).
+**Cluster** Mindwell `gpu_b200`, 1 × B200 per arm | **Commit** final segments PD `d4f06c2`, LGD
+`7800d08`, both with uncommitted changes (earlier segments `7d1cb02`, `9b752d2`, `6d716ec`) |
+**tfm-library pin** `21d555a6a24e` | **Python** 3.12.3, Linux | **walltime** 12 h PD, 72 h LGD.
+
+### Configuration
+- Unchanged `config/Exp1_PD.yaml` and `config/Exp1_LGD.yaml`, 45 arms per track: credit fraction
+  {0, 0.5, 1} × filter {tabicl, banded, off} × intensity {mild, aggressive} × seeds {0, 1, 2},
+  the credit-fraction-0 control deduplicated.
+- Budget 12,500 steps × 64 = 800,000 datasets per arm; scratch init, Muon.
+- **Edited by hand since the morning snapshot:** nothing.
+
+### Results
+All **90 arms `completed: true`** at 12,500 steps and 800,000 datasets; the latest Slurm log of
+every array index ends `END status=OK`. The four arms running this morning finished from steps
+7,235 (a25), 2,500 (LGD a43, one 49-hour segment), 12,292 (a19) and 9,268 (a40).
+
+Training monitor at the final step — **not the verdict**, and not comparable across protocols:
+
+| | control (cf 0) | cf 0.5 | cf 1 |
+|---|---|---|---|
+| PD development ROC-AUC, `german` + `myhom` (the only dev sets all 45 arms monitored) | 0.672 | 0.669 | 0.646 |
+| PD out-of-domain ROC-AUC, 8 sets | 0.997 | 0.992 | 0.975 |
+| PD training loss (median over arms of each arm's last three logged losses, as notebook 1.1) | 0.295 | 0.199 | 0.066 |
+| LGD development R², `base_model` (finite in 3 / 6 / 6 of 9 / 18 / 18 arms) | −0.03 | 0.19 | 0.02 |
+| LGD out-of-domain R², 8 sets, all 45 arms (notebook 1.2 averages its 15 scored arms: control 0.58, credit 0.49) | 0.51 | 0.55 | 0.42 |
+| LGD training loss (as notebook 1.2) | 0.093 | 0.064 | 0.032 |
+
+- **Progress curve:** plateaued — PD development ROC-AUC moved by ≤ 0.002 over the last three
+  monitor points (~1,900 steps). The nine protocol-2 PD arms (banded, cf 0 / 0.5; five dev sets)
+  end at 0.725 (cf 0) and 0.718–0.723 (cf 0.5).
+- **Out of domain:** held for the control and the blend; credit-only gives up 0.022 ROC-AUC (PD)
+  and ~0.1 R² (LGD).
+- **Throughput:** median 0.63–0.65 steps/s (`off`, `tabicl`) and 0.12–0.15 (`banded`); GPU
+  utilisation 89–93 %; peak allocated memory 13.1 GB. **Compute** ≈ 587 GPU-h PD + 767 GPU-h LGD
+  (logged segment time, excluding start-up, checkpoints and queueing); `banded` arms cost 28 (PD)
+  and 39 (LGD) GPU-h each against ~5.5 for the others.
+- **Files** `output/logs/`, `output/manifests/` of the snapshot.
+
+### Bugs and anomalies
+- **No new failures.** The four last arms ended `END status=OK`; nothing in their logs is an error.
+- **The monitors cannot rank priors.** PD: 36 arms use the legacy protocol (`german`, `myhom` plus
+  the holdout sets `hmeq`, `thomas`), nine use protocol 2 (five dev sets). LGD: all 45 are legacy,
+  and `base_model` R² is non-finite in 30 of them (seeds 0 and 2, one non-finite prediction each),
+  so the LGD row above rests on one seed per configuration.
+
+### Interpretation
+- **Show:** every checkpoint trained to a plateau. On PD's monitor, control ≈ blend > credit-only
+  (0.672 / 0.669 / 0.646, seed SD ~0.01 within a configuration), and credit-only also loses some
+  out-of-domain ability. The LGD monitor is too broken to read.
+- **Think:** credit-only PD tasks are far more predictable than real default data (pseudo-R² ~0.6
+  against ~0.06, notebook 0.2), so the cf-1 arms learn an easier task than the one they are scored
+  on. A hypothesis, not tested.
+- **Test:** phase 2 — every checkpoint on the development datasets, seeds paired, and the holdout
+  only for the prior selected on development.
+
+### Next
+Submit phase 2 (`benchmark.slurm`, `EXP=1`) for both tracks — not submitted; it needs Andreas's go.
+
+---
+
 ## 24-09-2026 — Exp1 retry progress — 86/90 complete; recovery working
 
 **Snapshot:** `C:\Users\U0152019\Downloads\output CreditICL`, latest training line

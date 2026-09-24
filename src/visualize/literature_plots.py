@@ -51,16 +51,15 @@ def credit_benchmark_landscape(keys: tuple[str, ...] | None = None):
     style.bar_value_labels(ax, bars, fmt="{:.3f}", horizontal=True)
     # A random classifier scores 0.5; anchoring there gives the reader the scale of the spread.
     ax.axvline(0.5, color=style.MUTED, ls=":", lw=1.0, zorder=1)
-    ax.annotate("0.5 = random", (0.5, len(refs) - 0.4), fontsize=6.5, color=style.MUTED,
-                xytext=(3, 0), textcoords="offset points", va="top")
     lo = min(0.5, min(values)) - 0.02
-    ax.set_xlim(lo, max(values) + 0.03)
+    ax.set_xlim(lo, max(values) + 0.04)
     ax.set_xlabel("reported ROC-AUC (each paper's own protocol)")
-    ax.legend(handles=style.legend_patches({"evaluated": style.REFERENCE,
-                                            "described / ceiling": style.EXTERNAL}),
-              loc="lower right")
-    style.title(ax, "Credit-domain AUCs in the literature")
-    fig.suptitle("Where the field sits on real credit data")
+    ax.grid(axis="x")
+    ax.grid(axis="y", visible=False)
+    style.legend_below(ax, style.legend_patches({"evaluated in the paper": style.REFERENCE,
+                                                 "described or cited as a ceiling": style.EXTERNAL})
+                       + [plt.Line2D([], [], color=style.MUTED, ls=":", lw=1.0,
+                                     label="0.5: a random classifier")], ncol=3)
     return fig
 
 

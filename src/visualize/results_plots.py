@@ -110,7 +110,11 @@ def _kind(model: str) -> str:
     return "credit"
 
 
-_KIND_COLOUR = {"credit": style.CREDIT, "control": style.ORIGINAL, "baseline": style.REAL}
+#: Credit prior blue and control grey as everywhere; external baselines olive — they were drawn in
+#: the real-data orange, which made "CatBoost" read as a measurement on real data.
+_KIND_COLOUR = {"credit": style.CREDIT, "control": style.ORIGINAL, "baseline": style.BASELINE}
+_KIND_LABEL = {"credit": "credit prior (cf > 0)", "control": "control (cf = 0)",
+               "baseline": "external baseline"}
 
 
 def _with_identity(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
@@ -182,31 +186,25 @@ def overall_ranking(track: str, exp: str = "exp1", metric: str | None = None):
     metric = metric or HEADLINE[track]
     style.apply()
     if df is None or metric not in df.columns:
-        fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.30))
-        _empty(ax, "no benchmark results in output/results/%s/eval/ yet" % track)
-        return fig
+        return _placeholder(f"no benchmark results in output/results/{track}/eval/ yet")
 
     from src.eval.selection import development_ranking
     agg = development_ranking(df, track, exp, metric)
     mc = "configuration"
     if agg.empty:
-        fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.30))
-        _empty(ax, "No complete development-set configuration scores yet")
-        return fig
+        return _placeholder("no complete development-set configuration scores yet")
     agg["kind"] = agg[mc].map(_kind)
     agg = agg.sort_values("mean", ascending=HIGHER_IS_BETTER.get(metric, True))
-    fig, ax = plt.subplots(figsize=style.row_figsize(len(agg)))
+    fig, ax = plt.subplots(figsize=style.row_figsize(len(agg), base=1.3))
     y = np.arange(len(agg))
     ax.barh(y, agg["mean"], xerr=agg["std"].fillna(0), color=[_KIND_COLOUR[k] for k in agg["kind"]],
             error_kw={"elinewidth": 0.8, "ecolor": style.MUTED})
     ax.set_yticks(y)
     ax.set_yticklabels([str(m)[:34] for m in agg[mc]], fontsize=7)
-    ax.set_xlabel(f"development {style.metric_label(metric)} (mean; bars: training-seed SD)")
-    ax.legend(handles=style.legend_patches({k: _KIND_COLOUR[k] for k in ("credit", "control", "baseline")}),
-              loc="lower right")
-    style.title(ax, f"Configurations ranked by {style.metric_label(metric)}",
-                "development datasets only — the split the prior is chosen on")
-    fig.suptitle(f"{track.upper()} which prior development selects")
+    ax.set_xlabel(f"development {style.metric_label(metric)}: mean over datasets and seeds "
+                  f"(whisker: seed SD)")
+    kinds = [k for k in ("credit", "control", "baseline") if (agg["kind"] == k).any()]
+    style.legend_below(ax, style.legend_patches({_KIND_LABEL[k]: _KIND_COLOUR[k] for k in kinds}))
     return fig
 
 
@@ -221,9 +219,7 @@ def per_dataset(track: str, exp: str = "exp1", metric: str | None = None):
     metric = metric or HEADLINE[track]
     style.apply()
     if df is None or metric not in df.columns or "dataset" not in df.columns:
-        fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.30))
-        _empty(ax, "no per-dataset benchmark results yet")
-        return fig
+        return _placeholder("no per-dataset benchmark results yet")
 
     df, mc = _with_identity(df)
     df["kind"] = df[mc].map(_kind)
@@ -239,14 +235,11 @@ def per_dataset(track: str, exp: str = "exp1", metric: str | None = None):
     kinds = [k for k in ("credit", "control", "baseline") if k in piv.columns]
     w = 0.8 / max(len(kinds), 1)
     for i, k in enumerate(kinds):
-        ax.bar(x + i * w, piv[k].values, width=w, color=_KIND_COLOUR[k], label=k)
+        ax.bar(x + i * w, piv[k].values, width=w, color=_KIND_COLOUR[k], label=_KIND_LABEL[k])
     ax.set_xticks(x + w * (len(kinds) - 1) / 2)
     ax.set_xticklabels([_role_tag(d, roles) for d in datasets], rotation=30, ha="right", fontsize=7)
-    ax.set_ylabel(f"best {style.metric_label(metric)} per kind")
-    ax.legend(loc="lower right")
-    style.title(ax, f"{style.metric_label(metric)} on every dataset",
-                "development datasets first, then holdout")
-    fig.suptitle(f"{track.upper()} benchmark by dataset")
+    ax.set_ylabel(f"best {style.metric_label(metric)} of each kind")
+    style.legend_below(ax, ncol=3)
     return fig
 
 
@@ -265,14 +258,12 @@ def credit_vs_control(track: str, exp: str = "exp1", metric: str | None = None,
     if df is not None:
         df = _restrict(df, track, exp, role)
     if df is None or metric not in df.columns or not len(df):
-        fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.30))
-        _empty(ax, "no benchmark results yet — this is the figure that answers the experiment")
-        return fig
+        return _placeholder("no benchmark results yet")
 
     df, mc = _with_identity(df)
     per_model = df.groupby(mc)[metric].mean().reset_index()
     per_model["kind"] = per_model[mc].map(_kind)
-    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.44))
+    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.42))
     kinds = [k for k in ("credit", "control", "baseline") if (per_model["kind"] == k).any()]
     for i, k in enumerate(kinds):
         vals = per_model.loc[per_model["kind"] == k, metric].values
@@ -280,11 +271,11 @@ def credit_vs_control(track: str, exp: str = "exp1", metric: str | None = None,
                    color=_KIND_COLOUR[k], edgecolor="white", linewidth=0.4, zorder=3)
         ax.plot([i - 0.2, i + 0.2], [vals.mean(), vals.mean()], color=style.INK, lw=2, zorder=4)
     ax.set_xticks(range(len(kinds)))
-    ax.set_xticklabels(kinds)
+    ax.set_xticklabels([_KIND_LABEL[k] for k in kinds])
     ax.set_ylabel(f"{style.metric_label(metric)}, mean over {ROLE_LABEL.get(role, role)}")
-    style.title(ax, "Credit prior vs control vs baselines",
-                f"one point per model on the {ROLE_LABEL.get(role, role)}; bar: group mean")
-    fig.suptitle(f"{track.upper()}: does the credit prior beat control?")
+    style.legend_below(ax, [plt.Line2D([], [], color=style.MUTED, marker="o", ls="none",
+                                       label="one model"),
+                            plt.Line2D([], [], color=style.INK, lw=2, label="group mean")], ncol=2)
     return fig
 
 
@@ -309,13 +300,10 @@ def lever_effect(track: str, exp: str = "exp2", metric: str | None = None):
     df = load_results(track, exp)
     metric = metric or HEADLINE[track]
     style.apply()
-    fig, axes = plt.subplots(2, 2, figsize=style.grid_figsize(2, 2, panel_ratio=0.72))
-    axes = np.atleast_1d(axes).ravel()
     if df is None or metric not in df.columns:
-        for ax in axes:
-            ax.axis("off")
-        _empty(axes[0], "no benchmark results yet — this figure isolates each fine-tuning knob")
-        return fig
+        return _placeholder("no benchmark results yet")
+    fig, axes = plt.subplots(2, 2, figsize=style.grid_figsize(2, 2, panel_ratio=0.62), sharey=True)
+    axes = np.atleast_1d(axes).ravel()
 
     mc = _model_col(df)
     names = df[mc].astype(str)
@@ -331,16 +319,15 @@ def lever_effect(track: str, exp: str = "exp2", metric: str | None = None):
         ax.bar(x, grp.values, color=style.CREDIT, width=0.6)
         ax.set_xticks(x)
         ax.set_xticklabels([str(v).replace("p", ".").replace("m", "-") for v in grp.index],
-                           fontsize=7, rotation=20, ha="right")
-        ax.set_ylabel(style.metric_label(metric), fontsize=8)
-        style.title(ax, label)
+                           fontsize=7)
+        ax.set_ylabel(f"mean {style.metric_label(metric)}", fontsize=8)
+        ax.set_xlabel(label, fontsize=8)
         drawn = True
     for ax in axes:
         if not ax.has_data() and ax.axison:
             ax.axis("off")
     if not drawn:
         _empty(axes[0], "results carry no recognisable sweep levers to group by")
-    fig.suptitle(f"{track.upper()} effect of each fine-tuning lever")
     return fig
 
 
@@ -358,15 +345,14 @@ def metric_grid(track: str, exp: str = "exp1", role: str | None = None):
         df = _restrict(df, track, exp, role)
         df = df if len(df) else None
     metrics = available_metrics(df) if df is not None else []
+    if df is None or not metrics:
+        return _placeholder("no benchmark results in output/results/ yet")
     ncols = 3
     nrows = max(1, int(np.ceil(len(metrics) / ncols)))
-    fig, axes = plt.subplots(nrows, ncols, figsize=style.grid_figsize(ncols, nrows, panel_ratio=0.82))
+    fig, axes = plt.subplots(nrows, ncols, figsize=style.grid_figsize(ncols, nrows, panel_ratio=0.7))
     axes = np.atleast_1d(axes).ravel()
     for ax in axes:
         ax.axis("off")
-    if df is None or not metrics:
-        _empty(axes[0], "no benchmark results in output/results/ yet")
-        return fig
     df, mc = _with_identity(df)
     kinds = [k for k in ("credit", "control", "baseline") if df[mc].map(_kind).eq(k).any()]
     dk = df.assign(_kind=df[mc].map(_kind))
@@ -375,11 +361,15 @@ def metric_grid(track: str, exp: str = "exp1", role: str | None = None):
         means = dk.groupby("_kind")[metric].mean()
         vals = [means.get(k, np.nan) for k in kinds]
         ax.bar(range(len(kinds)), vals, color=[_KIND_COLOUR[k] for k in kinds], width=0.66)
-        ax.set_xticks(range(len(kinds)))
-        ax.set_xticklabels(kinds, fontsize=7, rotation=15, ha="right")
-        arrow = "↑" if HIGHER_IS_BETTER.get(metric, True) else "↓"
-        style.title(ax, f"{style.metric_label(metric)} {arrow}")
-    fig.suptitle(f"{track.upper()} every metric by model kind")
+        goal = style.metric_goal(metric)
+        if isinstance(goal, (int, float)):
+            ax.axhline(goal, color=style.INK, lw=0.9, ls="--")
+        ax.set_xticks([])
+        ax.set_title(f"{style.metric_label(metric)} {style.goal_mark(metric)}".strip(), loc="left",
+                     fontsize=8)
+        ax.tick_params(labelsize=7)
+    style.legend_below(fig, style.legend_patches({_KIND_LABEL[k]: _KIND_COLOUR[k] for k in kinds}),
+                       ncol=3)
     return fig
 
 
@@ -389,9 +379,7 @@ def per_dataset_heatmap(track: str, exp: str = "exp1", metric: str | None = None
     metric = metric or HEADLINE[track]
     style.apply()
     if df is None or metric not in df.columns or "dataset" not in df.columns:
-        fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.35))
-        _empty(ax, "no per-dataset benchmark results yet")
-        return fig
+        return _placeholder("no per-dataset benchmark results yet")
     df, mc = _with_identity(df)
     d = df.assign(_kind=df[mc].map(_kind))
     roles = _roles(track, exp)
@@ -401,10 +389,10 @@ def per_dataset_heatmap(track: str, exp: str = "exp1", metric: str | None = None
     rank = {"development": 0, "holdout": 1}
     order = sorted(piv.index, key=lambda v: (rank.get(roles.get(str(v).split(".", 1)[-1]), 2), str(v)))
     piv = piv.loc[order, kinds]
-    fig, ax = plt.subplots(figsize=style.row_figsize(len(piv)))
+    fig, ax = plt.subplots(figsize=style.row_figsize(len(piv), base=1.2))
     im = ax.imshow(piv.values, aspect="auto", cmap=style.CMAP_SEQ)
     ax.set_xticks(range(len(kinds)))
-    ax.set_xticklabels(kinds)
+    ax.set_xticklabels([_KIND_LABEL[k] for k in kinds])
     ax.set_yticks(range(len(piv)))
     ax.set_yticklabels([_role_tag(v, roles) for v in piv.index], fontsize=7)
     ax.grid(False)
@@ -418,10 +406,7 @@ def per_dataset_heatmap(track: str, exp: str = "exp1", metric: str | None = None
                 dark = (v - lo) / (hi - lo + 1e-12) < 0.55
                 ax.text(j, i, f"{v:.2f}", ha="center", va="center", fontsize=6,
                         color="white" if dark else style.INK)
-    fig.colorbar(im, ax=ax, shrink=0.55, label=style.metric_label(metric))
-    style.title(ax, f"Best {style.metric_label(metric)} per dataset and kind",
-                "development datasets first, then holdout")
-    fig.suptitle(f"{track.upper()} per-dataset heatmap")
+    fig.colorbar(im, ax=ax, shrink=0.55, label=f"best {style.metric_label(metric)} of the kind")
     return fig
 
 
@@ -432,36 +417,34 @@ def beats_reference(track: str, exp: str = "exp1", metric: str | None = None,
     df = load_results(track, exp)
     metric = metric or HEADLINE[track]
     style.apply()
-    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.46))
     if df is not None:
         df = _restrict(df, track, exp, role)
     if df is None or metric not in df.columns or not len(df):
-        _empty(ax, "no benchmark results yet")
-        return fig
+        return _placeholder("no benchmark results yet")
     df, mc = _with_identity(df)
     per = df.groupby(mc)[metric].mean()
     is_ref = [("tabiclv2" in str(m).lower()) for m in per.index]
     if not any(is_ref):
-        _empty(ax, "no released-TabICLv2 reference column in results yet")
-        return fig
+        return _placeholder("no released-TabICLv2 reference column in the results yet")
     ref = float(per[is_ref].mean())
     ours = per[[_kind(m) in ("credit", "control") for m in per.index]]
     if ours.empty:
-        _empty(ax, "no trained arms scored yet")
-        return fig
+        return _placeholder("no trained arms scored yet")
     higher = HIGHER_IS_BETTER.get(metric, True)
     order = ours.sort_values(ascending=not higher)
     delta = order.values - ref
-    better = delta > 0 if higher else delta < 0
+    fig, ax = plt.subplots(figsize=style.row_figsize(len(order), per_row=0.12, base=1.3))
     ax.barh(np.arange(len(order)), delta,
-            color=[style.CREDIT if b else style.MUTED for b in better])
+            color=[_KIND_COLOUR[_kind(m)] for m in order.index])
     ax.axvline(0, color=style.REFERENCE, lw=1.2)
-    ax.set_yticks([])
-    ax.set_xlabel(f"{style.metric_label(metric)} minus released TabICLv2 (right of 0 beats it)")
-    n = int(better.sum())
-    style.title(ax, f"{n}/{len(order)} arms beat released TabICLv2",
-                f"mean over the {ROLE_LABEL.get(role, role)}")
-    fig.suptitle(f"{track.upper()} vs the released reference")
+    ax.set_yticks(np.arange(len(order)))
+    ax.set_yticklabels([str(m)[:30] for m in order.index], fontsize=6)
+    ax.set_xlabel(f"{style.metric_label(metric)} minus the released TabICLv2's, mean over the "
+                  f"{ROLE_LABEL.get(role, role)}")
+    kinds = [k for k in ("credit", "control") if any(_kind(m) == k for m in order.index)]
+    style.legend_below(ax, style.legend_patches({_KIND_LABEL[k]: _KIND_COLOUR[k] for k in kinds})
+                       + [plt.Line2D([], [], color=style.REFERENCE, lw=1.2,
+                                     label="released TabICLv2 (0)")], ncol=3)
     return fig
 
 
@@ -520,3 +503,15 @@ def _empty(ax: Any, message: str) -> None:
     ax.text(0.5, 0.5, message, ha="center", va="center", color=style.MUTED, fontsize=9,
             wrap=True, transform=ax.transAxes)
     ax.set_xticks([]); ax.set_yticks([])
+
+
+def _placeholder(message: str):
+    """One compact line saying what is missing — the figure itself replaces it once the benchmark
+    has run. A half-page of empty axes (or a 2x2 grid with the message wedged in one corner, as the
+    lever figure had) said nothing more than this line does."""
+    style.apply()
+    fig, ax = plt.subplots(figsize=(style.WIDTH_FULL, 0.9))
+    _empty(ax, message)
+    for side in ax.spines:
+        ax.spines[side].set_visible(False)
+    return fig

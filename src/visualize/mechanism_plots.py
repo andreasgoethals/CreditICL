@@ -8,9 +8,10 @@ sizes, correlation spectra. This module shows the parts that make the prior
 * controlled imbalance (PD: the base rate held in credit's measured regime);
 * correlated defaults (PD: the Vasicek systematic factor, mild vs aggressive `rho`);
 * reject inference (PD: the approved book in context, the rejected region in the query);
-* distribution shift (both: context vs query per kind);
+* distribution shift (both: each task's context mean against its query mean, per kind);
 * informative missingness (both: a missing rate that depends on the outcome);
-* the predictability filter (both: what `tabicl` / `banded` / `off` keep).
+* predictability (both: synthetic tasks and real datasets scored by the filter's own
+  `predictability`, with what `tabicl` / `banded` / `off` keep).
 
 Every figure GENERATES LIVE from the current config through `TaskGenerator` — the exact
 code path training uses — so it can never show a stale prior the way a pre-generated
@@ -23,8 +24,10 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import torch
 
 from src.prior.filters import predictability
@@ -80,29 +83,44 @@ def _base_rate(t: Any) -> float:
 
 
 def intensity_atoms(config_path: str, n: int = 100, seed: int = 0):
-    """LGD: the original prior against our prior at mild vs aggressive boundary intensity."""
+    """LGD: the original prior against our prior at the two swept boundary intensities.
+
+    One panel per prior, each the target pooled over `n` tasks as a share of rows. The panel title
+    carries the mean boundary mass — for our prior the share of rows at exactly 0 or 1, for the
+    original prior (whose target is standard-scaled, not on [0, 1]) the share tied at its own
+    minimum or maximum, which is what the ±4 SD outlier clamp produces.
+    """
     task, prior = _prior(config_path)
     if task != "lgd":
         raise ValueError("intensity_atoms is an LGD figure")
     arms = [
-        ("original TabICL", style.ORIGINAL, {"credit_fraction": 0.0}),
-        ("ours — mild", style.CREDIT_MILD,
+        ("original prior", style.ORIGINAL, {"credit_fraction": 0.0}),
+        ("credit prior, mild", style.CREDIT_MILD,
          {"credit_fraction": 1.0, "filter.mode": "off", "credit.target.boundary_mass_range": [0.02, 0.30]}),
-        ("ours — aggressive", style.CREDIT_STRONG,
+        ("credit prior, aggressive", style.CREDIT_STRONG,
          {"credit_fraction": 1.0, "filter.mode": "off", "credit.target.boundary_mass_range": [0.15, 0.60]}),
     ]
     style.apply()
-    fig, axes = plt.subplots(1, 3, figsize=style.figsize(style.WIDTH_FULL, 0.40), sharey=True)
+    fig, axes = plt.subplots(1, 3, figsize=style.figsize(style.WIDTH_FULL, 0.36))
     for ax, (label, color, ov) in zip(axes, arms):
         tasks = _generate(task, prior, n, seed, ov)
-        pooled = np.concatenate([t.y.numpy() for t in tasks])
-        ax.hist(pooled, bins=60, color=color)
+        pooled = np.concatenate([t.y.numpy() for t in tasks]).astype(float)
+        bounded = pooled.min() >= -1e-6 and pooled.max() <= 1 + 1e-6
+        bins = np.linspace(0, 1, 41) if bounded else np.linspace(pooled.min(), pooled.max(), 41)
+        ax.hist(pooled, bins=bins, weights=np.full(pooled.size, 1.0 / pooled.size), color=color,
+                linewidth=0)
         stats = [target_stats(t.y) for t in tasks]
         bm = float(np.mean([s["frac_at_min"] + s["frac_at_max"] for s in stats]))
-        ax.set_xlabel("target (LGD)")
-        style.title(ax, label, f"mean boundary mass {bm:.2f}")
-    axes[0].set_ylabel("pooled count")
-    fig.suptitle("Boundary atoms by intensity")
+        ax.set_xlabel("LGD target" if bounded else "target, standardised scale")
+        ax.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(1.0, decimals=0))
+        ax.set_title(label, loc="left", fontsize=9)
+        # The number where the panel is empty: between the two spikes of a bounded target, in the
+        # corner beside the bell of the standardised one.
+        where = "at 0 or 1" if bounded else "at its\nmin or max"
+        ax.annotate(f"{bm:.0%} of rows\n{where}", (0.5, 0.95) if bounded else (0.03, 0.95),
+                    xycoords="axes fraction", ha="center" if bounded else "left", va="top",
+                    fontsize=7, color=style.INK)
+    axes[0].set_ylabel("share of rows")
     return fig
 
 
@@ -134,10 +152,7 @@ def imbalance_control(config_path: str, n: int = 200, seed: int = 0):
     literature.line(ax, "tanna_paradox", label="Tanna: collapse < 10%")
     ax.set_xlabel("positive (default) rate per task")
     ax.set_ylabel("number of tasks")
-    ax.legend(loc="upper right")
-    style.title(ax, "Controlled imbalance",
-                "our prior concentrates the base rate where real books sit")
-    fig.suptitle("PD base rate: upstream vs ours")
+    style.legend_below(ax, ncol=2)
     return fig
 
 
@@ -166,33 +181,32 @@ def correlated_defaults(config_path: str, n: int = 200, seed: int = 0):
 
     style.apply()
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=style.figsize(style.WIDTH_FULL, 0.42))
-    bins = np.linspace(0, 0.5, 41)
+    bins = np.linspace(0, 0.4, 33)
     ax1.hist(r_mild, bins=bins, color=style.CREDIT_MILD, alpha=0.8,
-             label=f"mild ρ  (SD {r_mild.std():.3f})")
+             label=f"mild, ρ in [0.03, 0.12] (SD {r_mild.std():.3f})")
     ax1.hist(r_aggr, bins=bins, color=style.CREDIT_STRONG, alpha=0.8,
-             label=f"aggressive ρ  (SD {r_aggr.std():.3f})")
-    ax1.axvline(0.15, color=style.INK, ls="--", lw=1.2)
-    ax1.annotate("15% target", (0.15, ax1.get_ylim()[1] * 0.95), color=style.INK, fontsize=8,
-                 xytext=(5, 0), textcoords="offset points")
-    ax1.set_xlabel("realised default rate")
+             label=f"aggressive, ρ in [0.12, 0.30] (SD {r_aggr.std():.3f})")
+    ax1.axvline(0.15, color=style.INK, ls="--", lw=1.1, label="target rate 15%")
+    ax1.set_xlabel("realised default rate per task")
     ax1.set_ylabel("number of tasks")
-    ax1.legend(loc="upper right")
-    style.title(ax1, "Realised rate around a fixed target")
+    ax1.xaxis.set_major_formatter(mpl.ticker.PercentFormatter(1.0, decimals=0))
+    ax1.set_title("Realised rate at a fixed 15% target", loc="left", fontsize=9)
 
-    rhos = [0.03, 0.15, 0.30]
+    rhos = [0.03, 0.08, 0.15, 0.22, 0.30]
     sds = []
     for r in rhos:
         ts = _generate(task, prior, max(30, n // 3), seed,
                        {**fixed, "credit.target.mechanism.rho_range": [r, r]})
         sds.append(float(np.std([_base_rate(t) for t in ts])))
-    ax2.plot(rhos, sds, "o-", color=style.CREDIT)
+    ax2.plot(rhos, sds, "o-", color=style.CREDIT, label="our prior at a fixed ρ")
     # The Basel IRB corporate asset-correlation cap sits on this exact axis; our aggressive arm
     # (ρ up to 0.30) reaches past it. External domain knowledge, so it draws amber and marked.
-    literature.line(ax2, "basel_corp", label="Basel corp 0.24")
+    literature.line(ax2, "basel_corp", label="Basel IRB corporate cap 0.24", inline=False)
     ax2.set_xlabel("asset correlation ρ")
-    ax2.set_ylabel("SD of realised default rate")
-    style.title(ax2, "Default clustering grows with ρ")
-    fig.suptitle("Correlated defaults by ρ")
+    ax2.set_ylabel("SD of the realised default rate")
+    ax2.set_ylim(bottom=0)
+    ax2.set_title("Spread of the realised rate against ρ", loc="left", fontsize=9)
+    style.legend_below(fig, ncol=2)
     return fig
 
 
@@ -220,23 +234,25 @@ def reject_inference(config_path: str, n: int = 120, seed: int = 0):
 
     style.apply()
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=style.figsize(style.WIDTH_FULL, 0.44))
-    ax1.scatter(ctx, qry, s=28, alpha=0.5, color=style.CREDIT, edgecolor="white", lw=0.4, zorder=3)
+    ax1.scatter(ctx, qry, s=28, alpha=0.5, color=style.CREDIT, edgecolor="white", lw=0.4, zorder=3,
+                label="one task")
     lim = float(max(ctx.max(), qry.max())) * 1.1 + 1e-3
-    ax1.plot([0, lim], [0, lim], color=style.MUTED, ls="--", lw=1.0, zorder=1)
+    ax1.plot([0, lim], [0, lim], color=style.MUTED, ls="--", lw=1.0, zorder=1,
+             label="no difference (y = x)")
     ax1.set_xlim(0, lim)
     ax1.set_ylim(0, lim)
     ax1.set_xlabel("context (approved book) default rate")
     ax1.set_ylabel("query (through-the-door) default rate")
-    style.title(ax1, "Query is the riskier book", "every task sits above the diagonal")
+    ax1.set_title("Default rate, context vs query", loc="left", fontsize=9)
 
     gap = qry - ctx
-    ax2.hist(gap, bins=20, color=style.QUERY)
+    ax2.hist(gap, bins=20, color=style.CREDIT)
     ax2.axvline(0, color=style.INK, lw=1.0)
-    ax2.axvline(float(gap.mean()), color=style.WARN, ls="--", lw=1.4)
+    ax2.axvline(float(gap.mean()), color=style.INK, ls="--", lw=1.2, label="mean difference")
     ax2.set_xlabel("query minus context default rate")
     ax2.set_ylabel("number of tasks")
-    style.title(ax2, f"Approved book understates risk by {gap.mean():+.2f}")
-    fig.suptitle("Reject inference: context vs query")
+    ax2.set_title("Query minus context", loc="left", fontsize=9)
+    style.legend_below(fig, ncol=3)
     return fig
 
 
@@ -245,56 +261,93 @@ def reject_inference(config_path: str, n: int = 120, seed: int = 0):
 # ---------------------------------------------------------------------------
 
 
-def shift_kinds(config_path: str, n: int = 80, seed: int = 0):
-    """Context (given) vs query (predicted), one panel per shift kind. `selection` is PD-only."""
+#: How each shift kind reads as a panel heading.
+_SHIFT_TITLE = {"cohort": "cohort", "covariate": "covariate", "prior_prob": "prior probability",
+                "selection": "selection (reject inference)"}
+
+
+def _split_means(task_obj: Any, kind: str, cut: int, feature: int | None = None) -> tuple[float, float]:
+    """(context mean, query mean) of what a shift kind moves: one feature, in SD units, for a
+    covariate shift; the target (default rate, or mean LGD) for every other kind."""
+    if kind == "covariate":
+        col = np.asarray(task_obj.X, dtype=float)[:, feature]
+        sd = float(col.std()) or 1.0
+        z = (col - col.mean()) / sd
+        return float(z[:cut].mean()), float(z[cut:].mean())
+    y = np.asarray(task_obj.y, dtype=float).ravel()
+    return float(y[:cut].mean()), float(y[cut:].mean())
+
+
+def shift_kinds(config_path: str, n: int = 40, seed: int = 0):
+    """What each distribution shift does to ONE task: its context mean against its query mean.
+
+    One panel per shift kind, one point per generated task with that shift switched on. A point on
+    the diagonal is a task whose query looks like its context; the distance from the diagonal is
+    the shift, and its side is the direction. The grey cloud is the yardstick: the same prior with
+    the shift switched OFF, split at the same point, so its spread around the diagonal is what
+    sampling alone produces.
+
+    Replaces a figure that POOLED every task's context rows against every task's query rows. Shifts
+    whose direction varies from task to task (a prior-probability shift goes either way) cancel in
+    such a pool, so the histograms coincided and showed nothing; per task, nothing cancels.
+    `selection` (reject inference) is PD-only.
+    """
     task, prior = _prior(config_path)
     kinds = ["cohort", "covariate", "prior_prob"] + (["selection"] if task == "pd" else [])
+    quantity = "default rate" if task == "pd" else "mean LGD"
+    frac = float(np.mean(prior.get("train_frac_range", [0.3, 0.9])))
+    base = _generate(task, prior, n, seed + 1, {
+        "credit_fraction": 1.0, "filter.mode": "off", "credit.shift.shift_prob": 0.0})
+    pick = np.random.default_rng(seed)
+
     style.apply()
-    fig, axes = plt.subplots(1, len(kinds), figsize=style.figsize(style.WIDTH_FULL, 0.36))
-    axes = np.atleast_1d(axes)
-    for ax, kind in zip(axes, kinds):
+    ncols = 2 if len(kinds) == 4 else len(kinds)
+    nrows = int(np.ceil(len(kinds) / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=style.grid_figsize(ncols, nrows, panel_ratio=0.82
+                                                                      if ncols == 2 else 1.0),
+                             squeeze=False)
+    for i, (ax, kind) in enumerate(zip(axes.ravel(), kinds)):
         tasks = _generate(task, prior, n, seed, {
             "credit_fraction": 1.0, "filter.mode": "off",
             "credit.shift.shift_prob": 1.0,
             "credit.shift.kind_weights": {kind: 1.0},
         })
-        sel = [t for t in tasks if t.meta.get("shift") == kind]
+        shifted = [_split_means(t, kind, int(t.meta["shift_cut"]), t.meta.get("shift_feature"))
+                   for t in tasks if t.meta.get("shift") == kind]
+        reference = []
+        for t in base:
+            cut = max(8, min(t.n_rows - 8, int(round(t.n_rows * frac))))
+            feature = None
+            if kind == "covariate":
+                X = np.asarray(t.X, dtype=float)
+                varying = np.flatnonzero(X.std(axis=0) > 1e-12)
+                if not varying.size:
+                    continue
+                feature = int(pick.choice(varying))
+            reference.append(_split_means(t, kind, cut, feature))
+        for pts, colour, size, label in ((reference, style.MUTED, 12, "same prior, shift switched off"),
+                                         (shifted, style.CREDIT, 18, "task with this shift switched on")):
+            if pts:
+                xs, ys = zip(*pts)
+                ax.scatter(xs, ys, s=size, color=colour, alpha=0.45 if colour == style.MUTED else 0.7,
+                           linewidths=0, zorder=2 if colour == style.MUTED else 3,
+                           label=label if i == 0 else None)
+        every = [v for pt in reference + shifted for v in pt]
+        lo, hi = (min(every), max(every)) if every else (0.0, 1.0)
+        pad = 0.05 * (hi - lo or 1.0)
+        lo, hi = lo - pad, hi + pad
+        ax.plot([lo, hi], [lo, hi], color=style.INK, lw=0.8, ls="--", zorder=1,
+                label="query = context" if i == 0 else None)
+        ax.set_xlim(lo, hi)
+        ax.set_ylim(lo, hi)
         if kind == "covariate":
-            # Covariate shift moves the FEATURES, not the target; show the shifted feature.
-            ctx, qry = [], []
-            for t in sel:
-                cut, j = t.meta["shift_cut"], t.meta["shift_feature"]
-                col = t.X.numpy()[:, j]
-                ctx.append(col[:cut]); qry.append(col[cut:])
-            ctx = np.concatenate(ctx) if ctx else np.array([0.0])
-            qry = np.concatenate(qry) if qry else np.array([0.0])
-            lo, hi = np.percentile(np.concatenate([ctx, qry]), [1, 99])
-            bins = np.linspace(lo, hi, 30)
-            ax.hist(ctx, bins=bins, color=style.CONTEXT, alpha=0.7, density=True)
-            ax.hist(qry, bins=bins, color=style.QUERY, alpha=0.7, density=True)
-            ax.set_xlabel("shifted feature")
-            ax.set_yticks([])
-            style.title(ax, "covariate", "feature range moves")
-            continue
-        ctx = np.concatenate([t.y.numpy()[:t.meta["shift_cut"]] for t in sel]) if sel else np.array([0.0])
-        qry = np.concatenate([t.y.numpy()[t.meta["shift_cut"]:] for t in sel]) if sel else np.array([0.0])
-        if task == "pd":
-            ax.bar([0, 1], [float(ctx.mean()), float(qry.mean())],
-                   color=[style.CONTEXT, style.QUERY], width=0.7)
-            ax.set_xticks([0, 1]); ax.set_xticklabels(["context", "query"])
-            ax.set_ylabel("default rate")
-            style.title(ax, kind)
+            ax.set_xlabel("feature, context mean (SD)")
+            ax.set_ylabel("feature, query mean (SD)")
         else:
-            bins = np.linspace(0, 1, 30)
-            ax.hist(ctx, bins=bins, color=style.CONTEXT, alpha=0.7, density=True)
-            ax.hist(qry, bins=bins, color=style.QUERY, alpha=0.7, density=True)
-            ax.set_xlabel("target")
-            ax.set_yticks([])
-            style.title(ax, kind)
-    # One shared legend via proxies (bars/hists carry no label).
-    axes[-1].legend(handles=style.legend_patches({"context": style.CONTEXT, "query": style.QUERY}),
-                    loc="upper right")
-    fig.suptitle(f"Distribution shift, {task.upper()}: context vs query")
+            ax.set_xlabel(f"{quantity}, context rows")
+            ax.set_ylabel(f"{quantity}, query rows")
+        ax.set_title(_SHIFT_TITLE[kind], loc="left", fontsize=9)
+    style.legend_below(fig, ncol=3)
     return fig
 
 
@@ -318,8 +371,8 @@ def informative_missingness(task: str, n_rows: int = 4000, seed: int = 0):
 
     style.apply()
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.44))
-    for beta, color, label in [(0.0, style.MUTED, "MCAR — coupling 0"),
-                               (2.0, style.CREDIT, "MNAR — coupling 2")]:
+    for beta, color, label in [(0.0, style.MUTED, "completely at random (coupling 0)"),
+                               (2.0, style.CREDIT, "tied to the outcome (coupling 2)")]:
         rng = PriorRNG(seed)
         Xn, meta = apply_informative_missingness(
             rng, X.clone(), y,
@@ -335,7 +388,9 @@ def informative_missingness(task: str, n_rows: int = 4000, seed: int = 0):
             yv = y.numpy()
             rates = [float(miss[yv == 0].mean()), float(miss[yv == 1].mean())]
             ax.plot([0, 1], rates, "o-", color=color, label=label, markersize=6)
-            ax.set_xticks([0, 1]); ax.set_xticklabels(["non-default (y=0)", "default (y=1)"])
+            ax.set_xticks([0, 1]); ax.set_xticklabels(["non-default (y = 0)", "default (y = 1)"])
+            ax.set_xlim(-0.25, 1.25)
+            ax.set_xlabel("outcome of the row")
         else:
             yv = y.numpy()
             edges = np.quantile(yv, np.linspace(0, 1, 7))
@@ -343,11 +398,12 @@ def informative_missingness(task: str, n_rows: int = 4000, seed: int = 0):
             rates = [float(miss[(yv >= lo) & (yv <= hi)].mean()) for lo, hi in zip(edges[:-1], edges[1:])]
             ax.plot(centers, rates, "o-", color=color, label=label, markersize=5)
             ax.set_xlabel("LGD outcome")
-    ax.set_ylabel("missing rate")
-    ax.legend(loc="upper left")
-    style.title(ax, "Informative missingness (MNAR)",
-                "under coupling the missing rate rises with the outcome; under MCAR it is flat")
-    fig.suptitle(f"Informative missingness ({task.upper()})")
+    ax.set_ylabel("share of values missing")
+    ax.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(1.0, decimals=0))
+    ax.set_ylim(bottom=0)
+    if task != "pd":
+        ax.set_xlabel("LGD outcome (sextile midpoints)")
+    style.legend_below(ax, ncol=2)
     return fig
 
 
@@ -375,15 +431,139 @@ def filter_modes(config_path: str, n: int = 120, seed: int = 0):
     lo, hi = (float(v) for v in prior["filter"]["quantile_band"])
 
     style.apply()
-    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.46))
-    ax.hist(r2, bins=30, color=style.CREDIT)
-    ax.axvspan(lo, hi, color=style.CREDIT_MILD, alpha=0.30, zorder=0)
-    ax.annotate(f"banded keeps\n[{lo:g}, {hi:g}]", (0.5 * (lo + hi), ax.get_ylim()[1] * 0.88),
-                color=style.CREDIT_STRONG, fontsize=8, ha="center", weight="semibold")
-    ax.set_xlabel("ExtraTrees pseudo-R²  (0 = unpredictable, 1 = trivially easy)")
+    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.40))
+    ax.hist(r2, bins=30, color=style.CREDIT, label="generated tasks")
+    ax.axvspan(lo, hi, color=style.CREDIT_MILD, alpha=0.30, zorder=0,
+               label=f"band kept by 'banded' [{lo:g}, {hi:g}]")
+    ax.set_xlabel("ExtraTrees out-of-bag pseudo-R²")
     ax.set_ylabel("number of tasks")
-    frac_band = float(((r2 >= lo) & (r2 <= hi)).mean())
-    style.title(ax, "What each filter keeps",
-                f"off: all · tabicl: the predictable tail · banded: the {frac_band:.0%} in the band")
-    fig.suptitle(f"Predictability filter, {task.upper()}")
+    style.legend_below(ax, ncol=2)
     return fig
+
+
+# ---------------------------------------------------------------------------
+# Both — how predictable the tasks are, on the filter's own yardstick, against the real data
+# ---------------------------------------------------------------------------
+
+
+def predictability_scores(config_path: str, real: dict[str, Any] | None = None, n: int = 120,
+                          seed: int = 0, real_repeats: int = 3) -> pd.DataFrame:
+    """Every task's and every real dataset's predictability, measured by the filter itself.
+
+    `src.prior.filters.predictability` is what the predictability filter runs during training: a
+    25-tree ExtraTrees with out-of-bag predictions, returning a bootstrap p-value (the `tabicl`
+    mode keeps a task at p < 0.05) and a pseudo-R² (the `banded` mode keeps it inside
+    `filter.quantile_band`). Scoring synthetic tasks AND real datasets with it puts both on the one
+    axis the filter acts on.
+
+    Synthetic tasks are generated with the filter OFF — the population the filter chooses from —
+    at the config's table size (1,024 rows). A real dataset is scored on `real_repeats` random
+    1,024-row samples, averaged, so it is measured at the size the prior's tables have.
+
+    Returns one row per task or dataset: `source` (`original prior` / `credit prior` / `real`),
+    `name`, `pseudo_r2`, `pvalue`.
+    """
+    cfg = expand_with_seeds(load(config_path))[0]
+    task = cfg["task"]
+    n_rows = int(cfg["prior"].get("n_rows_range", [1024, 1024])[-1])
+    _, prior = _prior(config_path, n_rows=n_rows)
+    is_classif = task == "pd"
+    rows: list[dict[str, Any]] = []
+    for label, cf in (("original prior", 0.0), ("credit prior", 1.0)):
+        for k, t in enumerate(_generate(task, prior, n, seed, {"credit_fraction": cf,
+                                                                "filter.mode": "off"})):
+            if t.X.shape[1] < 1:
+                continue
+            p, s = predictability(t.X, t.y, is_classif=is_classif)
+            rows.append({"source": label, "name": f"task {k}", "pseudo_r2": float(s),
+                         "pvalue": float(p)})
+    rng = np.random.default_rng(seed)
+    for name, ds in (real or {}).items():
+        X = np.nan_to_num(np.asarray(getattr(ds, "X", ds), dtype=np.float32), nan=0.0,
+                          posinf=0.0, neginf=0.0)
+        y = np.asarray(ds.y, dtype=np.float32).ravel()
+        scores, pvals = [], []
+        for _ in range(real_repeats):
+            idx = rng.choice(len(y), size=min(n_rows, len(y)), replace=False)
+            yt = torch.as_tensor(y[idx])
+            if is_classif:
+                yt = (yt >= 0.5).float()
+                if float(yt.std()) == 0.0:
+                    continue
+            p, s = predictability(torch.as_tensor(X[idx]), yt, is_classif=is_classif)
+            scores.append(float(s))
+            pvals.append(float(p))
+        if scores:
+            rows.append({"source": "real", "name": name.split(".", 1)[-1],
+                         "pseudo_r2": float(np.mean(scores)), "pvalue": float(np.mean(pvals))})
+    return pd.DataFrame(rows)
+
+
+def _band(config_path: str) -> tuple[float, float]:
+    cfg = expand_with_seeds(load(config_path))[0]
+    lo, hi = cfg["prior"]["filter"]["quantile_band"]
+    return float(lo), float(hi)
+
+
+def plot_predictability(scores: pd.DataFrame, config_path: str):
+    """The priors' tasks and the real datasets on the filter's own axis, with what each mode keeps.
+
+    One row per population: the original prior's tasks, our prior's tasks, the real datasets. The
+    shaded band is what `banded` keeps; a hollow point is a task the `tabicl` filter rejects
+    (bootstrap p ≥ 0.05); the black tick is each row's median. `off` keeps every point.
+    """
+    lo, hi = _band(config_path)
+    style.apply()
+    order = [s for s in ("original prior", "credit prior", "real") if (scores["source"] == s).any()]
+    fig, ax = plt.subplots(figsize=style.row_figsize(len(order), per_row=0.42, base=1.25))
+    ax.axvspan(lo, hi, color=style.CREDIT_MILD, alpha=0.22, zorder=0,
+               label=f"kept by 'banded': pseudo-R² in [{lo:g}, {hi:g}]")
+    jitter = np.random.default_rng(0)
+    for i, source in enumerate(order):
+        part = scores[scores["source"] == source]
+        x = np.clip(part["pseudo_r2"].to_numpy(), -0.1, 1.0)
+        yy = i + (jitter.random(len(x)) - 0.5) * 0.36
+        if source == "real":
+            ax.scatter(x, yy, marker="*", s=70, color=style.STAR, zorder=4,
+                       edgecolors="white", linewidths=0.5, label="one real dataset")
+        else:
+            colour = style.variant_colour(source.split()[0])
+            passed = part["pvalue"].to_numpy() < 0.05
+            ax.scatter(x[passed], yy[passed], s=13, color=colour, alpha=0.75, linewidths=0,
+                       zorder=3, label="task kept by 'tabicl' (p < 0.05)" if i == 0 else None)
+            ax.scatter(x[~passed], yy[~passed], s=13, facecolors="none", edgecolors=colour,
+                       linewidths=0.8, zorder=3,
+                       label="task rejected by 'tabicl'" if i == 0 else None)
+        ax.plot([np.median(x)] * 2, [i - 0.3, i + 0.3], color=style.INK, lw=1.8, zorder=5,
+                label="median" if i == 0 else None)
+    ax.set_yticks(range(len(order)))
+    ax.set_yticklabels(["real datasets" if s == "real" else s for s in order])
+    ax.set_ylim(len(order) - 0.5, -0.5)
+    ax.set_xlim(-0.1, 1.0)
+    ax.set_xlabel("ExtraTrees out-of-bag pseudo-R² (the filter's measure; 0 = no signal)")
+    ax.grid(axis="x")
+    ax.grid(axis="y", visible=False)
+    style.legend_below(ax, ncol=2)
+    return fig
+
+
+def predictability_summary(scores: pd.DataFrame, config_path: str) -> str:
+    """The predictability figure in numbers: per prior, the median pseudo-R², the share `banded`
+    keeps and the share `tabicl` rejects; per real dataset, its pseudo-R²."""
+    lo, hi = _band(config_path)
+    lines = [f"PREDICTABILITY — the filter's pseudo-R² (banded keeps [{lo:g}, {hi:g}])"]
+    for source in ("original prior", "credit prior"):
+        part = scores[scores["source"] == source]
+        if not len(part):
+            continue
+        r2 = part["pseudo_r2"].to_numpy()
+        lines.append(
+            f"  {source:<15} {len(part)} unfiltered tasks | median {np.median(r2):.2f} | "
+            f"banded keeps {np.mean((r2 >= lo) & (r2 <= hi)):.0%} | "
+            f"tabicl rejects {np.mean(part['pvalue'].to_numpy() >= 0.05):.0%}")
+    real = scores[scores["source"] == "real"].sort_values("pseudo_r2")
+    if len(real):
+        lines.append(f"  real datasets   {len(real)} | median {real['pseudo_r2'].median():.2f} | "
+                     f"inside the band {np.mean((real['pseudo_r2'] >= lo) & (real['pseudo_r2'] <= hi)):.0%}")
+        lines.append("    " + ", ".join(f"{r.name} {r.pseudo_r2:.2f}" for r in real.itertuples()))
+    return "\n".join(lines)

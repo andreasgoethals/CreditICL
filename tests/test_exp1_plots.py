@@ -125,7 +125,18 @@ def test_realism_ranking_orders_variants_best_first():
     fig = e1.plot_prior_realism_ranking(_variants(), _real(), task="lgd")
     labels = [t.get_text() for t in fig.axes[0].get_yticklabels()]
     # The y axis is inverted, so the first label is the closest to real data.
-    assert labels[0] == "credit", f"expected the closer prior first, got {labels}"
+    assert labels[0] == "credit prior", f"expected the closer prior first, got {labels}"
+
+
+def test_realism_rescales_a_standardised_target_instead_of_clipping_it():
+    """Clipping the original prior's standard-scaled target to [0, 1] turned every negative value
+    into an exact 0 — a boundary atom the prior does not have. Min-max scaling keeps the shape."""
+    y = np.linspace(-2.0, 2.0, 101)
+    unit = e1._unit_target(y)
+    assert unit.min() == 0.0 and unit.max() == 1.0
+    assert np.mean(unit == 0.0) < 0.02, "a clip would put half the rows on 0"
+    already = np.array([0.0, 0.3, 1.0])
+    assert np.array_equal(e1._unit_target(already), already)
 
 
 def test_realism_ranking_survives_having_no_real_data():

@@ -7,31 +7,38 @@ one after.
 
 | chapter | notebook | the question it answers |
 |---|---|---|
-| **[0. General](<0. General/>)** — the problem and the prior | [0.1 · the real credit data](<0. General/0.1_data_exploration.ipynb>) | What must a credit prior reproduce? How rare is default, where does the loss mass sit, can the evaluation be trusted? |
-| | [0.2 · the PD prior](<0. General/0.2_prior_visualisation_pd.ipynb>) | What does our PD prior generate, how does it differ from TabICL's own, and does it look like real credit? |
-| | [0.3 · the LGD prior](<0. General/0.3_prior_visualisation_lgd.ipynb>) | The same for LGD: where do the boundary atoms come from, and do they land where real books are? |
+| **[0. General](<0. General/>)** — the problem and the prior | [0.1 · the real credit data](<0. General/0.1_data_exploration.ipynb>) | What must a credit prior reproduce? How rare is default, what does an LGD target look like, how big and how dependent are the tables, can the scores be trusted? |
+| | [0.2 · the PD prior](<0. General/0.2_prior_visualisation_pd.ipynb>) | What does our PD prior generate, how does it differ from TabICL's own, and is its task as hard as real default data? |
+| | [0.3 · the LGD prior](<0. General/0.3_prior_visualisation_lgd.ipynb>) | The same for LGD: where do the boundary atoms sit, how close is the whole target to the real books, and how hard is the task? |
 | **[1. Experiment 1](<1. Experiment 1/>)** — which prior? | [1.1 · PD training](<1. Experiment 1/1.1_pd_training.ipynb>) | Did every PD arm train soundly, and what does development monitoring say about each lever? |
 | | [1.2 · LGD training](<1. Experiment 1/1.2_lgd_training.ipynb>) | The same for LGD. |
 | | [1.3 · PD results](<1. Experiment 1/1.3_pd_results.ipynb>) | Which prior does the development split select, and how does it do on the holdout? |
 | | [1.4 · LGD results](<1. Experiment 1/1.4_lgd_results.ipynb>) | The same for LGD. |
-| **[2. Experiment 2](<2. Experiment 2/>)** — fine-tuning the released model | [2.1 · PD fine-tuning](<2. Experiment 2/2.1_pd_finetuning.ipynb>) | Did every fine-tuning arm train soundly, and what does specialising on credit cost out of domain? |
+| **[2. Experiment 2](<2. Experiment 2/>)** — adapting the released model | [2.1 · PD fine-tuning](<2. Experiment 2/2.1_pd_finetuning.ipynb>) | Did every fine-tuning arm train soundly, and what does specialising on credit cost out of domain? |
 | | [2.2 · LGD fine-tuning](<2. Experiment 2/2.2_lgd_finetuning.ipynb>) | The same for LGD. |
 | | [2.3 · PD results](<2. Experiment 2/2.3_pd_results.ipynb>) | Which fine-tuning recipe does development select, and how does it do on the holdout? |
 | | [2.4 · LGD results](<2. Experiment 2/2.4_lgd_results.ipynb>) | The same for LGD. |
 
-## Every notebook tells its part the same way
+## Every figure is explained the same way
 
-A reader who has learned one notebook can read the rest. Each opens with what it answers and how it fits
-the story, then a colour key (except 0.1 — the prior colours mean nothing for real data), then parts:
+Under each heading: **what it shows** (the quantity on each axis and what one mark is), **why it
+matters** (which question of the experiment it answers) and **what it says** (the finding, with its
+numbers). Nothing in the prose explains colours or layout — every figure carries its own labelled axes
+and a legend below the data. Where a run has not happened yet, the figure is a one-line placeholder and
+the notebook's opening says so.
 
-- **The General notebooks** go *what the data looks like* → *where the difference comes from* (0.2 and
-  0.3 take the prior apart one credit mechanism at a time) → *whether the task is learnable and sane*.
+## Every notebook tells its part in the same order
+
+- **The General notebooks** go **A** — the targets (0.1) or the target of both priors against the real
+  books (0.2, 0.3) → **B** — the tables (0.1) or the credit mechanisms one at a time (0.2, 0.3) →
+  **C** — whether the scores can be trusted (0.1) or whether the prior's task is the right one: its
+  predictability next to real data, one table, and how its features depend on each other (0.2, 0.3).
 - **The training notebooks** go **A · Is the run sound?** (the sweep map, what each arm was scored on,
-  what each cost, whether every arm learned) → **B · What does development monitoring say?** (lever by
-  lever, then within each credit fraction, then against seed noise) → **C · Where does it hold?** (every
-  dataset, out of domain, every metric) → **D · Every arm, in detail**.
-- **The results notebooks** go **A · Which prior does development select?** → **B · How does it do on
-  the holdout?** → **C · Where does it hold?** → **D · Where the field sits**.
+  what each cost, whether every arm and every block learned) → **B · What does development monitoring
+  say?** (over training, lever by lever, within each credit fraction, against seed noise) → **C · Where
+  does it hold?** (every dataset, out of domain, every metric) → **D · Every arm on its own**.
+- **The results notebooks** go **A · Which configuration does development select?** → **B · How does
+  it do on the holdout?** → **C · Where does it hold?** → **D · Where the field sits**.
 
 Every notebook ends by printing its findings in the same order, which is what `output/All_Results.md`
 collects.
@@ -50,12 +57,12 @@ the benchmark scores of both tasks, and is read from 1.3 and 1.4 together once p
 ## Running them
 
 ```
-python -m src.utils.run_notebooks                       # all eleven, in parallel
+python -m src.utils.run_notebooks --timeout 7200        # all eleven, in parallel
 python -m src.utils.run_notebooks --only 1.1_pd_training
 ```
 
 Notebooks are found by recursing into the chapter folders; a notebook is named by its stem alone, so
 stems must be unique across folders (the runner refuses duplicates). A notebook opened interactively
 from its own folder walks up to the repository root before importing anything. The two prior notebooks
-generate their priors live and are slow — 0.2 can take over an hour — so give a full run room:
-`--timeout 7200`.
+generate their priors live and score several hundred tasks with the predictability filter, so they are
+the slow ones — give a full run room with `--timeout 7200`.

@@ -186,10 +186,15 @@ CREDIT_MILD = "#7ba7d7"
 CREDIT_STRONG = "#173a63"
 
 #: Context (the rows the model conditions on) vs query (the rows it must predict), for the shift
-#: and reject-inference figures. Context is the recessive grey of the given book; query is warm,
-#: because the query is where the deviation the model has to handle lives.
+#: and reject-inference figures. Context is the recessive grey of the given book; query is a
+#: violet that means nothing else in these figures. It used to be `REAL`'s orange, which made a
+#: synthetic query read as "measured on real data" to anyone who had learned the palette.
 CONTEXT = "#94a3b8"
-QUERY = "#c2410c"
+QUERY = "#6d28d9"
+#: External baseline MODELS in the benchmark (CatBoost, TabPFN, the released TabICLv2, a linear
+#: model) — neither our prior (blue) nor the control (grey), and not real data (orange) either,
+#: which is what they were drawn in before. Olive appears nowhere else in the palette.
+BASELINE = "#4d7c0f"
 
 #: A published value from the literature, overlaid on our own measurement as a reference — a Basel
 #: asset correlation, a TabICLv2 filtering rate, an LGD R² band. Teal, so it reads as "the paper
@@ -306,6 +311,45 @@ def source_color(source: str) -> str:
     return CREDIT if source == "credit" else ORIGINAL
 
 
+def variant_colour(variant: str, index: int = 0) -> str:
+    """Colour for a prior VARIANT by what it is, never by where it sits in a dict.
+
+    `original…` is the grey control and `credit…` our blue prior, whatever the suffix — a pool
+    called `credit_v1`, a live draw called `credit`. Anything else (a second credit variant from a
+    pool) takes the next series colour. Picking by position is what drew the control orange and
+    our prior green in the prior notebooks: the lookup matched only the exact names `original` and
+    `credit_v1`, and live draws were called `original (live)` / `credit (live)`.
+    """
+    name = str(variant).lower()
+    if name.startswith("original"):
+        return ORIGINAL
+    if name in ("credit", "credit_v1") or name.startswith(("credit (", "credit prior")):
+        return CREDIT
+    return SERIES[(index + 1) % len(SERIES)]
+
+
+def variant_label(variant: str) -> str:
+    """How a prior variant reads in a legend or tick: `original prior`, `credit prior`, or the pool
+    name for anything else. Where the tasks came from (a live draw or a pool) is reported once,
+    in the notebook's printed source line — not repeated in every label."""
+    name = str(variant).replace(" (live)", "")
+    return {"original": "original prior", "credit": "credit prior",
+            "credit_v1": "credit prior"}.get(name, name.replace("_", " "))
+
+
+def credit_fraction_marker(fraction: float) -> str:
+    """A marker per credit fraction, so cf 0.5 and cf 1 separate by SHAPE as well as by shade —
+    two blues of similar weight are hard to tell apart in a small scatter."""
+    f = float(fraction)
+    return "o" if f <= 0 else ("^" if f >= 1 else "s")
+
+
+#: Ordered styles for a lever's values when the lever is not the credit fraction (filter mode,
+#: freeze strategy, L2-SP, learning rate): ink shades plus line styles, so the values separate in
+#: greyscale and borrow no colour that means something else in the palette.
+LEVEL_STYLES = [("#1e293b", "-"), ("#475569", "--"), ("#7b8799", ":"), ("#334155", "-.")]
+
+
 def credit_fraction_colour(fraction: float) -> str:
     """Colour for a credit fraction: ORIGINAL grey at 0 (the control), CREDIT blue at 1, and a
     straight blend between. The fraction is "how much of our prior", so the colour says it
@@ -342,6 +386,38 @@ METRIC_LABEL = {
 def metric_label(metric: str) -> str:
     """The display name of a metric; an unknown one falls back to its words, never its code."""
     return METRIC_LABEL.get(metric, metric.replace("_", " "))
+
+
+#: What "better" means for each metric: `"max"`, `"min"`, or the ideal VALUE for a metric that is
+#: right at a target rather than at an extreme — a calibration slope of 1, a bias of 0, a 90%
+#: interval that covers 90%. Treating every unknown metric as higher-is-better drew "↑" over
+#: errors, biases and coverages alike; an unknown metric now has no goal rather than a wrong one.
+METRIC_GOAL: dict[str, Any] = {
+    "roc_auc": "max", "auc": "max", "pr_auc": "max", "ap": "max", "r2": "max", "ks": "max",
+    "spearman": "max", "kendall": "max",
+    "rmse": "min", "mae": "min", "pinball": "min", "crps": "min", "brier": "min",
+    "logloss": "min", "ece": "min", "boundary_mass_abs_err": "min", "pit_uniformity_error": "min",
+    "mae_boundary": "min", "mae_interior": "min",
+    "calibration_slope": 1.0, "bias": 0.0, "pit_mean": 0.5, "coverage_50": 0.5,
+    "coverage_80": 0.8, "coverage_90": 0.9, "boundary_mass_err_0": 0.0, "boundary_mass_err_1": 0.0,
+}
+
+
+def metric_goal(metric: str) -> Any:
+    """`"max"`, `"min"`, an ideal value, or `None` when the metric has no agreed direction."""
+    return METRIC_GOAL.get(metric)
+
+
+def goal_mark(metric: str) -> str:
+    """The direction as it reads after a metric's name: `↑`, `↓`, `→ 1`, or nothing."""
+    goal = metric_goal(metric)
+    if goal == "max":
+        return "↑"
+    if goal == "min":
+        return "↓"
+    if isinstance(goal, (int, float)):
+        return f"→ {goal:g}"
+    return ""
 
 
 #: Characters per inch for the title face, measured empirically at 10pt DejaVu Sans. Used only
@@ -415,6 +491,90 @@ def legend_patches(labels: dict[str, str]) -> list[Any]:
     return [Patch(facecolor=c, label=lbl, edgecolor="white") for lbl, c in labels.items()]
 
 
+def legend_below(target: Any, handles: list[Any] | None = None, *, ncol: int | None = None,
+                 **kwargs: Any) -> Any:
+    """A legend OUTSIDE the data, under the plot — never on top of a point, a bar or a line.
+
+    A legend placed inside the axes (`loc="best"`, `"upper right"`) lands on the data sooner or
+    later, because where the data falls changes with every run: the cost figure's legend sat on the
+    `tabicl` arms, the lever figure's on the cf = 1 whiskers, the shift figure's on a histogram
+    bar. Below the axes nothing is ever drawn, and `constrained_layout` makes room for it.
+
+    `target` is an Axes (legend under that panel) or a Figure (one legend under the whole figure).
+    """
+    from matplotlib.figure import Figure
+
+    if handles is None:
+        axes = target.axes if isinstance(target, Figure) else [target]
+        handles, seen = [], set()
+        for ax in axes:
+            for h, lbl in zip(*ax.get_legend_handles_labels()):
+                if lbl not in seen and not lbl.startswith("_"):
+                    handles.append(h)
+                    seen.add(lbl)
+    if not handles:
+        return None
+    ncol = ncol or min(len(handles), 4)
+    opts = dict(ncol=ncol, frameon=False, fontsize=mpl.rcParams["legend.fontsize"],
+                handlelength=1.6, columnspacing=1.2)
+    opts.update(kwargs)
+    if isinstance(target, Figure):
+        return target.legend(handles=handles, loc="outside lower center", **opts)
+    # Offset in POINTS below the axes, clearing the tick labels and the x label: an offset in axes
+    # fractions (-0.2) sits on the x label of a short panel and floats far below a tall one.
+    from matplotlib.transforms import ScaledTranslation
+
+    has_ticks = bool(target.get_xticklabels()) and target.xaxis.get_visible()
+    drop = 6.0 + (14.0 if has_ticks else 0.0) + (13.0 if target.get_xlabel() else 0.0)
+    shift = ScaledTranslation(0, -drop / 72.0, target.figure.dpi_scale_trans)
+    return target.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.0),
+                         bbox_transform=target.transAxes + shift, borderaxespad=0.0, **opts)
+
+
+def place_labels(ax: Any, xs: Any, ys: Any, labels: list[str], *, fontsize: float | None = None,
+                 color: str = MUTED, pad_points: float = 5.0) -> None:
+    """Name every point of a scatter without two names landing on each other.
+
+    Greedy: each label tries eight positions around its point, in order, and takes the first
+    whose box overlaps neither an earlier label nor another point. Twenty-one dataset names placed
+    at one fixed offset collided (`lgd_lendingclub` on `hmeq`, `lgd_freddie` under a marker).
+    Needs the axes limits to be final, so call it last.
+    """
+    import numpy as np
+    from matplotlib.transforms import Bbox
+
+    fontsize = fontsize or mpl.rcParams["font.size"] * 0.8
+    fig = ax.figure
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    pts = ax.transData.transform(np.column_stack([np.asarray(xs, float), np.asarray(ys, float)]))
+    point_boxes = [Bbox.from_extents(x - 4, y - 4, x + 4, y + 4) for x, y in pts]
+    placed: list[Any] = []
+    offsets = [(1, 0.6), (1, -0.6), (-1, 0.6), (-1, -0.6), (0, 1.3), (0, -1.3), (1.6, 0), (-1.6, 0)]
+    for (x, y), text in zip(pts, labels):
+        best = None
+        for dx, dy in offsets:
+            ha = "left" if dx > 0 else ("right" if dx < 0 else "center")
+            va = "bottom" if dy > 0 else ("top" if dy < 0 else "center")
+            t = ax.annotate(text, ax.transData.inverted().transform((x, y)),
+                            xytext=(dx * pad_points, dy * pad_points), textcoords="offset points",
+                            ha=ha, va=va, fontsize=fontsize, color=color)
+            box = t.get_window_extent(renderer).expanded(1.05, 1.1)
+            clash = any(box.overlaps(b) for b in placed) or any(
+                box.overlaps(b) for i, b in enumerate(point_boxes) if not b.contains(x, y))
+            if not clash:
+                best = (t, box)
+                break
+            t.remove()
+        if best is None:  # nowhere free: keep the first position rather than drop the name
+            dx, dy = offsets[0]
+            t = ax.annotate(text, ax.transData.inverted().transform((x, y)),
+                            xytext=(dx * pad_points, dy * pad_points), textcoords="offset points",
+                            ha="left", va="bottom", fontsize=fontsize, color=color)
+            best = (t, t.get_window_extent(renderer))
+        placed.append(best[1])
+
+
 def annotate_value(ax: Any, x: float, y: float, text: str, *, color: str = INK) -> None:
     """Put a number on the mark it belongs to. Saves the reader squinting at ticks."""
     ax.annotate(
@@ -424,14 +584,21 @@ def annotate_value(ax: Any, x: float, y: float, text: str, *, color: str = INK) 
 
 
 def reference_line(ax: Any, value: float, label: str | None = None, *, orient: str = "v",
-                   color: str = REFERENCE, top: bool = True) -> None:
+                   color: str = REFERENCE, top: bool = True, inline: bool = True) -> None:
     """A published value from the literature, drawn as a labelled dashed line to compare against.
 
     This is how a figure grounds itself: our measured distribution in the data colours, the value a
     paper reports drawn over it in `REFERENCE` teal with a short label (a number, not a sentence —
     the interpretation belongs in the caption). `orient="v"` draws a vertical line at `value` on the
     x-axis, `"h"` a horizontal one on the y-axis.
+
+    `inline=False` puts the label in the LEGEND instead of beside the line. Use it wherever the
+    data reaches the top of the axes: a rotated label there is written across the bars.
     """
+    if not inline:
+        draw = ax.axvline if orient == "v" else ax.axhline
+        draw(value, color=color, ls=(0, (4, 2)), lw=1.1, zorder=2.5, label=label)
+        return
     if orient == "v":
         ax.axvline(value, color=color, ls=(0, (4, 2)), lw=1.1, zorder=2.5)
         if label:
