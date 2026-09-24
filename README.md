@@ -101,18 +101,19 @@ knowing:
 - **Prior pools:** training can read datasets pre-generated once per variant
   (`prior_cache/<task>__original`, `…__credit_v1`) so a GPU never waits on CPU generation and the two
   sides differ only by design, not by draw. `--prior-source generate` builds live instead.
-- **Notebooks** (logic in `src/visualize/`, every figure A4/PDF): **level 0** describes the project
-  (`0.1` data, `0.2`/`0.3` the PD/LGD prior); **level 1** covers Exp1 (`1.1`/`1.2` training behaviour,
-  `1.3`/`1.4` benchmark); **level 2** covers Exp2 (`2.1`/`2.2` fine-tuning + out-of-domain retention,
-  `2.3`/`2.4` benchmark + effect of each fine-tuning lever). Results notebooks show a placeholder
-  until phase 2 has run. Every figure and section is **grounded in the pinned `tfm-library`**:
-  `src/visualize/literature.py` holds the citable published values (each tagged paper-evaluated /
-  code-supported / *external*), drawn on axis-matched figures as reference lines — teal for a library
-  value, amber for external domain knowledge, so provenance shows on the axis — and printed in each
-  notebook's references block. `literature_plots.py` adds a credit-AUC *landscape* to the results
-  notebooks: the only credit-domain numbers the library holds (Tanna 2026 on Home Credit / Lending
-  Club, Hollmann 2023 on Credit-g), shown as context under the papers' own protocols, not a
-  like-for-like target.
+- **Notebooks** — eleven, in three numbered chapter folders read as one story
+  ([`notebooks/README.md`](notebooks/README.md)): **`0. General`** (the real data, the PD prior, the
+  LGD prior), **`1. Experiment 1`** (which prior — `1.1`/`1.2` training, `1.3`/`1.4` benchmark) and
+  **`2. Experiment 2`** (fine-tuning — `2.1`/`2.2` training and out-of-domain retention, `2.3`/`2.4`
+  benchmark). Logic lives in `src/visualize/`; every figure is an A4 PDF. Training notebooks average
+  **development datasets only**, over **finished** arms — holdout datasets some old arms happened to
+  monitor are shown but never averaged — and results notebooks select on development, report on the
+  holdout, and show a placeholder until phase 2 has run. Every section is **grounded in the pinned
+  `tfm-library`**: `src/visualize/literature.py` holds the citable values (paper-evaluated /
+  code-supported / *external*), drawn as reference lines where the axis genuinely matches — teal for a
+  library value, amber for external domain knowledge — and printed in each notebook's references block;
+  `literature_plots.py` draws the credit-AUC *landscape* in the PD results notebooks (Tanna 2026 on
+  Home Credit / Lending Club, Hollmann 2023 on Credit-g), as context under each paper's own protocol.
 
 ## Repository layout
 
@@ -133,7 +134,7 @@ CreditICL/
 │   ├── AGENTS_MEMORY.md         one line per run, four per dead end
 │   ├── CHANGELOG.md             one chapter per date
 │   └── TEMPLATE.md              the layout this project started from
-├── notebooks/         level 0 = project · level 1 = Exp1 · level 2 = Exp2
+├── notebooks/         0. General · 1. Experiment 1 · 2. Experiment 2 — one story (see its README)
 ├── output/            everything generated: logs/ manifests/ figures/ results/  [mostly gitignored]
 ├── scripts/           every runnable; calls into src/ · slurm/ holds the SLURM jobs
 ├── src/               data/ prior/ train/ eval/ models/ visualize/ utils/

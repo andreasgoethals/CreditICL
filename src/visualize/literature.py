@@ -7,7 +7,7 @@ a notebook's references cell prints the sources (`literature.references_md(...)`
 from memory: if a fact is not in the library, it is tagged `external` and says so, so a reader never
 mistakes domain knowledge for a library-grounded result.
 
-Library pin: `52dab01` (`git submodule status`). Tags:
+Library pin: `e5ce016` (`git submodule status`); every citation re-verified at this pin. Tags:
   paper-evaluated — the paper *measured* it        code-supported — the code does it, unevaluated
   editorial       — the library's own synthesis    external — NOT in the library (domain knowledge)
 """
@@ -19,7 +19,7 @@ from typing import Any
 
 #: The tfm-library commit these citations were read against. Record it beside any result that uses
 #: them; bump with `python -m src.utils.update_tfm_library`.
-PIN = "52dab01"
+PIN = "e5ce016"
 
 
 @dataclass(frozen=True)
@@ -47,9 +47,13 @@ REFS: dict[str, Ref] = {
                         "code-supported", 200, "NanoTabICL uses 100"),
     "outlier_clamp": Ref("outlier clamp at 4σ", "TabICL.txt outlier_removing(threshold=4)",
                          "code-supported", None, "clamping is what manufactures the original prior's accidental atoms"),
-    "kumaraswamy": Ref("Kumaraswamy warp a,b∈LogNum(0.2,5)", "TabICL.txt rand_kumaraswamy_act; §E.6",
+    # At pin e5ce016 the TabICL dump holds these as classes (KumaraswamyWarping, CategoricalConverter);
+    # NanoTabICL — the implementation this project runs — keeps the original functions. Both checked.
+    "kumaraswamy": Ref("Kumaraswamy warp a,b∈LogNum(0.2,5)",
+                       "NanoTabICL.txt rand_kumaraswamy_act; TabICL.txt KumaraswamyWarping; §E.6",
                        "code+paper", None, "the [0,1] shape family already in their prior — the same we use for LGD"),
-    "imbalance_source": Ref("prior imbalance via softmax b=log(w)", "TabICL.txt rand_converter; §E.6",
+    "imbalance_source": Ref("prior imbalance via softmax b=log(w)",
+                            "NanoTabICL.txt rand_converter; TabICL.txt CategoricalConverter; §E.6",
                             "paper-described", None, "graph_scm makes categorical y natively; the softmax bias sets imbalance"),
 
     # -- TabICLv2 training budget, for 1.1 / 1.2 ------------------------------

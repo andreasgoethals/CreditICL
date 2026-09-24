@@ -8,8 +8,35 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 24-09-2026
+
+- Audit the new Exp1 snapshot: 86/90 complete, successful overnight checkpoint continuation, four remaining ETAs, and persistent legacy LGD monitoring NaNs.
+- **Notebooks restructured into three numbered chapters** — `notebooks/0. General/`, `1. Experiment 1/`,
+  `2. Experiment 2/` — with a story map in `notebooks/README.md` and a previous/next line in every notebook.
+  Stems keep their `X.Y_` prefix, so `output/figures/<notebook>/` and the alphabetical summaries are
+  unchanged and read in story order. `run_notebooks` now discovers recursively (refusing duplicate
+  stems) and resolves paths through `notebook_path`; setup cells walk up to the repo root. A deliberate
+  deviation from the template's flat `notebooks/`; the recursion is generic and worth upstreaming.
+- **Every notebook rebuilt as a story.** Experiment notebooks read *A · is the run sound? → B · what does
+  it say? → C · where does it hold? → D · in detail*; results notebooks *select on development → report
+  on the holdout*. The General notebooks keep every code cell verbatim with rewritten prose (they said
+  "32 priors" — the config has 15 — and 0.2/0.3 compare the original against our prior, not a ranking).
+- **Training figures now average development datasets only.** The 36 PD and 45 LGD arms finished
+  before 23-09 monitored holdout datasets too (PD `hmeq`/`thomas`; LGD `axa`/`loss2`/`base_modelisation`);
+  those are shown but never averaged. An arm whose development monitor is all-NaN (LGD `base_model`,
+  30 of 45) now drops out and is counted, instead of silently removing 30 arms from every LGD aggregate.
+- **Aggregates use finished arms only** (`completed: true`), which removes the jump every credit/banded
+  curve made near the end as unfinished arms stopped contributing.
+- **New figures:** sweep map, monitoring coverage, cost per arm, lever × credit-fraction interaction, seed
+  spread; credit-vs-out-of-domain added to Exp1. Results figures take a `role` (development / holdout)
+  and label each dataset's side of the split. Metric labels read "ROC-AUC", "R²"; a credit-fraction
+  colour ramp joins `style.py`. The credit-AUC landscape is dropped from the LGD notebooks (it is PD data).
+- `literature.py` re-pinned to `e5ce016`; every citation re-verified, and the two whose symbols moved in
+  the TabICL dump now cite `NanoTabICL.txt` `rand_converter` / `rand_kumaraswamy_act` first.
+
 ## 23-09-2026
 
+- Record accepted PD resubmission 11598087 for the nine unfinished Exp1 arms.
 - Reject invalid synthetic tasks before fallback/CUDA; fix development-only monitoring, PD plots, paired benchmark validation, and automatic resubmission. Remove the one-off recovery document and cleanup helper.
 - Record the Exp1 output audit: 80/90 complete, repeated PD crashes, reproduced invalid-task fallback, LGD monitor NaNs, and recovery/next-experiment blockers.
 

@@ -1,21 +1,21 @@
 [
   {
     "index": 1,
-    "stem": "01_lgd_targets",
+    "stem": "01_pd_base_rates",
+    "name": "pd_base_rates",
+    "caption": "Default rate per PD dataset, ordered by rate, on a logarithmic horizontal axis. The dashed vertical line marks a 50% rate. Percentages give the rate per dataset."
+  },
+  {
+    "index": 2,
+    "stem": "02_lgd_targets",
     "name": "lgd_targets",
     "caption": "Histograms of the Loss Given Default target for each of the seven LGD datasets, ordered by sample size. Forty bins per panel. Dashed vertical lines mark the minimum and maximum observed values where more than 1% of observations fall exactly on them. Panel subtitles give the combined share of observations at the two boundaries."
   },
   {
-    "index": 2,
-    "stem": "02_boundary_mass_ranking",
+    "index": 3,
+    "stem": "03_boundary_mass_ranking",
     "name": "boundary_mass_ranking",
     "caption": "Share of observations lying exactly at a boundary of the observed target range, per LGD dataset, ordered by total. Bars are split into mass at the minimum (blue) and at the maximum (orange). Percentages give the total per dataset."
-  },
-  {
-    "index": 3,
-    "stem": "03_pd_base_rates",
-    "name": "pd_base_rates",
-    "caption": "Default rate per PD dataset, ordered by rate, on a logarithmic horizontal axis. The dashed vertical line marks a 50% rate. Percentages give the rate per dataset."
   },
   {
     "index": 4,

@@ -22,7 +22,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 from src.utils import paths  # noqa: E402
-from src.utils.run_notebooks import discover  # noqa: E402
+from src.utils.run_notebooks import discover, notebook_path  # noqa: E402
 from src.visualize import figures, style  # noqa: E402
 
 NOTEBOOKS = discover()
@@ -33,7 +33,7 @@ _SAVE_CALL = re.compile(r"FIGS\.save\(")
 
 
 def _code(name: str) -> str:
-    nb = json.loads((ROOT / "notebooks" / f"{name}.ipynb").read_text(encoding="utf-8"))
+    nb = json.loads(notebook_path(name).read_text(encoding="utf-8"))
     return "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
 
 
@@ -228,7 +228,7 @@ _DEFINITION = re.compile(r"^\s*(?:async\s+)?(?:def|class)\s+\w", re.M)
 def test_notebook_exists_and_holds_no_logic(name):
     """A function defined in a notebook cannot be imported or tested, so it gets copied
     into the next notebook and the copies diverge."""
-    nb = json.loads((ROOT / "notebooks" / f"{name}.ipynb").read_text(encoding="utf-8"))
+    nb = json.loads(notebook_path(name).read_text(encoding="utf-8"))
     code = [c for c in nb["cells"] if c["cell_type"] == "code"]
     assert code
     for cell in code:
@@ -239,7 +239,7 @@ def test_notebook_exists_and_holds_no_logic(name):
 @pytest.mark.parametrize("name", NOTEBOOKS)
 def test_notebook_ends_with_a_printed_text_summary(name):
     """The template rule: the final output is copy-pasteable text, not a figure."""
-    nb = json.loads((ROOT / "notebooks" / f"{name}.ipynb").read_text(encoding="utf-8"))
+    nb = json.loads(notebook_path(name).read_text(encoding="utf-8"))
     code = [c for c in nb["cells"] if c["cell_type"] == "code"]
     last = "".join(code[-1]["source"])
     assert "print(" in last and "summar" in last.lower(), (
@@ -263,10 +263,27 @@ def test_notebooks_are_discovered_not_listed():
 
     from src.utils import run_notebooks
 
-    source = inspect.getsource(run_notebooks.discover)
-    assert "glob" in source and "sorted" in source
-    on_disk = tuple(sorted(p.stem for p in (ROOT / "notebooks").glob("*.ipynb")))
+    assert "sorted" in inspect.getsource(run_notebooks.discover)
+    # Recursive: the notebooks live in numbered chapter folders, and a flat glob would silently
+    # find none of them — the exact failure a hard-coded list has.
+    assert "rglob" in inspect.getsource(run_notebooks._notebook_files)
+    on_disk = tuple(sorted(
+        p.stem for p in (ROOT / "notebooks").rglob("*.ipynb") if ".ipynb_checkpoints" not in p.parts
+    ))
     assert on_disk == NOTEBOOKS
+
+
+def test_notebooks_are_grouped_into_numbered_chapters():
+    """The reading order is the folder order: `0. General`, then one folder per experiment, and
+    every notebook's stem starts with its folder's number — so the alphabetical order both
+    summary documents use is the order of the story."""
+    from src.utils import run_notebooks
+
+    for name in NOTEBOOKS:
+        chapter = run_notebooks.chapter_of(name)
+        assert chapter is not None, f"{name} sits at the top level, outside any chapter folder"
+        number = chapter.split(".", 1)[0]
+        assert name.startswith(f"{number}."), f"{name} is in '{chapter}' but not numbered {number}.x"
 
 
 def test_notebooks_save_their_own_figures():
@@ -358,7 +375,7 @@ def test_every_notebook_cell_compiles():
     stripped, exactly as `run_notebooks` strips them.
     """
     for name in NOTEBOOKS:
-        nb = json.loads((ROOT / "notebooks" / f"{name}.ipynb").read_text(encoding="utf-8"))
+        nb = json.loads(notebook_path(name).read_text(encoding="utf-8"))
         for i, cell in enumerate(c for c in nb["cells"] if c["cell_type"] == "code"):
             source = "".join(cell["source"])
             clean = "\n".join(

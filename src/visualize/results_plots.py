@@ -139,6 +139,39 @@ def available_metrics(df: pd.DataFrame) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# The split: development chooses the prior, holdout reports it
+# ---------------------------------------------------------------------------
+
+#: How a split reads in a heading — the protocol in EXPERIMENTAL_DESIGN.md §5: development is where
+#: the prior is chosen, the holdout is untouched until the end and is what gets reported.
+ROLE_LABEL = {"development": "development datasets", "holdout": "holdout datasets", None: "all datasets"}
+
+
+def _roles(track: str, exp: str) -> dict[str, str]:
+    from src.visualize.training_plots import dataset_roles
+
+    return dataset_roles(track, exp)
+
+
+def _restrict(df: pd.DataFrame, track: str, exp: str, role: str | None) -> pd.DataFrame:
+    """The rows of the datasets with `role` ("development" / "holdout"). Every row when `role` is
+    None, or when the config carries no split to restrict by."""
+    roles = _roles(track, exp)
+    if role is None or "dataset" not in df.columns or not roles:
+        return df
+    keep = df["dataset"].astype(str).map(lambda d: roles.get(d.split(".", 1)[-1]) == role)
+    return df[keep]
+
+
+def _role_tag(dataset: str, roles: dict[str, str]) -> str:
+    """`german · dev` / `hmeq · holdout` — a dataset tick that says which side of the split it is on."""
+    role = roles.get(str(dataset).split(".", 1)[-1])
+    short = {"development": "dev", "holdout": "holdout"}.get(role)
+    name = str(dataset).split(".", 1)[-1][:16]
+    return f"{name} · {short}" if short else name
+
+
+# ---------------------------------------------------------------------------
 # 1. Overall ranking
 # ---------------------------------------------------------------------------
 
@@ -168,11 +201,12 @@ def overall_ranking(track: str, exp: str = "exp1", metric: str | None = None):
             error_kw={"elinewidth": 0.8, "ecolor": style.MUTED})
     ax.set_yticks(y)
     ax.set_yticklabels([str(m)[:34] for m in agg[mc]], fontsize=7)
-    ax.set_xlabel(f"development {metric} (mean; error bars: training-seed SD)")
+    ax.set_xlabel(f"development {style.metric_label(metric)} (mean; bars: training-seed SD)")
     ax.legend(handles=style.legend_patches({k: _KIND_COLOUR[k] for k in ("credit", "control", "baseline")}),
               loc="lower right")
-    style.title(ax, f"Ranking by {metric}")
-    fig.suptitle(f"{track.upper()} development benchmark ranking")
+    style.title(ax, f"Configurations ranked by {style.metric_label(metric)}",
+                "development datasets only — the split the prior is chosen on")
+    fig.suptitle(f"{track.upper()} which prior development selects")
     return fig
 
 
@@ -193,10 +227,13 @@ def per_dataset(track: str, exp: str = "exp1", metric: str | None = None):
 
     df, mc = _with_identity(df)
     df["kind"] = df[mc].map(_kind)
+    roles = _roles(track, exp)
     # Best score of each kind on each dataset — the fair per-dataset comparison.
     best = df.groupby(["dataset", "kind"])[metric].agg("max" if HIGHER_IS_BETTER.get(metric, True) else "min")
     piv = best.unstack("kind")
-    datasets = list(piv.index)
+    rank = {"development": 0, "holdout": 1}
+    datasets = sorted(piv.index, key=lambda d: (rank.get(roles.get(str(d).split(".", 1)[-1]), 2), str(d)))
+    piv = piv.loc[datasets]
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.46))
     x = np.arange(len(datasets))
     kinds = [k for k in ("credit", "control", "baseline") if k in piv.columns]
@@ -204,10 +241,11 @@ def per_dataset(track: str, exp: str = "exp1", metric: str | None = None):
     for i, k in enumerate(kinds):
         ax.bar(x + i * w, piv[k].values, width=w, color=_KIND_COLOUR[k], label=k)
     ax.set_xticks(x + w * (len(kinds) - 1) / 2)
-    ax.set_xticklabels([str(d)[:16] for d in datasets], rotation=30, ha="right", fontsize=7)
-    ax.set_ylabel(f"best {metric} per kind")
+    ax.set_xticklabels([_role_tag(d, roles) for d in datasets], rotation=30, ha="right", fontsize=7)
+    ax.set_ylabel(f"best {style.metric_label(metric)} per kind")
     ax.legend(loc="lower right")
-    style.title(ax, f"{metric} by dataset")
+    style.title(ax, f"{style.metric_label(metric)} on every dataset",
+                "development datasets first, then holdout")
     fig.suptitle(f"{track.upper()} benchmark by dataset")
     return fig
 
@@ -217,12 +255,16 @@ def per_dataset(track: str, exp: str = "exp1", metric: str | None = None):
 # ---------------------------------------------------------------------------
 
 
-def credit_vs_control(track: str, exp: str = "exp1", metric: str | None = None):
-    """The distribution of headline scores for credit-prior arms, control arms and baselines."""
+def credit_vs_control(track: str, exp: str = "exp1", metric: str | None = None,
+                      role: str | None = None):
+    """The distribution of headline scores for credit-prior arms, control arms and baselines, on
+    the datasets of one side of the split (`role="holdout"` is what the experiment reports)."""
     df = load_results(track, exp)
     metric = metric or HEADLINE[track]
     style.apply()
-    if df is None or metric not in df.columns:
+    if df is not None:
+        df = _restrict(df, track, exp, role)
+    if df is None or metric not in df.columns or not len(df):
         fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.30))
         _empty(ax, "no benchmark results yet — this is the figure that answers the experiment")
         return fig
@@ -239,9 +281,9 @@ def credit_vs_control(track: str, exp: str = "exp1", metric: str | None = None):
         ax.plot([i - 0.2, i + 0.2], [vals.mean(), vals.mean()], color=style.INK, lw=2, zorder=4)
     ax.set_xticks(range(len(kinds)))
     ax.set_xticklabels(kinds)
-    ax.set_ylabel(f"real-data {metric} (per model)")
-    style.title(ax, f"Credit prior vs control vs baseline by {metric}",
-                "each point is one model; the bar is the group mean")
+    ax.set_ylabel(f"{style.metric_label(metric)}, mean over {ROLE_LABEL.get(role, role)}")
+    style.title(ax, "Credit prior vs control vs baselines",
+                f"one point per model on the {ROLE_LABEL.get(role, role)}; bar: group mean")
     fig.suptitle(f"{track.upper()}: does the credit prior beat control?")
     return fig
 
@@ -290,7 +332,7 @@ def lever_effect(track: str, exp: str = "exp2", metric: str | None = None):
         ax.set_xticks(x)
         ax.set_xticklabels([str(v).replace("p", ".").replace("m", "-") for v in grp.index],
                            fontsize=7, rotation=20, ha="right")
-        ax.set_ylabel(metric, fontsize=8)
+        ax.set_ylabel(style.metric_label(metric), fontsize=8)
         style.title(ax, label)
         drawn = True
     for ax in axes:
@@ -298,7 +340,7 @@ def lever_effect(track: str, exp: str = "exp2", metric: str | None = None):
             ax.axis("off")
     if not drawn:
         _empty(axes[0], "results carry no recognisable sweep levers to group by")
-    fig.suptitle(f"{track.upper()} effect of each fine-tuning lever on {metric}")
+    fig.suptitle(f"{track.upper()} effect of each fine-tuning lever")
     return fig
 
 
@@ -307,10 +349,14 @@ def lever_effect(track: str, exp: str = "exp2", metric: str | None = None):
 # ---------------------------------------------------------------------------
 
 
-def metric_grid(track: str, exp: str = "exp1"):
-    """One panel per benchmark metric, each a bar per model kind — the whole scoreboard at once."""
+def metric_grid(track: str, exp: str = "exp1", role: str | None = None):
+    """One panel per benchmark metric, each a bar per model kind — the whole scoreboard at once,
+    on the datasets of one side of the split."""
     df = load_results(track, exp)
     style.apply()
+    if df is not None:
+        df = _restrict(df, track, exp, role)
+        df = df if len(df) else None
     metrics = available_metrics(df) if df is not None else []
     ncols = 3
     nrows = max(1, int(np.ceil(len(metrics) / ncols)))
@@ -332,7 +378,7 @@ def metric_grid(track: str, exp: str = "exp1"):
         ax.set_xticks(range(len(kinds)))
         ax.set_xticklabels(kinds, fontsize=7, rotation=15, ha="right")
         arrow = "↑" if HIGHER_IS_BETTER.get(metric, True) else "↓"
-        style.title(ax, f"{metric}  ({arrow} better)")
+        style.title(ax, f"{style.metric_label(metric)} {arrow}")
     fig.suptitle(f"{track.upper()} every metric by model kind")
     return fig
 
@@ -348,35 +394,48 @@ def per_dataset_heatmap(track: str, exp: str = "exp1", metric: str | None = None
         return fig
     df, mc = _with_identity(df)
     d = df.assign(_kind=df[mc].map(_kind))
+    roles = _roles(track, exp)
     agg = "max" if HIGHER_IS_BETTER.get(metric, True) else "min"
     piv = d.groupby(["dataset", "_kind"])[metric].agg(agg).unstack("_kind")
     kinds = [k for k in ("credit", "control", "baseline") if k in piv.columns]
-    piv = piv[kinds]
+    rank = {"development": 0, "holdout": 1}
+    order = sorted(piv.index, key=lambda v: (rank.get(roles.get(str(v).split(".", 1)[-1]), 2), str(v)))
+    piv = piv.loc[order, kinds]
     fig, ax = plt.subplots(figsize=style.row_figsize(len(piv)))
     im = ax.imshow(piv.values, aspect="auto", cmap=style.CMAP_SEQ)
     ax.set_xticks(range(len(kinds)))
     ax.set_xticklabels(kinds)
     ax.set_yticks(range(len(piv)))
-    ax.set_yticklabels([str(v)[:18] for v in piv.index], fontsize=7)
+    ax.set_yticklabels([_role_tag(v, roles) for v in piv.index], fontsize=7)
     ax.grid(False)
+    finite = piv.values[np.isfinite(piv.values)]
+    lo, hi = (finite.min(), finite.max()) if finite.size else (0.0, 1.0)
     for i in range(len(piv)):
         for j in range(len(kinds)):
             v = piv.values[i, j]
             if not np.isnan(v):
-                ax.text(j, i, f"{v:.2f}", ha="center", va="center", fontsize=6, color="white")
-    fig.colorbar(im, ax=ax, shrink=0.55, label=metric)
-    style.title(ax, f"Best {metric} per dataset and kind")
-    fig.suptitle(f"{track.upper()} {metric} heatmap")
+                # cividis runs dark to light: white text on the dark half, ink on the light half.
+                dark = (v - lo) / (hi - lo + 1e-12) < 0.55
+                ax.text(j, i, f"{v:.2f}", ha="center", va="center", fontsize=6,
+                        color="white" if dark else style.INK)
+    fig.colorbar(im, ax=ax, shrink=0.55, label=style.metric_label(metric))
+    style.title(ax, f"Best {style.metric_label(metric)} per dataset and kind",
+                "development datasets first, then holdout")
+    fig.suptitle(f"{track.upper()} per-dataset heatmap")
     return fig
 
 
-def beats_reference(track: str, exp: str = "exp1", metric: str | None = None):
-    """Every trained arm's headline score minus the released TabICLv2's — who clears the frontier."""
+def beats_reference(track: str, exp: str = "exp1", metric: str | None = None,
+                    role: str | None = None):
+    """Every trained arm's headline score minus the released TabICLv2's, on the datasets of one side
+    of the split — who clears the frontier."""
     df = load_results(track, exp)
     metric = metric or HEADLINE[track]
     style.apply()
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.46))
-    if df is None or metric not in df.columns:
+    if df is not None:
+        df = _restrict(df, track, exp, role)
+    if df is None or metric not in df.columns or not len(df):
         _empty(ax, "no benchmark results yet")
         return fig
     df, mc = _with_identity(df)
@@ -398,38 +457,53 @@ def beats_reference(track: str, exp: str = "exp1", metric: str | None = None):
             color=[style.CREDIT if b else style.MUTED for b in better])
     ax.axvline(0, color=style.REFERENCE, lw=1.2)
     ax.set_yticks([])
-    ax.set_xlabel(f"{metric} minus released TabICLv2 (right of 0 = beats it)")
+    ax.set_xlabel(f"{style.metric_label(metric)} minus released TabICLv2 (right of 0 beats it)")
     n = int(better.sum())
-    style.title(ax, f"{n}/{len(order)} arms beat released TabICLv2")
+    style.title(ax, f"{n}/{len(order)} arms beat released TabICLv2",
+                f"mean over the {ROLE_LABEL.get(role, role)}")
     fig.suptitle(f"{track.upper()} vs the released reference")
     return fig
 
 
 def results_summary(track: str, exp: str = "exp1") -> str:
-    """Text summary of the benchmark, for the notebook's final cell."""
+    """Text summary of the benchmark, in the notebook's order: what development selects, then how
+    it does on the holdout."""
     df = load_results(track, exp)
+    title = f"{exp.upper()} {track.upper()} RESULTS — the benchmark"
     if df is None:
-        return (f"{exp.upper()} {track.upper()} RESULTS: no benchmark output in "
-                f"output/results/{track}/eval/ yet.\n"
+        return (f"{title}\n  no benchmark output in output/results/{track}/eval/ yet.\n"
                 f"  The benchmark (phase 2) runs once every arm of the track has trained;\n"
                 f"  re-run this notebook after the phase-2 array finishes scoring.")
     metric = HEADLINE[track]
+    label = style.metric_label(metric)
     df, mc = _with_identity(df)
-    lines = [f"{exp.upper()} {track.upper()} RESULTS — {df[mc].nunique()} models on "
-             f"{df['dataset'].nunique() if 'dataset' in df else '?'} datasets",
-             f"  metrics: {', '.join(available_metrics(df)) or 'none'}"]
-    if metric in df.columns:
-        per_kind = df.assign(kind=df[mc].map(_kind)).groupby("kind")[metric].mean()
+    roles = _roles(track, exp)
+    lines = [title, f"  {df[mc].nunique()} models on "
+             f"{df['dataset'].nunique() if 'dataset' in df else '?'} datasets"
+             f" | metrics: {', '.join(available_metrics(df)) or 'none'}"]
+    if metric not in df.columns:
+        return "\n".join(lines)
+    lines += ["", f"A. WHICH PRIOR DEVELOPMENT SELECTS ({label})"]
+    from src.eval.selection import development_ranking
+
+    ranking = development_ranking(df, track, exp)
+    if not ranking.empty:
+        for _, row in ranking.head(3).iterrows():
+            lines.append(f"  {row['configuration'][:60]:<60} {row['mean']:.4f}")
+    else:
+        lines.append("  no complete development configuration scores yet")
+    for role, heading in (("holdout", "B. HOW IT DOES ON THE HOLDOUT"),):
+        part = _restrict(df, track, exp, role) if roles else df
+        lines += ["", f"{heading} ({label}, {ROLE_LABEL[role if roles else None]})"]
+        if not len(part):
+            lines.append("  no holdout rows scored yet")
+            continue
+        per_kind = part.assign(kind=part[mc].map(_kind)).groupby("kind")[metric].mean()
         for k in ("credit", "control", "baseline"):
             if k in per_kind:
-                lines.append(f"  {k:<9} mean {metric} = {per_kind[k]:.4f}")
-        from src.eval.selection import development_ranking
-        ranking = development_ranking(df, track, exp)
-        if not ranking.empty:
-            top = ranking.iloc[0]
-            lines.append(f"  development leader: {top['configuration']} ({metric}={top['mean']:.4f})")
-        else:
-            lines.append("  prior selection: no complete development configuration scores yet")
+                lines.append(f"  {k:<9} mean {label} = {per_kind[k]:.4f}")
+        if "credit" in per_kind and "control" in per_kind:
+            lines.append(f"  credit prior minus control: {per_kind['credit'] - per_kind['control']:+.4f}")
     return "\n".join(lines)
 
 

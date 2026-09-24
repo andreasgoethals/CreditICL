@@ -171,10 +171,11 @@ def test_notebook_exists_ends_with_a_text_summary_and_holds_no_logic(name):
     """One notebook per task, each ending in text. The no-logic rule is what makes the
     plots testable at all."""
     import json
-    import pathlib
 
-    path = pathlib.Path("notebooks") / f"{name}.ipynb"
-    assert path.is_file(), f"{name} is missing"
+    from src.utils.run_notebooks import notebook_path
+
+    path = notebook_path(name)
+    assert path is not None and path.is_file(), f"{name} is missing"
     nb = json.loads(path.read_text(encoding="utf-8"))
     assert nb["nbformat"] == 4
 
@@ -199,17 +200,17 @@ def test_the_old_combined_notebook_is_gone():
 
     for stale in ("prior_visualisation.ipynb", "prior_visualisation_lgd.ipynb",
                   "prior_visualisation_pd.ipynb", "data_exploration.ipynb"):
-        assert not (pathlib.Path("notebooks") / stale).exists(), f"{stale} should be renamed"
+        # Anywhere under notebooks/, not just the top level: the notebooks live in chapter folders.
+        assert not list(pathlib.Path("notebooks").rglob(stale)), f"{stale} should be renamed"
 
 
 def test_data_notebook_does_not_show_the_prior_palette():
     """`show_palette` explains the prior colours (ours vs TabICL's). The data notebook
     is about the datasets we EVALUATE on, where those colours mean nothing."""
     import json
-    import pathlib
 
-    nb = json.loads(
-        (pathlib.Path("notebooks") / "0.1_data_exploration.ipynb").read_text(encoding="utf-8")
-    )
+    from src.utils.run_notebooks import notebook_path
+
+    nb = json.loads(notebook_path("0.1_data_exploration").read_text(encoding="utf-8"))
     body = "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
     assert "show_palette" not in body

@@ -52,6 +52,51 @@ def test_discovery_can_be_overridden_for_a_partial_rerun(tmp_path, monkeypatch) 
     assert rn.discover(("only_this",)) == ("only_this",)
 
 
+# -- the project's chapter folders (a deviation from the template's flat notebooks/) ----------
+
+
+def test_discovery_recurses_into_chapter_folders(tmp_path, monkeypatch) -> None:
+    """Notebooks live in `0. General/`, `1. Experiment 1/`, ... — a flat glob finds none of them.
+    Checkpoint copies are skipped, and the order stays alphabetical by stem across folders."""
+    monkeypatch.setattr(rn, "notebooks_dir", lambda: tmp_path)
+    make_notebook(tmp_path / "1. Experiment 1" / "1.1_train.ipynb", ["print(1)"])
+    make_notebook(tmp_path / "0. General" / "0.1_data.ipynb", ["print(1)"])
+    make_notebook(tmp_path / "0. General" / ".ipynb_checkpoints" / "0.1_data-checkpoint.ipynb",
+                  ["print(1)"])
+    assert rn.discover() == ("0.1_data", "1.1_train")
+    assert rn.notebook_path("1.1_train") == tmp_path / "1. Experiment 1" / "1.1_train.ipynb"
+    assert rn.notebook_path("nope") is None
+    assert rn.chapter_of("0.1_data") == "0. General"
+
+
+def test_a_duplicated_stem_across_folders_is_refused(tmp_path, monkeypatch) -> None:
+    """Two notebooks named `x` would share `output/figures/x/`, and each clears the other's
+    figures on construction — silently. Refuse it at discovery instead."""
+    monkeypatch.setattr(rn, "notebooks_dir", lambda: tmp_path)
+    make_notebook(tmp_path / "a" / "x.ipynb", ["print(1)"])
+    make_notebook(tmp_path / "b" / "x.ipynb", ["print(1)"])
+    with pytest.raises(ValueError, match="unique"):
+        rn.discover()
+
+
+def test_summaries_carry_a_chapter_divider_per_folder(isolated_output, monkeypatch, tmp_path) -> None:
+    """Both documents read in chapters, while each notebook keeps its own `##` block."""
+    from src.utils.paths import figures_dir
+
+    nb_dir = tmp_path / "nbs"
+    monkeypatch.setattr(rn, "notebooks_dir", lambda: nb_dir)
+    for chapter, name in (("0. General", "0.1_a"), ("1. Experiment 1", "1.1_b")):
+        make_notebook(nb_dir / chapter / f"{name}.ipynb", ["print(1)"])
+        folder = figures_dir(name)
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / rn.STDOUT_FILE).write_text(f"SUMMARY {name}", encoding="utf-8")
+        (folder / "_figures.json").write_text("[]", encoding="utf-8")
+    results = rn.write_all_results(("1.1_b", "0.1_a")).read_text(encoding="utf-8")
+    assert results.index("# 0. General") < results.index("## 0.1_a") < results.index("# 1. Experiment 1")
+    captions = rn.write_captions(("0.1_a", "1.1_b")).read_text(encoding="utf-8")
+    assert captions.index("# 0. General") < captions.index("## 0.1_a") < captions.index("## 1.1_b")
+
+
 def test_magics_are_stripped_from_the_flattened_script(tmp_path) -> None:
     """`%matplotlib inline` is a syntax error in a plain interpreter, and a notebook that
     needs a magic to run cannot be executed non-interactively at all."""

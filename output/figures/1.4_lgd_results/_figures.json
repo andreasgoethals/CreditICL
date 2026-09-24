@@ -9,42 +9,36 @@
     "index": 2,
     "stem": "02_overall_ranking",
     "name": "overall_ranking",
-    "caption": "Mean R-squared per configuration on development datasets, averaged over evaluation and training seeds. Error bars show the standard deviation across training seeds."
+    "caption": "Development R\u00b2 per configuration, averaged over the development datasets and training seeds, as horizontal bars coloured by model kind with error bars for the training-seed standard deviation."
   },
   {
     "index": 3,
-    "stem": "03_beats_reference",
-    "name": "beats_reference",
-    "caption": "Each trained arm's mean R-squared minus the released TabICLv2's, one horizontal bar per arm, with a reference line at zero marking the frontier model."
+    "stem": "03_credit_vs_control",
+    "name": "credit_vs_control",
+    "caption": "Distribution of per-model mean R\u00b2 on the holdout datasets for credit-prior arms, control arms and external baselines; one point per model with a bar at each group mean."
   },
   {
     "index": 4,
-    "stem": "04_metric_grid",
-    "name": "metric_grid",
-    "caption": "One panel per benchmark metric, each a bar per model kind (credit, control, baseline); the arrow in each panel title marks the improving direction."
+    "stem": "04_beats_reference",
+    "name": "beats_reference",
+    "caption": "Each trained arm's mean R\u00b2 on the holdout datasets minus the released TabICLv2's, one horizontal bar per arm, with a reference line at zero."
   },
   {
     "index": 5,
-    "stem": "05_per_dataset",
-    "name": "per_dataset",
-    "caption": "Best R-squared per model kind on each real dataset, as grouped bars, one group per dataset."
+    "stem": "05_metric_grid",
+    "name": "metric_grid",
+    "caption": "One panel per benchmark metric on the holdout datasets, each a bar per model kind (credit, control, baseline); the arrow in each title marks the improving direction."
   },
   {
     "index": 6,
-    "stem": "06_per_dataset_heatmap",
-    "name": "per_dataset_heatmap",
-    "caption": "Best R-squared of each model kind on each dataset as an annotated heatmap, datasets on the vertical axis and kinds on the horizontal."
+    "stem": "06_per_dataset",
+    "name": "per_dataset",
+    "caption": "Best R\u00b2 per model kind on every real dataset as grouped bars, development datasets first and then holdout, each labelled with its side of the split."
   },
   {
     "index": 7,
-    "stem": "07_credit_vs_control",
-    "name": "credit_vs_control",
-    "caption": "Distribution of per-model mean R-squared for credit-prior arms, control arms and external baselines; one point per model with a bar at each group mean."
-  },
-  {
-    "index": 8,
-    "stem": "08_literature_landscape",
-    "name": "literature_landscape",
-    "caption": "Reported ROC-AUC on real credit datasets drawn from the tfm-library, one horizontal bar per published result, each on its paper's own full-dataset protocol rather than the 1024-row in-context setting used elsewhere in this notebook."
+    "stem": "07_per_dataset_heatmap",
+    "name": "per_dataset_heatmap",
+    "caption": "Best R\u00b2 of each model kind on each dataset as an annotated heatmap, development datasets first and then holdout on the vertical axis, model kinds on the horizontal axis."
   }
 ]

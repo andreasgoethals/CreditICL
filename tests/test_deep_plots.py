@@ -17,6 +17,7 @@ import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 from src.visualize import results_plots as rp
@@ -89,6 +90,79 @@ def test_new_training_views_build_on_synthetic_manifests(isolated_output):
     assert _drew(tp.final_metric_by_lever("pd", "exp1"))
 
 
+def test_story_figures_build_on_synthetic_manifests(isolated_output):
+    """The Part A/B figures added for the story: the sweep map, the monitoring map, the cost of each
+    arm, the lever-within-fraction view and the seed spread."""
+    from src.utils import paths
+
+    man = paths.manifests_dir()
+    man.mkdir(parents=True, exist_ok=True)
+    control = EXP1_ARM.replace("credit_fraction=1", "credit_fraction=0")
+    for arm in (EXP1_ARM, control, EXP1_ARM.replace("__s2", "__s1")):
+        _write_progress(man, arm)
+        _write_telemetry(man, arm)
+    for fn in (tp.sweep_map, tp.monitoring_coverage, tp.throughput, tp.lever_interaction,
+               tp.seed_spread, tp.real_vs_ood):
+        assert _drew(fn("pd", "exp1")), fn.__name__
+    assert "A. THE RUN" in tp.training_summary("pd", "exp1")
+
+
+# -- what a curve may average over: development data, finished arms --------------
+
+
+def _arms(**cols):
+    return {name: pd.DataFrame({"step": [0, 100, 200], **c}) for name, c in cols.items()}
+
+
+def test_a_holdout_dataset_is_never_averaged_into_a_development_mean():
+    """THE LEAK THIS GUARDS: curves from before the development-only protocol scored "the smallest
+    few" datasets, holdout ones among them (PD hmeq/thomas). Averaging those into "which prior is
+    best" selects on the test set. `german` is development in config/Exp1_PD.yaml, `hmeq` holdout."""
+    runs = _arms(**{EXP1_ARM: {"real__german__roc_auc": [0.6, 0.7, 0.8],
+                               "real__hmeq__roc_auc": [0.9, 0.9, 0.9]}})
+    kept, excluded = tp.comparable_datasets(runs, "roc_auc")
+    assert kept == ["german"] and "hmeq" in excluded
+    assert tp._final(tp._mean_metric(runs[EXP1_ARM], "roc_auc", "real", kept)) == 0.8
+
+
+def test_an_arm_without_a_development_monitor_drops_out_rather_than_shrinking():
+    """A monitor that logged only missing values (LGD base_model, 30 of 45 arms) must neither be
+    averaged over fewer datasets nor erase the dataset for everyone: that arm leaves the average."""
+    other = EXP1_ARM.replace("__s2", "__s0")
+    runs = _arms(**{EXP1_ARM: {"real__german__roc_auc": [0.6, 0.7, 0.8]},
+                    other: {"real__german__roc_auc": [np.nan] * 3}})
+    kept, _ = tp.comparable_datasets(runs, "roc_auc")
+    assert kept == ["german"]
+    assert set(tp._finals(runs, "roc_auc", kept)) == {EXP1_ARM}
+
+
+def test_aggregates_use_finished_arms_only(isolated_output):
+    """Averaging an unfinished arm up to where it stopped changes the composition of the mean there,
+    and the curve jumps. The summary's `completed` flag decides; unfinished arms are left out."""
+    import json
+
+    from src.utils import paths
+
+    runs = _arms(**{EXP1_ARM: {"train_loss": [1, 1, 1]},
+                    EXP1_ARM.replace("__s2", "__s0"): {"train_loss": [1, 1, 1]}})
+    paths.manifests_dir().mkdir(parents=True, exist_ok=True)
+    paths.run_summary_path(EXP1_ARM).write_text(json.dumps({"completed": True}), encoding="utf-8")
+    paths.run_summary_path(EXP1_ARM.replace("__s2", "__s0")).write_text(
+        json.dumps({"completed": False}), encoding="utf-8")
+    assert tp.completed_arms(runs) == {EXP1_ARM}
+    assert set(tp._aggregate(runs)) == {EXP1_ARM}
+
+
+def test_metric_labels_and_fraction_colours_are_publication_ready():
+    from src.visualize import style
+
+    assert style.metric_label("roc_auc") == "ROC-AUC" and style.metric_label("r2") == "R²"
+    assert style.metric_label("some_new_metric") == "some new metric"  # words, never code
+    assert style.credit_fraction_colour(0) == style.ORIGINAL
+    assert style.credit_fraction_colour(1) == style.CREDIT
+    assert style.credit_fraction_colour(0.5) not in (style.CREDIT_MILD, style.CREDIT_STRONG)
+
+
 def test_new_training_views_degrade_without_data():
     # No isolated_output: manifests_dir has no exp3_ files, so every view is a placeholder.
     for fn in (tp.credit_vs_control_over_training, tp.weight_gradient_ratios,
@@ -131,6 +205,25 @@ def test_new_results_views_build_with_a_reference(monkeypatch):
         assert _drew(fn("pd", "exp2")), fn.__name__
     # This partial fixture cannot be used to choose a prior.
     assert not _drew(rp.overall_ranking("pd", "exp2"))
+
+
+def test_results_restrict_to_one_side_of_the_split(monkeypatch):
+    """EXPERIMENTAL_DESIGN §5: the prior is chosen on development data and REPORTED on the holdout,
+    which stays untouched until the end. `german` is development in config/Exp1_PD.yaml and `hmeq`
+    holdout, so a holdout view must see only hmeq — and label each dataset with its side."""
+    df = _results_df()
+    holdout = rp._restrict(df, "pd", "exp1", "holdout")
+    assert set(holdout["dataset"]) == {"hmeq"}
+    assert set(rp._restrict(df, "pd", "exp1", "development")["dataset"]) == {"german"}
+    assert len(rp._restrict(df, "pd", "exp1", None)) == len(df)
+    roles = rp._roles("pd", "exp1")
+    assert rp._role_tag("0008.german", roles) == "german · dev"
+    assert rp._role_tag("hmeq", roles) == "hmeq · holdout"
+    monkeypatch.setattr(rp, "load_results", lambda track, exp="exp1": df)
+    for fn in (rp.credit_vs_control, rp.beats_reference):
+        assert _drew(fn("pd", "exp2", role="holdout")), fn.__name__
+    assert _drew(rp.metric_grid("pd", "exp2", role="holdout"))
+    assert "B. HOW IT DOES ON THE HOLDOUT" in rp.results_summary("pd", "exp2")
 
 
 def test_new_results_views_degrade_before_the_benchmark(monkeypatch):

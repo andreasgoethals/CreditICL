@@ -37,6 +37,8 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 24-09-2026 | Exp1 snapshot at 09:31 CEST; PD 11598087 → 11604654–61, LGD 11591463_43 | **86/90 complete: PD 42/45, LGD 44/45; four advancing, no new training crashes** | Six PD retries completed; all eight overnight walltime continuations resumed at the exact saved step. Remaining PD a19=11000, a25=12250, a40=7700; LGD a43=12200 of 12500. Conditional finish today ~17:30–18:30 plus queue delay. New PD monitor: 160 finite rows; old LGD monitor still has NaNs in 30 arms. Final benchmark results were not in this download |
+| 23-09-2026 | Exp1 PD retry 11598087, Mindwell; indices 1,4,10,16,19,25,31,34,40 | **SUBMITTED at 12:22 CEST; execution/results not yet supplied** | Updated launcher submitted only the nine unfinished PD arms; counts remain PD 36/45, LGD 44/45 with LGD still running. Failed-log cleanup returned without error at 12:23; checkpoints and successful logs were outside its scope |
 | 23-09-2026 | Scheduler follow-up for 11591462 / 11591463 at 10:30–10:39 | **Confirmed: nine PD FAILED 134; LGD 13/28 completed, 43 RUNNING; benchmark 0/46 per track** | Local fixes prepared; no new cluster jobs submitted. Resume unfinished training; preserve all checkpoints and successful logs. This is follow-up evidence for the snapshot below |
 | 23-09-2026 | Exp1 rerun snapshot; latest PD 11591462, LGD 11591463, Mindwell B200 | **80/90 complete: LGD 44/45, PD 36/45; nine PD crashes, one LGD progressing** | LGD a43 at 7300/12500 (09:28 CEST), conditional ETA 24-09 ~11:24. CPU reproduction proves invalid `-100` synthetic fallback reaches encoder; actual crashed batches unavailable. LGD monitor NaNs affect 30 arms. No results tier supplied; read RUNS.md before retrying |
 | 07-09-2026 | 11549669 (PD, mindwell `gpu_b200`), 61898850 (LGD, wICE `gpu_a100`) — Exp1 phase-1 re-run, 90 arms | **PARTIAL 63/90; all 27 unfinished are `filter=banded`; 15 PD banded arms CRASHED (OOD `-1` → one_hot device assert)** | Root cause fixed in `src/eval/ood.py`. Non-banded 30/30 (PD) + 30/30 (LGD) done. Progress-eval only (phase-2 not run): cf=0.5 blend leads both tracks — PD AUC 0.723 vs control 0.721, LGD R² 0.392 vs 0.220; cf=1 trails. Suggestive, not the verdict |
@@ -67,6 +69,12 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
+
+### 24-09-2026 — Averaging Exp1 monitoring curves mixed holdout data into "which prior is best"
+- **Tried:** averaging each arm's `real__*` progress columns into one training curve — first over every column (skipna off), then over the datasets valid in every arm.
+- **Result:** the first silently dropped 30/45 LGD arms (`base_model` all-NaN); the second averaged only `axa`/`loss2`/`base_modelisation` for LGD — all three HOLDOUT datasets — and printed a +0.13 R² "credit wins" computed on the test set.
+- **Why:** arms finished before the 23-09 development-only protocol monitored "the smallest few" datasets regardless of role (36 PD arms: `hmeq`, `thomas` are holdout); they have no `progress_protocol` column.
+- **Instead:** average only the config's `eval.dev_datasets` that every arm carries (PD `german`, `myhom`; LGD `base_model`, 15 arms); show holdout curves labelled, never averaged; check `training_plots.monitoring_coverage` before reading any monitoring number.
 
 ### 23-09-2026 — Plot fixtures hid the PD metric-name mismatch
 - **Tried:** rendering the repaired PD plots against existing synthetic plot fixtures.

@@ -175,10 +175,115 @@ The one thing to do differently.
 
 ## Runs
 
+## 24-09-2026 — Exp1 retry progress — 86/90 complete; recovery working
+
+**Snapshot:** `C:\Users\U0152019\Downloads\output CreditICL`, latest training line
+24-09-2026 **09:30:48 CEST**; 873 files, 30,769,867 bytes. This is downloaded evidence,
+not a live queue query. Andreas reports four jobs still running, matching the logs.
+**Submitted:** PD parent `11598087` on 23-09 at 12:22; eight automatic continuations
+`11604654`–`11604661` started just after midnight. Existing LGD `11591463_43` continues.
+**Cluster/resources:** Mindwell `gpu_b200`, one B200, 24 cores, 180 GiB per task;
+PD 12-hour allocations, existing LGD 72 hours. PD array concurrency is capped at eight.
+**Recorded code:** PD `d4f06c2`, LGD `7800d08`; both report a dirty checkout and library
+pin `21d555a6a24e`. The exact uncommitted cluster diff is unavailable.
+
+### Configuration
+
+- Unchanged `config/Exp1_PD.yaml` and `config/Exp1_LGD.yaml`, 45 arms per track.
+  Resolved configurations are present in the downloaded `manifests/*__config.json`.
+- Budget: 12,500 total optimizer steps × 64 datasets = 800,000 datasets per arm;
+  micro-batch four, Muon 0.0008 / Adam 0.0003, AMP enabled, 23 data workers.
+- PD retries: `1,4,10,16,19,25,31,34,40`, all `filter.mode=banded`, credit fraction
+  zero or 0.5. Training resumes existing scratch-trained checkpoints; it does not reset.
+- Remaining PD a19 is fraction 0.5, rho `[0.03,0.12]`, seed 1; a25/a40 are fraction 0.5,
+  rho `[0.12,0.30]`, seeds 1/2. LGD a43 is fraction 1, boundary mass `[0.15,0.60]`,
+  banded filter, seed 2. No configuration or code was changed during this inspection.
+
+### Results
+
+**PD 42/45; LGD 44/45; total 86/90 complete**, up from 80/90. All 86 completed summaries
+agree with their latest Slurm logs: `completed=true`, 12,500 steps, 800,000 datasets,
+a final checkpoint-save message and `END status=OK`. Checkpoint binaries are on cluster
+storage and were not supplied for loading. Latest step evidence across all arms totals
+1,118,150 / 1,125,000 steps (**99.39%** of the nominal update budget).
+
+| Remaining job | Track/arm | Latest step | Progress | Conditional finish, 24-09 CEST |
+|---|---|---:|---:|---|
+| `11604659_25` | PD 25 | 12,250 | 98.0% | ~09:55–10:10 |
+| `11591463_43` | LGD 43 | 12,200 | 97.6% | ~10:45–11:10 |
+| `11604658_19` | PD 19 | 11,000 | 88.0% | ~12:30–13:15, plus any queue delay |
+| `11598087_40` | PD 40 | 7,700 | 61.6% | ~17:30–18:30, plus any queue delay |
+
+These estimates use step/timestamp slopes over the latest one, two and four hours,
+allowing for final checkpoint work. PD a40 only started at 00:13 on 24-09, after a slot
+in the eight-task array became available. PD a19 and a40 are likely to need another
+automatic checkpoint/resubmission near their noon walltime limit.
+
+Six retried PD arms completed: **1,4,10,16,31,34**, through child jobs respectively
+`11604655`, `11604657`, `11604660`, `11604656`, `11604654`, `11604661`.
+All eight overnight continuations loaded exactly the step saved by their parent:
+1=10816, 4=8405, 10=10071, 16=11089, 19=6705, 25=7235, 31=11529, 34=8746.
+The nine original retries also explicitly loaded their pre-existing checkpoints.
+
+All four active arms have finite losses and nonzero finite column/row/ICL gradients.
+Recent throughput is ~195–207 steps/hour for LGD a43, ~472–485 for PD a19,
+~541–580 for PD a25, and ~581–598 for PD a40. Waiting for generated data accounts
+for roughly **61–91%** of recent timed phases; sampled filter rejection is 85–93%.
+Peak allocated GPU memory is about 13.1 GB. Data generation/filtering limits progress.
+
+### Bugs and anomalies
+
+- **No new training crashes:** 17 PD retry/continuation logs contain zero tracebacks,
+  CUDA failures, error-level messages or non-finite training losses. Eight ended with
+  the intended `INCOMPLETE-RESUBMITTED`, six with `OK`, and three remain active.
+  The latest Slurm logs of all 90 arms contain no terminal training failure.
+- The nine repaired PD progress CSVs contain **160 rows**, five development datasets
+  and eight OOD datasets, with finite headline metrics, intact headers and increasing,
+  unique steps. Nine legacy PD curves were retained separately by the resume code.
+- **Old LGD monitoring remains unreliable:** 30/45 legacy curves contain non-finite
+  headline R² values (605 recorded cells). Active a43 still reports NaNs for one credit
+  dataset, although its loss is finite; its old progress history also repeats some steps.
+  This run started before the monitor repair. These measurements cannot establish that
+  a checkpoint is invalid or that a prior wins; the corrected final benchmark must decide.
+- Thirty-six PD curves and all 45 LGD curves use the legacy monitoring protocol; nine PD
+  curves use protocol 2. Their monitoring scores must not be pooled into a fair ranking.
+- Partial summaries lag active progress: LGD a43 still has the old 1,622-step summary;
+  PD a40 has no completed/interruption summary yet. Without the cluster checkpoint tree,
+  the local status helper labels a40 `todo`; its live log proves resumption and 7,700 steps.
+- Module-load fallback and projected-walltime warnings recur, but activation, training
+  and automatic continuation succeeded. No benchmark logs or result CSVs were supplied;
+  the large results storage tier is outside this downloaded folder.
+
+### Interpretation
+
+The retry and walltime recovery paths are operating correctly. Six previously failing
+arms now have completed-run evidence; the other three PD arms and last LGD arm are advancing.
+The recent rates put completion of the training phase in the late afternoon or early
+evening of 24-09 if rates and queue availability hold. This does not yet establish a
+benefit over released weights: final common-protocol credit/OOD evaluation is outstanding.
+
+### Next
+
+Allow the active runs and their automatic continuations to finish. Benchmark the completed
+tracks through the corrected evaluation path, require finite and complete paired-domain
+results, then select development-set priors before configuring Exp2/Exp3. Address the
+generation bottleneck when planning long runs; do not change this sweep mid-run.
+
 ## 23-09-2026 — Exp1 scheduler confirmation and recovery repair
 
 **Evidence:** Andreas's pasted login-node output at 10:30–10:39 CEST, following the downloaded
 snapshot audited below. No additional cluster jobs were launched during this repair.
+
+### Submission follow-up — 12:22 CEST
+
+Andreas pulled the published fixes, activated the existing Python 3.12.3 project environment,
+and submitted **PD array 11598087 on Mindwell**, indices `1,4,10,16,19,25,31,34,40`, at most eight
+concurrently. It uses unchanged `config/Exp1_PD.yaml`, `EXP=1`, and automatic checkpoint resume;
+the configured budget remains 12,500 total steps per arm, not 12,500 additional steps.
+The launcher reported PD **36/45** complete and LGD **44/45**, still running; no LGD task was submitted.
+At 12:23 the failed-training-log-only cleanup returned without an error. No deletion count was
+printed; its scope excludes checkpoints, successful logs and manifests. Submission acceptance
+is confirmed; runtime checkpoint loading, resolved configs, throughput and outcomes await new logs.
 
 ### Confirmed state
 

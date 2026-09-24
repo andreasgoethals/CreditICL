@@ -306,6 +306,44 @@ def source_color(source: str) -> str:
     return CREDIT if source == "credit" else ORIGINAL
 
 
+def credit_fraction_colour(fraction: float) -> str:
+    """Colour for a credit fraction: ORIGINAL grey at 0 (the control), CREDIT blue at 1, and a
+    straight blend between. The fraction is "how much of our prior", so the colour says it
+    continuously — and the blend is monotone in lightness, so cf 0 / 0.5 / 1 still separate in a
+    greyscale photocopy. Deliberately NOT CREDIT_MILD/CREDIT_STRONG: those mean prior *intensity*,
+    and a figure with intensity on its x-axis must not also use them for the fraction."""
+    import matplotlib.colors as mcolors
+
+    f = min(max(float(fraction), 0.0), 1.0)
+    lo, hi = mcolors.to_rgb(ORIGINAL), mcolors.to_rgb(CREDIT)
+    return mcolors.to_hex(tuple(a + (b - a) * f for a, b in zip(lo, hi)))
+
+
+#: How a metric reads on an axis, in a heading or a legend — the paper's spelling, not the CSV
+#: column's. `roc_auc` in a figure is a variable name; "ROC-AUC" is a quantity.
+METRIC_LABEL = {
+    "roc_auc": "ROC-AUC", "auc": "ROC-AUC", "pr_auc": "PR-AUC", "ap": "PR-AUC",
+    "r2": "R²", "rmse": "RMSE", "mae": "MAE", "crps": "CRPS", "pinball": "pinball loss",
+    "brier": "Brier score", "logloss": "log loss", "ks": "KS statistic", "bias": "bias",
+    "calibration_slope": "calibration slope", "spearman": "Spearman ρ", "kendall": "Kendall τ",
+    "boundary_mass_abs_err": "boundary-mass error", "boundary_mass_err_0": "mass error at 0",
+    "boundary_mass_err_1": "mass error at 1", "coverage_50": "50% interval coverage",
+    "coverage_80": "80% interval coverage", "coverage_90": "90% interval coverage",
+    "pit_mean": "PIT mean", "pit_uniformity_error": "PIT uniformity error",
+    "mae_boundary": "MAE at the boundaries", "mae_interior": "MAE in the interior",
+    "pred_mass_at_0": "predicted mass at 0", "pred_mass_at_1": "predicted mass at 1",
+    "true_mass_at_0": "true mass at 0", "true_mass_at_1": "true mass at 1",
+    "pred_out_of_unit": "share outside [0, 1]", "pred_nonfinite_frac": "non-finite share",
+    "nan_predictions": "NaN predictions", "pred_min": "smallest prediction",
+    "pred_max": "largest prediction",
+}
+
+
+def metric_label(metric: str) -> str:
+    """The display name of a metric; an unknown one falls back to its words, never its code."""
+    return METRIC_LABEL.get(metric, metric.replace("_", " "))
+
+
 #: Characters per inch for the title face, measured empirically at 10pt DejaVu Sans. Used only
 #: to decide where to wrap, so it does not need to be exact — one character either way changes
 #: nothing, and a real text-extent measurement needs a renderer that does not exist yet when
