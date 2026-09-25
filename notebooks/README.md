@@ -57,12 +57,18 @@ the benchmark scores of both tasks, and is read from 1.3 and 1.4 together once p
 ## Running them
 
 ```
-python -m src.utils.run_notebooks --timeout 7200        # all eleven, in parallel
-python -m src.utils.run_notebooks --only 1.1_pd_training
+python -m src.utils.run_notebooks                    # all eleven, in parallel
+python -m src.utils.run_notebooks --only 1.          # chapter 1 only — e.g. after downloading new results
+python -m src.utils.run_notebooks --only 1.3 1.4     # a stem, or its start
 ```
 
-Notebooks are found by recursing into the chapter folders; a notebook is named by its stem alone, so
-stems must be unique across folders (the runner refuses duplicates). A notebook opened interactively
-from its own folder walks up to the repository root before importing anything. The two prior notebooks
-generate their priors live and score several hundred tasks with the predictability filter, so they are
-the slow ones — give a full run room with `--timeout 7200`.
+Each notebook runs in a Jupyter kernel, like *Run All*, and its outputs — figures and printed text —
+are saved into the notebook, so opening it (or viewing it on GitHub) shows the run. The runner
+prints a line as each notebook finishes and, every 30 s, which ones are not finished yet. A partial
+run keeps every other notebook's block in `All_Results.md`. Notebooks are found by
+recursing into the chapter folders; a notebook is named by its stem alone, so stems must be unique
+across folders (the runner refuses duplicates). A notebook opened interactively from its own folder
+walks up to the repository root before importing anything. The two prior notebooks (0.2, 0.3)
+generate about 1,500 tasks each, which is why they are the slow ones; they draw them in parallel
+worker processes (`src/visualize/draw.py`, `CREDITICL_DRAW_WORKERS` to change how many). Nothing
+in chapters 1 and 2 depends on them, so after a download `--only 1. 2.` is enough.

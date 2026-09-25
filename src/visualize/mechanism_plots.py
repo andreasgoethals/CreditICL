@@ -31,8 +31,8 @@ import pandas as pd
 import torch
 
 from src.prior.filters import predictability
-from src.prior.generator import TaskGenerator
 from src.prior.rng import PriorRNG
+from src.visualize.draw import draw, parallel_map
 from src.prior.targets.pd import apply_informative_missingness
 from src.utils.config import expand_with_seeds, load
 from src.utils.target_stats import target_stats
@@ -65,12 +65,12 @@ def _set(prior: dict, dotted: str, value: Any) -> None:
 
 
 def _generate(task: str, prior: dict, n: int, seed: int, overrides: dict | None = None) -> list[Any]:
-    """`n` tasks generated exactly as training would, after applying dotted-path overrides."""
+    """`n` tasks generated exactly as training would, after applying dotted-path overrides —
+    in parallel worker processes for a large draw (src/visualize/draw.py)."""
     p = copy.deepcopy(prior)
     for dotted, value in (overrides or {}).items():
         _set(p, dotted, value)
-    gen = TaskGenerator(p, task, PriorRNG(seed))
-    return [gen.sample() for _ in range(n)]
+    return draw(task, p, n, seed)[0]
 
 
 def _base_rate(t: Any) -> float:
@@ -468,21 +468,19 @@ def predictability_scores(config_path: str, real: dict[str, Any] | None = None, 
     n_rows = int(cfg["prior"].get("n_rows_range", [1024, 1024])[-1])
     _, prior = _prior(config_path, n_rows=n_rows)
     is_classif = task == "pd"
-    rows: list[dict[str, Any]] = []
+    # Every item is scored independently and deterministically, so they are collected first
+    # and scored in parallel (`parallel_map`); the numbers are those of the sequential loop.
+    items: list[tuple[str, str, Any, Any]] = []
     for label, cf in (("original prior", 0.0), ("credit prior", 1.0)):
         for k, t in enumerate(_generate(task, prior, n, seed, {"credit_fraction": cf,
                                                                 "filter.mode": "off"})):
-            if t.X.shape[1] < 1:
-                continue
-            p, s = predictability(t.X, t.y, is_classif=is_classif)
-            rows.append({"source": label, "name": f"task {k}", "pseudo_r2": float(s),
-                         "pvalue": float(p)})
+            if t.X.shape[1] >= 1:
+                items.append((label, f"task {k}", t.X, t.y))
     rng = np.random.default_rng(seed)
     for name, ds in (real or {}).items():
         X = np.nan_to_num(np.asarray(getattr(ds, "X", ds), dtype=np.float32), nan=0.0,
                           posinf=0.0, neginf=0.0)
         y = np.asarray(ds.y, dtype=np.float32).ravel()
-        scores, pvals = [], []
         for _ in range(real_repeats):
             idx = rng.choice(len(y), size=min(n_rows, len(y)), replace=False)
             yt = torch.as_tensor(y[idx])
@@ -490,13 +488,28 @@ def predictability_scores(config_path: str, real: dict[str, Any] | None = None, 
                 yt = (yt >= 0.5).float()
                 if float(yt.std()) == 0.0:
                     continue
-            p, s = predictability(torch.as_tensor(X[idx]), yt, is_classif=is_classif)
-            scores.append(float(s))
-            pvals.append(float(p))
-        if scores:
-            rows.append({"source": "real", "name": name.split(".", 1)[-1],
-                         "pseudo_r2": float(np.mean(scores)), "pvalue": float(np.mean(pvals))})
+            items.append(("real", name.split(".", 1)[-1], torch.as_tensor(X[idx]), yt))
+    scored = parallel_map(_score, [(X, y, is_classif) for _, _, X, y in items])
+
+    rows: list[dict[str, Any]] = []
+    real_scores: dict[str, list[tuple[float, float]]] = {}
+    for (label, name, _, _), (p, s) in zip(items, scored):
+        if label == "real":
+            real_scores.setdefault(name, []).append((p, s))
+        else:
+            rows.append({"source": label, "name": name, "pseudo_r2": s, "pvalue": p})
+    for name, ps in real_scores.items():
+        rows.append({"source": "real", "name": name,
+                     "pseudo_r2": float(np.mean([s for _, s in ps])),
+                     "pvalue": float(np.mean([p for p, _ in ps]))})
     return pd.DataFrame(rows)
+
+
+def _score(args: tuple) -> tuple[float, float]:
+    """`predictability` for one (X, y, is_classif), as floats — the unit `parallel_map` farms out."""
+    X, y, is_classif = args
+    p, s = predictability(X, y, is_classif=is_classif)
+    return float(p), float(s)
 
 
 def _band(config_path: str) -> tuple[float, float]:

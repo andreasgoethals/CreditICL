@@ -1,8 +1,11 @@
 """Run every notebook in parallel, then rebuild the two summary documents.
 
     python -m src.utils.run_notebooks                     every notebook in notebooks/
-    python -m src.utils.run_notebooks --only exploration  just these, by stem
+    python -m src.utils.run_notebooks --only 1.3 1.4      just these: a stem, or its start ("1." = chapter 1)
     python -m src.utils.run_notebooks --summaries-only    rebuild the two .md files only
+
+It prints a line as each notebook finishes, and every 30 s names the ones not finished yet.
+A partial run (`--only`) keeps every other notebook's block in `All_Results.md`.
 
     output/figures/<notebook>/*.pdf   written by the notebooks themselves
     output/figures/CAPTIONS.md        ONE file, all notebooks, notebook order
@@ -12,9 +15,12 @@ SEPARATE PROCESSES, NOT THREADS: matplotlib's figure registry is global, so two 
 one interpreter would capture each other's figures — silently, giving plausible figures
 attributed to the wrong notebook.
 
-A FLATTENED SCRIPT, NOT A JUPYTER KERNEL: nothing extra to install, identical on the cluster,
-and a traceback points at a line number instead of a cell index. Magics are stripped, which is
-deliberate — a notebook needing one cannot be executed non-interactively at all.
+A REAL JUPYTER KERNEL, AND THE OUTPUTS ARE SAVED INTO THE NOTEBOOK: each notebook runs cell by
+cell in a fresh IPython kernel, exactly as *Run All* does, and every output — printed text,
+inline figures, errors — is written back into its `.ipynb`, so opening a notebook (or viewing it on
+GitHub) shows the run. Until 25-09-2026 the runner executed a flattened copy instead, which left the
+notebooks empty (a deviation from the template, made for that reason). `jupyter_client`, which
+comes with `ipykernel`, drives the kernel; nothing else is needed.
 
 THE RUNNER DOES NOT SAVE FIGURES; each notebook does, through `FigureSaver`, so an interactive
 *Run All* produces exactly the same PDFs. The runner adds parallelism and the two documents.
@@ -33,12 +39,10 @@ the template's flat `notebooks/`; the recursion itself is generic and worth upst
 from __future__ import annotations
 
 import json
+import queue
 import re
-import subprocess
-import sys
-import tempfile
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -57,6 +61,10 @@ DEFAULT_TIMEOUT = 1800
 #: Captured stdout, parked between execution and assembly, then removed. `_figures.json` is
 #: KEPT: CAPTIONS.md must be rebuildable from disk without re-executing anything.
 STDOUT_FILE = "_stdout.txt"
+
+#: How often a run with notebooks still going says which ones, so a quiet terminal is never
+#: mistaken for a hung one.
+HEARTBEAT_SECONDS = 30
 
 
 @dataclass
@@ -92,6 +100,18 @@ def discover(names: tuple[str, ...] | None = None) -> tuple[str, ...]:
     return tuple(sorted(p.stem for p in _notebook_files()))
 
 
+def select(patterns: tuple[str, ...]) -> tuple[str, ...]:
+    """The notebooks each pattern names: a whole stem, or its start (`1.` is chapter 1, `1.3` is
+    `1.3_pd_results`). A pattern matching nothing is kept as typed, so the run reports it."""
+    stems = discover()
+    chosen: list[str] = []
+    for pattern in patterns:
+        for stem in [s for s in stems if s.startswith(pattern)] or [pattern]:
+            if stem not in chosen:
+                chosen.append(stem)
+    return tuple(chosen)
+
+
 def notebook_path(name: str) -> Path | None:
     """Where notebook `name` lives — in whichever chapter folder — or `None` if it does not."""
     return next((p for p in _notebook_files() if p.stem == name), None)
@@ -110,41 +130,93 @@ def chapter_of(name: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def _prelude() -> str:
-    """Injected above every flattened notebook. `Agg` because a compute node has no display, and
-    stdout is captured so `All_Results.md` can be built without the notebook knowing."""
-    return (
-        "import matplotlib\n"
-        'matplotlib.use("Agg")\n'
-        "import io as _io\n"
-        "from contextlib import redirect_stdout as _redirect\n"
-        "_TEXT = _io.StringIO()\n"
-    )
+#: Terminal colour codes in kernel tracebacks — kept in the notebook, stripped from the report.
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
-def _build_script(nb_path: Path, text_path: Path) -> str:
-    """Flatten a notebook's code cells into one script under the capture prelude."""
-    nb = json.loads(nb_path.read_text(encoding="utf-8"))
-    parts = [_prelude(), "\nwith _redirect(_TEXT):\n"]
-    for i, cell in enumerate(nb.get("cells", []), start=1):
-        if cell.get("cell_type") != "code":
+def _run_cell(km, kc, source: str, deadline: float, timeout: int) -> tuple[list[dict], str]:
+    """Execute one cell and collect its outputs as nbformat dicts. Returns (outputs, error)."""
+    msg_id = kc.execute(source, store_history=True, allow_stdin=False)
+    outputs: list[dict] = []
+    error = ""
+    while True:
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            km.interrupt_kernel()
+            return outputs, f"timed out after {timeout}s"
+        try:
+            msg = kc.get_iopub_msg(timeout=min(remaining, 5))
+        except queue.Empty:
+            if not km.is_alive():
+                return outputs, "the kernel died"
             continue
-        source = "".join(cell.get("source", []))
-        # Strip IPython magics and shell escapes: they are syntax errors in a plain
-        # interpreter. A notebook that depends on one cannot be run non-interactively,
-        # which the compliance rules already forbid.
-        source = re.sub(r"^\s*[%!].*$", "", source, flags=re.M)
-        body = "\n".join(f"    {line}" for line in source.split("\n"))
-        parts.append(f"\n    # ---- cell {i} ----\n{body}\n")
-    parts.append(
-        "\nimport pathlib as _pl\n"
-        f"_pl.Path(r{str(text_path)!r}).write_text(_TEXT.getvalue(), encoding='utf-8')\n"
-    )
-    return "".join(parts)
+        if msg["parent_header"].get("msg_id") != msg_id:
+            continue
+        kind, content = msg["msg_type"], msg["content"]
+        if kind == "status" and content.get("execution_state") == "idle":
+            return outputs, error
+        if kind == "stream":
+            last = outputs[-1] if outputs else {}
+            if last.get("output_type") == "stream" and last.get("name") == content["name"]:
+                last["text"] += content["text"]
+            else:
+                outputs.append({"output_type": "stream", "name": content["name"],
+                                "text": content["text"]})
+        elif kind in ("display_data", "execute_result"):
+            out = {"output_type": kind, "data": content["data"],
+                   "metadata": content.get("metadata", {})}
+            if kind == "execute_result":
+                out["execution_count"] = content["execution_count"]
+            outputs.append(out)
+        elif kind == "error":
+            outputs.append({"output_type": "error", "ename": content["ename"],
+                            "evalue": content["evalue"], "traceback": content["traceback"]})
+            error = _ANSI.sub("", "\n".join(content["traceback"]))
+        elif kind == "clear_output":
+            outputs.clear()
+
+
+def _execute(nb_path: Path, timeout: int) -> tuple[dict, str, str]:
+    """Run a notebook's code cells in a fresh IPython kernel, as *Run All* does.
+
+    Returns (the notebook with its outputs, everything it printed to stdout, an error or "").
+    It stops at the first failing cell, like *Run All*; the cells after it are left empty, so the
+    saved notebook shows where it broke.
+    """
+    from jupyter_client.manager import start_new_kernel
+
+    nb = json.loads(nb_path.read_text(encoding="utf-8"))
+    # `--log-level=ERROR` hides the kernel's own start-up warning that it talks over TCP without
+    # encryption — printed once per kernel and harmless here: the ports are bound to localhost and
+    # every message is signed with a per-kernel key, as in any Jupyter on Windows. Kernel errors
+    # still print; a cell's own warnings go into the notebook, not the terminal.
+    km, kc = start_new_kernel(kernel_name="python3", cwd=str(REPO_ROOT), startup_timeout=120,
+                              extra_arguments=["--log-level=ERROR"])
+    printed: list[str] = []
+    error = ""
+    deadline = time.time() + timeout
+    try:
+        count = 0
+        for cell in nb.get("cells", []):
+            if cell.get("cell_type") != "code":
+                continue
+            cell["outputs"], cell["execution_count"] = [], None
+            source = "".join(cell.get("source", []))
+            if error or not source.strip():
+                continue
+            count += 1
+            cell["execution_count"] = count
+            cell["outputs"], error = _run_cell(km, kc, source, deadline, timeout)
+            printed += [o["text"] for o in cell["outputs"]
+                        if o["output_type"] == "stream" and o["name"] == "stdout"]
+    finally:
+        kc.stop_channels()
+        km.shutdown_kernel(now=True)
+    return nb, "".join(printed), error
 
 
 def run_one(name: str, timeout: int = DEFAULT_TIMEOUT) -> NotebookResult:
-    """Execute one notebook in a fresh process. Never raises — it reports."""
+    """Execute one notebook in a fresh kernel and save its outputs into it. Never raises."""
     started = time.time()
     nb_path = notebook_path(name)
     if nb_path is None:
@@ -152,32 +224,19 @@ def run_one(name: str, timeout: int = DEFAULT_TIMEOUT) -> NotebookResult:
 
     out_dir = figures_dir(name)
     out_dir.mkdir(parents=True, exist_ok=True)
-    text_path = out_dir / STDOUT_FILE
-
-    # The generated script goes to the system temp dir, NOT into the figure folder: the
-    # notebook clears that folder as its first act, and on Windows a directory cannot be
-    # modified while it holds the script currently being executed from it.
-    tmp = Path(tempfile.gettempdir()) / f"nbrun_{name}.py"
-    tmp.write_text(_build_script(nb_path, text_path), encoding="utf-8")
     try:
-        proc = subprocess.run(
-            [sys.executable, str(tmp)],
-            cwd=str(REPO_ROOT),   # so `from src...` resolves without an install
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return NotebookResult(name, False, time.time() - started, 0, f"timed out after {timeout}s")
-    finally:
-        tmp.unlink(missing_ok=True)
+        nb, printed, error = _execute(nb_path, timeout)
+    except Exception as exc:  # the kernel would not start — report it, as every failure is
+        return NotebookResult(name, False, time.time() - started, 0, f"{type(exc).__name__}: {exc}")
 
+    # Saved even when a cell failed: the notebook then shows the error where it happened.
+    nb_path.write_text(json.dumps(nb, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     n_figs = len(list(out_dir.glob("*.pdf")))
-    if proc.returncode != 0:
+    if error:
         # Only the tail: a full traceback from twelve notebooks buries the one that matters.
-        tail = "\n".join((proc.stderr or "").strip().splitlines()[-12:])
+        tail = "\n".join(error.strip().splitlines()[-12:])
         return NotebookResult(name, False, time.time() - started, n_figs, tail)
+    (out_dir / STDOUT_FILE).write_text(printed, encoding="utf-8")
     return NotebookResult(name, True, time.time() - started, n_figs)
 
 
@@ -189,6 +248,22 @@ def run_one(name: str, timeout: int = DEFAULT_TIMEOUT) -> NotebookResult:
 def _captured_text(name: str) -> str:
     path = figures_dir(name) / STDOUT_FILE
     return path.read_text(encoding="utf-8") if path.is_file() else ""
+
+
+def previous_blocks() -> dict[str, str]:
+    """Each notebook's block in the current `All_Results.md`, verbatim.
+
+    A partial run keeps these for the notebooks it did not execute. It used to rebuild the file
+    from the executed notebooks alone, so `--only 1.3_pd_results` silently deleted the other ten
+    summaries — and `--summaries-only` all eleven, because the captured text is cleaned up after
+    every run.
+    """
+    path = all_results_path()
+    if not path.is_file():
+        return {}
+    text = path.read_text(encoding="utf-8")
+    return {m.group(1): m.group(2)
+            for m in re.finditer(r"^## (\S+)\n\n```\n(.*?)\n```\n", text, flags=re.S | re.M)}
 
 
 def write_captions(notebooks: tuple[str, ...]) -> Path:
@@ -238,7 +313,7 @@ def write_captions(notebooks: tuple[str, ...]) -> Path:
     return path
 
 
-def write_all_results(notebooks: tuple[str, ...]) -> Path:
+def write_all_results(notebooks: tuple[str, ...], keep: dict[str, str] | None = None) -> Path:
     """Every notebook's printed summary, concatenated. The shape is fixed:
 
     one block per notebook, **sorted alphabetically by notebook name**; each block is that
@@ -247,6 +322,9 @@ def write_all_results(notebooks: tuple[str, ...]) -> Path:
 
     Verbatim matters: the moment this file paraphrases, the two disagree and the notebook wins —
     but this file is the one anybody actually reads.
+
+    `keep` supplies the block of a notebook that has no freshly captured text — one a partial
+    run did not execute (`previous_blocks`).
     """
     names = tuple(sorted(notebooks))
     lines = [
@@ -259,7 +337,7 @@ def write_all_results(notebooks: tuple[str, ...]) -> Path:
     ]
     chapter = None
     for name in names:
-        text = _captured_text(name).strip()
+        text = _captured_text(name).strip() or (keep or {}).get(name, "").strip()
         here = chapter_of(name)
         if here and here != chapter:
             lines += ["---", "", f"# {here}", ""]
@@ -290,7 +368,8 @@ def run_all(
     """Run every notebook in parallel, then rebuild both summary documents.
 
     Rebuilt even when a notebook failed, from whatever the successful ones wrote: a
-    half-updated summary beats a stale one, and the failure is reported separately.
+    half-updated summary beats a stale one, and the failure is reported separately. Both
+    documents always cover EVERY notebook; one not run this time keeps its previous block.
     """
     names = discover(notebooks)
     if not names:
@@ -298,17 +377,39 @@ def run_all(
     # Capped at 4: notebooks are numpy-heavy and each already uses several threads, so more
     # workers than this trades parallelism for cache thrashing.
     workers = max_workers or min(len(names), 4)
+    everything = discover()
+    previous = previous_blocks()
 
     results: list[NotebookResult] = []
+    started = time.time()
     with ProcessPoolExecutor(max_workers=workers) as pool:
         futures = {pool.submit(run_one, name, timeout): name for name in names}
-        for fut in as_completed(futures):
-            results.append(fut.result())
+        pending = set(futures)
+        while pending:
+            done, pending = wait(pending, timeout=HEARTBEAT_SECONDS, return_when=FIRST_COMPLETED)
+            for fut in sorted(done, key=lambda f: futures[f]):
+                r = fut.result()
+                results.append(r)
+                _say(f"  [{len(results):>2}/{len(names)}] {'OK    ' if r.ok else 'FAILED'} "
+                     f"{r.name:<32} {r.seconds:6.1f}s  {r.n_figures:2d} figures")
+            if pending and not done:
+                _say(f"  ... {_clock(time.time() - started)} in, not finished yet: "
+                     + ", ".join(sorted(futures[f] for f in pending)))
 
-    write_captions(names)
-    write_all_results(names)
+    write_captions(everything)
+    write_all_results(everything, keep={n: t for n, t in previous.items() if n not in names})
     _cleanup(names)
     return sorted(results, key=lambda r: names.index(r.name))
+
+
+def _say(line: str) -> None:
+    """Progress goes out immediately: a buffered line is as good as none on a long run."""
+    print(line, flush=True)
+
+
+def _clock(seconds: float) -> str:
+    minutes, secs = divmod(int(seconds), 60)
+    return f"{minutes}m{secs:02d}s"
 
 
 def summarise(results: list[NotebookResult]) -> str:
@@ -346,25 +447,30 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--only", nargs="+", metavar="STEM", help="notebook stems to run")
+    parser.add_argument("--only", nargs="+", metavar="STEM",
+                        help="notebooks to run: a stem or its start, e.g. 1.3 or 1.")
     parser.add_argument("--workers", type=int, default=None, help="parallel processes")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT, help="seconds per notebook")
     parser.add_argument("--summaries-only", action="store_true",
                         help="rebuild both documents from disk, run nothing")
     args = parser.parse_args(argv)
 
-    names = discover(tuple(args.only) if args.only else None)
+    names = select(tuple(args.only)) if args.only else discover()
     if not names:
         print("No notebooks found in notebooks/.")
         return 0
 
     if args.summaries_only:
-        print(f"Rebuilding summaries from disk for: {', '.join(names)}")
-        print(f"  captions  -> {write_captions(names)}")
-        print(f"  summaries -> {write_all_results(names)}")
+        everything = discover()
+        print(f"Rebuilding summaries from disk for all {len(everything)} notebooks")
+        print(f"  captions  -> {write_captions(everything)}")
+        print(f"  summaries -> {write_all_results(everything, keep=previous_blocks())}")
         return 0
 
-    print(f"Running {len(names)} notebook(s): {', '.join(names)}")
+    workers = args.workers or min(len(names), 4)
+    _say(f"Running {len(names)} notebook(s), {workers} at a time: {', '.join(names)}")
+    _say("  (a line per notebook as it finishes; 0.2 and 0.3 take longest — they generate "
+         "the prior's tasks, in parallel worker processes)")
     results = run_all(names, max_workers=args.workers, timeout=args.timeout)
     print(summarise(results))
     return 0 if all(r.ok for r in results) else 1

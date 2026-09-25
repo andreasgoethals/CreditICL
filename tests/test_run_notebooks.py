@@ -1,6 +1,7 @@
-# Came with the template, and worth keeping: `src/utils/run_notebooks.py` is identical in every
-# project, and these pin the two documented contracts — notebooks discovered alphabetically, and
-# `All_Results.md` sorted alphabetically with each block verbatim.
+# Came with the template, and worth keeping: these pin the two documented contracts — notebooks
+# discovered alphabetically, and `All_Results.md` sorted alphabetically with each block verbatim.
+# This project's runner deviates from the template's in one way: it executes each notebook in a
+# Jupyter kernel and saves the outputs into the notebook, instead of running a flattened copy.
 """`src/utils/run_notebooks.py` — the runner and the two summary documents.
 
 The end-to-end test executes a real one-cell notebook in a subprocess. It is marked `slow`
@@ -97,31 +98,68 @@ def test_summaries_carry_a_chapter_divider_per_folder(isolated_output, monkeypat
     assert captions.index("# 0. General") < captions.index("## 0.1_a") < captions.index("## 1.1_b")
 
 
-def test_magics_are_stripped_from_the_flattened_script(tmp_path) -> None:
-    """`%matplotlib inline` is a syntax error in a plain interpreter, and a notebook that
-    needs a magic to run cannot be executed non-interactively at all."""
-    nb = tmp_path / "nb.ipynb"
-    make_notebook(nb, ["%matplotlib inline\nprint('hello')", "!ls\nprint('two')"])
-    script = rn._build_script(nb, tmp_path / "out.txt")
-    assert "%matplotlib" not in script and "!ls" not in script
-    assert "print('hello')" in script and "print('two')" in script
+@pytest.mark.slow
+def test_a_notebook_runs_in_a_kernel_and_keeps_its_outputs(tmp_path) -> None:
+    """THE point of running in a kernel: the notebook FILE ends up holding its outputs — printed
+    text and inline figures — so opening it shows the run. Magics work, as in Jupyter, and a
+    markdown cell is left alone."""
+    nb_path = tmp_path / "nb.ipynb"
+    make_notebook(nb_path, ["%time x = 21", "print(x * 2)",
+                            "import matplotlib.pyplot as plt\nplt.plot([0, 1], [0, 1]);"])
+    nb = json.loads(nb_path.read_text(encoding="utf-8"))
+    nb["cells"].insert(1, {"cell_type": "markdown", "metadata": {}, "source": ["# a heading"]})
+    nb_path.write_text(json.dumps(nb), encoding="utf-8")
+
+    executed, printed, error = rn._execute(nb_path, timeout=120)
+    assert error == ""
+    code = [c for c in executed["cells"] if c["cell_type"] == "code"]
+    assert [c["execution_count"] for c in code] == [1, 2, 3]
+    assert code[1]["outputs"] == [{"output_type": "stream", "name": "stdout", "text": "42\n"}]
+    assert any("image/png" in o.get("data", {}) for o in code[2]["outputs"]), "no inline figure"
+    assert "42" in printed
+    assert executed["cells"][1] == {"cell_type": "markdown", "metadata": {}, "source": ["# a heading"]}
 
 
-def test_markdown_cells_are_skipped(tmp_path) -> None:
-    nb = tmp_path / "nb.ipynb"
-    nb.write_text(
-        json.dumps({
-            "cells": [
-                {"cell_type": "markdown", "source": ["# a heading"]},
-                {"cell_type": "code", "source": ["print('code')"], "outputs": [],
-                 "execution_count": None, "metadata": {}},
-            ],
-            "metadata": {}, "nbformat": 4, "nbformat_minor": 5,
-        }),
-        encoding="utf-8",
-    )
-    script = rn._build_script(nb, tmp_path / "out.txt")
-    assert "a heading" not in script and "print('code')" in script
+@pytest.mark.slow
+def test_a_failing_cell_stops_the_run_and_the_error_is_kept(tmp_path) -> None:
+    """Like *Run All*: nothing runs after the failing cell, and the saved notebook shows the
+    error where it happened."""
+    nb_path = tmp_path / "nb.ipynb"
+    make_notebook(nb_path, ["print('before')", "1 / 0", "print('never')"])
+    executed, printed, error = rn._execute(nb_path, timeout=120)
+    assert "ZeroDivisionError" in error
+    code = executed["cells"]
+    assert code[1]["outputs"][0]["output_type"] == "error"
+    assert code[2]["outputs"] == [] and code[2]["execution_count"] is None
+    assert printed == "before\n"
+
+
+def test_only_accepts_a_stem_or_its_start(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(rn, "notebooks_dir", lambda: tmp_path)
+    for name in ("0.1_explore", "1.1_train", "1.3_results", "2.1_tune"):
+        make_notebook(tmp_path / f"{name}.ipynb", ["print(1)"])
+    assert rn.select(("1.",)) == ("1.1_train", "1.3_results")
+    assert rn.select(("1.3", "0.1_explore")) == ("1.3_results", "0.1_explore")
+    assert rn.select(("nope",)) == ("nope",), "an unmatched name is kept, so the run reports it"
+
+
+def test_a_partial_run_keeps_the_other_notebooks_summaries(isolated_output) -> None:
+    """`--only 1.3` used to rebuild All_Results.md from the executed notebook alone, deleting
+    every other block; a notebook not run keeps the block it had."""
+    from src.utils.paths import figures_dir
+
+    for name, text in (("a", "OLD A"), ("b", "OLD B")):
+        folder = figures_dir(name)
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / rn.STDOUT_FILE).write_text(text, encoding="utf-8")
+    rn.write_all_results(("a", "b"))
+    rn._cleanup(("a", "b"))
+    assert rn.previous_blocks() == {"a": "OLD A", "b": "OLD B"}
+
+    (figures_dir("b") / rn.STDOUT_FILE).write_text("NEW B", encoding="utf-8")  # only b re-ran
+    written = rn.write_all_results(("a", "b"), keep={"a": rn.previous_blocks()["a"]})
+    text = written.read_text(encoding="utf-8")
+    assert "OLD A" in text and "NEW B" in text and "OLD B" not in text
 
 
 def test_captions_are_grouped_per_notebook_in_order(isolated_output, monkeypatch) -> None:
@@ -231,6 +269,11 @@ def test_end_to_end_a_notebook_saves_its_own_figure(isolated_output, monkeypatch
     folder = figures_dir("smoke")
     assert (folder / "01_line.pdf").is_file()
     assert not list(folder.glob("*.png"))  # PDF only
+
+    # ...and the notebook FILE now holds the run: the inline figure and the printed summary.
+    outputs = json.loads((nb_dir / "smoke.ipynb").read_text(encoding="utf-8"))["cells"][0]["outputs"]
+    assert any("image/png" in o.get("data", {}) for o in outputs), "the figure is not in the notebook"
+    assert any(o.get("name") == "stdout" and "SMOKE SUMMARY" in o["text"] for o in outputs)
 
     from src.utils.paths import all_results_path, captions_path
 

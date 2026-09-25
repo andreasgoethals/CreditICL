@@ -175,6 +175,62 @@ The one thing to do differently.
 
 ## Runs
 
+## 24-09-2026 — Exp1 phase 2 benchmark — **COMPLETE 92/92; no credit prior beats the control on development, credit-only is worse on both tracks**
+
+**Submitted** 24-09-2026 20:45 | **jobs** 11614376 (LGD), 11614377 (PD), each `--array=0-45%8`
+(45 checkpoints + the reference column) | **cluster** Mindwell `gpu_b200`, 2 nodes | **Commit**
+`2034cc2`, dirty checkout | **GPUs** 1 × B200 per task | **walltime** LGD 20:50–21:09, PD 21:06–22:00
+
+### Configuration
+- `python -m src.utils.run_experiment 1 --submit` → `scripts/slurm/benchmark.slurm`, `EXP=1`, both
+  tracks, scoring the 90 checkpoints of the completed phase 1 (entry below). Context cap 1,024
+  rows, evaluation seeds 0, 1, 2; reference column tabiclv2, tabpfn3, catboost, linear.
+- **Anything edited by hand since the last run:** nothing in the evaluation code; `2034cc2` changed
+  notebooks, docs and plotting only.
+
+### Results
+Read from the 92 task logs (the result CSVs stay on project storage), with `src/eval/selection.py`'s
+rule: development datasets only, each arm's mean over its dataset × evaluation-seed cells, then the
+mean and SD over training seeds. Holdout is shown for reference, never used to choose.
+
+| | PD dev ROC-AUC | PD holdout | LGD dev R² | LGD holdout |
+|---|---|---|---|---|
+| best control (cf 0) | 0.7326 ± 0.0007 (`banded`) | 0.7281 | 0.5197 ± 0.0029 (`tabicl`) | 0.4590 |
+| best credit prior | 0.7325 ± 0.0016 (cf 0.5 `banded` aggressive) | 0.7266 | 0.5182 ± 0.0022 (cf 0.5 `banded` aggressive) | 0.4479 |
+| cf 0 and cf 0.5, all 12 configurations | 0.7303–0.7326 | 0.7208–0.7281 | 0.5143–0.5197 | 0.4440–0.4601 |
+| cf 1, all 6 configurations | 0.7009–0.7151 | 0.6765–0.6901 | −0.081–0.009 | −0.219 to −0.033 |
+| released TabICLv2 | 0.7322 | 0.7370 | 0.5337 | 0.4983 |
+| TabPFN-3 | 0.7447 | 0.7665 | 0.6131 | 0.5515 |
+| CatBoost | 0.7340 | 0.7762 | 0.5756 | 0.4952 |
+| linear / logistic | 0.7246 | 0.7278 | 0.3874 | 0.3135 |
+
+- **Out of domain:** PD ROC-AUC 0.947–0.952 for cf 0 / 0.5 against 0.931–0.940 for cf 1 (released
+  TabICLv2 0.953); LGD R² 0.710–0.723 for cf 0 / 0.5 against −0.01–0.07 for cf 1 (TabICLv2 0.753).
+- **Files** `output/logs/bench_exp1_{pd,lgd}_*_j1161437{6,7}_a*.log`; results CSVs under
+  `/lustre1/project/stg_00211/CreditICL/output/results/{pd,lgd,ood}/eval/`.
+
+### Bugs and anomalies
+- None in the run: all 92 tasks `END status=OK`; every credit cell scored (42/42 per PD arm, 21/21
+  per LGD arm, 168/168 and 84/84 for the reference column); 0 failed out-of-domain cells.
+- **cf 1 on LGD collapses** — R² ≈ 0 on development, holdout and out-of-domain data alike, in all six
+  configurations. Cause not established.
+
+### Interpretation
+- **Show:** on development data every cf 0 and cf 0.5 configuration lies within 0.0023 ROC-AUC (PD)
+  and 0.0054 R² (LGD), about one to two seed SDs, so filter mode and intensity make no measurable
+  difference and the credit prior does not beat the control. Pure credit (cf 1) is clearly worse on
+  both tracks. Our best PD models match the released TabICLv2 on development at 2.5 % of its budget,
+  but trail it on holdout (0.728 against 0.737); on LGD they trail it on both.
+- **Think:** the credit mechanisms add nothing the base prior lacks at this budget, and a prior made
+  only of them removes something the models need — for LGD, apparently everything. A hypothesis.
+- **Test:** Exp2 (continued pre-training from the released weights) asks the same question of a
+  strong model.
+
+### Next
+Fill Exp2/Exp3's `FILL_FROM_EXP1` from notebooks 1.3/1.4 and submit Exp2.
+
+---
+
 ## 24-09-2026 (evening) — Exp1 phase 1, final download — **COMPLETE: 90/90 arms trained; phase 2 not yet run**
 
 **Snapshot** `C:\Users\U0152019\Downloads\output`, downloaded 19:41 CEST; logs 498 files (25 MB),

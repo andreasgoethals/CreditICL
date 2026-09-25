@@ -8,6 +8,19 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 25-09-2026
+
+- `run_notebooks` executes each notebook in a Jupyter kernel and saves its outputs (figures, printed
+  text) into the `.ipynb`, instead of running a flattened copy that left the notebooks empty — a
+  deviation from the template's runner. Needs only `jupyter_client`, which `ipykernel` brings.
+- Notebooks ~2.5× faster: the prior notebooks draw their tasks in parallel worker processes
+  (`src/visualize/draw.py`, 8 per notebook) — full run 12.5 → 4.9 min (0.2: 725 → 288 s, 0.3:
+  626 → 239 s). Draws under 24 tasks are unchanged.
+- `run_notebooks` prints a line per finished notebook and a 30 s heartbeat; `--only` takes a stem
+  or its start (`--only 1.`); partial runs and `--summaries-only` no longer erase the other
+  notebooks' summaries.
+- `output/results/` ignored: the ~550 benchmark CSVs downloaded from project storage.
+
 ## 24-09-2026
 
 - Exp1 phase 1 complete (90/90): final download recorded; `output/manifests` refreshed and notebooks

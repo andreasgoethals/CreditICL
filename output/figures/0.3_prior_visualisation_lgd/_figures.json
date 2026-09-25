@@ -34,5 +34,23 @@
     "stem": "06_informative_missingness",
     "name": "informative_missingness",
     "caption": "Share of values missing against the LGD outcome, sextile midpoints, on a controlled table of 4,000 rows, under missingness completely at random (coupling 0) and missingness tied to the outcome (coupling 2)."
+  },
+  {
+    "index": 7,
+    "stem": "07_predictability",
+    "name": "predictability",
+    "caption": "ExtraTrees out-of-bag pseudo-R\u00b2 per task for 120 unfiltered tasks of each prior and per real LGD dataset (mean over three 1,024-row samples), with each row's median; the shaded band marks the range kept by the banded filter and hollow points the tasks rejected by the tabicl filter at p of 0.05 or more."
+  },
+  {
+    "index": 8,
+    "stem": "08_side_by_side_tables",
+    "name": "side_by_side_tables",
+    "caption": "Twelve random rows of one generated credit-prior task and of one real LGD dataset as heatmaps, the seven most varied columns plus the target separated by a vertical rule, each column min-max scaled to its own range."
+  },
+  {
+    "index": 9,
+    "stem": "09_spectrum_by_variant",
+    "name": "spectrum_by_variant",
+    "caption": "Eigenvalue spectra of the feature correlation matrix, each normalised by its largest eigenvalue and plotted against eigenvalue rank over the number of varying columns, for 40 generated tasks per prior and every real LGD dataset; bold lines are medians."
   }
 ]

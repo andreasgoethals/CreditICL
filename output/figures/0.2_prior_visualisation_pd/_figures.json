@@ -16,5 +16,35 @@
     "stem": "03_correlated_defaults",
     "name": "correlated_defaults",
     "caption": "Left: histogram of the realised default rate over 80 generated tasks with the target rate fixed at 15%, under mild and aggressive asset correlation, standard deviations in the legend. Right: standard deviation of the realised rate against the asset correlation rho at five values, with the Basel IRB corporate cap of 0.24 dashed."
+  },
+  {
+    "index": 4,
+    "stem": "04_shift_kinds",
+    "name": "shift_kinds",
+    "caption": "Context against query mean per generated task, one panel per shift kind (cohort, covariate, prior probability, selection), 60 tasks with the shift switched on and 60 without; default rates for the target shifts, the shifted feature in standard deviations for the covariate shift, and the dashed line where query equals context."
+  },
+  {
+    "index": 5,
+    "stem": "05_informative_missingness",
+    "name": "informative_missingness",
+    "caption": "Share of values missing for non-defaulters and defaulters on a controlled table of 4,000 rows, under missingness completely at random (coupling 0) and missingness tied to the outcome (coupling 2)."
+  },
+  {
+    "index": 6,
+    "stem": "06_predictability",
+    "name": "predictability",
+    "caption": "ExtraTrees out-of-bag pseudo-R\u00b2 per task for 120 unfiltered tasks of each prior and per real PD dataset (mean over three 1,024-row samples), with each row's median; the shaded band marks the range kept by the banded filter and hollow points the tasks rejected by the tabicl filter at p of 0.05 or more."
+  },
+  {
+    "index": 7,
+    "stem": "07_side_by_side_tables",
+    "name": "side_by_side_tables",
+    "caption": "Twelve random rows of one generated credit-prior task and of one real PD dataset as heatmaps, the seven most varied columns plus the target separated by a vertical rule, each column min-max scaled to its own range."
+  },
+  {
+    "index": 8,
+    "stem": "08_spectrum_by_variant",
+    "name": "spectrum_by_variant",
+    "caption": "Eigenvalue spectra of the feature correlation matrix, each normalised by its largest eigenvalue and plotted against eigenvalue rank over the number of varying columns, for 40 generated tasks per prior and every real PD dataset; bold lines are medians."
   }
 ]

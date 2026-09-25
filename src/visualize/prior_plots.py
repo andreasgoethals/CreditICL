@@ -21,8 +21,6 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 
-from src.prior.generator import TaskGenerator
-from src.prior.rng import PriorRNG
 from src.utils.config import expand_with_seeds, load
 from src.utils.target_stats import target_stats
 from src.visualize import style
@@ -41,13 +39,15 @@ def sample_tasks(
     `credit_fraction=None` uses whatever the config says. Override it to compare
     the original prior (0.0) against ours (1.0) side by side.
     """
+    from src.visualize.draw import draw
+
     cfg = expand_with_seeds(load(config_path))[grid_index]
     task = cfg["task"]
     if credit_fraction is not None:
         cfg["prior"]["credit_fraction"] = credit_fraction
 
-    gen = TaskGenerator(cfg["prior"], task, PriorRNG(seed))
-    tasks = [gen.sample() for _ in range(n)]
+    # In parallel worker processes for a large draw (src/visualize/draw.py).
+    tasks, filter_summary = draw(task, cfg["prior"], n, seed)
 
     info = {
         "config": config_path,
@@ -55,7 +55,7 @@ def sample_tasks(
         "credit_fraction": cfg["prior"]["credit_fraction"],
         "n_sampled": n,
         "sources": {s: sum(t.source == s for t in tasks) for s in ("base", "credit")},
-        "filter": gen.filter_summary(),
+        "filter": filter_summary,
     }
     return tasks, info
 

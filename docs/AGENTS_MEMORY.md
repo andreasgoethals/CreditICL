@@ -37,6 +37,7 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 24-09-2026 | Exp1 phase 2 benchmark: 11614376 (LGD), 11614377 (PD), Mindwell, arrays 0-45%8 | **COMPLETE 92/92, all OK; credit prior ≈ control on dev, cf 1 worse on both tracks** | PD dev ROC-AUC: best control 0.7326, best credit (cf 0.5 banded aggr) 0.7325, cf 1 0.70–0.72, released TabICLv2 0.7322. LGD dev R²: control 0.520, cf 0.5 ≤ 0.518, cf 1 ≈ 0 (collapse, also OOD). All cf 0/0.5 configs within 1–2 seed SDs. Commit `2034cc2` |
 | 24-09-2026 | Exp1 final download, 19:41; last jobs PD 11604659 / 11613401 / 11613402, LGD 11591463_43 | **COMPLETE: 90/90 arms, all `END status=OK`; phase 2 not run** | ≈1,354 GPU-h (PD 587, LGD 767; banded arms 5–7× the rest). PD monitor (german+myhom, final step): control 0.672, cf 0.5 0.669, cf 1 0.646; OOD 0.997/0.992/0.975. LGD monitor unusable (base_model NaN in 30/45). Monitoring protocols differ — do not rank on them; phase 2 decides |
 | 24-09-2026 | Exp1 snapshot at 09:31 CEST; PD 11598087 → 11604654–61, LGD 11591463_43 | **86/90 complete: PD 42/45, LGD 44/45; four advancing, no new training crashes** | Six PD retries completed; all eight overnight walltime continuations resumed at the exact saved step. Remaining PD a19=11000, a25=12250, a40=7700; LGD a43=12200 of 12500. Conditional finish today ~17:30–18:30 plus queue delay. New PD monitor: 160 finite rows; old LGD monitor still has NaNs in 30 arms. Final benchmark results were not in this download |
 | 23-09-2026 | Exp1 PD retry 11598087, Mindwell; indices 1,4,10,16,19,25,31,34,40 | **SUBMITTED at 12:22 CEST; execution/results not yet supplied** | Updated launcher submitted only the nine unfinished PD arms; counts remain PD 36/45, LGD 44/45 with LGD still running. Failed-log cleanup returned without error at 12:23; checkpoints and successful logs were outside its scope |
@@ -70,6 +71,12 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
+
+### 25-09-2026 — `run_notebooks --only` erased the other notebooks' summaries
+- **Tried:** re-running just the notebooks the new data touched (`--only 1.1_pd_training ...`).
+- **Result:** `All_Results.md` and `CAPTIONS.md` came back holding only those notebooks; `--summaries-only` wrote "(no output captured)" for all eleven.
+- **Why:** both documents were rebuilt from the executed notebooks alone, and each run deletes the captured text it read.
+- **Instead:** fixed — a run always writes every notebook, keeping the previous block of those it did not execute (`run_notebooks.previous_blocks`).
 
 ### 24-09-2026 — A fixed seed does not reproduce the PD prior across processes
 - **Tried:** quoting 0.2's PD prior numbers from one run and checking them against the next run with the same seed.

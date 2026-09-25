@@ -121,16 +121,19 @@ desktop.ini
 # ---------------------------------------------------------------------------
 # output/ — THE single root for everything the code generates.
 #
-# Committed:  CAPTIONS.md, All_Results.md, PNG figures, small result CSVs. These are
-#             the readable record of a run and are worth having in git history.
-# Ignored:    PDF figures (regenerated, and the PNG carries the same picture), logs,
-#             per-run metrics, manifests, and any large array.
+# Committed:  CAPTIONS.md, All_Results.md and each notebook's _figures.json — the
+#             readable record of a run, worth having in git history.
+# Ignored:    PDF figures (regenerated), logs, per-run metrics, manifests, results
+#             (downloaded from the cluster's project storage: ~550 CSVs per benchmark),
+#             and any large array.
 # ---------------------------------------------------------------------------
 output/**/*.pdf
 output/logs/*
 !output/logs/.gitkeep
 output/manifests/*
 !output/manifests/.gitkeep
+output/results/*
+!output/results/.gitkeep
 output/**/*.npy
 output/**/*.npz
 output/**/*.parquet

@@ -135,21 +135,21 @@ datasets sampled : original=500, credit=500
 --- PER VARIANT --------------------------------------------------------------
 
 original:
-  shape          rows 1024 to 1024 (median 1024) | varying features 3 to 98 (median 48.5) (padded to 100)
-  base rate      1.6% to 99.5% (median 50.0%)
-  below 5%       1.8% of datasets
-  below 10%      3.0% of datasets
+  shape          rows 1024 to 1024 (median 1024) | varying features 3 to 98 (median 51) (padded to 100)
+  base rate      0.4% to 99.2% (median 52.0%)
+  below 5%       1.6% of datasets
+  below 10%      3.8% of datasets
 
 credit:
-  shape          rows 1024 to 1024 (median 1024) | varying features 3 to 100 (median 83) (padded to 100)
-  base rate      1.3% to 45.6% (median 15.6%)
-  below 5%       10.6% of datasets
-  below 10%      29.4% of datasets
+  shape          rows 1024 to 1024 (median 1024) | varying features 12 to 100 (median 84) (padded to 100)
+  base rate      1.9% to 53.1% (median 14.2%)
+  below 5%       14.0% of datasets
+  below 10%      34.4% of datasets
 
 --- AGAINST THE REAL DATASETS ------------------------------------------------
 real base rate: algorithmwatch=37.8%, bank_status=22.6%, cobranded=24.6%, german=30.0%, gmsc=6.7%, hackerearth=23.6%, hmeq=19.9%, home_credit=8.1%, lendingclub=16.0%, loan_default=9.3%, myhom=40.0%, taiwan_creditcard=22.1%, thomas=26.4%, vehicle_loan=21.7%
-  original: range [0.016, 0.995] spans 14/14 | median 0.500 | 3/14 datasets have >=10% of draws within 5pp
-  credit: range [0.013, 0.456] spans 14/14 | median 0.156 | 12/14 datasets have >=10% of draws within 5pp
+  original: range [0.004, 0.992] spans 14/14 | median 0.520 | 2/14 datasets have >=10% of draws within 5pp
+  credit: range [0.019, 0.531] spans 14/14 | median 0.142 | 12/14 datasets have >=10% of draws within 5pp
 
   Read the LAST column, not the first. A range can span a real value on
   the strength of a few outlier draws while placing almost no mass near it,
@@ -167,8 +167,8 @@ closer-looking prior actually transfers is what the training and evaluation
 pipelines measure.
 
 PREDICTABILITY — the filter's pseudo-R² (banded keeps [0.02, 0.3])
-  original prior  120 unfiltered tasks | median 0.34 | banded keeps 18% | tabicl rejects 32%
-  credit prior    120 unfiltered tasks | median 0.57 | banded keeps 6% | tabicl rejects 3%
+  original prior  120 unfiltered tasks | median 0.20 | banded keeps 15% | tabicl rejects 44%
+  credit prior    120 unfiltered tasks | median 0.57 | banded keeps 7% | tabicl rejects 1%
   real datasets   14 | median 0.06 | inside the band 50%
     loan_default -0.04, myhom -0.01, home_credit -0.01, vehicle_loan -0.00, lendingclub 0.01, algorithmwatch 0.02, thomas 0.03, gmsc 0.10, taiwan_creditcard 0.14, hackerearth 0.17, bank_status 0.17, german 0.19, cobranded 0.20, hmeq 0.43
 
@@ -218,27 +218,27 @@ datasets sampled : original=500, credit=500
 --- PER VARIANT --------------------------------------------------------------
 
 original:
-  shape          rows 1024 to 1024 (median 1024) | varying features 3 to 95 (median 54) (padded to 100)
-  in [0,1]       1.0% of datasets
-  boundary mass  0.2% to 100.0% (median 1.0%)
-    at its own min       mean 6.9%  (NOT 0)
-    at its own max       mean 3.8%  (NOT 1)
+  shape          rows 1024 to 1024 (median 1024) | varying features 6 to 97 (median 46.5) (padded to 100)
+  in [0,1]       0.4% of datasets
+  boundary mass  0.2% to 100.0% (median 1.4%)
+    at its own min       mean 6.7%  (NOT 0)
+    at its own max       mean 5.6%  (NOT 1)
     target is not on [0,1], so these are scale-free ties at the extremes,
       largely the +-4 SD outlier clamp — not recovery or loss.
-  any atoms      48.0% of datasets
+  any atoms      53.4% of datasets
 
 credit:
-  shape          rows 1024 to 1024 (median 1024) | varying features 13 to 100 (median 86) (padded to 100)
+  shape          rows 1024 to 1024 (median 1024) | varying features 6 to 100 (median 81) (padded to 100)
   in [0,1]       100.0% of datasets
-  boundary mass  6.2% to 58.7% (median 32.4%)
-    at 0 (full recovery) mean 15.9%
-    at 1 (total loss)    mean 15.7%
+  boundary mass  5.9% to 59.7% (median 31.7%)
+    at 0 (full recovery) mean 16.0%
+    at 1 (total loss)    mean 15.8%
   any atoms      100.0% of datasets
 
 --- AGAINST THE REAL DATASETS ------------------------------------------------
 real boundary mass: axa=34.2%, base_model=22.4%, base_modelisation=27.6%, heloc=73.0%, lgd_freddie=19.5%, lgd_lendingclub=1.8%, loss2=7.3%
-  original: range [0.002, 1.000] spans 7/7 | median 0.010 | 2/7 datasets have >=10% of draws within 5pp
-  credit: range [0.062, 0.587] spans 5/7 | median 0.324 | 4/7 datasets have >=10% of draws within 5pp
+  original: range [0.002, 1.000] spans 7/7 | median 0.014 | 2/7 datasets have >=10% of draws within 5pp
+  credit: range [0.059, 0.597] spans 5/7 | median 0.317 | 4/7 datasets have >=10% of draws within 5pp
 
   Read the LAST column, not the first. A range can span a real value on
   the strength of a few outlier draws while placing almost no mass near it,
@@ -266,8 +266,8 @@ Each task's target on [0, 1] first: min-max scaled where it is not (the original
 prior's is standardised). Lower is better.
 
   variant            mean   closest real dataset       farthest real dataset
-  credit            0.340   lgd_freddie       0.260   lgd_lendingclub   0.456
-  original          0.351   lgd_freddie       0.073   heloc             0.579
+  credit            0.340   base_model        0.260   lgd_lendingclub   0.458
+  original          0.349   lgd_freddie       0.072   heloc             0.548
 
 Closest to real data: credit (mean 0.340).
 A CAVEAT THAT MATTERS: looking like real data is not the same as training a better
@@ -275,8 +275,8 @@ model. This ranking says which priors are worth the compute; Exp1's training run
 what decide which one actually helps.
 
 PREDICTABILITY — the filter's pseudo-R² (banded keeps [0.05, 0.4])
-  original prior  120 unfiltered tasks | median 0.72 | banded keeps 14% | tabicl rejects 24%
-  credit prior    120 unfiltered tasks | median 0.72 | banded keeps 16% | tabicl rejects 0%
+  original prior  120 unfiltered tasks | median 0.78 | banded keeps 12% | tabicl rejects 18%
+  credit prior    120 unfiltered tasks | median 0.74 | banded keeps 18% | tabicl rejects 0%
   real datasets   7 | median 0.42 | inside the band 43%
     axa 0.20, lgd_freddie 0.22, heloc 0.34, loss2 0.42, base_model 0.43, base_modelisation 0.43, lgd_lendingclub 0.74
 
@@ -433,9 +433,18 @@ References (tfm-library pin e5ce016):
 
 ```
 EXP1 PD RESULTS — the benchmark
-  no benchmark output in output/results/pd/eval/ yet.
-  The benchmark (phase 2) runs once every arm of the track has trained;
-  re-run this notebook after the phase-2 array finishes scoring.
+  49 models on 14 datasets | metrics: roc_auc, pr_auc, brier, ks, calibration_slope
+
+A. WHICH PRIOR DEVELOPMENT SELECTS (ROC-AUC)
+  tabpfn3                                                      0.7447
+  catboost                                                     0.7340
+  exp1_pd__mechanism-rho_range=[0.03,0.12]__prior-credit_fract 0.7326
+
+B. HOW IT DOES ON THE HOLDOUT (ROC-AUC, holdout datasets)
+  credit    mean ROC-AUC = 0.7021
+  control   mean ROC-AUC = 0.7271
+  baseline  mean ROC-AUC = 0.7182
+  credit prior minus control: -0.0251
 
 CREDIT-DOMAIN LITERATURE LANDSCAPE (tfm-library pin e5ce016)
   reported ROC-AUC on real credit datasets, each under its own protocol:
@@ -469,9 +478,18 @@ References (tfm-library pin e5ce016):
 
 ```
 EXP1 LGD RESULTS — the benchmark
-  no benchmark output in output/results/lgd/eval/ yet.
-  The benchmark (phase 2) runs once every arm of the track has trained;
-  re-run this notebook after the phase-2 array finishes scoring.
+  49 models on 7 datasets | metrics: r2, rmse, mae, brier, calibration_slope, boundary_mass_abs_err
+
+A. WHICH PRIOR DEVELOPMENT SELECTS (R²)
+  tabpfn3                                                      0.6132
+  catboost                                                     0.5756
+  tabiclv2                                                     0.5337
+
+B. HOW IT DOES ON THE HOLDOUT (R², holdout datasets)
+  credit    mean R² = 0.1686
+  control   mean R² = 0.4592
+  baseline  mean R² = 0.2627
+  credit prior minus control: -0.2906
 
 References (tfm-library pin e5ce016):
   - SYNTHESIS.md; TabICLv2 §I.7  [editorial+paper]
@@ -565,9 +583,15 @@ References (tfm-library pin e5ce016):
 
 ```
 EXP2 PD RESULTS — the benchmark
-  no benchmark output in output/results/pd/eval/ yet.
-  The benchmark (phase 2) runs once every arm of the track has trained;
-  re-run this notebook after the phase-2 array finishes scoring.
+  4 models on 14 datasets | metrics: roc_auc, pr_auc, brier, ks, calibration_slope
+
+A. WHICH PRIOR DEVELOPMENT SELECTS (ROC-AUC)
+  tabpfn3                                                      0.7447
+  catboost                                                     0.7340
+  tabiclv2                                                     0.7322
+
+B. HOW IT DOES ON THE HOLDOUT (ROC-AUC, holdout datasets)
+  baseline  mean ROC-AUC = 0.7519
 
 CREDIT-DOMAIN LITERATURE LANDSCAPE (tfm-library pin e5ce016)
   reported ROC-AUC on real credit datasets, each under its own protocol:
@@ -602,9 +626,15 @@ References (tfm-library pin e5ce016):
 
 ```
 EXP2 LGD RESULTS — the benchmark
-  no benchmark output in output/results/lgd/eval/ yet.
-  The benchmark (phase 2) runs once every arm of the track has trained;
-  re-run this notebook after the phase-2 array finishes scoring.
+  4 models on 7 datasets | metrics: r2, rmse, mae, brier, calibration_slope, boundary_mass_abs_err
+
+A. WHICH PRIOR DEVELOPMENT SELECTS (R²)
+  tabpfn3                                                      0.6132
+  catboost                                                     0.5756
+  tabiclv2                                                     0.5337
+
+B. HOW IT DOES ON THE HOLDOUT (R², holdout datasets)
+  baseline  mean R² = 0.4646
 
 References (tfm-library pin e5ce016):
   - SYNTHESIS.md; TabICLv2 §I.7  [editorial+paper]
