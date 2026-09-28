@@ -78,6 +78,12 @@ fixed, because the fix is one changelog line and the dead end was the hour.
 - **Why (likely, untested):** TabICL's prior standardises regression targets and `TabICLRegressor.fit` standardises y (`y_scaler_`), so the benchmark feeds standardised targets — which a 100 % credit arm never saw; `progress._score` feeds raw [0, 1] targets — which a control arm never saw. Only 50 % arms saw both.
 - **Instead:** read LGD credit-vs-control only at 0 % vs 50 % in the benchmark. Before Exp2 LGD: set `prior.credit.target.target_scaling: standard`, or score one 100 % checkpoint without y standardisation to confirm first (Andreas's call).
 
+### 28-09-2026 — Exp1's PD credit prior ran without its label noise and its underwriting selection
+- **Tried:** reading `config/Exp1_PD.yaml`'s `credit.target` block (`flip_pos_to_neg: 0.10`, `flip_neg_to_pos: 0.01`, `selection: {selection_drop: 0.2, ...}`, `base_rate_range`) as part of the prior Exp1 trained on, as `docs/PRIORS.md` describes it.
+- **Result:** 48 of 48 generated credit tasks carry no flip or selection metadata. Their median pseudo-R² is 0.57, against 0.06 on real PD data and 0.20 for TabICL's prior.
+- **Why:** `apply_pd_target` returns straight after `apply_pd_mechanism` when `mode: mechanism`; steps 2–5 (selection, signal dilution, base rate, label noise) belong to `mode: quantile` only. Notebook 0.2 says so; the config and PRIORS.md do not.
+- **Instead:** for a re-run, apply label noise and selection in mechanism mode too (or drop them from the config), and check the realised pseudo-R² of the credit tasks against real data before training.
+
 ### 25-09-2026 — "The context cap applies to every model" — it applies to two
 - **Tried:** reading the Exp1 benchmark's reference gap and PD Brier scores as matched-context comparisons, as `benchmark.slurm` states ("applies to EVERY model in this array").
 - **Result:** our arms and the released TabICLv2 predict a mean default rate of 0.41 against a base rate of 0.22 (TabPFN-3 0.21, CatBoost 0.22); Brier 0.19–0.22 against 0.12–0.14.
