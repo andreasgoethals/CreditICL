@@ -65,9 +65,8 @@ HIGHER_IS_BETTER = {"auc": True, "ap": True, "r2": True, "spearman": True, "kend
 #: The levers that name an arm, per experiment, and how each reads in a heading. Credit fraction
 #: comes first in both: it is the lever the sweep's rows are grouped by.
 LEVERS = {
-    "exp1": (("credit_fraction", "credit fraction"), ("filter", "filter mode"),
-             ("intensity", "prior intensity")),
-    "exp2": (("credit_fraction", "credit fraction"), ("strategy", "freeze strategy"),
+    "exp1": (("credit_fraction", "prior mix"), ("filter", "filter"), ("intensity", "intensity")),
+    "exp2": (("credit_fraction", "prior mix"), ("strategy", "layers trained"),
              ("l2sp", "L2-SP"), ("lr", "learning rate")),
 }
 
@@ -110,6 +109,31 @@ def load_progress(track: str, exp: str = "exp1") -> dict[str, pd.DataFrame]:
     return out
 
 
+def load_loss_logs(track: str, exp: str = "exp1") -> dict[str, pd.DataFrame]:
+    """`{run_name: DataFrame(step, loss)}` — the training loss every 100 steps from step 100,
+    stitched across an arm's restarts, from `output/logs/<run>_<time>.metrics.jsonl`.
+
+    The progress CSVs log the loss only every 625 steps and start at step 625 — after most of the
+    fall — and three restarted PD arms' progress logs only at ~4,000. Empty when the logs were not
+    downloaded; `training_loss` then falls back to the progress CSVs.
+    """
+    import json as _json
+
+    out: dict[str, pd.DataFrame] = {}
+    for path in sorted(paths.logs_dir().glob(f"{exp}_{track}__*.metrics.jsonl")):
+        run = re.sub(r"_\d{8}_\d{6}\.metrics\.jsonl$", "", path.name)
+        losses = out.setdefault(run, {})
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                rec = _json.loads(line) if line.strip() else {}
+                if "loss" in rec and "step" in rec:
+                    losses[int(rec["step"])] = float(rec["loss"])  # a later segment wins
+        except (OSError, ValueError):
+            continue
+    return {run: pd.DataFrame(sorted(d.items()), columns=["step", "train_loss"])
+            for run, d in out.items() if len(d) >= 2}
+
+
 def load_telemetry(track: str, exp: str = "exp1") -> dict[str, pd.DataFrame]:
     """`{run_name: telemetry DataFrame}` for every started arm of `track` in experiment `exp`."""
     out: dict[str, pd.DataFrame] = {}
@@ -129,62 +153,10 @@ def load_telemetry(track: str, exp: str = "exp1") -> dict[str, pd.DataFrame]:
 
 
 def arm_label(run_name: str) -> str:
-    """A short, readable label from the sweep levers.
-
-    Exp1 arms read `cf1·banded·aggr·s2` (prior levers); Exp2 arms read `cf0.5·icl·l2·lr1e-5`
-    (fine-tuning levers), because the two experiments sweep different knobs. The experiment is
-    taken from the `exp1_`/`exp2_` prefix the run name always carries.
-    """
-    if run_name.startswith("exp2"):
-        return _arm_label_exp2(run_name)
-    cf = re.search(r"credit_fraction=([0-9p.]+)", run_name)
-    fm = re.search(r"filter-mode=([a-z]+)", run_name)
-    seed = re.search(r"__s(\d+)", run_name)
-    intensity = "aggr" if ("0.6" in run_name or "0,6" in run_name or "0.3]" in run_name.split("rho_range=")[-1][:12]) else "mild"
-    # boundary/rho ranges are the two intensity axes; the aggressive arm carries the wider upper bound.
-    if "boundary_mass_range=[0.15" in run_name or "rho_range=[0.12" in run_name:
-        intensity = "aggr"
-    elif "boundary_mass_range=[0.02" in run_name or "rho_range=[0.03" in run_name:
-        intensity = "mild"
-    parts = []
-    if cf:
-        parts.append("cf" + cf.group(1).replace("p", "."))
-    if fm:
-        parts.append(fm.group(1))
-    if cf and cf.group(1) not in ("0", "0.0"):
-        parts.append(intensity)
-    if seed:
-        parts.append("s" + seed.group(1))
-    return "·".join(parts) or run_name[:20]
-
-
-#: How Exp2's freeze strategies read in a label — short enough for a small-multiple title.
-_STRATEGY_SHORT = {"full": "full", "icl_only": "icl", "head_only": "head", "scratch": "scratch"}
-
-
-def _arm_label_exp2(run_name: str) -> str:
-    """Label an Exp2 arm from its fine-tuning levers: credit fraction, freeze strategy,
-    L2-SP on/off, learning rate, seed — e.g. `cf0.5·icl·l2·lr1e-5`."""
-    cf = re.search(r"credit_fraction=([0-9p.]+)", run_name)
-    # A fixed set, matched explicitly: `[a-z_]+` is greedy and swallows the `__prior…` that
-    # follows `strategy=icl_only` in the run name.
-    strat = re.search(r"strategy=(full|icl_only|head_only|scratch)", run_name)
-    l2 = re.search(r"l2sp_alpha=([0-9pm.e+-]+)", run_name)
-    lr = re.search(r"-lr=([0-9pm.e+-]+)", run_name)
-    seed = re.search(r"__s(\d+)", run_name)
-    parts: list[str] = []
-    if cf:
-        parts.append("cf" + cf.group(1).replace("p", "."))
-    if strat:
-        parts.append(_STRATEGY_SHORT.get(strat.group(1), strat.group(1)))
-    if l2:
-        # `_fmt` writes 0.0 as "0" and 0.003 as "0p003"; only the latter is L2-SP on.
-        parts.append("l2" if l2.group(1) not in ("0", "0p0") else "noL2")
-    if lr:
-        parts.append("lr" + lr.group(1).replace("m", "-").replace("p", "."))
-    if seed:
-        parts.append("s" + seed.group(1))
-    return "·".join(parts) or run_name[:20]
+    """An arm's plain-language name, e.g. `50 % credit · band filter · strong correlation ·
+    seed 2` (Exp1) or `50 % credit · ICL stack + head · L2-SP · lr 1e-05 · seed 0` (Exp2) — see
+    `style.arm_name`, which the results figures share."""
+    return style.arm_name(run_name)
 
 
 def _is_control(run_name: str) -> bool:
@@ -207,9 +179,10 @@ def _seed_of(run_name: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def _config_label(run_name: str) -> str:
-    """`arm_label` without the seed — the label of a configuration."""
-    return re.sub(r"·s\d+$", "", arm_label(run_name))
+def _config_label(run_name: str, *, mix: bool = True) -> str:
+    """`arm_label` without the seed — the label of a configuration (`mix=False` also drops the
+    credit share, for rows already grouped by it)."""
+    return style.arm_name(run_name, seed=False, mix=mix)
 
 
 #: The order a lever's values are listed in, everywhere: the filter from none to strictest, the
@@ -430,7 +403,7 @@ def _cf_handles(fractions, *, markers: bool = True) -> list[Any]:
     return [Line2D([], [], color=style.credit_fraction_colour(f),
                    marker=style.credit_fraction_marker(f) if markers else None,
                    linestyle="none" if markers else "-", lw=2.0, markersize=5,
-                   label=f"cf = {f:g}" + (" (control)" if f == 0 else ""))
+                   label=style.prior_mix_label(f, control=True))
             for f in sorted(set(fractions))]
 
 
@@ -481,7 +454,7 @@ def sweep_map(track: str, exp: str = "exp1", metric: str | None = None):
         def row_of(n: str) -> str:
             return re.sub(r"credit_fraction=[0-9p.]+", "credit_fraction=x", _config_of(n))
         col_values = sorted({_cf_value(n) for n in names})
-        col_labels = [f"cf = {v:g}" for v in col_values]
+        col_labels = [style.prior_mix_label(v) for v in col_values]
 
         def col_of(n: str) -> int:
             return col_values.index(_cf_value(n))
@@ -542,7 +515,7 @@ def sweep_map(track: str, exp: str = "exp1", metric: str | None = None):
             if fractions[i] != fractions[i - 1]:
                 ax.axhline(i - 0.5, color="white", lw=2.4)
     ax.set_yticks(range(len(rows)))
-    ax.set_yticklabels([_config_label(c).replace("cfx·", "") for c in rows],
+    ax.set_yticklabels([_config_label(c) for c in rows],
                        fontsize=6.5 if len(rows) > 20 else 7)
     ax.set_xticks(range(len(col_values)))
     ax.set_xticklabels(col_labels)
@@ -625,7 +598,7 @@ def monitoring_coverage(track: str, exp: str = "exp1", metric: str | None = None
     # The credit-fraction groups label the x axis — below the map, where nothing competes with them.
     ends = starts[1:] + [len(names)]
     ax.set_xticks([(a + b - 1) / 2 for a, b in zip(starts, ends)])
-    ax.set_xticklabels([f"cf = {fractions[a]:g}  ({b - a} arms)" for a, b in zip(starts, ends)],
+    ax.set_xticklabels([f"{style.prior_mix_label(fractions[a])}  ({b - a} arms)" for a, b in zip(starts, ends)],
                        fontsize=7)
     ax.tick_params(axis="x", length=0)
     ax.set_yticks(range(len(datasets)))
@@ -650,7 +623,7 @@ def throughput(track: str, exp: str = "exp1"):
     """
     tel = load_telemetry(track, exp)
     runs = load_progress(track, exp)
-    lever, lever_label = ("filter", "filter mode") if exp == "exp1" else ("strategy", "freeze strategy")
+    lever, lever_label = ("filter", "filter") if exp == "exp1" else ("strategy", "layers trained")
     style.apply()
     speed: dict[str, float] = {}
     for name, df in tel.items():
@@ -683,7 +656,7 @@ def throughput(track: str, exp: str = "exp1"):
                         color=style.INK)
     for ax in (ax1, ax2):
         ax.set_xticks(range(len(groups)))
-        ax.set_xticklabels(groups)
+        ax.set_xticklabels([_value_label(lever, g, track) for g in groups])
         ax.set_xlim(-0.5, len(groups) - 0.1)
         ax.set_xlabel(lever_label)
         ax.set_ylim(bottom=0)
@@ -697,29 +670,34 @@ def throughput(track: str, exp: str = "exp1"):
 
 
 def training_loss(track: str, exp: str = "exp1"):
-    """Training loss against step for every arm, coloured by credit fraction, with the median of
-    the finished arms of each fraction drawn bold.
+    """Training loss against step (logarithmic) for every arm, coloured by credit share, with the
+    median of each share drawn bold.
 
-    The logged loss is one batch's loss, so each arm is drawn as a rolling mean over three logged
-    points. The loss is computed on each arm's OWN synthetic tasks, so its level is a property of
-    the prior (a low base rate makes cross-entropy small), not of how well the arm learned: read
-    each line's shape — does it descend, does it diverge — never one line's level against another's.
+    From the job logs (`load_loss_logs`: every 100 steps from step 100) when downloaded, so the
+    steep fall of the first ~1,000 steps is visible; the logged loss is one batch's, so each arm is
+    a rolling mean over five points. The loss is computed on each arm's OWN synthetic tasks, so its
+    level is a property of the prior (our credit prior's tasks are easier, the band filter keeps
+    harder ones), not of how well the arm learned: read each line's shape — does it descend, does
+    it diverge — never one line's level against another's.
     """
     runs = load_progress(track, exp)
     agg = _aggregate(runs)
     style.apply()
-    if not runs:
-        return _placeholder("no progress logs in output/manifests/ yet")
+    # The full curve from the job logs when they were downloaded — every 100 steps from step 100,
+    # across restarts; otherwise the progress CSVs' every-625-steps points.
+    curves = load_loss_logs(track, exp) or {n: df.dropna(subset=["train_loss"]) for n, df in runs.items()}
+    if not curves:
+        return _placeholder("no loss logs in output/logs/ or output/manifests/ yet")
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.46))
-    grid = _common_step_grid(agg)
+    steps = [int(d["step"].min()) for d in curves.values() if len(d)] + [100]
+    grid = np.geomspace(max(1, min(steps)), max(int(d["step"].max()) for d in curves.values()), 80)
     by_cf: dict[float, list] = {}
-    for name, df in runs.items():
-        d = df.dropna(subset=["train_loss"])
+    for name, d in curves.items():
         if len(d) < 2:
             continue
         f = _cf_value(name)
-        smooth = _smooth(d["train_loss"])
-        finished = name in agg
+        smooth = d["train_loss"].rolling(5, min_periods=1, center=True).mean()
+        finished = name in agg or not agg
         ax.plot(d["step"], smooth, color=style.credit_fraction_colour(f), alpha=0.3, lw=0.7,
                 ls="-" if finished else ":", zorder=1)
         if finished:
@@ -728,8 +706,9 @@ def training_loss(track: str, exp: str = "exp1"):
     for f in sorted(by_cf):
         ax.plot(grid, _complete(by_cf[f], np.median), color=style.credit_fraction_colour(f),
                 lw=2.2, zorder=4, marker=style.credit_fraction_marker(f), markevery=10,
-                markersize=4, label=f"cf = {f:g}: median of {len(by_cf[f])} finished arms")
-    ax.set_xlabel("training step")
+                markersize=4, label=f"{style.prior_mix_label(f)}: median of {len(by_cf[f])} arms")
+    ax.set_xscale("log")
+    ax.set_xlabel("training step (logarithmic)")
     ax.set_ylabel("training loss (cross-entropy)" if track == "pd"
                   else "training loss (pinball)")
     ax.set_ylim(bottom=0)
@@ -770,7 +749,7 @@ def metric_over_training(track: str, exp: str = "exp1", metric: str | None = Non
     for f in sorted(by_cf):
         ax.plot(grid, _complete(by_cf[f]), color=style.credit_fraction_colour(f), lw=2.2, zorder=4,
                 marker=style.credit_fraction_marker(f), markevery=10, markersize=4,
-                label=f"cf = {f:g}: mean of {len(by_cf[f])} finished arms")
+                label=f"{style.prior_mix_label(f)}: mean of {len(by_cf[f])} finished arms")
     if not by_cf:
         _empty(ax, "no arm carries a development score yet")
         return fig
@@ -797,7 +776,7 @@ def credit_vs_control_over_training(track: str, exp: str = "exp1", metric: str |
         curve = _curve(df, metric, kept, grid)
         if curve is not None:
             groups["control" if _is_control(name) else "credit prior"].append(curve)
-    labels = {"credit prior": "credit prior (cf > 0)", "control": "control (cf = 0)"}
+    labels = {"credit prior": "with our credit prior (> 0 % credit)", "control": "control: 0 % credit (TabICL prior only)"}
     for key, colour in (("credit prior", style.CREDIT), ("control", style.ORIGINAL)):
         stack = groups[key]
         if not stack:
@@ -865,7 +844,7 @@ def metric_by_lever(track: str, lever: str, exp: str = "exp1", metric: str | Non
     for i, v in enumerate(_value_order(lever, by_val)):
         colour, ls = _lever_style(lever, v, i)
         ax.plot(grid, _complete(by_val[v]), color=colour, ls=ls, lw=2.0,
-                label=f"{v}  ({len(by_val[v])} arms)", **_lever_marker(lever, v))
+                label=f"{_value_label(lever, v, track)}  ({len(by_val[v])} arms)", **_lever_marker(lever, v))
     ax.set_xlabel("training step")
     ax.set_ylabel(f"development {style.metric_label(metric)}")
     style.legend_below(ax, ncol=3)
@@ -896,7 +875,8 @@ def metric_by_levers(track: str, exp: str = "exp1", metric: str | None = None):
         for i, v in enumerate(_value_order(lever, by_val)):
             colour, ls = _lever_style(lever, v, i)
             ax.plot(grid, _complete(by_val[v]), color=colour, ls=ls, lw=1.8,
-                    label=f"{v} ({len(by_val[v])})", **_lever_marker(lever, v))
+                    label=f"{_value_label(lever, v, track)} ({len(by_val[v])} arms)",
+                    **_lever_marker(lever, v))
             drawn = True
         ax.set_title(label, loc="left", fontsize=9)
         ax.set_xlabel("training step")
@@ -950,7 +930,7 @@ def final_metric_by_lever(track: str, exp: str = "exp1", metric: str | None = No
                            linewidth=0.3, zorder=3)
             ax.plot([i - 0.26, i + 0.26], [vals.mean()] * 2, color=style.INK, lw=1.8, zorder=4)
         ax.set_xticks(range(len(xs)))
-        ax.set_xticklabels([x.replace("cf=", "") for x in xs], fontsize=7)
+        ax.set_xticklabels([_value_label(lever, x, track) for x in xs], fontsize=7)
         ax.set_xlim(-0.5, len(xs) - 0.5)
         ax.set_xlabel(label)
     for ax in flat[len(levers):]:
@@ -1015,7 +995,7 @@ def lever_interaction(track: str, exp: str = "exp1", metric: str | None = None):
             ax.plot(np.arange(len(values)) + offset, means, color=colour, lw=1.6,
                     marker=style.credit_fraction_marker(f), markersize=3.5, zorder=4)
         ax.set_xticks(range(len(values)))
-        ax.set_xticklabels(values, fontsize=7)
+        ax.set_xticklabels([_value_label(lever, v, track) for v in values], fontsize=7)
         ax.set_xlim(-0.5, len(values) - 0.5)
         ax.set_xlabel(label)
     for ax in flat[len(levers):]:
@@ -1024,10 +1004,10 @@ def lever_interaction(track: str, exp: str = "exp1", metric: str | None = None):
         row[0].set_ylabel(f"final development {style.metric_label(metric)}")
     handles = [Line2D([], [], color=style.credit_fraction_colour(f), lw=1.6,
                       marker=style.credit_fraction_marker(f), markersize=4,
-                      label=f"cf = {f:g}: mean ± 1 SD over seeds") for f in fractions]
+                      label=f"{style.prior_mix_label(f)}: mean ± 1 SD over seeds") for f in fractions]
     if band_drawn:
         handles.append(Patch(facecolor=style.ORIGINAL, alpha=0.4,
-                             label="control (cf = 0): mean ± 1 SD"))
+                             label="control, 0 % credit: mean ± 1 SD"))
     style.legend_below(fig, handles, ncol=2)
     return fig
 
@@ -1518,6 +1498,28 @@ def _lever_value(run_name: str, lever: str) -> str | None:
     return v
 
 
+#: The swept range behind each intensity, per track — the key of `style.INTENSITY_LABEL`.
+_INTENSITY_RANGE = {("pd", "mild"): "[0.03,0.12]", ("pd", "aggressive"): "[0.12,0.3]",
+                    ("lgd", "mild"): "[0.02,0.3]", ("lgd", "aggressive"): "[0.15,0.6]"}
+
+
+def _value_label(lever: str, value: str, track: str | None = None) -> str:
+    """How a lever's value reads in a legend, a tick or a summary line: the words of the notebooks'
+    naming glossary (`50 % credit`, `band filter`, `strong correlation`), never the key
+    `_lever_value` groups by (`cf=0.5`, `banded`, `aggressive`)."""
+    if lever == "credit_fraction":
+        return style.prior_mix_label(float(value.split("=")[1]))
+    if lever == "filter":
+        return style.FILTER_LABEL.get(value, value)
+    if lever == "intensity":
+        return style.INTENSITY_LABEL.get(_INTENSITY_RANGE.get((track or "", value), ""), value)
+    if lever == "strategy":
+        return style.STRATEGY_LABEL.get(value, value)
+    if lever == "l2sp":
+        return {"L2-SP on": "L2-SP", "L2-SP off": "no L2-SP"}.get(value, value)
+    return value
+
+
 # ---------------------------------------------------------------------------
 # Summary — printed last, in the notebook's section order
 # ---------------------------------------------------------------------------
@@ -1598,7 +1600,8 @@ def training_summary(track: str, exp: str = "exp1") -> str:
             if len(m):
                 mems.append(float(m.max()))
     if speeds:
-        parts = [f"{k} {np.median(speeds[k]):.2f} steps/s (~{target / np.median(speeds[k]) / 3600:.0f} h)"
+        parts = [f"{_value_label(lever, k, track)} {np.median(speeds[k]):.2f} steps/s "
+                 f"(~{target / np.median(speeds[k]) / 3600:.0f} h)"
                  for k in _value_order(lever, speeds)]
         lines.append(f"  median speed by {lever}: " + " | ".join(parts))
     if utils:
@@ -1612,8 +1615,8 @@ def training_summary(track: str, exp: str = "exp1") -> str:
         if len(d):
             losses.setdefault(_cf_value(name), []).append(float(d["train_loss"].tail(3).mean()))
     if losses:
-        lines.append("  final training loss by credit fraction (each on its own prior's tasks): "
-                     + " | ".join(f"cf {f:g} {np.median(v):.3f}" for f, v in sorted(losses.items())))
+        lines.append("  final training loss by prior mix (each on its own prior's tasks): "
+                     + " | ".join(f"{style.prior_mix_label(f)} {np.median(v):.3f}" for f, v in sorted(losses.items())))
 
     finals = _finals(agg, metric, kept)
     lines += ["", f"B. THE ANSWER — final development {label}, {len(finals)} finished arms"]
@@ -1621,7 +1624,7 @@ def training_summary(track: str, exp: str = "exp1") -> str:
         rows = _by_lever(finals, lv)
         if rows:
             lines.append(f"  by {lv_label}: " + " | ".join(
-                f"{k} {m:.4f} ±{s:.4f} (n={n})" for k, m, s, n in rows))
+                f"{_value_label(lv, k, track)} {m:.4f} ±{s:.4f} (n={n})" for k, m, s, n in rows))
     credit = [v for n, v in finals.items() if not _is_control(n)]
     control = [v for n, v in finals.items() if _is_control(n)]
     if credit and control:

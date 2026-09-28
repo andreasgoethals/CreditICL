@@ -337,6 +337,86 @@ def variant_label(variant: str) -> str:
             "credit_v1": "credit prior"}.get(name, name.replace("_", " "))
 
 
+# -- naming the trained models ("arms") in plain words -------------------------------------------
+#
+# ONE vocabulary for every figure, legend and printed summary, spelled out in each experiment
+# notebook's introduction. It replaced `cf0.5·banded·aggr·s2` and run names cut at 34 characters,
+# which a reader could not decode.
+
+#: The filter a prior's generated tasks pass through before training.
+FILTER_LABEL = {"off": "no filter", "tabicl": "TabICL filter", "banded": "band filter"}
+
+#: The strength of the credit structure in our prior: PD — how strongly defaults are correlated
+#: (the Vasicek asset correlation ρ); LGD — how many rows sit at exactly 0 and at exactly 1.
+INTENSITY_LABEL = {"[0.03,0.12]": "mild correlation", "[0.12,0.3]": "strong correlation",
+                   "[0.02,0.3]": "light atoms", "[0.15,0.6]": "heavy atoms"}
+
+#: Which layers an Exp2 fine-tuning arm trains.
+STRATEGY_LABEL = {"full": "all layers", "icl_only": "ICL stack + head", "head_only": "head only",
+                  "scratch": "from scratch"}
+
+#: The reference models, which we score but do not train.
+REFERENCE_LABEL = {"tabiclv2": "released TabICLv2", "tabpfn3": "TabPFN-3", "catboost": "CatBoost",
+                   "xgboost": "XGBoost", "lightgbm": "LightGBM"}
+
+
+def prior_mix_label(fraction: float, *, control: bool = False) -> str:
+    """The share of each training batch drawn from OUR credit prior — the rest is TabICL's own:
+    `0 % credit`, `50 % credit`, `100 % credit`. `control=True` names 0 % as the control."""
+    pct = f"{float(fraction) * 100:g} % credit"
+    return f"{pct} (TabICL prior only)" if control and float(fraction) == 0 else pct
+
+
+def reference_label(model: str, track: str | None = None) -> str:
+    """A reference model's product name; the linear baseline is logistic for PD, linear for LGD."""
+    name = str(model).lower()
+    if name in ("linear", "logreg", "logistic"):
+        return {"pd": "logistic regression", "lgd": "linear regression"}.get(track or "", "linear model")
+    return REFERENCE_LABEL.get(name, str(model))
+
+
+def arm_name(identifier: str, track: str | None = None, *, seed: bool = True,
+             mix: bool = True) -> str:
+    """One trained model's plain-language name, from its run name — or a reference model's.
+
+    Exp1: `50 % credit · band filter · strong correlation · seed 2` (the intensity only where our
+    prior is in the mix). Exp2: `50 % credit · ICL stack + head · L2-SP · lr 1e-05 · seed 0`.
+    `seed=False` names a configuration (its seeds averaged); `mix=False` drops the credit share,
+    for a figure already grouped by it.
+    """
+    import re
+
+    text = str(identifier)
+    if not text.startswith(("exp1", "exp2", "exp3")):
+        return reference_label(text, track)
+    parts: list[str] = []
+    cf = re.search(r"credit_fraction=([0-9p.]+)", text)
+    fraction = float(cf.group(1).replace("p", ".")) if cf else None
+    if mix and fraction is not None:
+        parts.append(prior_mix_label(fraction))
+    if text.startswith("exp2"):
+        strat = re.search(r"strategy=(full|icl_only|head_only|scratch)", text)
+        l2 = re.search(r"l2sp_alpha=([0-9pm.e+-]+)", text)
+        lr = re.search(r"-lr=([0-9pm.e+-]+)", text)
+        if strat:
+            parts.append(STRATEGY_LABEL[strat.group(1)])
+        if l2:
+            parts.append("no L2-SP" if l2.group(1) in ("0", "0p0") else "L2-SP")
+        if lr:
+            parts.append("lr " + lr.group(1).replace("m", "-").replace("p", "."))
+    else:
+        filt = re.search(r"filter-mode=([a-z]+)", text)
+        rng = re.search(r"(?:rho_range|boundary_mass_range)=(\[[0-9.,]+\])", text)
+        if filt:
+            parts.append(FILTER_LABEL.get(filt.group(1), filt.group(1)))
+        if rng and fraction:  # the intensity of OUR prior means nothing without it in the mix
+            parts.append(INTENSITY_LABEL.get(rng.group(1), rng.group(1)))
+    s = re.search(r"__s(\d+)$", text)
+    if seed and s:
+        parts.append(f"seed {s.group(1)}")
+    return " · ".join(parts) or text
+
+
 def credit_fraction_marker(fraction: float) -> str:
     """A marker per credit fraction, so cf 0.5 and cf 1 separate by SHAPE as well as by shade —
     two blues of similar weight are hard to tell apart in a small scatter."""

@@ -207,6 +207,27 @@ def test_new_results_views_build_with_a_reference(monkeypatch):
     assert not _drew(rp.overall_ranking("pd", "exp2"))
 
 
+def test_results_views_keep_each_credit_share_apart(monkeypatch):
+    """50 % and 100 % credit arms were pooled into one group whose mean fell between two clusters
+    (on LGD 0.16 R², between arms at 0.45 and at -0.1). Each share is its own group now."""
+    df = _results_df()
+    monkeypatch.setattr(rp, "load_results", lambda track, exp="exp1": df)
+    ticks = [t.get_text() for t in rp.credit_vs_control("pd", "exp2").axes[0].get_xticklabels()]
+    assert ticks == ["0 % credit\n(TabICL prior only)", "50 % credit", "100 % credit",
+                     "reference models\n(not trained by us)"]
+    piv, groups = rp._best_per_group(df, "roc_auc")
+    assert groups == [0.0, 0.5, 1.0, None]
+    assert piv.loc["german", "50 % credit"] == pytest.approx(0.72)
+
+
+def test_best_per_group_takes_a_models_seed_mean_not_its_luckiest_seed():
+    rows = [{"dataset": "german", "model": "crediticl", "seed": s, "roc_auc": a,
+             "info_run_name": "exp1_pd__prior-credit_fraction=0p5__filter-mode=off__s0"}
+            for s, a in ((0, 0.60), (1, 0.80))]
+    piv, _ = rp._best_per_group(pd.DataFrame(rows), "roc_auc")
+    assert piv.loc["german", "50 % credit"] == pytest.approx(0.70)
+
+
 def test_results_restrict_to_one_side_of_the_split(monkeypatch):
     """EXPERIMENTAL_DESIGN §5: the prior is chosen on development data and REPORTED on the holdout,
     which stays untouched until the end. `german` is development in config/Exp1_PD.yaml and `hmeq`

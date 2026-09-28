@@ -213,7 +213,17 @@ mean and SD over training seeds. Holdout is shown for reference, never used to c
 - None in the run: all 92 tasks `END status=OK`; every credit cell scored (42/42 per PD arm, 21/21
   per LGD arm, 168/168 and 84/84 for the reference column); 0 failed out-of-domain cells.
 - **cf 1 on LGD collapses** — R² ≈ 0 on development, holdout and out-of-domain data alike, in all six
-  configurations. Cause not established.
+  configurations. Cause not established. *(25-09: most likely the target scale — `TabICLRegressor`
+  standardises y, and cf 1 arms only ever trained on raw [0, 1] credit targets; calibration slope 4.1.
+  Untested; see `AGENTS_MEMORY.md`, 25-09-2026.)*
+- *(Found 25-09.)* **The 1,024-row cap binds only on our arms and the released TabICLv2**
+  (`TabICLBaseline._cap_context`; for PD it draws 512 defaults and 512 non-defaults). TabPFN-3 goes
+  through `_TFMBaseline._maybe_subsample` — up to 10,000 rows, in proportion — and CatBoost / linear
+  see every row, although `benchmark.slurm` says the cap "applies to EVERY model". Ours vs the released
+  TabICLv2 is matched; the other references had more data. The balanced PD context also inflates our
+  arms' and TabICLv2's predicted default rate (mean 0.41 against a base rate of 0.22; calibration
+  intercept ≈ −1.2, the log-odds shift from 22 % to 50 %), so their Brier score and calibration are not
+  comparable with the references'. ROC-AUC is a ranking and unaffected by the shift.
 
 ### Interpretation
 - **Show:** on development data every cf 0 and cf 0.5 configuration lies within 0.0023 ROC-AUC (PD)

@@ -42,26 +42,27 @@ def test_arm_label_reads_the_finetuning_levers_not_the_prior_levers():
     """An Exp2 label must show strategy / L2-SP / LR, and never leak the `__prior…` that
     follows `strategy=icl_only` in the name (a greedy `[a-z_]+` used to swallow it)."""
     label = tp.arm_label(ARM)
-    assert label == "cf0.5·icl·l2·lr1e-05·s0", label
+    assert label == "50 % credit · ICL stack + head · L2-SP · lr 1e-05 · seed 0", label
     assert "__prior" not in label
 
 
 def test_arm_label_marks_l2sp_off_for_the_zero_arm():
-    assert "noL2" in tp.arm_label(CONTROL)
-    assert "l2" in tp.arm_label(ARM) and "noL2" not in tp.arm_label(ARM)
+    assert "no L2-SP" in tp.arm_label(CONTROL)
+    assert "L2-SP" in tp.arm_label(ARM) and "no L2-SP" not in tp.arm_label(ARM)
 
 
 def test_arm_label_covers_every_freeze_strategy():
-    for strat, short in (("full", "full"), ("icl_only", "icl"), ("head_only", "head")):
+    for strat, short in (("full", "all layers"), ("icl_only", "ICL stack + head"),
+                         ("head_only", "head only")):
         name = ARM.replace("init-strategy=icl_only", f"init-strategy={strat}")
-        assert short in tp.arm_label(name).split("·")
+        assert short in tp.arm_label(name).split(" · ")
 
 
 def test_exp1_labels_are_unchanged_by_the_exp2_branch():
-    """The Exp1 notebooks still call `arm_label`; their format must not move."""
+    """The Exp1 notebooks call `arm_label` too, and read the PRIOR levers."""
     exp1 = ("exp1_pd__mechanism-rho_range=[0.12,0.3]__prior-credit_fraction=1__"
             "filter-mode=banded__s2")
-    assert tp.arm_label(exp1) == "cf1·banded·aggr·s2"
+    assert tp.arm_label(exp1) == "100 % credit · band filter · strong correlation · seed 2"
 
 
 # -- the model column and kind, on Exp2 results -------------------------------
@@ -82,6 +83,16 @@ def test_kind_separates_control_from_credit_by_the_fraction():
     assert rp._kind(ARM) == "credit"
     assert rp._kind(CONTROL) == "control"
     assert rp._kind("catboost") == "baseline"
+
+
+def test_an_arm_trained_with_the_tabicl_filter_is_ours_not_a_baseline():
+    """`filter-mode=tabicl` contains the baseline name `tabicl`; a substring test that ran first
+    filed a third of Exp1's arms as external baselines."""
+    for cf, kind in (("0", "control"), ("0p5", "credit")):
+        name = (f"exp1_pd__mechanism-rho_range=[0.03,0.12]__prior-credit_fraction={cf}__"
+                f"filter-mode=tabicl__s0")
+        assert rp._kind(name) == kind
+    assert rp._kind("tabiclv2") == "baseline"
 
 
 # -- the manifests are read per experiment ------------------------------------

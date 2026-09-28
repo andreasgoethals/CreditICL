@@ -320,18 +320,18 @@ A. THE RUN
   development datasets not carried by every arm: gmsc, lendingclub, taiwan_creditcard
   arms monitored before the development-only protocol: 36 of 45
   group curves are drawn only where all their arms have a value: finished arms' logs start at step 625-4,001 and end at 11,904-12,500
-  median speed by filter: off 0.64 steps/s (~5 h) | tabicl 0.63 steps/s (~6 h) | banded 0.12 steps/s (~29 h)
+  median speed by filter: no filter 0.64 steps/s (~5 h) | TabICL filter 0.63 steps/s (~6 h) | band filter 0.12 steps/s (~29 h)
   GPU utilisation, median per arm: 92% (range 88-94%)
   peak allocated GPU memory: 13.1-13.1 GB per arm
-  final training loss by credit fraction (each on its own prior's tasks): cf 0 0.295 | cf 0.5 0.199 | cf 1 0.066
+  final training loss by prior mix (each on its own prior's tasks): 0 % credit 0.295 | 50 % credit 0.199 | 100 % credit 0.066
 
 B. THE ANSWER — final development ROC-AUC, 45 finished arms
-  by credit fraction: cf=0 0.6718 ±0.0107 (n=9) | cf=0.5 0.6693 ±0.0114 (n=18) | cf=1 0.6459 ±0.0143 (n=18)
-  by filter mode: off 0.6633 ±0.0183 (n=15) | tabicl 0.6632 ±0.0159 (n=15) | banded 0.6549 ±0.0162 (n=15)
-  by prior intensity: mild 0.6556 ±0.0180 (n=18) | aggressive 0.6597 ±0.0166 (n=18)
+  by prior mix: 0 % credit 0.6718 ±0.0107 (n=9) | 50 % credit 0.6693 ±0.0114 (n=18) | 100 % credit 0.6459 ±0.0143 (n=18)
+  by filter: no filter 0.6633 ±0.0183 (n=15) | TabICL filter 0.6632 ±0.0159 (n=15) | band filter 0.6549 ±0.0162 (n=15)
+  by intensity: mild correlation 0.6556 ±0.0180 (n=18) | strong correlation 0.6597 ±0.0166 (n=18)
   credit prior minus control: -0.0142
-  best  ROC-AUC = 0.6876  cf0.5·tabicl·mild·s2
-  worst ROC-AUC = 0.6250  cf1·banded·aggr·s0
+  best  ROC-AUC = 0.6876  50 % credit · TabICL filter · mild correlation · seed 2
+  worst ROC-AUC = 0.6250  100 % credit · band filter · strong correlation · seed 0
   seed noise: median range over a configuration's seeds = 0.0195
   best seed within a configuration: seed 2 in 12 of 15, seed 0 in 2 of 15, seed 1 in 1 of 15
 
@@ -381,18 +381,18 @@ A. THE RUN
   finished arms without a development score: 30 of 45 (seed 0: 15, seed 2: 15) — a monitor that logged only missing values
   arms monitored before the development-only protocol: 45 of 45
   group curves are drawn only where all their arms have a value: finished arms' logs start at step 625-625 and end at 11,876-12,500
-  median speed by filter: off 0.65 steps/s (~5 h) | tabicl 0.64 steps/s (~5 h) | banded 0.15 steps/s (~23 h)
+  median speed by filter: no filter 0.65 steps/s (~5 h) | TabICL filter 0.64 steps/s (~5 h) | band filter 0.15 steps/s (~23 h)
   GPU utilisation, median per arm: 93% (range 87-95%)
   peak allocated GPU memory: 13.1-13.1 GB per arm
-  final training loss by credit fraction (each on its own prior's tasks): cf 0 0.093 | cf 0.5 0.064 | cf 1 0.032
+  final training loss by prior mix (each on its own prior's tasks): 0 % credit 0.093 | 50 % credit 0.064 | 100 % credit 0.032
 
 B. THE ANSWER — final development R², 15 finished arms
-  by credit fraction: cf=0 -0.0289 ±0.0773 (n=3) | cf=0.5 0.1881 ±0.0256 (n=6) | cf=1 0.0151 ±0.0565 (n=6)
-  by filter mode: off 0.0872 ±0.1077 (n=5) | tabicl 0.0753 ±0.1074 (n=5) | banded 0.0640 ±0.1046 (n=5)
-  by prior intensity: mild 0.1202 ±0.0858 (n=6) | aggressive 0.0829 ±0.1038 (n=6)
+  by prior mix: 0 % credit -0.0289 ±0.0773 (n=3) | 50 % credit 0.1881 ±0.0256 (n=6) | 100 % credit 0.0151 ±0.0565 (n=6)
+  by filter: no filter 0.0872 ±0.1077 (n=5) | TabICL filter 0.0753 ±0.1074 (n=5) | band filter 0.0640 ±0.1046 (n=5)
+  by intensity: light atoms 0.1202 ±0.0858 (n=6) | heavy atoms 0.0829 ±0.1038 (n=6)
   credit prior minus control: +0.1304
-  best  R² = 0.2177  cf0.5·tabicl·mild·s1
-  worst R² = -0.1003  cf1·tabicl·aggr·s1
+  best  R² = 0.2177  50 % credit · TabICL filter · light atoms · seed 1
+  worst R² = -0.1003  100 % credit · TabICL filter · heavy atoms · seed 1
   seed noise: not measurable — one scored seed per configuration
 
 C. WHERE IT HOLDS
@@ -435,16 +435,29 @@ References (tfm-library pin e5ce016):
 EXP1 PD RESULTS — the benchmark
   49 models on 14 datasets | metrics: roc_auc, pr_auc, brier, ks, calibration_slope
 
-A. WHICH PRIOR DEVELOPMENT SELECTS (ROC-AUC)
-  tabpfn3                                                      0.7447
-  catboost                                                     0.7340
-  exp1_pd__mechanism-rho_range=[0.03,0.12]__prior-credit_fract 0.7326
+A. WHICH PRIOR DEVELOPMENT SELECTS (ROC-AUC, development datasets, mean over datasets and seeds)
+  0.7447  TabPFN-3
+  0.7340  CatBoost
+  0.7326  0 % credit · band filter
+  0.7325  50 % credit · band filter · strong correlation
+  0.7322  released TabICLv2
+  0.7322  50 % credit · TabICL filter · mild correlation
 
-B. HOW IT DOES ON THE HOLDOUT (ROC-AUC, holdout datasets)
-  credit    mean ROC-AUC = 0.7021
-  control   mean ROC-AUC = 0.7271
-  baseline  mean ROC-AUC = 0.7182
-  credit prior minus control: -0.0251
+B. HOW IT DOES ON THE HOLDOUT (ROC-AUC, holdout datasets, mean over every arm of each share)
+  0.7272  0 % credit (TabICL prior only)
+  0.7233  50 % credit
+  0.6826  100 % credit
+  0.7762  reference: CatBoost
+  0.7665  reference: TabPFN-3
+  0.7278  reference: logistic regression
+  0.7370  reference: released TabICLv2
+
+C. OUR CREDIT PRIOR AGAINST THE CONTROL — matched arms that differ only in the credit share
+  (same filter and training seed; a positive difference means the credit prior helped)
+  development 50 % credit minus 0 % credit: -0.0005 ROC-AUC, better in 4 of 9 pairs
+  development 100 % credit minus 0 % credit: -0.0215 ROC-AUC, better in 0 of 9 pairs
+  holdout     50 % credit minus 0 % credit: -0.0039 ROC-AUC, better in 0 of 9 pairs
+  holdout     100 % credit minus 0 % credit: -0.0446 ROC-AUC, better in 0 of 9 pairs
 
 CREDIT-DOMAIN LITERATURE LANDSCAPE (tfm-library pin e5ce016)
   reported ROC-AUC on real credit datasets, each under its own protocol:
@@ -480,16 +493,29 @@ References (tfm-library pin e5ce016):
 EXP1 LGD RESULTS — the benchmark
   49 models on 7 datasets | metrics: r2, rmse, mae, brier, calibration_slope, boundary_mass_abs_err
 
-A. WHICH PRIOR DEVELOPMENT SELECTS (R²)
-  tabpfn3                                                      0.6132
-  catboost                                                     0.5756
-  tabiclv2                                                     0.5337
+A. WHICH PRIOR DEVELOPMENT SELECTS (R², development datasets, mean over datasets and seeds)
+  0.6132  TabPFN-3
+  0.5756  CatBoost
+  0.5337  released TabICLv2
+  0.5197  0 % credit · TabICL filter
+  0.5197  0 % credit · no filter
+  0.5183  50 % credit · band filter · heavy atoms
 
-B. HOW IT DOES ON THE HOLDOUT (R², holdout datasets)
-  credit    mean R² = 0.1686
-  control   mean R² = 0.4592
-  baseline  mean R² = 0.2627
-  credit prior minus control: -0.2906
+B. HOW IT DOES ON THE HOLDOUT (R², holdout datasets, mean over every arm of each share)
+  0.4591  0 % credit (TabICL prior only)
+  0.4511  50 % credit
+  -0.1287  100 % credit
+  0.4952  reference: CatBoost
+  0.5515  reference: TabPFN-3
+  0.3135  reference: linear regression
+  0.4983  reference: released TabICLv2
+
+C. OUR CREDIT PRIOR AGAINST THE CONTROL — matched arms that differ only in the credit share
+  (same filter and training seed; a positive difference means the credit prior helped)
+  development 50 % credit minus 0 % credit: -0.0030 R², better in 2 of 9 pairs
+  development 100 % credit minus 0 % credit: -0.5590 R², better in 0 of 9 pairs
+  holdout     50 % credit minus 0 % credit: -0.0080 R², better in 1 of 9 pairs
+  holdout     100 % credit minus 0 % credit: -0.5879 R², better in 0 of 9 pairs
 
 References (tfm-library pin e5ce016):
   - SYNTHESIS.md; TabICLv2 §I.7  [editorial+paper]
@@ -585,13 +611,20 @@ References (tfm-library pin e5ce016):
 EXP2 PD RESULTS — the benchmark
   4 models on 14 datasets | metrics: roc_auc, pr_auc, brier, ks, calibration_slope
 
-A. WHICH PRIOR DEVELOPMENT SELECTS (ROC-AUC)
-  tabpfn3                                                      0.7447
-  catboost                                                     0.7340
-  tabiclv2                                                     0.7322
+A. WHICH PRIOR DEVELOPMENT SELECTS (ROC-AUC, development datasets, mean over datasets and seeds)
+  0.7447  TabPFN-3
+  0.7340  CatBoost
+  0.7322  released TabICLv2
+  0.7246  logistic regression
 
-B. HOW IT DOES ON THE HOLDOUT (ROC-AUC, holdout datasets)
-  baseline  mean ROC-AUC = 0.7519
+B. HOW IT DOES ON THE HOLDOUT (ROC-AUC, holdout datasets, mean over every arm of each share)
+  0.7762  reference: CatBoost
+  0.7665  reference: TabPFN-3
+  0.7278  reference: logistic regression
+  0.7370  reference: released TabICLv2
+
+C. OUR CREDIT PRIOR AGAINST THE CONTROL — matched arms that differ only in the credit share
+  (same filter and training seed; a positive difference means the credit prior helped)
 
 CREDIT-DOMAIN LITERATURE LANDSCAPE (tfm-library pin e5ce016)
   reported ROC-AUC on real credit datasets, each under its own protocol:
@@ -628,13 +661,20 @@ References (tfm-library pin e5ce016):
 EXP2 LGD RESULTS — the benchmark
   4 models on 7 datasets | metrics: r2, rmse, mae, brier, calibration_slope, boundary_mass_abs_err
 
-A. WHICH PRIOR DEVELOPMENT SELECTS (R²)
-  tabpfn3                                                      0.6132
-  catboost                                                     0.5756
-  tabiclv2                                                     0.5337
+A. WHICH PRIOR DEVELOPMENT SELECTS (R², development datasets, mean over datasets and seeds)
+  0.6132  TabPFN-3
+  0.5756  CatBoost
+  0.5337  released TabICLv2
+  0.3874  linear regression
 
-B. HOW IT DOES ON THE HOLDOUT (R², holdout datasets)
-  baseline  mean R² = 0.4646
+B. HOW IT DOES ON THE HOLDOUT (R², holdout datasets, mean over every arm of each share)
+  0.4952  reference: CatBoost
+  0.5515  reference: TabPFN-3
+  0.3135  reference: linear regression
+  0.4983  reference: released TabICLv2
+
+C. OUR CREDIT PRIOR AGAINST THE CONTROL — matched arms that differ only in the credit share
+  (same filter and training seed; a positive difference means the credit prior helped)
 
 References (tfm-library pin e5ce016):
   - SYNTHESIS.md; TabICLv2 §I.7  [editorial+paper]

@@ -20,6 +20,20 @@ a flat dated list, so the dates below are its table of contents.
   or its start (`--only 1.`); partial runs and `--summaries-only` no longer erase the other
   notebooks' summaries.
 - `output/results/` ignored: the ~550 benchmark CSVs downloaded from project storage.
+- Arms named in plain words everywhere (`50 % credit · band filter · strong correlation · seed 2`,
+  `style.arm_name`), with a naming glossary in the 1.1–1.4 intros and a short one in 2.1–2.4.
+- `_kind` filed every `filter-mode=tabicl` arm as an external baseline (substring `tabicl`); fixed —
+  earlier 1.3/1.4 figures and summaries left a third of the arms out.
+- Results figures keep 0 %, 50 % and 100 % credit apart (a pooled "credit" group averaged two distant
+  clusters); the ranking is points, not bars from zero; "best in group" takes each model's seed mean,
+  not its luckiest seed; overlapping legends and ticks fixed. Results summary adds matched-pair
+  differences (same filter and seed, credit share only).
+- A4 training loss read from the job logs (every 100 steps, all arms from step 100) on a log step
+  axis; the progress CSVs start at step 625, after most of the fall, and three restarted PD logs at
+  ~4,000.
+- 1.1–1.4 prose rewritten from the finished benchmark; 1.2/1.4 state the LGD target-scale mismatch
+  (credit targets raw [0, 1], TabICL's standardised; the monitor scores raw, the benchmark standardised),
+  and 1.3/1.4 that the 1,024-row context cap binds only on our arms and the released TabICLv2.
 
 ## 24-09-2026
 

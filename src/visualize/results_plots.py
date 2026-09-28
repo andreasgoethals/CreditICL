@@ -99,7 +99,12 @@ def _model_col(df: pd.DataFrame) -> str:
 def _kind(model: str) -> str:
     """`baseline`, `control` (our prior at credit_fraction 0) or `credit` (our prior)."""
     low = str(model).lower()
-    if any(b in low for b in BASELINES) and "crediticl" not in low:
+    # One of OUR arms whenever the name carries our run levers. The baseline test is a substring
+    # match, and until 25-09-2026 it ran first: every arm trained with the TabICL filter has
+    # `filter-mode=tabicl` in its name, so a third of the arms were filed as external baselines —
+    # left out of the credit-vs-control figures and summary, and coloured as references.
+    ours = low.startswith(("exp1", "exp2", "exp3")) or "credit_fraction=" in low or "crediticl" in low
+    if not ours and any(b in low for b in BASELINES):
         return "baseline"
     # cf=0 EXACTLY: `credit_fraction=0__` and `cf0·`, not the `credit_fraction=0p5` of a 0.5 arm,
     # which a bare `"credit_fraction=0" in low` substring test wrongly read as a control.
@@ -110,11 +115,48 @@ def _kind(model: str) -> str:
     return "credit"
 
 
-#: Credit prior blue and control grey as everywhere; external baselines olive — they were drawn in
-#: the real-data orange, which made "CatBoost" read as a measurement on real data.
-_KIND_COLOUR = {"credit": style.CREDIT, "control": style.ORIGINAL, "baseline": style.BASELINE}
-_KIND_LABEL = {"credit": "credit prior (cf > 0)", "control": "control (cf = 0)",
-               "baseline": "external baseline"}
+# -- the groups the results figures compare -----------------------------------
+#
+# Our arms by the share of our credit prior in their training mix (0 % is the control), then the
+# reference models. The figures used to pool 50 % and 100 % into one "credit prior" group, whose
+# mean fell between two clusters that sit far apart — on LGD 0.16 R², between arms at 0.45 and at
+# −0.1 — and described neither. Our arms run from control grey to credit blue with the share; the
+# references are olive — they were drawn in the real-data orange, which made "CatBoost" read as a
+# measurement on real data.
+
+_REFERENCES = "reference models (not trained by us)"
+
+
+def _share(model: str) -> float | None:
+    """Our arm's credit share (0 for the control), or `None` for a reference model."""
+    if _kind(model) == "baseline":
+        return None
+    m = re.search(r"credit_fraction=([0-9p.]+)", str(model))
+    return float(m.group(1).replace("p", ".")) if m else 0.0
+
+
+def _groups(models: Any) -> list[float | None]:
+    """The groups present, in reading order: our shares ascending, then the references (`None`)."""
+    shares = {_share(m) for m in models}
+    return sorted(s for s in shares if s is not None) + ([None] if None in shares else [])
+
+
+def _group_label(share: float | None) -> str:
+    return _REFERENCES if share is None else style.prior_mix_label(share, control=True)
+
+
+def _group_tick(share: float | None) -> str:
+    """The label on two lines, the aside in brackets on the second, so that ticks side by side
+    do not run into each other."""
+    return _group_label(share).replace(" (", "\n(")
+
+
+def _group_colour(share: float | None) -> str:
+    return style.BASELINE if share is None else style.credit_fraction_colour(share)
+
+
+def _group_marker(share: float | None) -> str:
+    return "D" if share is None else style.credit_fraction_marker(share)
 
 
 def _with_identity(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
@@ -193,18 +235,24 @@ def overall_ranking(track: str, exp: str = "exp1", metric: str | None = None):
     mc = "configuration"
     if agg.empty:
         return _placeholder("no complete development-set configuration scores yet")
-    agg["kind"] = agg[mc].map(_kind)
     agg = agg.sort_values("mean", ascending=HIGHER_IS_BETTER.get(metric, True))
     fig, ax = plt.subplots(figsize=style.row_figsize(len(agg), base=1.3))
     y = np.arange(len(agg))
-    ax.barh(y, agg["mean"], xerr=agg["std"].fillna(0), color=[_KIND_COLOUR[k] for k in agg["kind"]],
-            error_kw={"elinewidth": 0.8, "ecolor": style.MUTED})
+    # Points, not bars. A bar is read by its length from zero, and on PD every configuration sits
+    # within a few hundredths of the others: bars from zero drew them all the same length.
+    ax.errorbar(agg["mean"], y, xerr=agg["std"].fillna(0), fmt="none", ecolor=style.MUTED,
+                elinewidth=0.8, zorder=2)
+    shares = [_share(m) for m in agg[mc]]
+    for g in _groups(agg[mc]):
+        rows = [i for i, s in enumerate(shares) if s == g]
+        ax.scatter(agg["mean"].values[rows], y[rows], s=30, color=_group_colour(g),
+                   marker=_group_marker(g), edgecolor="white", linewidth=0.4, zorder=3,
+                   label=_group_label(g))
     ax.set_yticks(y)
-    ax.set_yticklabels([str(m)[:34] for m in agg[mc]], fontsize=7)
+    ax.set_yticklabels([style.arm_name(m, track, seed=False) for m in agg[mc]], fontsize=7)
     ax.set_xlabel(f"development {style.metric_label(metric)}: mean over datasets and seeds "
                   f"(whisker: seed SD)")
-    kinds = [k for k in ("credit", "control", "baseline") if (agg["kind"] == k).any()]
-    style.legend_below(ax, style.legend_patches({_KIND_LABEL[k]: _KIND_COLOUR[k] for k in kinds}))
+    style.legend_below(ax, ncol=2)
     return fig
 
 
@@ -214,33 +262,47 @@ def overall_ranking(track: str, exp: str = "exp1", metric: str | None = None):
 
 
 def per_dataset(track: str, exp: str = "exp1", metric: str | None = None):
-    """Headline score per dataset, model-kind best summarised, so no dataset is hidden by a mean."""
+    """Headline score per dataset, the best model of each group, so no dataset is hidden by a mean."""
     df = load_results(track, exp)
     metric = metric or HEADLINE[track]
     style.apply()
     if df is None or metric not in df.columns or "dataset" not in df.columns:
         return _placeholder("no per-dataset benchmark results yet")
 
-    df, mc = _with_identity(df)
-    df["kind"] = df[mc].map(_kind)
+    piv, groups = _best_per_group(df, metric)
     roles = _roles(track, exp)
-    # Best score of each kind on each dataset — the fair per-dataset comparison.
-    best = df.groupby(["dataset", "kind"])[metric].agg("max" if HIGHER_IS_BETTER.get(metric, True) else "min")
-    piv = best.unstack("kind")
     rank = {"development": 0, "holdout": 1}
     datasets = sorted(piv.index, key=lambda d: (rank.get(roles.get(str(d).split(".", 1)[-1]), 2), str(d)))
     piv = piv.loc[datasets]
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.46))
     x = np.arange(len(datasets))
-    kinds = [k for k in ("credit", "control", "baseline") if k in piv.columns]
-    w = 0.8 / max(len(kinds), 1)
-    for i, k in enumerate(kinds):
-        ax.bar(x + i * w, piv[k].values, width=w, color=_KIND_COLOUR[k], label=_KIND_LABEL[k])
-    ax.set_xticks(x + w * (len(kinds) - 1) / 2)
+    w = 0.8 / max(len(groups), 1)
+    for i, g in enumerate(groups):
+        ax.bar(x + i * w, piv[_group_label(g)].values, width=w, color=_group_colour(g),
+               label=_group_label(g))
+    ax.set_xticks(x + w * (len(groups) - 1) / 2)
     ax.set_xticklabels([_role_tag(d, roles) for d in datasets], rotation=30, ha="right", fontsize=7)
-    ax.set_ylabel(f"best {style.metric_label(metric)} of each kind")
-    style.legend_below(ax, ncol=3)
+    ax.set_ylabel(f"best {style.metric_label(metric)} in the group")
+    # Under the whole figure: the rotated dataset names are taller than the one line of ticks that
+    # a legend under the axes makes room for, and it sat on them.
+    style.legend_below(fig, ncol=2)
     return fig
+
+
+def _best_per_group(df: pd.DataFrame, metric: str) -> tuple[pd.DataFrame, list[float | None]]:
+    """`(dataset × group table of the best model's score, the groups in order)`.
+
+    A model's score on a dataset is its mean over evaluation seeds, and the best of those is taken.
+    The best single (model, seed) row favoured whichever group had the most rows to find a lucky
+    seed among.
+    """
+    df, mc = _with_identity(df)
+    per_model = df.groupby(["dataset", mc])[metric].mean().reset_index()
+    groups = _groups(per_model[mc].unique())
+    per_model["group"] = per_model[mc].map(lambda m: _group_label(_share(m)))
+    agg = "max" if HIGHER_IS_BETTER.get(metric, True) else "min"
+    piv = per_model.groupby(["dataset", "group"])[metric].agg(agg).unstack("group")
+    return piv[[_group_label(g) for g in groups]], groups
 
 
 # ---------------------------------------------------------------------------
@@ -250,8 +312,9 @@ def per_dataset(track: str, exp: str = "exp1", metric: str | None = None):
 
 def credit_vs_control(track: str, exp: str = "exp1", metric: str | None = None,
                       role: str | None = None):
-    """The distribution of headline scores for credit-prior arms, control arms and baselines, on
-    the datasets of one side of the split (`role="holdout"` is what the experiment reports)."""
+    """The headline score of every model, one column per share of our credit prior (0 % is the
+    control) and one for the reference models, on the datasets of one side of the split
+    (`role="holdout"` is what the experiment reports)."""
     df = load_results(track, exp)
     metric = metric or HEADLINE[track]
     style.apply()
@@ -261,17 +324,17 @@ def credit_vs_control(track: str, exp: str = "exp1", metric: str | None = None,
         return _placeholder("no benchmark results yet")
 
     df, mc = _with_identity(df)
-    per_model = df.groupby(mc)[metric].mean().reset_index()
-    per_model["kind"] = per_model[mc].map(_kind)
+    per_model = df.groupby(mc)[metric].mean()
+    groups = _groups(per_model.index)
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.42))
-    kinds = [k for k in ("credit", "control", "baseline") if (per_model["kind"] == k).any()]
-    for i, k in enumerate(kinds):
-        vals = per_model.loc[per_model["kind"] == k, metric].values
-        ax.scatter(np.full(len(vals), i) + style_jitter(len(vals)), vals, s=34, alpha=0.6,
-                   color=_KIND_COLOUR[k], edgecolor="white", linewidth=0.4, zorder=3)
-        ax.plot([i - 0.2, i + 0.2], [vals.mean(), vals.mean()], color=style.INK, lw=2, zorder=4)
-    ax.set_xticks(range(len(kinds)))
-    ax.set_xticklabels([_KIND_LABEL[k] for k in kinds])
+    for i, g in enumerate(groups):
+        vals = per_model[[_share(m) == g for m in per_model.index]].values
+        ax.scatter(np.full(len(vals), i) + style_jitter(len(vals)), vals, s=34, alpha=0.7,
+                   color=_group_colour(g), marker=_group_marker(g), edgecolor="white",
+                   linewidth=0.4, zorder=3)
+        ax.plot([i - 0.2, i + 0.2], [np.nanmean(vals)] * 2, color=style.INK, lw=2, zorder=4)
+    ax.set_xticks(range(len(groups)))
+    ax.set_xticklabels([_group_tick(g) for g in groups])
     ax.set_ylabel(f"{style.metric_label(metric)}, mean over {ROLE_LABEL.get(role, role)}")
     style.legend_below(ax, [plt.Line2D([], [], color=style.MUTED, marker="o", ls="none",
                                        label="one model"),
@@ -284,10 +347,22 @@ def credit_vs_control(track: str, exp: str = "exp1", metric: str | None = None,
 # ---------------------------------------------------------------------------
 
 #: The Exp2 sweep levers, and how each reads in a benchmark tag / run name.
-_LEVERS = (("credit_fraction", r"credit_fraction=([0-9p.]+)", "credit fraction"),
-           ("strategy", r"strategy=(full|icl_only|head_only|scratch)", "freeze strategy"),
-           ("l2sp_alpha", r"l2sp_alpha=([0-9pm.e+-]+)", "L2-SP alpha"),
+_LEVERS = (("credit_fraction", r"credit_fraction=([0-9p.]+)", "prior mix"),
+           ("strategy", r"strategy=(full|icl_only|head_only|scratch)", "layers trained"),
+           ("l2sp_alpha", r"l2sp_alpha=([0-9pm.e+-]+)", "L2-SP"),
            ("lr", r"-lr=([0-9pm.e+-]+)", "learning rate"))
+
+
+def _lever_tick(key: str, value: str) -> str:
+    """A lever value in the notebooks' words: `50 % credit`, `ICL stack + head`, `no L2-SP`."""
+    text = str(value).replace("p", ".").replace("m", "-")
+    if key == "credit_fraction":
+        return style.prior_mix_label(float(text))
+    if key == "strategy":
+        return style.STRATEGY_LABEL.get(str(value), str(value))
+    if key == "l2sp_alpha":
+        return "no L2-SP" if float(text) == 0 else f"L2-SP {text}"
+    return text
 
 
 def lever_effect(track: str, exp: str = "exp2", metric: str | None = None):
@@ -308,7 +383,7 @@ def lever_effect(track: str, exp: str = "exp2", metric: str | None = None):
     mc = _model_col(df)
     names = df[mc].astype(str)
     drawn = False
-    for ax, (_key, pattern, label) in zip(axes, _LEVERS):
+    for ax, (key, pattern, label) in zip(axes, _LEVERS):
         vals = names.str.extract(pattern, expand=False)
         d = df.assign(_lever=vals).dropna(subset=["_lever"])
         if d["_lever"].nunique() < 2:
@@ -318,8 +393,7 @@ def lever_effect(track: str, exp: str = "exp2", metric: str | None = None):
         x = np.arange(len(grp))
         ax.bar(x, grp.values, color=style.CREDIT, width=0.6)
         ax.set_xticks(x)
-        ax.set_xticklabels([str(v).replace("p", ".").replace("m", "-") for v in grp.index],
-                           fontsize=7)
+        ax.set_xticklabels([_lever_tick(key, v) for v in grp.index], fontsize=7)
         ax.set_ylabel(f"mean {style.metric_label(metric)}", fontsize=8)
         ax.set_xlabel(label, fontsize=8)
         drawn = True
@@ -337,8 +411,8 @@ def lever_effect(track: str, exp: str = "exp2", metric: str | None = None):
 
 
 def metric_grid(track: str, exp: str = "exp1", role: str | None = None):
-    """One panel per benchmark metric, each a bar per model kind — the whole scoreboard at once,
-    on the datasets of one side of the split."""
+    """One panel per benchmark metric, each a bar per group (share of our credit prior, then the
+    reference models) — the whole scoreboard at once, on the datasets of one side of the split."""
     df = load_results(track, exp)
     style.apply()
     if df is not None:
@@ -354,13 +428,13 @@ def metric_grid(track: str, exp: str = "exp1", role: str | None = None):
     for ax in axes:
         ax.axis("off")
     df, mc = _with_identity(df)
-    kinds = [k for k in ("credit", "control", "baseline") if df[mc].map(_kind).eq(k).any()]
-    dk = df.assign(_kind=df[mc].map(_kind))
+    groups = _groups(df[mc].unique())
     for ax, metric in zip(axes, metrics):
         ax.axis("on")
-        means = dk.groupby("_kind")[metric].mean()
-        vals = [means.get(k, np.nan) for k in kinds]
-        ax.bar(range(len(kinds)), vals, color=[_KIND_COLOUR[k] for k in kinds], width=0.66)
+        # Each model's mean first, then the group's: every model weighs the same.
+        per_model = df.groupby(mc)[metric].mean()
+        vals = [per_model[[_share(m) == g for m in per_model.index]].mean() for g in groups]
+        ax.bar(range(len(groups)), vals, color=[_group_colour(g) for g in groups], width=0.66)
         goal = style.metric_goal(metric)
         if isinstance(goal, (int, float)):
             ax.axhline(goal, color=style.INK, lw=0.9, ls="--")
@@ -368,45 +442,41 @@ def metric_grid(track: str, exp: str = "exp1", role: str | None = None):
         ax.set_title(f"{style.metric_label(metric)} {style.goal_mark(metric)}".strip(), loc="left",
                      fontsize=8)
         ax.tick_params(labelsize=7)
-    style.legend_below(fig, style.legend_patches({_KIND_LABEL[k]: _KIND_COLOUR[k] for k in kinds}),
-                       ncol=3)
+    style.legend_below(fig, style.legend_patches({_group_label(g): _group_colour(g) for g in groups}),
+                       ncol=2)
     return fig
 
 
 def per_dataset_heatmap(track: str, exp: str = "exp1", metric: str | None = None):
-    """Best headline score of each model kind on each dataset, as an annotated heatmap."""
+    """Best headline score in each group on each dataset, as an annotated heatmap."""
     df = load_results(track, exp)
     metric = metric or HEADLINE[track]
     style.apply()
     if df is None or metric not in df.columns or "dataset" not in df.columns:
         return _placeholder("no per-dataset benchmark results yet")
-    df, mc = _with_identity(df)
-    d = df.assign(_kind=df[mc].map(_kind))
+    piv, groups = _best_per_group(df, metric)
     roles = _roles(track, exp)
-    agg = "max" if HIGHER_IS_BETTER.get(metric, True) else "min"
-    piv = d.groupby(["dataset", "_kind"])[metric].agg(agg).unstack("_kind")
-    kinds = [k for k in ("credit", "control", "baseline") if k in piv.columns]
     rank = {"development": 0, "holdout": 1}
     order = sorted(piv.index, key=lambda v: (rank.get(roles.get(str(v).split(".", 1)[-1]), 2), str(v)))
-    piv = piv.loc[order, kinds]
+    piv = piv.loc[order]
     fig, ax = plt.subplots(figsize=style.row_figsize(len(piv), base=1.2))
     im = ax.imshow(piv.values, aspect="auto", cmap=style.CMAP_SEQ)
-    ax.set_xticks(range(len(kinds)))
-    ax.set_xticklabels([_KIND_LABEL[k] for k in kinds])
+    ax.set_xticks(range(len(groups)))
+    ax.set_xticklabels([_group_tick(g) for g in groups], fontsize=7)
     ax.set_yticks(range(len(piv)))
     ax.set_yticklabels([_role_tag(v, roles) for v in piv.index], fontsize=7)
     ax.grid(False)
     finite = piv.values[np.isfinite(piv.values)]
     lo, hi = (finite.min(), finite.max()) if finite.size else (0.0, 1.0)
     for i in range(len(piv)):
-        for j in range(len(kinds)):
+        for j in range(len(groups)):
             v = piv.values[i, j]
             if not np.isnan(v):
                 # cividis runs dark to light: white text on the dark half, ink on the light half.
                 dark = (v - lo) / (hi - lo + 1e-12) < 0.55
                 ax.text(j, i, f"{v:.2f}", ha="center", va="center", fontsize=6,
                         color="white" if dark else style.INK)
-    fig.colorbar(im, ax=ax, shrink=0.55, label=f"best {style.metric_label(metric)} of the kind")
+    fig.colorbar(im, ax=ax, shrink=0.55, label=f"best {style.metric_label(metric)} in the group")
     return fig
 
 
@@ -435,16 +505,16 @@ def beats_reference(track: str, exp: str = "exp1", metric: str | None = None,
     delta = order.values - ref
     fig, ax = plt.subplots(figsize=style.row_figsize(len(order), per_row=0.12, base=1.3))
     ax.barh(np.arange(len(order)), delta,
-            color=[_KIND_COLOUR[_kind(m)] for m in order.index])
+            color=[_group_colour(_share(m)) for m in order.index])
     ax.axvline(0, color=style.REFERENCE, lw=1.2)
     ax.set_yticks(np.arange(len(order)))
-    ax.set_yticklabels([str(m)[:30] for m in order.index], fontsize=6)
+    ax.set_yticklabels([style.arm_name(m, track) for m in order.index], fontsize=6)
     ax.set_xlabel(f"{style.metric_label(metric)} minus the released TabICLv2's, mean over the "
                   f"{ROLE_LABEL.get(role, role)}")
-    kinds = [k for k in ("credit", "control") if any(_kind(m) == k for m in order.index)]
-    style.legend_below(ax, style.legend_patches({_KIND_LABEL[k]: _KIND_COLOUR[k] for k in kinds})
+    groups = _groups(order.index)
+    style.legend_below(ax, style.legend_patches({_group_label(g): _group_colour(g) for g in groups})
                        + [plt.Line2D([], [], color=style.REFERENCE, lw=1.2,
-                                     label="released TabICLv2 (0)")], ncol=3)
+                                     label="released TabICLv2 (0)")], ncol=2)
     return fig
 
 
@@ -466,28 +536,88 @@ def results_summary(track: str, exp: str = "exp1") -> str:
              f" | metrics: {', '.join(available_metrics(df)) or 'none'}"]
     if metric not in df.columns:
         return "\n".join(lines)
-    lines += ["", f"A. WHICH PRIOR DEVELOPMENT SELECTS ({label})"]
+    lines += ["", f"A. WHICH PRIOR DEVELOPMENT SELECTS ({label}, development datasets, "
+              f"mean over datasets and seeds)"]
     from src.eval.selection import development_ranking
 
     ranking = development_ranking(df, track, exp)
     if not ranking.empty:
-        for _, row in ranking.head(3).iterrows():
-            lines.append(f"  {row['configuration'][:60]:<60} {row['mean']:.4f}")
+        for _, row in ranking.head(6).iterrows():
+            name = style.arm_name(row["configuration"], track, seed=False)
+            lines.append(f"  {row['mean']:.4f}  {name}")
     else:
         lines.append("  no complete development configuration scores yet")
     for role, heading in (("holdout", "B. HOW IT DOES ON THE HOLDOUT"),):
         part = _restrict(df, track, exp, role) if roles else df
-        lines += ["", f"{heading} ({label}, {ROLE_LABEL[role if roles else None]})"]
+        lines += ["", f"{heading} ({label}, {ROLE_LABEL[role if roles else None]}, "
+                  f"mean over every arm of each share)"]
         if not len(part):
             lines.append("  no holdout rows scored yet")
             continue
-        per_kind = part.assign(kind=part[mc].map(_kind)).groupby("kind")[metric].mean()
-        for k in ("credit", "control", "baseline"):
-            if k in per_kind:
-                lines.append(f"  {k:<9} mean {label} = {per_kind[k]:.4f}")
-        if "credit" in per_kind and "control" in per_kind:
-            lines.append(f"  credit prior minus control: {per_kind['credit'] - per_kind['control']:+.4f}")
+        groups = part[mc].map(lambda m: _share_group(m, track))
+        means = part.groupby(groups)[metric].mean()
+
+        def order(g: str) -> tuple:  # our shares in increasing order, then the references
+            share = re.match(r"([0-9.]+) % credit", g)
+            return (0, float(share.group(1)), g) if share else (1, 0.0, g)
+
+        for g in sorted(means.index, key=order):
+            lines.append(f"  {means[g]:.4f}  {g}")
+    lines += ["", "C. OUR CREDIT PRIOR AGAINST THE CONTROL — matched arms that differ only in "
+              "the credit share", "  (same filter and training seed; a positive difference "
+              "means the credit prior helped)"]
+    for role in ("development", "holdout"):
+        for share, (mean, better, n) in paired_differences(df, track, exp, role).items():
+            lines.append(f"  {role:<11} {style.prior_mix_label(share)} minus 0 % credit: "
+                         f"{mean:+.4f} {label}, better in {better} of {n} pairs")
     return "\n".join(lines)
+
+
+def _share_group(model: str, track: str) -> str:
+    """`0 % credit (TabICL prior only)`, `50 % credit`, … for our arms; `reference: <name>`."""
+    if _kind(model) == "baseline":
+        return f"reference: {style.reference_label(model, track)}"
+    m = re.search(r"credit_fraction=([0-9p.]+)", str(model))
+    share = float(m.group(1).replace("p", ".")) if m else 0.0
+    return style.prior_mix_label(share, control=True)
+
+
+def _pair_key(run_name: str) -> str:
+    """An arm's name with its credit share and prior intensity removed: two arms with the same key
+    differ only in how much of our prior they saw — same filter (or fine-tuning levers) and seed."""
+    key = re.sub(r"credit_fraction=[0-9p.]+", "", run_name)
+    return re.sub(r"(?:rho_range|boundary_mass_range)=\[[0-9.,]+\]", "", key)
+
+
+def paired_differences(df: pd.DataFrame, track: str, exp: str,
+                       role: str) -> dict[float, tuple[float, int, int]]:
+    """For each credit share above 0: `(mean of arm − its matched control, pairs where the arm is
+    better, number of pairs)` on one side of the split. An arm's score is its mean over the side's
+    datasets (equal weight) and evaluation seeds; arms of one share that differ only in prior
+    intensity are averaged first, so each pair is one (filter, seed) cell."""
+    metric = HEADLINE[track]
+    part = _restrict(df, track, exp, role) if _roles(track, exp) else df
+    if part is None or not len(part) or "info_run_name" not in part.columns:
+        return {}
+    ours = part[part["model"].astype(str).eq("crediticl") & part[metric].notna()]
+    if ours.empty:
+        return {}
+    arm = ours.groupby(["info_run_name", "dataset"])[metric].mean().groupby(level=0).mean()
+    frame = pd.DataFrame({"score": arm})
+    frame["key"] = [_pair_key(n) for n in frame.index]
+    frame["share"] = [float(re.search(r"credit_fraction=([0-9p.]+)", n).group(1).replace("p", "."))
+                      for n in frame.index]
+    cell = frame.groupby(["share", "key"])["score"].mean()
+    if 0.0 not in cell.index.get_level_values(0):
+        return {}
+    control = cell.xs(0.0, level="share")
+    out: dict[float, tuple[float, int, int]] = {}
+    for share in sorted(s for s in cell.index.get_level_values(0).unique() if s > 0):
+        diff = (cell.xs(share, level="share") - control).dropna()
+        if len(diff):
+            better = int((diff > 0).sum()) if HIGHER_IS_BETTER.get(metric, True) else int((diff < 0).sum())
+            out[share] = (float(diff.mean()), better, int(len(diff)))
+    return out
 
 
 # ---------------------------------------------------------------------------

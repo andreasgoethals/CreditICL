@@ -156,8 +156,11 @@ def test_prior_ranking_uses_dev_only_and_aggregates_training_seeds(monkeypatch):
 
     from src.visualize import results_plots
     monkeypatch.setattr(results_plots, "load_results", lambda *a: pd.DataFrame(rows))
+    from matplotlib.collections import PathCollection
+
     fig = results_plots.overall_ranking("pd")
-    assert len(fig.axes[0].patches) == 15
+    points = [c for c in fig.axes[0].collections if isinstance(c, PathCollection)]
+    assert sum(len(c.get_offsets()) for c in points) == 15  # one point per configuration
     plt.close(fig)
 
 

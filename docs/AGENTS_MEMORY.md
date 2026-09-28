@@ -72,6 +72,18 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
 
+### 25-09-2026 — LGD 100 % credit arms collapse in the benchmark; the target scale, most likely
+- **Tried:** Exp1 LGD with the credit target left raw in [0, 1] (`target_scaling` defaults to `none`; not set in `Exp1_LGD.yaml` or `Exp2_LGD.yaml`).
+- **Result:** benchmark holdout R² −0.13 for every 100 % credit arm (0.46 at 0 %, 0.45 at 50 %), calibration slope 4.1. The training monitor ranks the other way round: 50 % credit ~0.19 on `base_model`, control ~−0.03.
+- **Why (likely, untested):** TabICL's prior standardises regression targets and `TabICLRegressor.fit` standardises y (`y_scaler_`), so the benchmark feeds standardised targets — which a 100 % credit arm never saw; `progress._score` feeds raw [0, 1] targets — which a control arm never saw. Only 50 % arms saw both.
+- **Instead:** read LGD credit-vs-control only at 0 % vs 50 % in the benchmark. Before Exp2 LGD: set `prior.credit.target.target_scaling: standard`, or score one 100 % checkpoint without y standardisation to confirm first (Andreas's call).
+
+### 25-09-2026 — "The context cap applies to every model" — it applies to two
+- **Tried:** reading the Exp1 benchmark's reference gap and PD Brier scores as matched-context comparisons, as `benchmark.slurm` states ("applies to EVERY model in this array").
+- **Result:** our arms and the released TabICLv2 predict a mean default rate of 0.41 against a base rate of 0.22 (TabPFN-3 0.21, CatBoost 0.22); Brier 0.19–0.22 against 0.12–0.14.
+- **Why:** `--max-context-rows 1024` is read only by `TabICLBaseline._cap_context`, which for PD samples 50/50; TabPFN-3 gets `_TFMBaseline._maybe_subsample` (10,000 rows, proportional), CatBoost/linear every row. The results' `context_cap` column says 1024 for every model; `info_context_cap` is set only where it was applied.
+- **Instead:** compare ours with the released TabICLv2 (matched); read the other references as having more data, and PD Brier/calibration of TabICL-architecture models as shifted by the 50 % context. Whether to cap TabPFN-3 too, or sample the cap in proportion, is Andreas's call (changes the benchmark).
+
 ### 25-09-2026 — `run_notebooks --only` erased the other notebooks' summaries
 - **Tried:** re-running just the notebooks the new data touched (`--only 1.1_pd_training ...`).
 - **Result:** `All_Results.md` and `CAPTIONS.md` came back holding only those notebooks; `--summaries-only` wrote "(no output captured)" for all eleven.

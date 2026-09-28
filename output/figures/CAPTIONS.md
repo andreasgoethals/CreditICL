@@ -132,19 +132,19 @@ Eigenvalue spectra of the feature correlation matrix, each normalised by its lar
 
 **01_sweep_map** — `sweep_map`
 
-Final development ROC-AUC of every scheduled PD arm as a heatmap, one row per configuration grouped by credit fraction and one column per seed; grey cells have no development score.
+Final development ROC-AUC of every scheduled PD arm as a heatmap, one row per configuration grouped by prior mix and one column per seed; grey cells have no development score.
 
 **02_monitoring_coverage** — `monitoring_coverage`
 
-Monitoring coverage of every PD arm: one row per real dataset labelled development or holdout, one column per arm grouped by credit fraction, each cell coloured by whether its score enters the development mean, is not carried by every arm, is holdout, holds only missing values or was not monitored.
+Monitoring coverage of every PD arm: one row per real dataset labelled development or holdout, one column per arm grouped by prior mix, each cell coloured by whether its score enters the development mean, is not carried by every arm, is holdout, holds only missing values or was not monitored.
 
 **03_throughput** — `throughput`
 
-Training speed per PD arm in steps per second (left) and the implied hours for the full run (right), grouped by filter mode; points are arms coloured and shaped by credit fraction and bars are group medians with their value.
+Training speed per PD arm in steps per second (left) and the implied hours for the full run (right), grouped by filter; points are arms coloured and shaped by prior mix and bars are group medians with their value.
 
 **04_training_loss** — `training_loss`
 
-Training loss against optimisation step for every PD arm, a rolling mean over three logged batches coloured by credit fraction, with the median of each credit fraction bold.
+Training cross-entropy against optimisation step on a logarithmic axis for every PD arm, a rolling mean over five values logged every 100 steps, coloured by prior mix, with the median of each prior mix bold.
 
 **05_gradient_health** — `gradient_health`
 
@@ -152,11 +152,11 @@ Mean per-block gradient L2 norm (left) and ratio of gradient norm to weight norm
 
 **06_metric_over_training** — `metric_over_training`
 
-Development ROC-AUC averaged over the development datasets every arm scored, against training step; one line per arm coloured by credit fraction, with the mean of each credit fraction bold.
+Development ROC-AUC averaged over the development datasets every arm scored, against training step; one line per arm coloured by prior mix, with the mean of each prior mix bold.
 
 **07_credit_vs_control_over_training** — `credit_vs_control_over_training`
 
-Development ROC-AUC against training step for credit-prior arms and control arms: median lines with shaded inter-quartile bands over the finished arms of each group.
+Development ROC-AUC against training step for arms with our credit prior in the mix and for control arms: median lines with shaded inter-quartile bands over the finished arms of each group.
 
 **08_metric_by_levers** — `metric_by_levers`
 
@@ -164,11 +164,11 @@ Development ROC-AUC against training step, one panel per swept lever with one me
 
 **09_final_metric_by_lever** — `final_metric_by_lever`
 
-Final development ROC-AUC of every finished arm as points coloured and shaped by credit fraction, one panel per swept lever, with a horizontal bar at each group mean.
+Final development ROC-AUC of every finished arm as points coloured and shaped by prior mix, one panel per swept lever, with a horizontal bar at each group mean.
 
 **10_lever_interaction** — `lever_interaction`
 
-Final development ROC-AUC against each lever other than credit fraction, one series per credit fraction: points are finished arms, lines join the per-value means, whiskers show one standard deviation over seeds, and the grey band is the control mean plus or minus one standard deviation.
+Final development ROC-AUC against each lever other than the prior mix, one series per prior mix: points are finished arms, lines join the per-value means, whiskers show one standard deviation over seeds, and the grey band is the control mean plus or minus one standard deviation.
 
 **11_seed_spread** — `seed_spread`
 
@@ -176,15 +176,15 @@ Final development ROC-AUC of every configuration's seeds as points on one horizo
 
 **12_per_dataset_p1** — `per_dataset_p1`
 
-Monitored ROC-AUC against training step, one panel per real dataset labelled with its side of the split and the number of finished arms that scored it, credit-prior arms against control arms.
+Monitored ROC-AUC against training step, one panel per real dataset labelled with its side of the split and the number of finished arms that scored it, arms with our credit prior in the mix against control arms.
 
 **13_real_vs_ood** — `real_vs_ood`
 
-Development ROC-AUC on the real-credit datasets (solid) and on the out-of-domain suites (dashed) against training step, averaged separately over credit-prior and control arms.
+Development ROC-AUC on the real-credit datasets (solid) and on the out-of-domain suites (dashed) against training step, averaged separately over arms with our credit prior in the mix and control arms.
 
 **14_eval_metrics_p1** — `eval_metrics_p1`
 
-Each logged development metric against training step, one panel per metric and one figure per metric group, credit-prior and control means over the finished arms; the title marks the improving direction or target value, drawn as a dashed line.
+Each logged development metric against training step, one panel per metric and one figure per metric group, means over the finished arms with our credit prior in the mix and over the control arms; the title marks the improving direction or target value, drawn as a dashed line.
 
 **15_per_config_p1** — `per_config_p1`
 
@@ -198,19 +198,19 @@ Training loss (a rolling mean over three logged batches) and development ROC-AUC
 
 **01_sweep_map** — `sweep_map`
 
-Final development R² of every scheduled LGD arm as a heatmap, one row per configuration grouped by credit fraction and one column per seed; grey cells have no development score.
+Final development R² of every scheduled LGD arm as a heatmap, one row per configuration grouped by prior mix and one column per seed; grey cells have no development score.
 
 **02_monitoring_coverage** — `monitoring_coverage`
 
-Monitoring coverage of every LGD arm: one row per real dataset labelled development or holdout, one column per arm grouped by credit fraction, each cell coloured by whether its score enters the development mean, is not carried by every arm, is holdout, holds only missing values or was not monitored.
+Monitoring coverage of every LGD arm: one row per real dataset labelled development or holdout, one column per arm grouped by prior mix, each cell coloured by whether its score enters the development mean, is not carried by every arm, is holdout, holds only missing values or was not monitored.
 
 **03_throughput** — `throughput`
 
-Training speed per LGD arm in steps per second (left) and the implied hours for the full run (right), grouped by filter mode; points are arms coloured and shaped by credit fraction and bars are group medians with their value.
+Training speed per LGD arm in steps per second (left) and the implied hours for the full run (right), grouped by filter; points are arms coloured and shaped by prior mix and bars are group medians with their value.
 
 **04_training_loss** — `training_loss`
 
-Training loss against optimisation step for every LGD arm, a rolling mean over three logged batches coloured by credit fraction, with the median of each credit fraction bold.
+Training pinball loss against optimisation step on a logarithmic axis for every LGD arm, a rolling mean over five values logged every 100 steps, coloured by prior mix, with the median of each prior mix bold.
 
 **05_gradient_health** — `gradient_health`
 
@@ -218,11 +218,11 @@ Mean per-block gradient L2 norm (left) and ratio of gradient norm to weight norm
 
 **06_metric_over_training** — `metric_over_training`
 
-Development R² averaged over the development datasets every arm scored, against training step; one line per arm coloured by credit fraction, with the mean of each credit fraction bold.
+Development R² averaged over the development datasets every arm scored, against training step; one line per arm coloured by prior mix, with the mean of each prior mix bold.
 
 **07_credit_vs_control_over_training** — `credit_vs_control_over_training`
 
-Development R² against training step for credit-prior arms and control arms: median lines with shaded inter-quartile bands over the finished arms of each group.
+Development R² against training step for arms with our credit prior in the mix and for control arms: median lines with shaded inter-quartile bands over the finished arms of each group.
 
 **08_metric_by_levers** — `metric_by_levers`
 
@@ -230,11 +230,11 @@ Development R² against training step, one panel per swept lever with one mean l
 
 **09_final_metric_by_lever** — `final_metric_by_lever`
 
-Final development R² of every finished arm as points coloured and shaped by credit fraction, one panel per swept lever, with a horizontal bar at each group mean.
+Final development R² of every finished arm as points coloured and shaped by prior mix, one panel per swept lever, with a horizontal bar at each group mean.
 
 **10_lever_interaction** — `lever_interaction`
 
-Final development R² against each lever other than credit fraction, one series per credit fraction: points are finished arms, lines join the per-value means, whiskers show one standard deviation over seeds, and the grey band is the control mean plus or minus one standard deviation.
+Final development R² against each lever other than the prior mix, one series per prior mix: points are finished arms, lines join the per-value means, whiskers show one standard deviation over seeds, and the grey band is the control mean plus or minus one standard deviation.
 
 **11_seed_spread** — `seed_spread`
 
@@ -242,23 +242,23 @@ Final development R² of every configuration's seeds as points on one horizontal
 
 **12_per_dataset_p1** — `per_dataset_p1`
 
-Monitored R² against training step, one panel per real dataset labelled with its side of the split and the number of finished arms that scored it, credit-prior arms against control arms.
+Monitored R² against training step, one panel per real dataset labelled with its side of the split and the number of finished arms that scored it, arms with our credit prior in the mix against control arms.
 
 **13_real_vs_ood** — `real_vs_ood`
 
-Development R² on the real-credit datasets (solid) and on the out-of-domain suites (dashed) against training step, averaged separately over credit-prior and control arms.
+Development R² on the real-credit datasets (solid) and on the out-of-domain suites (dashed) against training step, averaged separately over arms with our credit prior in the mix and control arms.
 
 **14_eval_metrics_p1** — `eval_metrics_p1`
 
-Each logged development metric against training step, one panel per metric and one figure per metric group, credit-prior and control means over the finished arms; the title marks the improving direction or target value, drawn as a dashed line.
+Each logged development metric against training step, one panel per metric and one figure per metric group, means over the finished arms with our credit prior in the mix and over the control arms; the title marks the improving direction or target value, drawn as a dashed line.
 
 **15_eval_metrics_p2** — `eval_metrics_p2`
 
-Each logged development metric against training step, one panel per metric and one figure per metric group, credit-prior and control means over the finished arms; the title marks the improving direction or target value, drawn as a dashed line.
+Each logged development metric against training step, one panel per metric and one figure per metric group, means over the finished arms with our credit prior in the mix and over the control arms; the title marks the improving direction or target value, drawn as a dashed line.
 
 **16_eval_metrics_p3** — `eval_metrics_p3`
 
-Each logged development metric against training step, one panel per metric and one figure per metric group, credit-prior and control means over the finished arms; the title marks the improving direction or target value, drawn as a dashed line.
+Each logged development metric against training step, one panel per metric and one figure per metric group, means over the finished arms with our credit prior in the mix and over the control arms; the title marks the improving direction or target value, drawn as a dashed line.
 
 **17_per_config_p1** — `per_config_p1`
 
@@ -272,27 +272,27 @@ Training loss (a rolling mean over three logged batches) and development R² aga
 
 **01_overall_ranking** — `overall_ranking`
 
-Development ROC-AUC per configuration, averaged over the development datasets and training seeds, as horizontal bars coloured by model kind with whiskers for the training-seed standard deviation.
+Development ROC-AUC per configuration, averaged over the development datasets and training seeds, one point per configuration marked by prior mix with reference models in olive, and whiskers for the training-seed standard deviation.
 
 **02_credit_vs_control** — `credit_vs_control`
 
-Per-model mean ROC-AUC on the holdout datasets for credit-prior arms, control arms and external baselines, one point per model with a bar at each group mean.
+Per-model mean ROC-AUC on the holdout datasets, one column per prior mix (0 %, 50 % and 100 % credit) and one for the reference models, one point per model with a bar at each column mean.
 
 **03_beats_reference** — `beats_reference`
 
-Each trained arm's mean ROC-AUC on the holdout datasets minus the released TabICLv2's, one horizontal bar per arm coloured by kind, with a reference line at zero.
+Each trained arm's mean ROC-AUC on the holdout datasets minus the released TabICLv2's, one horizontal bar per arm coloured by prior mix, with a reference line at zero.
 
 **04_metric_grid** — `metric_grid`
 
-One panel per benchmark metric on the holdout datasets, one bar per model kind (credit prior, control, external baseline); each title marks the improving direction or target value.
+One panel per benchmark metric on the holdout datasets, one bar per prior mix and one for the reference models, each the mean of the models' means; each title marks the improving direction or target value.
 
 **05_per_dataset** — `per_dataset`
 
-Best ROC-AUC of each model kind per real dataset as grouped bars, development datasets first and then holdout, each labelled with its side of the split.
+Best ROC-AUC per real dataset in each prior mix and among the reference models, a model scored by its mean over evaluation seeds, as grouped bars with development datasets first and then holdout.
 
 **06_per_dataset_heatmap** — `per_dataset_heatmap`
 
-Best ROC-AUC of each model kind on each dataset as an annotated heatmap, development datasets first and then holdout on the vertical axis, model kinds on the horizontal axis.
+Best ROC-AUC in each prior mix and among the reference models on each dataset as an annotated heatmap, development datasets first and then holdout on the vertical axis.
 
 **07_literature_landscape** — `literature_landscape`
 
@@ -302,27 +302,27 @@ Reported ROC-AUC on real credit datasets drawn from the tfm-library, one horizon
 
 **01_overall_ranking** — `overall_ranking`
 
-Development R² per configuration, averaged over the development datasets and training seeds, as horizontal bars coloured by model kind with whiskers for the training-seed standard deviation.
+Development R² per configuration, averaged over the development datasets and training seeds, one point per configuration marked by prior mix with reference models in olive, and whiskers for the training-seed standard deviation.
 
 **02_credit_vs_control** — `credit_vs_control`
 
-Per-model mean R² on the holdout datasets for credit-prior arms, control arms and external baselines, one point per model with a bar at each group mean.
+Per-model mean R² on the holdout datasets, one column per prior mix (0 %, 50 % and 100 % credit) and one for the reference models, one point per model with a bar at each column mean.
 
 **03_beats_reference** — `beats_reference`
 
-Each trained arm's mean R² on the holdout datasets minus the released TabICLv2's, one horizontal bar per arm coloured by kind, with a reference line at zero.
+Each trained arm's mean R² on the holdout datasets minus the released TabICLv2's, one horizontal bar per arm coloured by prior mix, with a reference line at zero.
 
 **04_metric_grid** — `metric_grid`
 
-One panel per benchmark metric on the holdout datasets, one bar per model kind (credit prior, control, external baseline); each title marks the improving direction or target value.
+One panel per benchmark metric on the holdout datasets, one bar per prior mix and one for the reference models, each the mean of the models' means; each title marks the improving direction or target value.
 
 **05_per_dataset** — `per_dataset`
 
-Best R² of each model kind per real dataset as grouped bars, development datasets first and then holdout, each labelled with its side of the split.
+Best R² per real dataset in each prior mix and among the reference models, a model scored by its mean over evaluation seeds, as grouped bars with development datasets first and then holdout.
 
 **06_per_dataset_heatmap** — `per_dataset_heatmap`
 
-Best R² of each model kind on each dataset as an annotated heatmap, development datasets first and then holdout on the vertical axis, model kinds on the horizontal axis.
+Best R² in each prior mix and among the reference models on each dataset as an annotated heatmap, development datasets first and then holdout on the vertical axis.
 
 # 2. Experiment 2
 
@@ -330,19 +330,19 @@ Best R² of each model kind on each dataset as an annotated heatmap, development
 
 **01_sweep_map** — `sweep_map`
 
-Final development ROC-AUC of every scheduled PD arm as a heatmap, one row per configuration grouped by credit fraction and one column per seed; grey cells have no development score, hatched cells are still training with the share of steps done.
+Final development ROC-AUC of every scheduled PD arm as a heatmap, one row per configuration grouped by prior mix and one column per seed; grey cells have no development score, hatched cells are still training with the share of steps done.
 
 **02_monitoring_coverage** — `monitoring_coverage`
 
-Monitoring coverage of every PD arm: one row per real dataset labelled development or holdout, one column per arm grouped by credit fraction, each cell coloured by whether its score enters the development mean, is not carried by every arm, is holdout, holds only missing values or was not monitored.
+Monitoring coverage of every PD arm: one row per real dataset labelled development or holdout, one column per arm grouped by prior mix, each cell coloured by whether its score enters the development mean, is not carried by every arm, is holdout, holds only missing values or was not monitored.
 
 **03_throughput** — `throughput`
 
-Training speed per PD arm in steps per second (left) and the implied hours for the full run (right), grouped by freeze strategy; points are arms coloured and shaped by credit fraction and bars are group medians with their value.
+Training speed per PD arm in steps per second (left) and the implied hours for the full run (right), grouped by layers trained; points are arms coloured and shaped by prior mix and bars are group medians with their value.
 
 **04_training_loss** — `training_loss`
 
-Training loss against optimisation step for every PD arm, a rolling mean over three logged batches coloured by credit fraction and dotted while unfinished, with the median of the finished arms of each credit fraction bold.
+Training loss against optimisation step for every PD arm, on a logarithmic axis, a rolling mean over five values logged every 100 steps, coloured by prior mix and dotted while unfinished, with the median of the finished arms of each prior mix bold.
 
 **05_gradient_health** — `gradient_health`
 
@@ -350,11 +350,11 @@ Mean per-block gradient L2 norm (left) and ratio of gradient norm to weight norm
 
 **06_metric_over_training** — `metric_over_training`
 
-Development ROC-AUC averaged over the development datasets every arm scored, against training step; one line per arm coloured by credit fraction and dotted while unfinished, with the mean of the finished arms of each credit fraction bold.
+Development ROC-AUC averaged over the development datasets every arm scored, against training step; one line per arm coloured by prior mix and dotted while unfinished, with the mean of the finished arms of each prior mix bold.
 
 **07_credit_vs_control_over_training** — `credit_vs_control_over_training`
 
-Development ROC-AUC against training step for credit-prior arms and control arms: median lines with shaded inter-quartile bands over the finished arms of each group.
+Development ROC-AUC against training step for arms with our credit prior in the mix and for control arms: median lines with shaded inter-quartile bands over the finished arms of each group.
 
 **08_metric_by_levers** — `metric_by_levers`
 
@@ -362,11 +362,11 @@ Development ROC-AUC against training step, one panel per swept lever with one me
 
 **09_final_metric_by_lever** — `final_metric_by_lever`
 
-Final development ROC-AUC of every finished arm as points coloured and shaped by credit fraction, one panel per swept lever, with a horizontal bar at each group mean.
+Final development ROC-AUC of every finished arm as points coloured and shaped by prior mix, one panel per swept lever, with a horizontal bar at each group mean.
 
 **10_lever_interaction** — `lever_interaction`
 
-Final development ROC-AUC against each lever other than credit fraction, one series per credit fraction: points are finished arms, lines join the per-value means, whiskers show one standard deviation over seeds, and the grey band is the control mean plus or minus one standard deviation.
+Final development ROC-AUC against each lever other than the prior mix, one series per prior mix: points are finished arms, lines join the per-value means, whiskers show one standard deviation over seeds, and the grey band is the control mean plus or minus one standard deviation.
 
 **11_seed_spread** — `seed_spread`
 
@@ -374,15 +374,15 @@ Final development ROC-AUC of every configuration's seeds as points on one horizo
 
 **12_per_dataset_p1** — `per_dataset_p1`
 
-Monitored ROC-AUC against training step, one panel per real dataset labelled with its side of the split and the number of finished arms that scored it, credit-prior arms against control arms.
+Monitored ROC-AUC against training step, one panel per real dataset labelled with its side of the split and the number of finished arms that scored it, arms with our credit prior in the mix against control arms.
 
 **13_real_vs_ood** — `real_vs_ood`
 
-Development ROC-AUC on the real-credit datasets (solid) and on the out-of-domain suites (dashed) against training step, averaged separately over credit-prior and control arms.
+Development ROC-AUC on the real-credit datasets (solid) and on the out-of-domain suites (dashed) against training step, averaged separately over arms with our credit prior in the mix and control arms.
 
 **14_eval_metrics_p1** — `eval_metrics_p1`
 
-Each logged development metric against training step, one panel per metric and one figure per metric group, credit-prior and control means over the finished arms; the title marks the improving direction or target value, drawn as a dashed line.
+Each logged development metric against training step, one panel per metric and one figure per metric group, means over the finished arms with our credit prior in the mix and over the control arms; the title marks the improving direction or target value, drawn as a dashed line.
 
 **15_per_config_p1** — `per_config_p1`
 
@@ -396,19 +396,19 @@ Training loss (a rolling mean over three logged batches) and development ROC-AUC
 
 **01_sweep_map** — `sweep_map`
 
-Final development R² of every scheduled LGD arm as a heatmap, one row per configuration grouped by credit fraction and one column per seed; grey cells have no development score, hatched cells are still training with the share of steps done.
+Final development R² of every scheduled LGD arm as a heatmap, one row per configuration grouped by prior mix and one column per seed; grey cells have no development score, hatched cells are still training with the share of steps done.
 
 **02_monitoring_coverage** — `monitoring_coverage`
 
-Monitoring coverage of every LGD arm: one row per real dataset labelled development or holdout, one column per arm grouped by credit fraction, each cell coloured by whether its score enters the development mean, is not carried by every arm, is holdout, holds only missing values or was not monitored.
+Monitoring coverage of every LGD arm: one row per real dataset labelled development or holdout, one column per arm grouped by prior mix, each cell coloured by whether its score enters the development mean, is not carried by every arm, is holdout, holds only missing values or was not monitored.
 
 **03_throughput** — `throughput`
 
-Training speed per LGD arm in steps per second (left) and the implied hours for the full run (right), grouped by freeze strategy; points are arms coloured and shaped by credit fraction and bars are group medians with their value.
+Training speed per LGD arm in steps per second (left) and the implied hours for the full run (right), grouped by layers trained; points are arms coloured and shaped by prior mix and bars are group medians with their value.
 
 **04_training_loss** — `training_loss`
 
-Training loss against optimisation step for every LGD arm, a rolling mean over three logged batches coloured by credit fraction and dotted while unfinished, with the median of the finished arms of each credit fraction bold.
+Training loss against optimisation step for every LGD arm, on a logarithmic axis, a rolling mean over five values logged every 100 steps, coloured by prior mix and dotted while unfinished, with the median of the finished arms of each prior mix bold.
 
 **05_gradient_health** — `gradient_health`
 
@@ -416,11 +416,11 @@ Mean per-block gradient L2 norm (left) and ratio of gradient norm to weight norm
 
 **06_metric_over_training** — `metric_over_training`
 
-Development R² averaged over the development datasets every arm scored, against training step; one line per arm coloured by credit fraction and dotted while unfinished, with the mean of the finished arms of each credit fraction bold.
+Development R² averaged over the development datasets every arm scored, against training step; one line per arm coloured by prior mix and dotted while unfinished, with the mean of the finished arms of each prior mix bold.
 
 **07_credit_vs_control_over_training** — `credit_vs_control_over_training`
 
-Development R² against training step for credit-prior arms and control arms: median lines with shaded inter-quartile bands over the finished arms of each group.
+Development R² against training step for arms with our credit prior in the mix and for control arms: median lines with shaded inter-quartile bands over the finished arms of each group.
 
 **08_metric_by_levers** — `metric_by_levers`
 
@@ -428,11 +428,11 @@ Development R² against training step, one panel per swept lever with one mean l
 
 **09_final_metric_by_lever** — `final_metric_by_lever`
 
-Final development R² of every finished arm as points coloured and shaped by credit fraction, one panel per swept lever, with a horizontal bar at each group mean.
+Final development R² of every finished arm as points coloured and shaped by prior mix, one panel per swept lever, with a horizontal bar at each group mean.
 
 **10_lever_interaction** — `lever_interaction`
 
-Final development R² against each lever other than credit fraction, one series per credit fraction: points are finished arms, lines join the per-value means, whiskers show one standard deviation over seeds, and the grey band is the control mean plus or minus one standard deviation.
+Final development R² against each lever other than the prior mix, one series per prior mix: points are finished arms, lines join the per-value means, whiskers show one standard deviation over seeds, and the grey band is the control mean plus or minus one standard deviation.
 
 **11_seed_spread** — `seed_spread`
 
@@ -440,15 +440,15 @@ Final development R² of every configuration's seeds as points on one horizontal
 
 **12_per_dataset_p1** — `per_dataset_p1`
 
-Monitored R² against training step, one panel per real dataset labelled with its side of the split and the number of finished arms that scored it, credit-prior arms against control arms.
+Monitored R² against training step, one panel per real dataset labelled with its side of the split and the number of finished arms that scored it, arms with our credit prior in the mix against control arms.
 
 **13_real_vs_ood** — `real_vs_ood`
 
-Development R² on the real-credit datasets (solid) and on the out-of-domain suites (dashed) against training step, averaged separately over credit-prior and control arms.
+Development R² on the real-credit datasets (solid) and on the out-of-domain suites (dashed) against training step, averaged separately over arms with our credit prior in the mix and control arms.
 
 **14_eval_metrics_p1** — `eval_metrics_p1`
 
-Each logged development metric against training step, one panel per metric and one figure per metric group, credit-prior and control means over the finished arms; the title marks the improving direction or target value, drawn as a dashed line.
+Each logged development metric against training step, one panel per metric and one figure per metric group, means over the finished arms with our credit prior in the mix and over the control arms; the title marks the improving direction or target value, drawn as a dashed line.
 
 **15_per_config_p1** — `per_config_p1`
 
@@ -462,31 +462,31 @@ Training loss (a rolling mean over three logged batches) and development R² aga
 
 **01_overall_ranking** — `overall_ranking`
 
-Development ROC-AUC per configuration, averaged over the development datasets and training seeds, as horizontal bars coloured by model kind with whiskers for the training-seed standard deviation.
+Development ROC-AUC per configuration, averaged over the development datasets and training seeds, one point per configuration marked by prior mix with reference models in olive, and whiskers for the training-seed standard deviation.
 
 **02_credit_vs_control** — `credit_vs_control`
 
-Per-model mean ROC-AUC on the holdout datasets for credit-prior arms, control arms and external baselines, one point per model with a bar at each group mean.
+Per-model mean ROC-AUC on the holdout datasets, one column per prior mix (0 % credit is the control) and one for the reference models, one point per model with a bar at each column mean.
 
 **03_beats_reference** — `beats_reference`
 
-Each trained arm's mean ROC-AUC on the holdout datasets minus the released TabICLv2's, one horizontal bar per arm coloured by kind, with a reference line at zero.
+Each trained arm's mean ROC-AUC on the holdout datasets minus the released TabICLv2's, one horizontal bar per arm coloured by prior mix, with a reference line at zero.
 
 **04_metric_grid** — `metric_grid`
 
-One panel per benchmark metric on the holdout datasets, one bar per model kind (credit prior, control, external baseline); each title marks the improving direction or target value.
+One panel per benchmark metric on the holdout datasets, one bar per prior mix and one for the reference models, each the mean of the models' means; each title marks the improving direction or target value.
 
 **05_lever_effect** — `lever_effect`
 
-Mean ROC-AUC by the value of each fine-tuning lever, one panel per lever: credit fraction, freeze strategy, L2-SP and learning rate.
+Mean ROC-AUC by the value of each fine-tuning lever, one panel per lever: prior mix, layers trained, L2-SP and learning rate.
 
 **06_per_dataset** — `per_dataset`
 
-Best ROC-AUC of each model kind per real dataset as grouped bars, development datasets first and then holdout, each labelled with its side of the split.
+Best ROC-AUC per real dataset in each prior mix and among the reference models, a model scored by its mean over evaluation seeds, as grouped bars with development datasets first and then holdout.
 
 **07_per_dataset_heatmap** — `per_dataset_heatmap`
 
-Best ROC-AUC of each model kind on each dataset as an annotated heatmap, development datasets first and then holdout on the vertical axis, model kinds on the horizontal axis.
+Best ROC-AUC in each prior mix and among the reference models on each dataset as an annotated heatmap, development datasets first and then holdout on the vertical axis.
 
 **08_literature_landscape** — `literature_landscape`
 
@@ -496,28 +496,28 @@ Reported ROC-AUC on real credit datasets drawn from the tfm-library, one horizon
 
 **01_overall_ranking** — `overall_ranking`
 
-Development R² per configuration, averaged over the development datasets and training seeds, as horizontal bars coloured by model kind with whiskers for the training-seed standard deviation.
+Development R² per configuration, averaged over the development datasets and training seeds, one point per configuration marked by prior mix with reference models in olive, and whiskers for the training-seed standard deviation.
 
 **02_credit_vs_control** — `credit_vs_control`
 
-Per-model mean R² on the holdout datasets for credit-prior arms, control arms and external baselines, one point per model with a bar at each group mean.
+Per-model mean R² on the holdout datasets, one column per prior mix (0 % credit is the control) and one for the reference models, one point per model with a bar at each column mean.
 
 **03_beats_reference** — `beats_reference`
 
-Each trained arm's mean R² on the holdout datasets minus the released TabICLv2's, one horizontal bar per arm coloured by kind, with a reference line at zero.
+Each trained arm's mean R² on the holdout datasets minus the released TabICLv2's, one horizontal bar per arm coloured by prior mix, with a reference line at zero.
 
 **04_metric_grid** — `metric_grid`
 
-One panel per benchmark metric on the holdout datasets, one bar per model kind (credit prior, control, external baseline); each title marks the improving direction or target value.
+One panel per benchmark metric on the holdout datasets, one bar per prior mix and one for the reference models, each the mean of the models' means; each title marks the improving direction or target value.
 
 **05_lever_effect** — `lever_effect`
 
-Mean R² by the value of each fine-tuning lever, one panel per lever: credit fraction, freeze strategy, L2-SP and learning rate.
+Mean R² by the value of each fine-tuning lever, one panel per lever: prior mix, layers trained, L2-SP and learning rate.
 
 **06_per_dataset** — `per_dataset`
 
-Best R² of each model kind per real dataset as grouped bars, development datasets first and then holdout, each labelled with its side of the split.
+Best R² per real dataset in each prior mix and among the reference models, a model scored by its mean over evaluation seeds, as grouped bars with development datasets first and then holdout.
 
 **07_per_dataset_heatmap** — `per_dataset_heatmap`
 
-Best R² of each model kind on each dataset as an annotated heatmap, development datasets first and then holdout on the vertical axis, model kinds on the horizontal axis.
+Best R² in each prior mix and among the reference models on each dataset as an annotated heatmap, development datasets first and then holdout on the vertical axis.
