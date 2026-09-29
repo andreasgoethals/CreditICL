@@ -69,10 +69,13 @@ set ``atom_prob: 1.0`` and give ``boundary_mass_range`` a positive lower bound.
 
 from __future__ import annotations
 
+import math
+from typing import Any
+
 import torch
 
 from ...utils.target_stats import target_stats
-from ..preprocess import outlier_removing, standard_scaling, to_ranks
+from ..preprocess import standard_scaling, to_ranks
 from ..rng import PriorRNG
 
 
@@ -86,17 +89,42 @@ def kumaraswamy_icdf(u: torch.Tensor, a: float, b: float) -> torch.Tensor:
 
 
 def sample_lgd_shape(rng: PriorRNG, cfg: dict) -> dict:
-    """Draw one point from the LGD target family."""
-    a_lo, a_hi = cfg.get("shape_ab_range", [0.3, 4.0])
-    a = rng.lognum(a_lo, a_hi)
-    b = rng.lognum(a_lo, a_hi)
+    """Draw one point from the LGD target family.
+
+    The interior is Kumaraswamy(a, b) with `a` and `b` drawn log-uniformly from their own
+    ranges — `interior_a_range`, `interior_b_range` — so the interior can lean towards small
+    losses (a < b: most recoveries nearly complete, a long tail of large losses — the shape
+    of most real LGD data) without losing the other shapes. Both fall back to
+    `interior_shape_range`, then to the old `shape_ab_range`. (Until 28-09-2026 the configs set
+    `interior_shape_range`, which nothing read: the interior used the default [0.3, 4.0].)
+
+    Each boundary atom has its own chance of existing (`atom_prob_0`, `atom_prob_1`) and its own
+    mass range (`boundary_mass_0_range`, `boundary_mass_1_range`), both falling back to the
+    shared `atom_prob` / `boundary_mass_range`: real LGD tables range from no atoms at all to
+    half the rows at exactly 1.
+    """
+    shared = cfg.get("interior_shape_range", cfg.get("shape_ab_range", [0.3, 4.0]))
+    a_lo, a_hi = cfg.get("interior_a_range", shared)
+    b_lo, b_hi = cfg.get("interior_b_range", shared)
+    a = rng.lognum(float(a_lo), float(a_hi))
+    b = rng.lognum(float(b_lo), float(b_hi))
 
     m_lo, m_hi = cfg.get("boundary_mass_range", [0.02, 0.25])
+    lo0, hi0 = cfg.get("boundary_mass_0_range", [m_lo, m_hi])
+    lo1, hi1 = cfg.get("boundary_mass_1_range", [m_lo, m_hi])
     atom_prob = float(cfg.get("atom_prob", 0.75))
     max_total = float(cfg.get("max_total_boundary_mass", 0.60))
+    # `lo + (hi - lo) * U ** power`: 1 is uniform; above 1 most tables get a small atom and a few a
+    # large one, which is how the real atoms spread (at 1: 0.3 %, 4 %, 6 %, 8 %, 12 %, 16 %, 52 %). A
+    # uniform draw wide enough to reach `heloc`'s 52 % put the median far above the real 8 %.
+    pow0 = float(cfg.get("boundary_mass_0_power", cfg.get("boundary_mass_power", 1.0)))
+    pow1 = float(cfg.get("boundary_mass_1_power", cfg.get("boundary_mass_power", 1.0)))
 
-    p0 = rng.uniform(m_lo, m_hi) if rng.boolean(atom_prob) else 0.0
-    p1 = rng.uniform(m_lo, m_hi) if rng.boolean(atom_prob) else 0.0
+    def mass(lo: Any, hi: Any, power: float) -> float:
+        return float(lo) + (float(hi) - float(lo)) * rng.uniform(0.0, 1.0) ** power
+
+    p0 = mass(lo0, hi0, pow0) if rng.boolean(float(cfg.get("atom_prob_0", atom_prob))) else 0.0
+    p1 = mass(lo1, hi1, pow1) if rng.boolean(float(cfg.get("atom_prob_1", atom_prob))) else 0.0
 
     # Keep genuine interior mass; without this, a draw can degenerate to a
     # two-point distribution, which the trivial/degenerate filters would bin.
@@ -123,8 +151,11 @@ def apply_lgd_target(
 
     # Optional signal dilution: mix noise into the latent BEFORE ranking. This
     # decouples "what shape is the target" from "how predictable is it", so the
-    # two can be varied independently instead of moving together.
-    rho = float(cfg.get("signal_strength", 1.0))
+    # two can be varied independently instead of moving together. A `[lo, hi]`
+    # `signal_strength_range` draws it per table, as real tables differ in difficulty.
+    s_range = cfg.get("signal_strength_range")
+    rho = (float(rng.uniform(float(s_range[0]), float(s_range[1]))) if s_range is not None
+           else float(cfg.get("signal_strength", 1.0)))
     if rho < 1.0:
         z = (y_latent - y_latent.mean()) / (y_latent.std() + 1e-8)
         noise = rng.randn_like(z)
@@ -174,7 +205,8 @@ def apply_lgd_target(
 
     else:
         raise ValueError(
-            f"unknown LGD target mode {mode!r}; expected 'quantile', 'censor' or 'mechanism'"
+            f"unknown LGD target mode {mode!r}; expected 'quantile', 'censor' or 'mechanism' "
+            f"('zoib' is applied by the generator through `apply_lgd_zoib`, which needs the features)"
         )
 
     # Optional recording granularity: real LGD is derived from currency amounts
@@ -198,8 +230,12 @@ def apply_lgd_target(
 
     scaling = cfg.get("target_scaling", "none")
     if scaling == "standard":
-        # Arm A's path. Affine, so the shape survives and only the support moves.
-        y = standard_scaling(outlier_removing(y.unsqueeze(-1), threshold=4.0)).squeeze(-1)
+        # What `TabICLRegressor.fit` does at prediction time: standardise, nothing else. Affine,
+        # so the shape survives and only the support moves. NO outlier clipping first (it used to
+        # be here): with a rare atom — 1 % of rows at 1 — the atom sits more than 4 SD out and
+        # clipping erases it, and prediction never clips the target. The generator applies this
+        # step itself, last, so missingness can couple to the raw [0, 1] target first.
+        y = standard_scaling(y.unsqueeze(-1)).squeeze(-1)
     elif scaling != "none":
         raise ValueError(f"unknown target_scaling {scaling!r}; expected 'none' or 'standard'")
 
@@ -216,3 +252,166 @@ def apply_lgd_target(
         "target_scaling": scaling,
     }
     return y.float(), meta
+
+
+# ---------------------------------------------------------------------------
+# ZOIB mode — the literature's LGD data-generating process (added 29-09-2026)
+# ---------------------------------------------------------------------------
+#
+# The zero-and-one inflated beta (ZOIB) regression of Ospina & Ferrari (2010), in the
+# parameterisation Li, Zhang & Zhao use to SIMULATE LGD data ("Modeling Loss Given Default
+# Regressions", OCC/FDIC working paper, version of 11-05-2020, section 2.1, eqs. 1-6; following
+# Li et al. 2016 and Yashkir & Yashkir 2013):
+#
+#     P(LGD = 0) = e^{x a} / (1 + e^{x a} + e^{x b})        (a full recovery)
+#     P(LGD = 1) = e^{x b} / (1 + e^{x a} + e^{x b})        (a total loss)
+#     LGD | interior ~ Beta(mu phi, (1 - mu) phi),  mu = logistic(x g)
+#
+# with a macroeconomic factor shared by every default of a period (their x2, the quarterly
+# unemployment rate, one value per 10,000 defaults) among the explanatory variables. Their true
+# values: intercepts a0 = -0.54, b0 = -1.46, g0 = 0; precision phi = 5; nine covariates with
+# coefficients +0.4 (a), -0.1 (b), -0.1 (g) on N(0, 0.5^2) variables; macro coefficients -5, +6,
+# +0.5 on the unemployment rate. A covariate that raises the chance of a full recovery lowers the
+# chance of a total loss and the interior mean; a downturn does the opposite (Altman et al. 2005:
+# recoveries fall when defaults rise).
+#
+# That is ONE portfolio. A prior needs a distribution over portfolios, so each table draws its
+# own parameters (`sample_zoib_params`): intercepts normal around the published values, the
+# precision log-uniform around phi = 5, covariate and macro loadings uniform over ranges that
+# contain the published effect sizes, with the published signs. Nothing here is set from the
+# evaluation datasets (docs/PRIORS.md).
+
+
+def sample_zoib_params(rng: PriorRNG, cfg: dict) -> dict[str, float]:
+    """One portfolio's ZOIB parameters. Defaults are the published values, spread as documented."""
+
+    def normal(key: str, default: tuple[float, float]) -> float:
+        mean, sd = cfg.get(key, default)
+        return float(mean) + float(sd) * float(rng.randn(1).item())
+
+    def uni(key: str, default: tuple[float, float]) -> float:
+        lo, hi = cfg.get(key, default)
+        return float(rng.uniform(float(lo), float(hi)))
+
+    phi_lo, phi_hi = cfg.get("phi_range", [1.0, 20.0])
+    return {
+        "a0": normal("alpha0_mean_sd", (-0.54, 1.0)),
+        "b0": normal("beta0_mean_sd", (-1.46, 1.0)),
+        "g0": normal("gamma0_mean_sd", (0.0, 1.0)),
+        "phi": float(rng.lognum(float(phi_lo), float(phi_hi))),
+        # Covariate loadings: the SD of the covariate part of each linear predictor. Published:
+        # 0.4 x 0.5 x sqrt(9) = 0.6 (P0), 0.1 x 0.5 x 3 = 0.15 (P1 and mu).
+        "a_s": uni("loading_p0_range", (0.2, 1.5)),
+        "b_s": uni("loading_p1_range", (0.1, 1.5)),
+        "g_s": uni("loading_mu_range", (0.1, 1.0)),
+        # Macro loadings per SD of the period factor. Published: -5, +6, +0.5 times the SD of the
+        # 2006-2015 unemployment rate (about 0.018) = -0.09, +0.11, +0.01.
+        "a_m": uni("macro_p0_range", (-0.3, 0.0)),
+        "b_m": uni("macro_p1_range", (0.0, 0.3)),
+        "g_m": uni("macro_mu_range", (0.0, 0.1)),
+        "overlap": uni("component_overlap_range", (0.3, 1.0)),
+        "signal_share": uni("signal_share_range", (0.1, 1.0)),
+    }
+
+
+def _period_factor(rng: PriorRNG, n: int, cfg: dict) -> tuple[torch.Tensor, int]:
+    """A standard-normal macro value per period, constant within the period's contiguous block of
+    rows (Li, Zhang & Zhao: one unemployment rate per quarter's defaults). One period = none."""
+    n_periods = int(rng.randint(int(cfg.get("min_cohorts", 1)), int(cfg.get("max_cohorts", 40)) + 1))
+    if n_periods <= 1:
+        return torch.zeros(n), 1
+    edges = torch.linspace(0, n, n_periods + 1).long()
+    draws = rng.randn(n_periods)
+    factor = torch.zeros(n)
+    for c in range(n_periods):
+        factor[edges[c]: edges[c + 1]] = draws[c]
+    return factor, n_periods
+
+
+def _standardised(z: torch.Tensor) -> torch.Tensor:
+    return (z - z.mean()) / (z.std() + 1e-8)
+
+
+def apply_lgd_zoib(
+    rng: PriorRNG,
+    X: torch.Tensor,
+    y_latent: torch.Tensor,
+    cfg: dict,
+    max_features: int,
+) -> tuple[torch.Tensor, torch.Tensor, dict]:
+    """Draw an LGD target from a ZOIB regression on the table's own features.
+
+    THE DRIVERS. The graph's target node — the SCM latent, rank-mapped to a standard normal so
+    only its ordering matters — is the table's main recovery driver `s`. `signal_share` of it is
+    kept and the rest replaced by noise: the drivers a lender never records (Li, Zhang & Zhao
+    drop four or eight of their nine covariates when fitting, i.e. keep 11-56 % of the covariate
+    signal). The three parts of the model each read their own driver (Ospina & Ferrari give P0,
+    P1 and mu separate coefficient vectors): `overlap` of `s` plus a random projection of the
+    features, so collateral can decide full recoveries while seniority moves the interior.
+
+    THE PERIOD FACTOR is shared by every row of a period and enters all three predictors with
+    the published signs. With `macro_feature_prob` it is also a column — as the unemployment rate
+    is an explanatory variable in Li, Zhang & Zhao — otherwise it is an unrecorded driver.
+
+    Returns the raw target on [0, 1]; the generator standardises it on the context afterwards
+    when the encoding asks for it, as `TabICLRegressor` does to a real one.
+    """
+    from .mechanisms import _normal_icdf, _uniform_from_latent
+
+    n = y_latent.numel()
+    p = sample_zoib_params(rng, cfg)
+
+    s = _normal_icdf(_uniform_from_latent(y_latent))
+    share = p["signal_share"]
+    if share < 1.0:
+        s = math.sqrt(share) * s + math.sqrt(1.0 - share) * rng.randn(n)
+    s = _standardised(s)
+
+    feats = X.float()
+    if feats.shape[1]:
+        feats = feats[:, feats.std(0) > 1e-8]
+    if feats.shape[1]:
+        feats = (feats - feats.mean(0)) / (feats.std(0) + 1e-8)
+
+    def driver() -> torch.Tensor:
+        """`overlap` of the main driver plus a random direction in feature space."""
+        if feats.shape[1] == 0 or p["overlap"] >= 1.0:
+            return s
+        proj = _standardised(feats @ rng.randn(feats.shape[1]))
+        return _standardised(math.sqrt(p["overlap"]) * s + math.sqrt(1.0 - p["overlap"]) * proj)
+
+    d0, d1, dmu = driver(), driver(), driver()
+    macro, n_periods = _period_factor(rng, n, cfg.get("cohort", {}))
+
+    # The published signs: a better recovery driver raises P(0) and lowers P(1) and mu; a downturn
+    # (macro > 0) lowers P(0) and raises P(1) and mu.
+    eta0 = p["a0"] + p["a_s"] * d0 + p["a_m"] * macro
+    eta1 = p["b0"] - p["b_s"] * d1 + p["b_m"] * macro
+    eta_mu = p["g0"] - p["g_s"] * dmu + p["g_m"] * macro
+    probs = torch.softmax(torch.stack([torch.zeros(n), eta0, eta1], dim=1), dim=1)  # interior, P0, P1
+    mu = torch.sigmoid(eta_mu).clamp(1e-4, 1 - 1e-4)
+
+    u = rng.rand(n)
+    p0, p1 = probs[:, 1], probs[:, 2]
+    at0 = u < p0
+    at1 = (~at0) & (u < p0 + p1)
+    phi = p["phi"]
+    draws = rng.np.beta((mu * phi).double().numpy(), ((1.0 - mu) * phi).double().numpy())
+    # A beta draw can round to exactly 0 or 1 in float32; an interior loss is strictly inside.
+    interior = torch.from_numpy(draws).float().clamp(1e-6, 1.0 - 1e-6)
+    y = torch.where(at0, torch.zeros(n), torch.where(at1, torch.ones(n), interior))
+
+    meta: dict[str, Any] = {
+        "target": "lgd",
+        "mode": "zoib",
+        **{f"zoib_{k}": round(v, 4) for k, v in p.items()},
+        "periods": n_periods,
+        "frac_at_0": round(float(at0.float().mean()), 4),
+        "frac_at_1": round(float(at1.float().mean()), 4),
+        "expected_p0": round(float(p0.mean()), 4),
+        "expected_p1": round(float(p1.mean()), 4),
+    }
+    if n_periods > 1 and rng.boolean(float(cfg.get("macro_feature_prob", 0.5))) and X.shape[1] < max_features:
+        X = torch.cat([X, macro.unsqueeze(1).to(X.dtype)], dim=1)
+        meta["macro_feature"] = True
+    return X, y.float(), meta

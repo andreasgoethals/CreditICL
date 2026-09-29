@@ -51,7 +51,7 @@ case "$CONFIG" in
     *)         TASK=lgd ;;
 esac
 
-LOGDIR="${VSC_DATA}/CreditICL/output/logs"
+LOGDIR="${VSC_DATA}/CreditICL/output_CreditICL/general/logs"   # = paths.logs_dir()
 mkdir -p "$LOGDIR"
 # The PARTITION is in the name: the whole point is comparing GPUs, so a filename that
 # does not say which card it was is useless as soon as the second one lands.

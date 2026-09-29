@@ -456,7 +456,7 @@ def bench_optimizers(
         try:
             model = build_model(task, architecture="tabicl").to(device)
             model.train()
-            opt = build_optimizer(model, {"optimizer": name, "lr": 1e-4, "muon_lr": 8e-4})
+            opt = build_optimizer(model, {"optimizer": name, "lr": 8e-4 if name == "muon" else 1e-4})
 
             def step(m=model, o=opt):
                 o.zero_grad(set_to_none=True)

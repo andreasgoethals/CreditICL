@@ -17,6 +17,9 @@ command — [§4.4](#44-recovery-is-one-command).
 7. [Job-script rules that bite](#7-job-script-rules-that-bite)
 8. [Submitting: the scripts](#8-submitting-the-scripts)
 9. [Compute budget](#9-compute-budget)
+10. [Experiment 0: run it first](#10-experiment-0-run-it-first)
+11. [Cleaning out the old layout (once, 29-09-2026)](#11-cleaning-out-the-old-layout-once-29-09-2026)
+12. [Experiments 1 and 2: the commands](#12-experiments-1-and-2-the-commands)
 
 ---
 
@@ -137,8 +140,9 @@ python -m src.utils.run_experiment 1 --submit   # submit whatever is ready
 ```
 
 The experiment number is required (never a default) and printed at the top, so "Exp1 or Exp2?" is
-answered on the page. `run_experiment 2`/`3` refuse to run while their configs still hold
-`FILL_FROM_EXP1`. Guarantees, each tested: benchmark cannot start before training finishes; a drain
+answered on the page. `run_experiment 2`/`3` refuse to run while their configs still hold a
+placeholder (`FILL_FROM_EXP1`, or `FILL_FROM_SEARCH` until Exp2's search has chosen the recipe);
+`run_experiment 2 --variant search` runs that search. Guarantees, each tested: benchmark cannot start before training finishes; a drain
 costs only what was pending; a re-run never doubles a queued job (matched on the Slurm job name); a
 broken `squeue` errs toward submitting (a duplicate can be cancelled; work that never starts cannot).
 
@@ -148,12 +152,16 @@ Three tiers, resolved automatically by [`src/utils/paths.py`](../src/utils/paths
 
 | tier | path | holds | backup | quota |
 |---|---|---|---|---|
-| **project staging** | `/lustre1/project/stg_00211` | big files: datasets, checkpoints, prior pools, result CSVs | no | ≥1 TB, **low inode budget** |
-| **personal data** | `$VSC_DATA` | the repo + small durable output: logs, manifests, figures, configs | **yes** | **75 GiB** — tight |
+| **project staging** | `/lustre1/project/stg_00211/CreditICL` | inputs: `data/` (raw, processed, the OOD cache `ood/`) and `checkpoints/` (the released TabICLv2 / TabPFN-3 weights); the big half of `output_CreditICL/`: `experiment_<N>/checkpoints/<run>/`, `prior_cache/` | no | ≥1 TB, **low inode budget** |
+| **personal data** | `$VSC_DATA/CreditICL` | the repo, and the small half of `output_CreditICL/`: `experiment_<N>/{logs,runs,benchmark,figures}`, `reference/`, `general/` | **yes** | **75 GiB** — tight |
 | scratch | `$VSC_SCRATCH` | working scratch only | no | 500 GiB, **purged after 30 days without access** |
 
-Big-and-regenerable → staging (its low inode budget wants few big files, not thousands of per-step
-metrics — those go to `$VSC_DATA`). `paths.resolve_writable()` probes staging with a real write at job
+**One tree, two tiers, the same layout** (`src/utils/paths.py`; the tree is described in
+`output_CreditICL/README.md`): everything a job writes is under `output_CreditICL/experiment_<N>/` on
+both tiers, so downloading `$VSC_DATA/CreditICL/output_CreditICL` gives every log, run record,
+benchmark score and figure of every experiment, and the checkpoints stay on staging under the same
+experiment folders. Big-and-regenerable → staging (its low inode budget wants few big files, not
+thousands of per-step metrics — those go to `$VSC_DATA`). `paths.resolve_writable()` probes staging with a real write at job
 start and falls back to `$VSC_DATA` with a loud warning (a sibling project lost checkpoints to
 unwritable staging).
 
@@ -221,7 +229,7 @@ script is correct everywhere. `#SBATCH` directives are only defaults, overridden
 ```bash
 bash scripts/slurm/submit.sh --list                 # the partition inventory, from the shell
 bash scripts/slurm/submit.sh b200 pd                # <where> <track> — one debug arm
-sbatch --clusters=mindwell --array=0-44%8 scripts/slurm/pretrain_pd.slurm   # a full phase-1 sweep
+sbatch --clusters=mindwell --array=0-8%8 scripts/slurm/pretrain_pd.slurm    # a full phase-1 sweep (Exp1: 9 arms)
 bash scripts/slurm/submit_pipeline.sh both          # the whole chain, submit and log out
 ```
 
@@ -245,13 +253,98 @@ Measured on B200, batch 64, micro-batch 4, the config's prior shape:
 |---|---|
 | B200 GPU-hour, all-in | ~30,625 credits (26,250 + ~4,375 for 24 cores) |
 | one Exp1 arm, 12,500 steps | ~16–25 h (the `banded` filter's ~90% rejection makes some arms slower) |
-| **Exp1, 45 arms/track** | order of tens of millions of credits |
+| **Exp1, 9 arms/track** (45 until 28-09-2026) | 9 x one arm; the 24-09 run took ~1,354 GPU-h for 90 arms, its banded-filter arms 5-7x the rest, and the redesign has none |
 | TabICLv2's own full pretraining | 24.5 GPU-days per model (the paper's figure) |
 
-At throttle `%8`, 45 arms of ~20 h is `ceil(45/8) × 20 ≈ 120 h` wall-clock — **the throttle, not the
+At throttle `%8`, 9 arms run in two waves; 45 arms of ~20 h was `ceil(45/8) × 20 ≈ 120 h` wall-clock — **the throttle, not the
 credit balance, sets how long the sweep takes**, so decide it against the QoS limits (§4.1). Our 12,500
 steps is 2.5% of upstream's 500k-step stage 1 (which would be ~347 h *per arm*) — the whole reason Exp1
 is a *screening* tier: it ranks priors; only Exp3 runs the winner long enough for the number to stand
 alone. **Storage rules out pooling at full scale** (35M datasets ≈ 3.5–4.7 TB/variant vs a ~1 TB quota;
 upstream sees each dataset once, so there is no corpus), which is why Exp3 uses `--prior-source generate`
 and pools remain only for Exp1, where they remove draw-luck between short arms.
+
+For Experiment 2 (measured in Experiment 0 before it is committed): the search is 8 arms per track
+(5 TabICLv2 recipes, 3 TabPFN-3) and the main comparison 18 (2 models × 3 mixes × 3 seeds), 10,000
+steps each; a TabICLv2 arm costs about what an Exp1 arm costs per step (same shapes), a TabPFN-3 arm
+16 tasks per step through TabPFN's own preprocessing. The budget agreed on 29-09-2026 is ~400 GPU-h;
+`python -m src.utils.exp0_verify` prints the per-arm and per-slot hours Experiment 0 measured.
+
+## 10. Experiment 0: run it first
+
+Experiment 0 is the debug suite (`config/Exp0_{PD,LGD}.yaml`, `scripts/slurm/exp0.slurm`): everything
+the real experiments do, on the production GPU, small. It writes to `output_CreditICL/experiment_0/`.
+
+```bash
+cd $VSC_DATA/CreditICL
+source scripts/slurm/_activate_env.sh
+python -c "import tabpfn, tabicl; print(tabpfn.__version__, tabicl.__version__)"   # Exp2 needs tabpfn 9.0.0
+python scripts/check_storage.py
+python -m src.utils.fetch_ood --status                   # the OOD cache (login node: fetch it here if missing)
+
+# 1. the checks job (~1 h): versions, paths, data, weights, prior, configs, training steps, one benchmark fold
+sbatch --clusters=mindwell scripts/slurm/exp0.slurm
+
+# 2. three tiny arms per track (600 steps: Exp1's scratch TabICL, Exp2's TabICLv2 and TabPFN-3 paths).
+#    Index 0 gets a 16-minute walltime on purpose: SIGUSR1 arrives after 6 minutes, the arm saves,
+#    exits 64 and resubmits itself until it is done — the resilience chain, tested for real.
+for T in pd lgd; do
+  sbatch --clusters=mindwell --export=ALL,EXP=0,VARIANT= --array=0   --time=00:16:00 scripts/slurm/pretrain_${T}.slurm
+  sbatch --clusters=mindwell --export=ALL,EXP=0,VARIANT= --array=1-2 --time=01:00:00 scripts/slurm/pretrain_${T}.slurm
+done
+
+# 3. once all six arms are done (python -m src.utils.sweep_status --config config/Exp0_PD.yaml, and _LGD):
+#    every arm's final checkpoint and the four reference models, on every dataset, full protocol.
+#    The reference slots ARE the reference column Exp1-3 reuse; the arm slots measure what a slot costs.
+for T in pd lgd; do
+  sbatch --clusters=mindwell --export=ALL,EXP=0,TRACK=${T},VARIANT= --array=0-6 scripts/slurm/benchmark.slurm
+done
+```
+
+Then download `$VSC_DATA/CreditICL/output_CreditICL/` into the repo and run
+`python -m src.utils.exp0_verify`: every item PASS/FAIL, and the cost of Exp1 and Exp2 from the
+measured speeds.
+
+## 11. Cleaning out the old layout (once, 29-09-2026)
+
+Until 29-09-2026 output went to `$VSC_DATA/CreditICL/output/` (logs, manifests) and
+`<staging>/CreditICL/output/results/` (benchmark CSVs), our checkpoints to subfolders of
+`<staging>/CreditICL/checkpoints/` (beside the released weights), and the OOD cache lived in
+`<staging>/CreditICL/prior_cache/ood/`. The new code reads none of those. To clear them without
+touching the datasets, the released weights or the OOD cache:
+
+```bash
+cd $VSC_DATA/CreditICL && source scripts/slurm/_activate_env.sh
+STG=$(python -c "from src.utils.paths import pretrained_dir; print(pretrained_dir().parent)")
+echo "$STG"                                            # /lustre1/project/stg_00211/CreditICL
+du -sh output .sentinels "$STG/output" "$STG/prior_cache" 2>/dev/null
+ls "$STG/checkpoints"                                  # released *.ckpt at the top, our runs as folders
+
+mkdir -p "$STG/data" && mv "$STG/prior_cache/ood" "$STG/data/ood"      # keep the OOD cache: its new home
+find "$STG/checkpoints" -mindepth 1 -maxdepth 1 -type d               # our old run folders: check the list
+find "$STG/checkpoints" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +
+rm -rf output .sentinels fallback "$STG/output" "$STG/prior_cache"
+
+ls "$STG/checkpoints" "$STG/data"                      # the four released .ckpt files; raw, processed, ood
+python scripts/check_storage.py
+```
+
+After that, `python -m src.utils.clean_run` (lists) and `--clean` (deletes) manage the new tree;
+add `--checkpoints` to clear our checkpoints too, `--experiment 0` to limit it to one experiment.
+
+## 12. Experiments 1 and 2: the commands
+
+```bash
+# Experiment 1 (after Experiment 0 passed): train, then benchmark — run_experiment decides what is ready
+python -m src.utils.run_experiment 1 --submit          # again later: it submits what is left
+
+# Experiment 2, stage A — the recipe search (development datasets only, control mix)
+python -m src.utils.run_experiment 2 --variant search --submit
+python -m src.eval.exp2_search --track pd              # when its benchmark is done: the values to fill
+python -m src.eval.exp2_search --track lgd
+#   fill FILL_FROM_SEARCH in config/Exp2_PD.yaml and config/Exp2_LGD.yaml, commit, pull on the cluster
+
+# Experiment 2, stage B — the comparison
+python -m src.utils.run_experiment 2 --submit
+```
+

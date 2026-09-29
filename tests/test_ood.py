@@ -346,12 +346,15 @@ def test_ood_eval_scores_both_kinds(ood_cache):
     from src.eval.ood_runner import OODEvalConfig, run_ood
 
     df = run_ood(OODEvalConfig(models=["linear"], seeds=[0]))
-    assert len(df) == 4
+    assert len(df) == 4 * 5, "4 datasets x 5 folds"
     assert (df["status"] == "ok").all(), df.get("error").tolist()
     clf = df[df["kind"] == "classification"]
     reg = df[df["kind"] == "regression"]
     assert clf["roc_auc"].notna().all() and clf["roc_auc"].min() > 0.5, "signal is learnable"
     assert reg["r2"].notna().all() and reg["r2"].min() > 0.5
+    # The same protocol as the credit data: every metric, a validation-tuned F1 threshold.
+    assert {"brier", "log_loss", "f1_tuned", "threshold_tuned"} <= set(clf.columns)
+    assert not any(c.startswith("boundary_mass") for c in reg.dropna(axis=1, how="all").columns)
 
 
 def test_classification_and_regression_are_never_pooled(ood_cache):
@@ -360,8 +363,11 @@ def test_classification_and_regression_are_never_pooled(ood_cache):
 
     summary = summarise_ood(run_ood(OODEvalConfig(models=["linear"], seeds=[0])))
     assert set(summary["kind"]) == {"classification", "regression"}
-    assert set(summary["metric"]) == {"roc_auc", "r2"}
-    assert len(summary) == 2, "one row per (kind, model), never a single pooled row"
+    by_kind = summary.groupby("kind")["metric"].apply(set)
+    assert by_kind["classification"] >= {"roc_auc", "f1_tuned", "brier"}
+    assert by_kind["regression"] >= {"r2", "rmse"}
+    assert not by_kind["classification"] & by_kind["regression"], "never a pooled metric"
+    assert (summary.groupby(["kind", "metric", "model"]).size() == 1).all()
 
 
 def test_text_summary_reports_deltas_against_a_reference(ood_cache):
@@ -389,12 +395,13 @@ def test_text_summary_survives_all_failures(ood_cache):
 
 def test_a_failing_cell_becomes_a_row_not_an_exception(ood_cache):
     """One bad dataset must not cost the other nineteen."""
-    from src.eval.ood_runner import OODEvalConfig, evaluate_one_ood
+    from src.eval.ood_runner import OODEvalConfig, evaluate_ood_dataset
 
     ghost = ood_cache.OODDataset(name="ghost", openml_id=9999, kind="regression",
                                  n_rows=1, n_features=1)
-    row = evaluate_one_ood(ghost, "linear", 0, OODEvalConfig())
-    assert row["status"] == "failed" and "FileNotFoundError" in row["error"]
+    rows = evaluate_ood_dataset(ghost, ["linear"], 0, OODEvalConfig())
+    assert len(rows) == 5, "one failed row per fold"
+    assert all(r["status"] == "failed" and "FileNotFoundError" in r["error"] for r in rows)
 
 
 def test_run_ood_without_a_cache_names_the_fix(tmp_path, monkeypatch):
@@ -415,11 +422,12 @@ def test_run_ood_without_a_cache_names_the_fix(tmp_path, monkeypatch):
 
 def test_ood_results_go_to_their_own_tree():
     """Out-of-domain numbers must never be written next to the credit results."""
-    from src.utils.paths import results_dir
+    from src.utils.paths import benchmark_dir, benchmark_dir_for
 
-    assert results_dir("ood", "eval").parts[-2:] == ("ood", "eval")
-    with pytest.raises(ValueError, match="results namespace"):
-        results_dir("not_a_namespace", "eval")
+    assert benchmark_dir(1, "ood").parts[-2:] == ("benchmark", "ood")
+    assert benchmark_dir_for("exp1bench_pd_a0", "ood") != benchmark_dir_for("exp1bench_pd_a0", "pd")
+    with pytest.raises(ValueError, match="benchmark part"):
+        benchmark_dir(1, "not_a_part")
 
 
 def test_the_cache_is_written_atomically_and_with_the_right_name(tmp_path):
@@ -519,12 +527,12 @@ def test_crediticl_skips_the_ood_kind_its_checkpoint_cannot_score():
 
     from src.eval import ood_runner
 
-    src = inspect.getsource(ood_runner.run_ood)
+    src = inspect.getsource(ood_runner.evaluate_ood_dataset)
     assert 'model_name == "crediticl"' in src
     assert "cfg.crediticl_task" in src
-    assert '"skipped"' in src
+    assert 'status="skipped"' in src
     # the mapping: lgd -> regression, pd -> classification
-    assert 'regression" if cfg.crediticl_task == "lgd"' in src
+    assert 'task = "pd" if is_clf else "lgd"' in src and "cfg.crediticl_task != task" in src
 
 
 def test_evaluate_ood_passes_the_checkpoint_task_into_the_config():

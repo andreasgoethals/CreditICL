@@ -75,12 +75,19 @@ def test_job_scripts_only_pass_flags_that_exist(job: Path, target: str, flags: s
 
 
 def _requested_models() -> set[str]:
-    """Every name passed to `--models` anywhere in the SLURM layer."""
+    """Every name passed to `--models` anywhere in the SLURM layer — literal, or through the
+    benchmark's `${MODEL}`, which is a reference model or `benchmark_status.arm_model`'s choice."""
+    from src.eval.benchmark_status import REFERENCE_MODELS, arm_model
+
     names: set[str] = set()
     for job in JOB_SCRIPTS:
         joined = re.sub(r"\\\s*\n\s*", " ", job.read_text(encoding="utf-8"))
         for m in re.finditer(r'--models\s+"?([a-z0-9_,]+)"?', joined):
             names.update(n for n in m.group(1).split(",") if n)
+        if '--models "${MODEL}"' in joined:
+            ref = re.search(r'REFERENCE_MODELS="\$\{REFERENCE_MODELS:-([a-z0-9_,]+)\}"', joined)
+            names.update((ref.group(1) if ref else REFERENCE_MODELS).split(","))
+            names.update(arm_model({"architecture": a}) for a in ("tabicl", "tabpfn3"))
     return names
 
 
@@ -139,33 +146,6 @@ def test_every_job_script_is_valid_bash():
         assert result.returncode == 0, f"{job.name} does not parse:\n{result.stderr}"
 
 
-def test_training_failure_does_not_abort_the_debug_script():
-    """`set -e` would kill the script at a failed training call, so `STATUS=$?` would be dead
-    code, the evaluation guard meaningless, and the artefact summary — the part you most want
-    when a run has just failed — never printed."""
-    text = (SLURM / "debug_exp1.slurm").read_text(encoding="utf-8")
-    assert "set +e\npython scripts/pretrain.py" in text, (
-        "the training call must run with `set +e` so STATUS can be inspected"
-    )
-    assert "STATUS=$?\nset -e" in text, "`set -e` must be restored immediately after"
-
-
-def test_debug_job_passes_its_own_checkpoint_to_the_evaluation():
-    """Registering the baseline only makes the NAME resolvable; it also needs a checkpoint.
-
-    On 14-08-2026 none was passed, so every `crediticl` cell failed with "needs
-    checkpoint=<path>" while the run reported "25/50 cells OK" and contained nothing at all
-    about our own model — the only model the experiment is about.
-    """
-    text = (SLURM / "debug_exp1.slurm").read_text(encoding="utf-8")
-    assert "--dry-run" in text and "CKPT_DIR=" in text, (
-        "the job must read the checkpoint directory from --dry-run so it cannot drift "
-        "from the directory training actually wrote to"
-    )
-    assert '"${CKPT_ARG[@]}"' in text, "the resolved checkpoint must reach both evaluations"
-    assert text.count('"${CKPT_ARG[@]}"') >= 2, "credit AND out-of-domain evaluation need it"
-
-
 def test_no_two_sweep_arms_do_the_same_thing():
     """At `credit_fraction: 0.0` no dataset comes from our prior, so every credit lever is
     dead — and the grid was scheduling EIGHT identical control runs per seed. 24 arms of 96
@@ -185,88 +165,6 @@ def test_no_two_sweep_arms_do_the_same_thing():
             f"{name}: {len(controls)} control arms but only {len(keys)} distinct (filter, seed) — "
             f"a credit lever is wrongly varying the control"
         )
-
-
-def test_debug_arms_point_where_the_comments_say():
-    """`ARMS` is hard-coded, and the comment above it claims what each index is. Deduplicating
-    the sweep moved the quantile arm from 11 to 9; an index that silently points at a
-    different arm is worse than a crash, so the pairing is checked rather than trusted."""
-    import re
-
-    from src.utils.config import expand_with_seeds, load
-
-    text = (SLURM / "debug_exp1.slurm").read_text(encoding="utf-8")
-    claimed = {
-        int(m.group(1)): (m.group(2), m.group(3))
-        for m in re.finditer(r"^#\s+(\d+)\s+cf=([\d.]+)\s+(mechanism|quantile)\b", text, re.M)
-    }
-    assert claimed, "the ARMS mapping comment is missing or reformatted"
-
-    arms = [int(x) for x in re.search(r"^ARMS=\(([^)]*)\)", text, re.M).group(1).split()]
-    assert set(arms) == set(claimed), f"ARMS={arms} does not match the documented {sorted(claimed)}"
-
-    runs = expand_with_seeds(load(ROOT / "config" / "Exp1_LGD.yaml"))
-    for index, (cf, mode) in claimed.items():
-        assert index < len(runs), f"index {index} is past the end of a {len(runs)}-run sweep"
-        run = runs[index]
-        assert float(run["prior"]["credit_fraction"]) == float(cf), (
-            f"index {index} claims cf={cf}, grid says {run['prior']['credit_fraction']}"
-        )
-        # the control ignores mode entirely, so only check it where it can act
-        if float(cf) > 0:
-            assert run["prior"]["credit"]["target"]["mode"] == mode, (
-                f"index {index} claims {mode}, grid says "
-                f"{run['prior']['credit']['target']['mode']}"
-            )
-
-
-def test_debug_job_sets_the_micro_batch_from_the_partition():
-    """This edit silently failed to apply TWICE — a heredoc whose backslash-continuations did
-    not match, and then one that wrote a literal `\n`. `bash -n` passed both times because the
-    result was still valid shell, and no test looked, so a run went out at micro_batch_size 4
-    on a 183 GB card.
-
-    It matters: at batch 4 the B200 sat at 3.5 % utilisation and 2.2 datasets/s; at batch 64 it
-    reached 89 % and 25.6. Launch size is the whole story on a big GPU.
-    """
-    text = (SLURM / "debug_exp1.slurm").read_text(encoding="utf-8")
-    assert "--micro-batch-size" in text, "the job must pass a micro-batch size"
-    literal_backslash_n = chr(92) + "n"   # the two characters, not a newline
-    assert literal_backslash_n not in text, (
-        "a literal backslash-n crept into the script — a heredoc wrote the escape "
-        "instead of a line break, and bash -n still accepted it"
-    )
-    # Upstream's 4. MEASURED: both the 3.5 %-utilisation run and the 88.7 % one used
-    # micro 4 — what fills the GPU is the number of consecutive passes before a
-    # synchronising optimiser step (1 vs 16), not the size of each pass. At 88.7 %
-    # there is ~1.1x left, so deviating from upstream would buy almost nothing.
-    assert 'MICRO="${MICRO:-4}"' in text, "the micro-batch should match upstream's 4"
-
-    # every continuation must end the line, or the next flag is swallowed as an argument
-    call = text[text.index("python scripts/pretrain.py \\") :]
-    call = call[: call.index("STATUS=$?")]
-    for line in call.splitlines()[:-1]:
-        assert line.rstrip().endswith("\\"), f"broken continuation: {line!r}"
-
-
-def test_debug_steps_fit_the_walltime_at_the_configured_batch():
-    """The debug budget is `steps x batch_size`. batch_size went 4 -> 64, so 1,500 steps became
-    96,000 datasets and job 11518236 was KILLED at the one-hour wall on step 1,422 — losing the
-    evaluation and the checkpoint after 62 minutes. A debug run has to finish."""
-    import yaml
-
-    text = (SLURM / "debug_exp1.slurm").read_text(encoding="utf-8")
-    steps = int(re.search(r'DEBUG_STEPS="\$\{DEBUG_STEPS:-(\d+)\}"', text).group(1))
-    batch = yaml.safe_load(
-        (ROOT / "config" / "Exp1_LGD.yaml").read_text(encoding="utf-8")
-    )["train"]["batch_size"]
-
-    # 0.4 steps/s measured on the B200 at batch 64; leave a third of the hour for evaluation.
-    budget_s = steps / 0.4
-    assert budget_s < 2400, (
-        f"{steps} steps x batch {batch} is ~{budget_s / 60:.0f} min of training at the "
-        f"measured 0.4 steps/s, leaving nothing for the evaluation inside a 1 h walltime"
-    )
 
 
 # ---------------------------------------------------------------------------------------
@@ -399,22 +297,23 @@ def test_phase_one_only_trains(name):
     assert BENCH in text, "it must point the reader at the phase that does score"
 
 
-def test_phase_two_covers_every_arm_plus_a_reference_column():
-    """`--array=0-75`: 0-74 are our checkpoints, 75 is the released TabICLv2 + CatBoost +
-    linear. One index past the grid, by design — the reference must be scored by the same
-    code, the same day, the same cap, the same seeds."""
-    from src.utils.config import expand_with_seeds, load
+def test_phase_two_covers_every_checkpoint_plus_the_reference_models():
+    """One slot per (arm, saved checkpoint) — final checkpoints first — then one per reference
+    model (released TabICLv2, TabPFN-3, CatBoost, linear). The `--array` default must cover
+    exactly Exp1's slots; every index past them must exit rather than race."""
+    from src.eval.benchmark_status import n_slots, slot_for
 
     text = (ROOT / "scripts" / "slurm" / BENCH).read_text(encoding="utf-8")
     spec = next(ln for ln in text.splitlines() if ln.startswith("#SBATCH --array="))
     hi = int(spec.split("=")[1].split("%")[0].split("-")[1])
-    n_arms = len(expand_with_seeds(load(ROOT / "config" / "Exp1_LGD.yaml")))
-    assert hi == n_arms, f"--array=0-{hi} should be 0-{n_arms}: {n_arms} arms + 1 reference"
-    # EXACTLY ONE reference index. The script is shared by all three experiments, whose grids
-    # differ (75 / 10 / 60), so an oversized `--array` is normal — but every index past the
-    # reference slot must exit rather than race the others to write the same file.
-    assert 'IDX}" -eq "${N_ARMS}' in text, "the reference slot must be exactly one index"
-    assert 'IDX}" -gt "${N_ARMS}' in text, "indices past it must exit"
+    for track in ("lgd", "pd"):
+        total = n_slots(1, track)
+        assert hi == total - 1, f"--array=0-{hi} should be 0-{total - 1} for Exp1 {track}"
+        first = slot_for(1, track, 0)
+        assert first.kind == "arm" and first.final and first.tag == f"exp1bench_{track}_a0"
+        assert slot_for(1, track, total - 1).kind == "reference"
+        assert slot_for(1, track, total).kind == "none"
+    assert '"$SLOT_KIND" == "none"' in text, "indices past the last slot must exit"
 
 
 @pytest.mark.parametrize("exp,track", [(1, "LGD"), (1, "PD"), (2, "LGD"), (3, "LGD")])
@@ -435,23 +334,27 @@ def test_the_reference_column_is_scored_once_and_reused():
     """CatBoost, TabPFN-3, released TabICLv2 and logistic/linear do not depend on our prior, so
     their numbers are identical across Exp1/2/3. Rescoring per experiment would waste GPU time
     AND produce three slightly different reference columns to compare against."""
+    from src.eval.benchmark_status import n_slots, slot_for
+
     text = (ROOT / "scripts" / "slurm" / BENCH).read_text(encoding="utf-8")
-    assert 'REF_TAG="reference_${TRACK}"' in text, "the tag must not mention the experiment"
     assert "src.eval.benchmark_status" in text and "FORCE_REFERENCE" in text
     assert "tabiclv2,tabpfn3,catboost,linear" in text
+    total = n_slots(1, "pd")
+    refs = [slot_for(1, "pd", i) for i in range(total - 4, total)]
+    assert [r.tag for r in refs] == [f"reference_pd_{m}" for m in ("tabiclv2", "tabpfn3", "catboost", "linear")]
+    assert all("exp" not in r.tag for r in refs), "the tag must not mention the experiment"
 
 
-def test_phase_two_applies_the_same_context_cap_to_both_branches():
-    """One variable, both branches. A cap applied to our column and not to the reference is
-    not a measurement, it is a handicap."""
+def test_phase_two_gives_every_model_the_whole_training_pool():
+    """Protocol 3: no context cap anywhere, the same fold seed in all four scoring calls."""
     text = (ROOT / "scripts" / "slurm" / BENCH).read_text(encoding="utf-8")
-    assert text.count('--max-context-rows "${CONTEXT_CAP}"') == 4
-    assert text.count('--seeds "${SEEDS}"') >= 4
+    assert "--max-context-rows" not in text and "CONTEXT_CAP" not in text
+    assert text.count('--seeds "${SEEDS}"') == 4
 
 
 def test_phase_two_refuses_an_arm_that_never_finished():
     """A SIGUSR1 checkpoint loads perfectly and is not a result. The arm summary is the
-    authority, the same one `sweep_status` reads (now flat in manifests/)."""
+    authority, the same one `sweep_status` reads (the arm's run folder)."""
     text = (ROOT / "scripts" / "slurm" / BENCH).read_text(encoding="utf-8")
     assert "run_summary_path" in text
     assert 'data.get("completed")' in text
@@ -461,10 +364,63 @@ def test_phase_two_refuses_an_arm_that_never_finished():
 def test_phase_two_scores_our_checkpoints_not_the_released_ones():
     """The whole point. `--models crediticl` with an explicit `--checkpoint`, and a hard error
     when the directory is empty rather than a silent fall-through to the download."""
+    from src.eval.benchmark_status import arm_model
+
     text = (ROOT / "scripts" / "slurm" / BENCH).read_text(encoding="utf-8")
-    assert "--models crediticl" in text
+    # The wrapper follows the arm's architecture: ours for TabICL, TabPFN's own for TabPFN-3.
+    assert '--models "${MODEL}"' in text and "--models crediticl" not in text
+    assert arm_model({"architecture": "tabicl"}) == "crediticl"
+    assert arm_model({"architecture": "tabpfn3"}) == "tabpfn3"
     assert '--checkpoint "$CKPT"' in text
-    # Require the configured FINAL checkpoint, never an earlier rolling checkpoint.
+    # The slot's own saved step, never a rolling checkpoint picked by a lexical sort.
     assert "SKIPPED: no checkpoint under" in text
-    assert 'CKPT="${CKPT_DIR}/step-${FINAL_STEP}.ckpt"' in text
+    assert 'CKPT="${CKPT_DIR}/step-${STEP}.ckpt"' in text
     assert 'if [ ! -f "$CKPT" ]' in text
+
+
+# ---------------------------------------------------------------------------------------
+# Experiment 0 — the cluster debug suite (replaced debug_exp1.slurm on 29-09-2026)
+# ---------------------------------------------------------------------------------------
+
+
+def test_exp0_runs_every_check_and_the_equivalence_on_the_production_gpu():
+    d = _directives("exp0.slurm")
+    assert d["clusters"] == "mindwell" and d["partition"] == "gpu_b200"
+    assert int(d["cpus-per-task"]) <= GPU_B200_MAX_CORES
+    text = (SLURM / "exp0.slurm").read_text(encoding="utf-8")
+    assert "scripts/exp0_checks.py" in text
+    assert "scripts/check_equivalence.py" in text and "for TRACK in PD LGD" in text
+    # a failing check must not skip the equivalence runs, and the job still reports the failure
+    run = text.index("python -u scripts/exp0_checks.py")
+    assert text.index("\nset +e\n") < run < text.index("\nset -e\n", run)
+    assert 'exit "${CHECKS_RC}"' in text
+    assert "EXP=0" in text
+
+
+def test_exp0_configs_cover_every_training_path():
+    """One tiny arm per path the experiments use — or a path could first break in a real run."""
+    from src.utils.config import expand_with_seeds, load
+
+    for track in ("PD", "LGD"):
+        runs = expand_with_seeds(load(ROOT / "config" / f"Exp0_{track}.yaml"))
+        kinds = {(r["architecture"], r["init"]["strategy"]) for r in runs}
+        assert kinds == {("tabicl", "scratch"), ("tabicl", "full"), ("tabpfn3", "full")}, kinds
+        for r in runs:
+            assert r["_run_name"].startswith(f"exp0_{track.lower()}__"), "must land in experiment_0/"
+            assert r["train"]["max_steps"] <= 1000, "a check, not an experiment"
+            assert r["progress"]["every_datasets"] > 0, "the progress curve must be exercised"
+            assert r["logging"]["log_weights_every"] > 0
+            if r["architecture"] == "tabpfn3":
+                assert r["prior"]["encoding"] == "raw"
+        # every dataset: the benchmark check measures a real slot's cost
+        assert runs[0]["eval"]["holdout_datasets"], "Exp0's benchmark must score every dataset"
+
+
+def test_every_training_launcher_can_run_the_exp2_search():
+    for name in LAUNCHERS:
+        text = (SLURM / name).read_text(encoding="utf-8")
+        assert 'VARIANT="${VARIANT:-}"' in text
+        assert "${VARIANT:+_${VARIANT}}" in text
+        assert "VARIANT=${VARIANT}" in text, "a resubmitted search arm must stay in the search"
+    bench = (SLURM / BENCH).read_text(encoding="utf-8")
+    assert '--variant "$VARIANT"' in bench and "${VARIANT:+_${VARIANT}}" in bench

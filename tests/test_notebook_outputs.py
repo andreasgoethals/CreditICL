@@ -55,29 +55,31 @@ def _all_captions() -> dict[str, str]:
 def test_everything_generated_lives_under_output():
     out = paths.outputs_dir()
     for path in (
-        paths.results_dir(),
-        paths.figures_dir(),
+        paths.benchmark_dir(1, "pd"),
+        paths.benchmark_dir(paths.REFERENCE, "ood"),
+        paths.figures_dir("1.3_pd_results"),
         paths.logs_dir(),
-        paths.manifests_dir(),
+        paths.logs_dir(2),
+        paths.runs_dir(1),
         paths.all_results_path(),
+        paths.captions_path(),
     ):
         assert out in path.parents or path.parent == out, f"{path} is outside {out}"
 
 
 def test_no_superseded_output_directories_at_the_repo_root():
     """`res/`, `results/`, `figures/` and `logs/` were all output roots at some point.
-    Any of them reappearing means something is writing outside `output/`."""
+    Any of them reappearing means something is writing outside `output_CreditICL/`."""
     for stale in ("res", "results", "figures", "logs"):
         assert not (ROOT / stale).exists(), (
             f"{stale}/ is back at the repo root — everything generated belongs under "
-            f"output/. Check src/utils/paths.py."
+            f"output_CreditICL/. Check src/utils/paths.py."
         )
 
 
-def test_results_are_the_one_part_of_output_on_project_storage():
-    """Per-row predictions across every arm and seed reach gigabytes, and `$VSC_DATA` is
-    75 GiB. This shipped wrong once: `results_dir()` returned `outputs_dir()/results`, so
-    the largest files would have gone to the small tier and filled it."""
+def test_only_checkpoints_and_pools_go_to_project_storage():
+    """The benchmark CSVs are small (5.6 MB for 553 files) and belong with the logs on the
+    backed-up tier; checkpoints and prior pools are the files `$VSC_DATA` cannot hold."""
     import importlib
 
     import src.utils.paths as p
@@ -86,12 +88,12 @@ def test_results_are_the_one_part_of_output_on_project_storage():
     try:
         __import__("os").environ["CREDITICL_STAGING_ROOT"] = str(ROOT / "_probe_staging")
         importlib.reload(p)
-        assert "_probe_staging" in p.results_dir().as_posix(), (
-            "results/ must move to project storage when staging is configured"
-        )
-        assert "_probe_staging" not in p.logs_dir().as_posix(), (
-            "logs/ are small and must stay on the browsable, backed-up tier"
-        )
+        assert "_probe_staging" in p.run_checkpoints_dir("exp1_pd__a__s0").as_posix()
+        assert "_probe_staging" in p.prior_cache_root().as_posix()
+        for small in (p.logs_dir(1), p.benchmark_dir(1, "pd"), p.run_dir("exp1_pd__a__s0")):
+            assert "_probe_staging" not in small.as_posix(), (
+                f"{small} is small and must stay on the browsable, backed-up tier"
+            )
     finally:
         __import__("os").environ.clear()
         __import__("os").environ.update(original)
@@ -102,7 +104,7 @@ def test_captions_and_summary_are_committed_but_pdfs_are_not():
     """A `figures/` rule without a leading slash previously matched `output/figures/` too
     and ignored everything under it."""
     gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
-    assert "output/**/*.pdf" in gitignore
+    assert "output_CreditICL/**/*.pdf" in gitignore
     for anchored in ("/figures/", "/results/", "/logs/", "/res/"):
         assert anchored in gitignore, (
             f"{anchored} must be anchored with a leading slash, or it also matches "
@@ -125,7 +127,7 @@ def test_figures_are_pdf_only():
 
 def test_no_png_is_produced_under_output():
     assert not list(paths.outputs_dir().rglob("*.png")), (
-        "a PNG appeared under output/ — figures are PDF only"
+        "a PNG appeared under output_CreditICL/ — figures are PDF only"
     )
 
 
@@ -133,7 +135,7 @@ def test_every_saved_pdf_fits_the_a4_text_block():
     """The failure this catches: figures were drawn 11-13 inches wide against a 6.30 inch
     text block, so the document would scale them to ~50% and take 9pt text to 4.5pt —
     under the ~7pt floor for print. Skips when nothing has been run yet."""
-    pdfs = sorted(paths.figures_dir().rglob("*.pdf"))
+    pdfs = sorted(p for d in paths.all_figure_dirs() for p in d.glob("*.pdf"))
     if not pdfs:
         pytest.skip("no figures on disk; run python -m src.utils.run_notebooks")
     box = re.compile(rb"/MediaBox\s*\[\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)")
@@ -494,13 +496,15 @@ def test_the_row_cap_samples_randomly_not_from_the_head():
 # -- cluster targets -----------------------------------------------------------
 
 
-def test_no_job_script_hard_codes_the_most_contended_partition():
-    """`gpu_a100` has 16 GPUs — the fewest available to us — and the first debug submission sat
-    there behind "Reason: Priority" without starting. Defaults point at the free partition;
-    `submit.sh` chooses anything else on the command line, which overrides `#SBATCH`."""
-    debug = (ROOT / "scripts" / "slurm" / "debug_exp1.slurm").read_text(encoding="utf-8")
-    active = [ln for ln in debug.splitlines() if ln.startswith("#SBATCH --partition")]
-    assert active == ["#SBATCH --partition=interactive"], active
+def test_no_pipeline_job_defaults_to_the_most_contended_partition():
+    """`gpu_a100` has 16 GPUs — the fewest available to us — and a debug submission once sat
+    there behind "Reason: Priority" without starting. The pipeline's jobs (the Exp0 checks,
+    training, the benchmark) target the B200s; `submit.sh` can still choose anything."""
+    for name in ("exp0.slurm", "pretrain_pd.slurm", "pretrain_lgd.slurm", "benchmark.slurm"):
+        job = ROOT / "scripts" / "slurm" / name
+        active = [ln for ln in job.read_text(encoding="utf-8").splitlines()
+                  if ln.startswith("#SBATCH --partition")]
+        assert "#SBATCH --partition=gpu_a100" not in active, job.name
 
 
 def test_the_submitter_knows_every_target_and_its_core_budget():
@@ -519,32 +523,11 @@ def test_the_submitter_knows_every_target_and_its_core_budget():
         )
 
 
-def test_the_job_takes_its_worker_count_from_the_allocation():
-    """One script runs on 8 cores and on 24. A fixed `num_workers` oversubscribes the small
-    allocation and leaves half the big one idle."""
-    debug = (ROOT / "scripts" / "slurm" / "debug_exp1.slurm").read_text(encoding="utf-8")
-    assert "SLURM_CPUS_PER_TASK" in debug
-    assert "--num-workers" in debug
-
-
-def test_the_debug_job_evaluates_the_task_it_trained():
-    """It hard-coded `--task lgd`, so a `CONFIG=config/Exp1_PD.yaml` run would have trained PD
-    and evaluated LGD — passing, while measuring the wrong thing."""
-    debug = (ROOT / "scripts" / "slurm" / "debug_exp1.slurm").read_text(encoding="utf-8")
-    assert "--task lgd" not in debug
-    assert '--task "$TASK"' in debug
-    assert "*_PD.yaml) TASK=pd" in debug
-
-
 def test_the_job_config_is_an_argument_not_an_environment_variable():
     """`CONFIG=x bash submit.sh` sets the variable for the CALLING shell, not for sbatch's
     environment — so the job never received it, and a run intended as PD went out as a second
     LGD job with nothing on screen to say so. `sbatch [opts] script args...` passes trailing
     arguments straight to the script, which needs no plumbing and cannot be lost."""
-    job = (ROOT / "scripts" / "slurm" / "debug_exp1.slurm").read_text(encoding="utf-8")
-    assert 'CONFIG="${1:-config/Exp1_LGD.yaml}"' in job, "the config must be argument 1"
-    assert 'CONFIG="${CONFIG:-' not in job, "the env-var form is what broke"
-
     sub = (ROOT / "scripts" / "slurm" / "submit.sh").read_text(encoding="utf-8")
     assert 'TRACK="${2:-lgd}"' in sub, "submit.sh must take the track as an argument"
     # and every input that changes what runs must be printed before submitting
@@ -585,8 +568,8 @@ def test_changelog_is_one_chapter_per_date():
 
 
 def test_tracked_output_files_still_exist():
-    """`output/` is mostly generated and gitignored, but a few files in it are TRACKED —
-    written by hand or by a notebook and meant to survive.
+    """`output_CreditICL/` is mostly generated and gitignored, but a few files in it are
+    TRACKED — written by hand or by a notebook and meant to survive.
 
     On 17-08-2026 they were deleted by something run locally and then swept into a commit by a
     blanket `git add -A`: `All_Results.md` (272 lines), `figures/CAPTIONS.md` (133 lines, the
@@ -594,17 +577,13 @@ def test_tracked_output_files_still_exist():
     write. Nothing noticed until the deletion appeared in someone else's `git pull`.
     """
     required = [
-        ROOT / "output" / ".gitkeep",
-        ROOT / "output" / "logs" / ".gitkeep",
-        ROOT / "output" / "manifests" / ".gitkeep",
-        ROOT / "output" / "results" / ".gitkeep",
-        ROOT / "output" / "figures" / ".gitkeep",
-        ROOT / "output" / "figures" / "CAPTIONS.md",
-        ROOT / "output" / "All_Results.md",
+        ROOT / "output_CreditICL" / "README.md",
+        ROOT / "output_CreditICL" / "CAPTIONS.md",
+        ROOT / "output_CreditICL" / "All_Results.md",
     ]
     missing = [p.relative_to(ROOT).as_posix() for p in required if not p.exists()]
     assert not missing, (
-        f"tracked files under output/ are gone: {missing}. Restore them with "
-        f"`git checkout HEAD -- output/` BEFORE committing — a `git add -A` would otherwise "
-        f"record the deletion."
+        f"tracked files under output_CreditICL/ are gone: {missing}. Restore them with "
+        f"`git checkout HEAD -- output_CreditICL/` BEFORE committing — a `git add -A` would "
+        f"otherwise record the deletion."
     )

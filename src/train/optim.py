@@ -4,29 +4,38 @@ The cosine-with-restarts schedule is transcribed from TabICL's
 `train/_optim.py` (`_get_cosine_with_restarts_lr_lambda`), including the
 amplitude decay per cycle and the `lr_end` floor.
 
-**We use MUON**, matching TabICLv2, whose reference scripts pass `--muon True` and which
-credits part of its gain to it. `config/Exp1_*.yaml` sets `optimizer: muon`, and the
-implementation is vendored from the pinned dump rather than reimplemented, so the
-Newton-Schulz iteration count and the `matched_adamw_rms` scaling are upstream's own.
+**MUON, EXACTLY AS TABICLV2.** Upstream's `Trainer.configure_optimizer` (pinned dump,
+`src/tabicl/train/_run.py`) builds:
 
-*(This docstring used to claim the opposite — that we had deviated to AdamW. That was true
-before Muon was vendored and was never updated, so the module described the wrong optimizer
-for weeks. `test_optim_docstring_matches_the_configs` now ties the two together.)*
+    Muon(param_groups=[dict(params=list(model.parameters()), use_muon=True)],
+         lr=config.lr, weight_decay=config.weight_decay, matched_adamw_rms=0.2,
+         momentum=config.beta1, nesterov=True, ns_steps=5,
+         adamw_betas=(config.beta1, config.beta2), adamw_eps=1e-8,
+         use_cautious_wd=config.use_cautious_wd)
 
-**MUON IS THE REASON THE B200 LOOKED SLOW.** Measured 16-08-2026: with `optimizer: muon`,
-B200 training ran at 0.53 steps/s while the free RTX 5000 Ada ran at 6.6 — but a benchmark of
-the identical model, prior and data loader using plain SGD had the B200 1.8x *faster* end to
-end (8.14 vs 4.50 steps/s). The optimiser was the only difference. Muon orthogonalises every
-weight matrix with a Newton-Schulz iteration — a chain of small matmuls per matrix per step,
-which is latency-bound, not throughput-bound, so a card with 1,392 bf16 TFLOP/s can still lose
-badly. `scripts/benchmark_gpu.py` has a row for it.
+and so do we, with the vendored class (`_muon_vendored.py`). Every parameter — biases and
+LayerNorm scales included — goes through Muon, and `train.lr` is THE learning rate (stage 1:
+`--lr 8e-4`). There is no second rate: `train.muon_lr` is rejected.
+
+*(Until 28-09-2026 this module preferred `torch.optim.Muon`, gave it only the weight matrices
+with torch's defaults, and sent the rest to an AdamW at 3e-4. torch's default step scaling is
+Keller's `sqrt(max(1, A/B))`, upstream's is Moonlight's `0.2*sqrt(max(A, B))`: the matrices
+took steps 4.8x smaller than upstream's at the same nominal rate, with momentum 0.95 instead
+of 0.9. Experiment 1 ran that way. See docs/AGENTS_MEMORY.md, 28-09-2026.)*
+
+Muon's Newton-Schulz iteration is a chain of small matmuls per matrix per step, so it costs
+more per step than AdamW on a big card (measured 16-08-2026; `scripts/benchmark_gpu.py`).
 
 AdamW remains available (`optimizer: adamw`), and upstream supports it too (`--muon False`).
-Whichever is chosen is held FIXED across arms, so it is never the experimental variable:
-it changes absolute performance, not the prior contrast.
+Pretraining from scratch (Exp1, Exp3) uses MUON, because that is how the released weights
+were made. Continued pretraining (Exp2) currently uses ADAMW, following the continued-
+pretraining recipes it takes its learning rates and L2-SP from (Real-TabPFN, TabPFN-Wide,
+and upstream's own `_finetune` module) — a design choice, open for revisiting now that Muon's
+`lr` is a single, sweepable rate. Whichever is chosen is held FIXED across the arms of an
+experiment, so it changes absolute performance, never the contrast.
 
-Note upstream's own caveat: the released checkpoints were trained *without* cautious weight
-decay even though the paper reports using it, because the flag was left unwired.
+Upstream's own caveat: the released checkpoints were trained *without* cautious weight decay
+even though the paper reports using it (the flag was left unwired), so it defaults to off.
 """
 
 from __future__ import annotations
@@ -39,33 +48,8 @@ import torch
 from torch.optim.lr_scheduler import LambdaLR
 
 
-def _split_muon_params(model: torch.nn.Module) -> tuple[list, list]:
-    """Split into the matrices Muon orthogonalises and everything else.
-
-    Muon only applies to parameters that are genuinely 2-D *matrices* — the linear and
-    attention weights. Biases, LayerNorm scales and embedding lookups are 1-D (or are
-    used as lookups rather than as linear maps), and orthogonalising them is undefined.
-    Every Muon implementation therefore runs AdamW on that remainder, and so do we.
-    """
-    matrices, others = [], []
-    for module in model.modules():
-        for name, p in module.named_parameters(recurse=False):
-            if not p.requires_grad:
-                continue
-            is_embedding = isinstance(module, torch.nn.Embedding)
-            if p.ndim == 2 and not is_embedding and name != "bias":
-                matrices.append(p)
-            else:
-                others.append(p)
-    return matrices, others
-
-
 def build_optimizer(model: torch.nn.Module, cfg: dict[str, Any]) -> torch.optim.Optimizer:
-    """AdamW or Muon, per `train.optimizer`.
-
-    TabICLv2 uses Muon and credits part of its gain to it, so matching them means
-    offering it. See this module's docstring for what is and is not verified.
-    """
+    """AdamW or Muon, per `train.optimizer`. Muon is built exactly as upstream builds it."""
     name = str(cfg.get("optimizer", "adamw")).lower()
     # Only trainable parameters, so a frozen fine-tune does not carry optimizer
     # state for weights it never updates. TabICL filters the same way:
@@ -82,112 +66,32 @@ def build_optimizer(model: torch.nn.Module, cfg: dict[str, Any]) -> torch.optim.
         return torch.optim.AdamW(params, lr=lr, betas=betas, weight_decay=weight_decay)
 
     if name == "muon":
-        muon_cls = _resolve_muon()
-        matrices, others = _split_muon_params(model)
-        if not matrices:
-            raise ValueError("optimizer='muon' but the model has no 2-D weight matrices")
-        # TabICLv2 uses 8e-4 for Muon against 1e-4 for AdamW in TabICL v1 — Muon
-        # prefers a markedly higher rate, so `train.muon_lr` is separate rather than
-        # reusing `lr`. Passing an AdamW-scale rate to Muon just wastes the run.
-        muon_lr = float(cfg.get("muon_lr", 8e-4))
-        muon = muon_cls(matrices, lr=muon_lr, weight_decay=weight_decay)
-        aux = (
-            torch.optim.AdamW(others, lr=lr, betas=betas, weight_decay=weight_decay)
-            if others
-            else None
+        if "muon_lr" in cfg:
+            raise ValueError(
+                "train.muon_lr no longer exists: under Muon, train.lr IS Muon's rate, as in "
+                "upstream (`--muon True --lr 8e-4`). Our old optimizer had two rates — Muon on "
+                "the matrices, an auxiliary AdamW on the rest — which upstream never had. Move "
+                "the value to train.lr and delete train.muon_lr."
+            )
+        from ._muon_vendored import Muon
+
+        # Upstream's `Trainer.configure_optimizer`, argument for argument. ONE group, every
+        # parameter, `use_muon=True`: without the flag the vendored class silently routes the
+        # group to its internal AdamW branch.
+        return Muon(
+            param_groups=[dict(params=params, use_muon=True)],
+            lr=lr,
+            weight_decay=weight_decay,
+            matched_adamw_rms=0.2,
+            momentum=betas[0],
+            nesterov=True,
+            ns_steps=5,
+            adamw_betas=betas,
+            adamw_eps=1e-8,
+            use_cautious_wd=bool(cfg.get("cautious_weight_decay", False)),
         )
-        return _MuonWithAux(muon, aux)
 
     raise ValueError(f"optimizer={name!r} is not implemented; use 'adamw' or 'muon'")
-
-
-class _MuonWithAux(torch.optim.Optimizer):
-    """Muon on the weight matrices, AdamW on everything else, as one optimizer.
-
-    `torch.optim.Muon` raises on any parameter that is not 2-D ("Muon only supports 2D
-    parameters"), so biases, LayerNorm scales and embeddings need a second optimizer.
-    Every Muon deployment does this; the pairing is part of the method, not a
-    workaround.
-
-    Presented as a single `Optimizer` so the training loop, the LR scheduler and
-    checkpoint save/load need no special case. `param_groups` is a concatenated view,
-    which is what `LambdaLR` walks to scale learning rates — so the cosine schedule
-    reaches both halves. Both keep their own base LR, so the 8x gap between the Muon
-    rate and the AdamW rate survives scheduling.
-    """
-
-    def __init__(self, muon: torch.optim.Optimizer, aux: torch.optim.Optimizer | None):
-        self.muon = muon
-        self.aux = aux
-        self._opts = [o for o in (muon, aux) if o is not None]
-        # No super().__init__: this is a facade over real optimizers, and calling it
-        # would create a third, empty set of param groups to keep in sync.
-        self.param_groups = [g for o in self._opts for g in o.param_groups]
-        self.defaults = dict(getattr(muon, "defaults", {}))
-
-    def zero_grad(self, set_to_none: bool = True) -> None:
-        for o in self._opts:
-            o.zero_grad(set_to_none=set_to_none)
-
-    def step(self, closure=None):  # noqa: ANN001 — matches torch's signature
-        loss = closure() if closure is not None else None
-        for o in self._opts:
-            o.step()
-        return loss
-
-    def state_dict(self) -> dict[str, Any]:
-        return {
-            "kind": "muon_with_aux",
-            "muon": self.muon.state_dict(),
-            "aux": self.aux.state_dict() if self.aux is not None else None,
-        }
-
-    def load_state_dict(self, state: dict[str, Any]) -> None:
-        if state.get("kind") != "muon_with_aux":
-            raise ValueError(
-                "checkpoint was written by a different optimizer. Resuming a run with a "
-                "changed train.optimizer would silently reset the optimizer state; "
-                "start a new run instead."
-            )
-        self.muon.load_state_dict(state["muon"])
-        if self.aux is not None and state["aux"] is not None:
-            self.aux.load_state_dict(state["aux"])
-        self.param_groups = [g for o in self._opts for g in o.param_groups]
-
-
-def _resolve_muon():
-    """Find a Muon implementation, preferring torch's own.
-
-    Deliberately not reimplemented here. Muon's correctness depends on details
-    (Newton-Schulz iteration count, the `0.2*sqrt(max(n,m))` Moonlight scaling,
-    cautious weight decay) that are easy to get subtly wrong, and a subtly wrong
-    optimizer degrades every arm *equally and invisibly* — the worst failure mode for
-    a controlled comparison. A maintained implementation removes that risk; writing
-    our own would reintroduce it.
-    """
-    if hasattr(torch.optim, "Muon"):  # torch >= 2.9 ships it in core
-        return torch.optim.Muon
-    try:
-        from muon import MuonWithAuxAdam  # the reference `muon` package
-
-        return MuonWithAuxAdam
-    except ImportError:
-        pass
-    try:
-        from pytorch_optimizer import Muon  # Schaipp's collection, cited by the paper
-
-        return Muon
-    except ImportError:
-        pass
-    # UPSTREAM'S OWN, vendored from the pinned dump. This is the branch the cluster takes:
-    # VSC runs torch 2.8 (no `torch.optim.Muon`) and the published `tabicl` wheel does not
-    # ship the training package, so before this existed every cluster run died at optimizer
-    # construction. It is also the strictly better fallback — the exact optimizer that
-    # produced the released TabICLv2 checkpoints, rather than a second implementation that
-    # merely ought to agree.
-    from ._muon_vendored import Muon as VendoredMuon
-
-    return VendoredMuon
 
 
 def _cosine_with_restarts_lambda(
@@ -227,7 +131,10 @@ def _constant_lambda(current_step: int, *, num_warmup_steps: int) -> float:
 
 def build_scheduler(optimizer: torch.optim.Optimizer, cfg: dict[str, Any], max_steps: int) -> LambdaLR:
     warmup_proportion = float(cfg.get("warmup_proportion", 0.01))
-    warmup_steps = int(max_steps * warmup_proportion)
+    # A FLOAT, as upstream's `get_scheduler` computes it (`config.max_steps * warmup_proportion`).
+    # Rounding it down (as until 28-09-2026) gave 0 warm-up steps whenever the product was below
+    # 1, and a full-rate first step where upstream takes a zero-rate one.
+    warmup_steps = max_steps * warmup_proportion
     lr_init = float(cfg.get("lr", 3e-4))
 
     kind = str(cfg.get("scheduler", "cosine_with_restarts")).lower()

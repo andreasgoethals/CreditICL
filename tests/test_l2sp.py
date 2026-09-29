@@ -64,6 +64,8 @@ def test_the_gradient_added_is_exactly_alpha_times_the_drift(lgd_cfg, tmp_path, 
 
     monkeypatch.setattr(loop_mod, "load_pretrained", lambda *a, **k: {"strategy": "full"})
     cfg = copy.deepcopy(lgd_cfg)
+    # The file must exist (`paths.find_pretrained` refuses a missing one); its content is never read.
+    (tmp_path / "fake.ckpt").write_bytes(b"not read: load_pretrained is patched")
     cfg["init"] = {"strategy": "full", "pretrained_path": str(tmp_path / "fake.ckpt")}
     alpha = 0.003
     t = _trainer(cfg, tmp_path, l2sp_alpha=alpha)
@@ -110,16 +112,16 @@ def test_the_penalty_lands_on_unscaled_gradients_and_before_the_clip():
     assert unscale < apply_ < clip
 
 
-def test_exp2_sweeps_it_and_the_others_do_not():
-    """It is a continued-pretraining tool. Exp1 and Exp3 start from random weights."""
+def test_no_experiment_uses_it_yet():
+    """L2-SP (Real-TabPFN's pull toward the released weights) is a continued-pretraining tool,
+    kept for a later ablation. Since 29-09-2026 Experiment 2's design leaves it off — the stage-A
+    search chooses the rate and length instead, with an out-of-domain forgetting guard — and
+    Exp1/Exp3 start from random weights, so no config may switch it on or sweep it."""
     import yaml
 
     for path in sorted((ROOT / "config").glob("Exp*.yaml")):
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-        swept = (raw.get("sweep") or {}).get("train.l2sp_alpha")
-        body = (raw.get("train") or {}).get("l2sp_alpha")
-        if path.name.startswith("Exp2"):
-            assert swept == [0.0, 0.003], f"{path.name}: expected off vs Real-TabPFN's value"
-            assert body is None, "one knob, one home"
-        else:
-            assert swept is None and not body, f"{path.name} must not use L2-SP"
+        assert (raw.get("sweep") or {}).get("train.l2sp_alpha") is None, f"{path.name} sweeps L2-SP"
+        assert not (raw.get("train") or {}).get("l2sp_alpha"), f"{path.name} switches L2-SP on"
+        for arm, overrides in (raw.get("arms") or {}).items():
+            assert not (overrides or {}).get("train.l2sp_alpha"), f"{path.name} arm {arm} switches L2-SP on"

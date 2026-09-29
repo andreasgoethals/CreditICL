@@ -275,3 +275,111 @@ def test_every_experiment_config_asks_for_telemetry():
             log_cfg = cfg["logging"]
             assert log_cfg["log_hardware_every"] > 0, f"{exp}_{track}"
             assert log_cfg["log_grad_every"] > 0, f"{exp}_{track}"
+
+
+# -- weight drift and resume-safe CSVs (29-09-2026) ------------------------------------------
+
+
+def test_drift_starts_at_zero_and_measures_the_distance_from_the_start(tmp_path):
+    from src.train.telemetry import WeightTracker
+
+    model = _Model()
+    tracker = WeightTracker(tmp_path, every=1)
+    tracker.start(model)
+    first = tracker.sample(model, step=0, datasets_seen=0)
+    assert first["drift_all"] == 0.0 and first["drift_rel_all"] == 0.0
+
+    w0 = model.tf_row.weight.detach().clone()
+    block0 = torch.cat([w0.flatten(), model.tf_row.bias.detach().flatten()])  # the whole row block
+    with torch.no_grad():
+        model.tf_row.weight.add_(0.1)
+    row = tracker.sample(model, step=1, datasets_seen=4)
+    expected = float(torch.linalg.vector_norm(model.tf_row.weight.detach() - w0))
+    assert row["drift_row"] == pytest.approx(expected, rel=1e-5)
+    assert row["drift_rel_row"] == pytest.approx(expected / float(torch.linalg.vector_norm(block0)), rel=1e-5)
+    assert row["drift_col"] == 0.0, "an untouched block has not moved"
+    assert row["update_rel_row"] > 0 and row["update_rel_col"] == 0.0
+
+
+def test_update_is_measured_between_samples_not_from_the_start(tmp_path):
+    from src.train.telemetry import WeightTracker
+
+    model = _Model()
+    tracker = WeightTracker(tmp_path, every=1)
+    tracker.start(model)
+    with torch.no_grad():
+        model.tf_row.weight.add_(1.0)
+    tracker.sample(model, step=1, datasets_seen=0)
+    row = tracker.sample(model, step=2, datasets_seen=0)       # nothing moved since step 1
+    assert row["update_rel_row"] == 0.0
+    assert row["drift_row"] > 0, "but the distance from the start remains"
+
+
+def test_a_resumed_tracker_keeps_the_earlier_rows_up_to_the_checkpoint(tmp_path):
+    from src.train.telemetry import WeightTracker
+
+    model = _Model()
+    first = WeightTracker(tmp_path, every=1)
+    first.start(model)
+    for step in range(4):
+        first.sample(model, step=step, datasets_seen=step)
+    # the process dies after step 3; the checkpoint was written at step 2
+    second = WeightTracker(tmp_path, every=1)
+    second.start(model)
+    second.resume(2)
+    row = second.sample(model, step=3, datasets_seen=3)
+    assert row["update_rel_all"] != row["update_rel_all"], "unknown after a resume -> NaN"
+    import pandas as pd
+
+    steps = pd.read_csv(tmp_path / "weights.csv")["step"].tolist()
+    assert steps == [0, 1, 2, 3], "earlier rows kept, the recomputed step written once"
+
+
+def test_telemetry_survives_a_requeue(tmp_path):
+    """A requeued arm is a new process. Its first `record` used to rewrite the CSV from memory,
+    so every earlier segment's rows were lost."""
+    import pandas as pd
+
+    t = Telemetry("run", tmp_path, hardware_every=1, grad_every=0)
+    for step in (100, 200, 300):
+        t.record({"step": step, "steps_per_s": 1.0})
+    again = Telemetry("run", tmp_path, hardware_every=1, grad_every=0)
+    again.resume(200)                       # checkpoint at 200; 300 is recomputed
+    again.record({"step": 300, "steps_per_s": 2.0})
+    df = pd.read_csv(tmp_path / "telemetry.csv")
+    assert df["step"].tolist() == [100, 200, 300]
+    assert df["steps_per_s"].tolist() == [1.0, 1.0, 2.0]
+
+
+def test_a_fresh_start_drops_rows_a_deleted_run_left_behind(tmp_path):
+    t = Telemetry("run", tmp_path, hardware_every=1, grad_every=0)
+    t.record({"step": 500, "steps_per_s": 1.0})
+    fresh = Telemetry("run", tmp_path, hardware_every=1, grad_every=0)
+    fresh.resume(0)
+    fresh.record({"step": 100, "steps_per_s": 3.0})
+    import pandas as pd
+
+    assert pd.read_csv(tmp_path / "telemetry.csv")["step"].tolist() == [100]
+
+
+def test_the_trainer_writes_drift_time_and_phases(lgd_cfg, tmp_path):
+    """End to end: a two-step run leaves weights.csv (step 0 and 2), a cumulative training time,
+    and the learning rate, window loss and time-per-phase in telemetry.csv."""
+    import pandas as pd
+
+    from src.train.loop import Trainer
+
+    cfg = dict(lgd_cfg)
+    cfg["logging"] = {**cfg["logging"], "log_weights_every": 2, "log_hardware_every": 1,
+                      "log_grad_every": 1}
+    trainer = Trainer(cfg, tmp_path, device="cpu")
+    trainer.maybe_resume()
+    summary = trainer.train()
+    weights = pd.read_csv(tmp_path / "weights.csv")
+    assert weights["step"].tolist() == [0, 2]
+    assert weights.loc[0, "drift_all"] == 0.0 and weights.loc[1, "drift_all"] > 0
+    assert summary["train_seconds_total"] >= 0 and "weights_csv" in summary
+    telem = pd.read_csv(tmp_path / "telemetry.csv")
+    hw = telem[telem["kind"] == "hardware"]
+    assert {"lr", "train_loss_window"} <= set(hw.columns)
+    assert any(c.startswith("phase_") and c.endswith("_pct") for c in hw.columns)

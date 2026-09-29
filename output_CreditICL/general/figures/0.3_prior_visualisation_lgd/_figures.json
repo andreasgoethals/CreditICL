@@ -1,0 +1,56 @@
+[
+  {
+    "index": 1,
+    "stem": "01_target_shapes_by_variant",
+    "name": "target_shapes_by_variant",
+    "caption": "Histograms of the target of five single generated tasks per prior, share of rows per bin, 25 bins; the original prior's target on its own standardised scale with its minimum and maximum as ticks, the credit prior's on [0, 1]; columns show the same draw index."
+  },
+  {
+    "index": 2,
+    "stem": "02_boundary_mass_sources",
+    "name": "boundary_mass_sources",
+    "caption": "Share of rows at the target minimum against share at the maximum, one point per generated task and one panel per prior, stars for the seven real LGD datasets and the dotted diagonal for equal mass at both ends."
+  },
+  {
+    "index": 3,
+    "stem": "03_prior_realism_ranking",
+    "name": "prior_realism_ranking",
+    "caption": "Total-variation distance between each prior's pooled target distribution and each real LGD dataset's over 40 fixed bins on [0, 1], one dot per real dataset and a diamond at the mean; the original prior's targets are min-max scaled to [0, 1] per task."
+  },
+  {
+    "index": 4,
+    "stem": "04_boundary_atoms",
+    "name": "boundary_atoms",
+    "caption": "Histogram of the LGD target pooled over 50 generated tasks of the original prior and of the credit prior, and over the seven real LGD datasets with equal weight per dataset, share of rows per bin; each panel states the mean share of rows at the boundaries."
+  },
+  {
+    "index": 5,
+    "stem": "05_shift_kinds",
+    "name": "shift_kinds",
+    "caption": "Context against query mean per generated task, one panel per shift kind (cohort, covariate, prior probability), 60 tasks with the shift switched on and 60 without; mean LGD for the target shifts, the shifted feature in standard deviations for the covariate shift, and the dashed line where query equals context."
+  },
+  {
+    "index": 6,
+    "stem": "06_informative_missingness",
+    "name": "informative_missingness",
+    "caption": "Share of values missing against the LGD outcome, sextile midpoints, on a controlled table of 4,000 rows, under missingness completely at random (coupling 0) and missingness tied to the outcome (coupling 1, the strongest the configuration draws)."
+  },
+  {
+    "index": 7,
+    "stem": "07_predictability",
+    "name": "predictability",
+    "caption": "ExtraTrees out-of-bag pseudo-R\u00b2 per task for 120 unfiltered tasks of each prior and per real LGD dataset (mean over three 1,024-row samples), with each row's median; the shaded band marks the range kept by the banded filter and hollow points the tasks rejected by the tabicl filter at p of 0.05 or more."
+  },
+  {
+    "index": 8,
+    "stem": "08_side_by_side_tables",
+    "name": "side_by_side_tables",
+    "caption": "Twelve random rows of one generated credit-prior task and of one real LGD dataset as heatmaps, the seven most varied columns plus the target separated by a vertical rule, each column min-max scaled to its own range."
+  },
+  {
+    "index": 9,
+    "stem": "09_spectrum_by_variant",
+    "name": "spectrum_by_variant",
+    "caption": "Eigenvalue spectra of the feature correlation matrix, each normalised by its largest eigenvalue and plotted against eigenvalue rank over the number of varying columns, faint lines for 40 generated tasks per prior and for every real LGD dataset, bold lines the medians over all tasks of a prior and over the real datasets."
+  }
+]

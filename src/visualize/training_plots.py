@@ -1,9 +1,10 @@
 """Level-1 TRAINING visualisation: what every arm of a sweep did while it trained.
 
-Reads what each arm writes to `output/manifests/` — `<run>__progress.csv` (train loss and the
-development-split monitoring metrics, real-credit and out-of-domain, sampled every
-`progress.every_datasets`), `<run>__telemetry.csv` (throughput, GPU, per-block gradients) and
-`<run>__summary.json` — and turns it into the figures of `1.1_pd_training` / `1.2_lgd_training`
+Reads what each arm writes to its run folder, `output_CreditICL/experiment_<N>/runs/<run>/` —
+`progress.csv` (train loss and the development-split monitoring metrics, real-credit and
+out-of-domain, sampled every `progress.every_datasets`), `telemetry.csv` (throughput, GPU,
+per-block gradients), `weights.csv` (drift from the initial weights) and `summary.json` — and turns
+it into the figures of `1.1_pd_training` / `1.2_lgd_training`
 (Exp1, `exp="exp1"`) and `2.1_pd_finetuning` / `2.2_lgd_finetuning` (Exp2, `exp="exp2"`).
 
 THREE RULES DECIDE WHAT A CURVE MAY AVERAGE OVER. Each exists because the real sweep broke the
@@ -59,16 +60,21 @@ from src.visualize import style
 HEADLINE = {"pd": "roc_auc", "lgd": "r2"}
 HIGHER_IS_BETTER = {"auc": True, "ap": True, "r2": True, "spearman": True, "kendall": True,
                     "roc_auc": True, "pr_auc": True,
-                    "brier": False, "logloss": False, "rmse": False, "mae": False,
-                    "pinball": False, "crps": False, "ks": True}
+                    "brier": False, "logloss": False, "log_loss": False, "ece": False,
+                    "rmse": False, "mae": False, "pinball": False, "crps": False, "ks": True,
+                    "f1_at_base_rate": True, "mcc_at_base_rate": True,
+                    "balanced_accuracy_at_base_rate": True}
 
 #: The levers that name an arm, per experiment, and how each reads in a heading. Credit fraction
-#: comes first in both: it is the lever the sweep's rows are grouped by.
+#: comes first in both: it is the lever the sweep's rows are grouped by. Since 29-09-2026 Exp1
+#: varies only the mix (the prior is fixed by the literature); Exp2 the mix and the released model
+#: whose pretraining continues.
 LEVERS = {
-    "exp1": (("credit_fraction", "prior mix"), ("filter", "filter"), ("intensity", "intensity")),
-    "exp2": (("credit_fraction", "prior mix"), ("strategy", "layers trained"),
-             ("l2sp", "L2-SP"), ("lr", "learning rate")),
+    "exp1": (("credit_fraction", "prior mix"),),
+    "exp2": (("credit_fraction", "prior mix"), ("model", "released model continued")),
 }
+#: The lever a figure groups arms by when it needs one besides the mix (speed, the summary).
+GROUP_LEVER = {"exp1": ("credit_fraction", "prior mix"), "exp2": ("model", "released model continued")}
 
 #: The development metrics grouped by what they measure, one figure per group, in reading order.
 #: Only real metrics: bookkeeping columns (`n_test`), properties of the DATA (`true_mass_at_0`,
@@ -82,8 +88,11 @@ METRIC_THEMES = {
                                               "pred_mass_at_0", "pred_mass_at_1",
                                               "boundary_mass_abs_err", "mae_boundary",
                                               "mae_interior"))),
-    "pd": (("Discrimination and calibration", ("roc_auc", "pr_auc", "ks", "brier", "logloss",
-                                                "calibration_slope")),),
+    # `logloss` is the column name of monitors before 28-09-2026, `log_loss` after.
+    "pd": (("Discrimination and calibration", ("roc_auc", "pr_auc", "ks", "brier", "log_loss", "logloss",
+                                                "ece", "calibration_slope")),
+           ("Decisions at the base-rate threshold", ("f1_at_base_rate", "balanced_accuracy_at_base_rate",
+                                                     "mcc_at_base_rate"))),
 }
 
 
@@ -92,26 +101,47 @@ METRIC_THEMES = {
 # ---------------------------------------------------------------------------
 
 
-def _manifest_files(track: str, kind: str, exp: str = "exp1") -> list:
-    return sorted(paths.manifests_dir().glob(f"{exp}_{track}__*__{kind}.csv"))
+def _run_files(track: str, kind: str, exp: str = "exp1") -> list[tuple[str, Any]]:
+    """`[(run name, path)]` of one per-run file (`progress`, `telemetry`, `weights`) for every arm
+    of `track` in experiment `exp` that has written it."""
+    root = paths.runs_dir(paths.experiment_of(f"{exp}_"))
+    name = paths.RUN_FILES[kind]
+    return sorted((p.parent.name, p) for p in root.glob(f"{exp}_{track}__*/{name}"))
+
+
+def _one_grid(out: dict[str, Any], track: str, exp: str) -> dict[str, Any]:
+    """`out` restricted to ONE sweep: the current config's arms as soon as any of them has output,
+    otherwise every arm found (an older grid — the 45-arm Exp1 before the 28-09-2026 redesign).
+    Run names differ between grids, so nothing is overwritten when a new sweep's files land beside
+    an old one's, and without this every curve would average the two."""
+    try:
+        from src.utils.config import expand_with_seeds, load, run_name
+
+        cfg = load(paths.REPO_ROOT / f"config/Exp{int(exp.removeprefix('exp'))}_{track.upper()}.yaml",
+                   allow_placeholders=True)
+        current = {run_name(r) for r in expand_with_seeds(cfg)}
+    except Exception:  # noqa: BLE001 — without a config, keep what is there
+        return out
+    kept = {k: v for k, v in out.items() if k in current}
+    return kept or out
 
 
 def load_progress(track: str, exp: str = "exp1") -> dict[str, pd.DataFrame]:
     """`{run_name: progress DataFrame}` for every started arm of `track` in experiment `exp`."""
     out: dict[str, pd.DataFrame] = {}
-    for path in _manifest_files(track, "progress", exp):
+    for run, path in _run_files(track, "progress", exp):
         try:
             df = pd.read_csv(path)
         except (OSError, pd.errors.ParserError, pd.errors.EmptyDataError):
             continue
         if "step" in df and len(df):
-            out[path.name.replace("__progress.csv", "")] = df.sort_values("step")
-    return out
+            out[run] = df.sort_values("step")
+    return _one_grid(out, track, exp)
 
 
 def load_loss_logs(track: str, exp: str = "exp1") -> dict[str, pd.DataFrame]:
     """`{run_name: DataFrame(step, loss)}` — the training loss every 100 steps from step 100,
-    stitched across an arm's restarts, from `output/logs/<run>_<time>.metrics.jsonl`.
+    stitched across an arm's restarts, from `runs/<run>/logs/<run>_<time>.metrics.jsonl`.
 
     The progress CSVs log the loss only every 625 steps and start at step 625 — after most of the
     fall — and three restarted PD arms' progress logs only at ~4,000. Empty when the logs were not
@@ -120,8 +150,9 @@ def load_loss_logs(track: str, exp: str = "exp1") -> dict[str, pd.DataFrame]:
     import json as _json
 
     out: dict[str, pd.DataFrame] = {}
-    for path in sorted(paths.logs_dir().glob(f"{exp}_{track}__*.metrics.jsonl")):
-        run = re.sub(r"_\d{8}_\d{6}\.metrics\.jsonl$", "", path.name)
+    root = paths.runs_dir(paths.experiment_of(f"{exp}_"))
+    for path in sorted(root.glob(f"{exp}_{track}__*/logs/*.metrics.jsonl")):
+        run = path.parent.parent.name
         losses = out.setdefault(run, {})
         try:
             for line in path.read_text(encoding="utf-8").splitlines():
@@ -130,21 +161,35 @@ def load_loss_logs(track: str, exp: str = "exp1") -> dict[str, pd.DataFrame]:
                     losses[int(rec["step"])] = float(rec["loss"])  # a later segment wins
         except (OSError, ValueError):
             continue
-    return {run: pd.DataFrame(sorted(d.items()), columns=["step", "train_loss"])
-            for run, d in out.items() if len(d) >= 2}
+    return _one_grid({run: pd.DataFrame(sorted(d.items()), columns=["step", "train_loss"])
+                      for run, d in out.items() if len(d) >= 2}, track, exp)
 
 
 def load_telemetry(track: str, exp: str = "exp1") -> dict[str, pd.DataFrame]:
     """`{run_name: telemetry DataFrame}` for every started arm of `track` in experiment `exp`."""
     out: dict[str, pd.DataFrame] = {}
-    for path in _manifest_files(track, "telemetry", exp):
+    for run, path in _run_files(track, "telemetry", exp):
         try:
             df = pd.read_csv(path)
         except (OSError, pd.errors.ParserError, pd.errors.EmptyDataError):
             continue
         if "step" in df and len(df):
-            out[path.name.replace("__telemetry.csv", "")] = df
-    return out
+            out[run] = df
+    return _one_grid(out, track, exp)
+
+
+def load_weights(track: str, exp: str = "exp1") -> dict[str, pd.DataFrame]:
+    """`{run_name: weights DataFrame}` — per-block drift from the initial weights and update size
+    (`src/train/telemetry.WeightTracker`) for every arm of `track` in experiment `exp`."""
+    out: dict[str, pd.DataFrame] = {}
+    for run, path in _run_files(track, "weights", exp):
+        try:
+            df = pd.read_csv(path)
+        except (OSError, pd.errors.ParserError, pd.errors.EmptyDataError):
+            continue
+        if "step" in df and len(df):
+            out[run] = df.sort_values("step")
+    return _one_grid(out, track, exp)
 
 
 # ---------------------------------------------------------------------------
@@ -189,7 +234,8 @@ def _config_label(run_name: str, *, mix: bool = True) -> str:
 #: intensity from mild to aggressive, the freeze strategies from most to least trained. Credit
 #: fraction always comes first in a configuration's sort key, so its effect reads as a block.
 _ORDER = {"intensity": ("mild", "aggressive"), "filter": ("off", "tabicl", "banded"),
-          "strategy": ("full", "icl_only", "head_only", "scratch"), "l2sp": ("L2-SP off", "L2-SP on")}
+          "strategy": ("full", "icl_only", "head_only", "scratch"), "l2sp": ("L2-SP off", "L2-SP on"),
+          "model": ("tabicl", "tabpfn3"), "credit_fraction": ("cf=0", "cf=0.0", "cf=0.5", "cf=1", "cf=1.0")}
 
 
 def _config_sort_key(run_name: str, exp: str = "exp1") -> tuple:
@@ -563,7 +609,7 @@ def monitoring_coverage(track: str, exp: str = "exp1", metric: str | None = None
     runs = load_progress(track, exp)
     style.apply()
     if not runs:
-        return _placeholder("no progress logs in output/manifests/ yet")
+        return _placeholder("no progress logs in output_CreditICL/experiment_<N>/runs/ yet")
     roles = dataset_roles(track, exp)
     kept, _ = comparable_datasets(runs, metric)
     names = sorted(runs, key=lambda n: (_config_sort_key(n, exp), _seed_of(n) or 0))
@@ -623,7 +669,7 @@ def throughput(track: str, exp: str = "exp1"):
     """
     tel = load_telemetry(track, exp)
     runs = load_progress(track, exp)
-    lever, lever_label = ("filter", "filter") if exp == "exp1" else ("strategy", "layers trained")
+    lever, lever_label = GROUP_LEVER.get(exp, GROUP_LEVER["exp1"])
     style.apply()
     speed: dict[str, float] = {}
     for name, df in tel.items():
@@ -687,7 +733,7 @@ def training_loss(track: str, exp: str = "exp1"):
     # across restarts; otherwise the progress CSVs' every-625-steps points.
     curves = load_loss_logs(track, exp) or {n: df.dropna(subset=["train_loss"]) for n, df in runs.items()}
     if not curves:
-        return _placeholder("no loss logs in output/logs/ or output/manifests/ yet")
+        return _placeholder("no loss logs in output_CreditICL/experiment_<N>/runs/ yet")
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.46))
     steps = [int(d["step"].min()) for d in curves.values() if len(d)] + [100]
     grid = np.geomspace(max(1, min(steps)), max(int(d["step"].max()) for d in curves.values()), 80)
@@ -730,7 +776,7 @@ def metric_over_training(track: str, exp: str = "exp1", metric: str | None = Non
     runs, agg, kept, _ = _view(track, exp, metric)
     style.apply()
     if not runs:
-        return _placeholder("no progress logs in output/manifests/ yet")
+        return _placeholder("no progress logs in output_CreditICL/experiment_<N>/runs/ yet")
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.48))
     grid = _common_step_grid(agg)
     by_cf: dict[float, list] = {}
@@ -768,7 +814,7 @@ def credit_vs_control_over_training(track: str, exp: str = "exp1", metric: str |
     runs, agg, kept, _ = _view(track, exp, metric)
     style.apply()
     if not runs:
-        return _placeholder("no progress logs in output/manifests/ yet")
+        return _placeholder("no progress logs in output_CreditICL/experiment_<N>/runs/ yet")
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.46))
     grid = _common_step_grid(agg)
     groups: dict[str, list] = {"credit prior": [], "control": []}
@@ -834,7 +880,7 @@ def metric_by_lever(track: str, lever: str, exp: str = "exp1", metric: str | Non
     runs, agg, kept, _ = _view(track, exp, metric)
     style.apply()
     if not runs:
-        return _placeholder("no progress logs in output/manifests/ yet")
+        return _placeholder("no progress logs in output_CreditICL/experiment_<N>/runs/ yet")
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.46))
     grid = _common_step_grid(agg)
     by_val = _lever_curves(agg, lever, metric, kept, grid)
@@ -863,7 +909,7 @@ def metric_by_levers(track: str, exp: str = "exp1", metric: str | None = None):
     style.apply()
     levers = LEVERS.get(exp, LEVERS["exp1"])
     if not runs:
-        return _placeholder("no progress logs in output/manifests/ yet")
+        return _placeholder("no progress logs in output_CreditICL/experiment_<N>/runs/ yet")
     ncols = len(levers) if len(levers) <= 3 else 2
     nrows = int(np.ceil(len(levers) / ncols))
     fig, axes = plt.subplots(nrows, ncols, figsize=style.grid_figsize(
@@ -954,6 +1000,9 @@ def lever_interaction(track: str, exp: str = "exp1", metric: str | None = None):
     runs, agg, kept, _ = _view(track, exp, metric)
     style.apply()
     levers = LEVERS.get(exp, LEVERS["exp1"])[1:]
+    if not levers:
+        # Experiment 1 varies the mix alone since 29-09-2026: there is no second lever to draw.
+        return _placeholder("the mix is this experiment's only lever: nothing to draw within it")
     ncols = len(levers) if len(levers) <= 3 else 2
     nrows = int(np.ceil(len(levers) / ncols))
     fig, axes = plt.subplots(nrows, ncols, figsize=style.grid_figsize(
@@ -1149,7 +1198,7 @@ def real_vs_ood(track: str, exp: str = "exp1", metric: str | None = None):
     agg = _aggregate(runs)
     style.apply()
     if not runs:
-        return _placeholder("no progress logs in output/manifests/ yet")
+        return _placeholder("no progress logs in output_CreditICL/experiment_<N>/runs/ yet")
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.46))
     grid = _common_step_grid(agg)
     for domain, label, ls in (("real", "real credit", "-"), ("ood", "out-of-domain", "--")):
@@ -1484,7 +1533,8 @@ def _lever_value(run_name: str, lever: str) -> str | None:
         return None
     pats = {"credit_fraction": r"credit_fraction=([0-9p.]+)", "filter": r"filter-mode=([a-z]+)",
             "strategy": r"strategy=(full|icl_only|head_only|scratch)",
-            "l2sp": r"l2sp_alpha=([0-9pm.e+-]+)", "lr": r"-lr=([0-9pm.e+-]+)"}
+            "l2sp": r"l2sp_alpha=([0-9pm.e+-]+)", "lr": r"-lr=([0-9pm.e+-]+)",
+            "model": r"arm=(tabicl|tabpfn3)"}
     m = re.search(pats.get(lever, r"(?!)"), run_name)
     if not m:
         return None
@@ -1517,6 +1567,8 @@ def _value_label(lever: str, value: str, track: str | None = None) -> str:
         return style.STRATEGY_LABEL.get(value, value)
     if lever == "l2sp":
         return {"L2-SP on": "L2-SP", "L2-SP off": "no L2-SP"}.get(value, value)
+    if lever == "model":
+        return style.CONTINUED_LABEL.get(value, value)
     return value
 
 
@@ -1543,7 +1595,7 @@ def training_summary(track: str, exp: str = "exp1") -> str:
     tel = load_telemetry(track, exp)
     title = f"{exp.upper()} {track.upper()} TRAINING — development-split monitoring"
     if not runs:
-        return f"{title}\n  no progress logs in output/manifests/ yet."
+        return f"{title}\n  no progress logs in output_CreditICL/experiment_<N>/runs/ yet."
     metric = HEADLINE[track]
     label = style.metric_label(metric)
     kept, dropped = comparable_datasets(runs, metric)
@@ -1581,7 +1633,7 @@ def training_summary(track: str, exp: str = "exp1") -> str:
     if ends and (ends[0] < ends[-1] or starts[0] < starts[-1]):
         lines.append(f"  group curves are drawn only where all their arms have a value: finished arms'"
                      f" logs start at step {starts[0]:,}-{starts[-1]:,} and end at {ends[0]:,}-{ends[-1]:,}")
-    lever = "filter" if exp == "exp1" else "strategy"
+    lever = GROUP_LEVER.get(exp, GROUP_LEVER["exp1"])[0]
     speeds: dict[str, list[float]] = {}
     utils: list[float] = []
     mems: list[float] = []

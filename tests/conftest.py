@@ -44,8 +44,8 @@ def isolated_output(tmp_path, monkeypatch) -> Path:
     otherwise only ever runs in production.
 
     Use this for anything that writes. Setting only the staging root is not enough — figures,
-    logs and manifests hang off `outputs_dir()`, which ignores staging and stays in the repo,
-    so a test that set only staging wrote into the real `output/` tree and left files behind.
+    logs and run records hang off `outputs_dir()`, which ignores staging and stays in the repo,
+    so a test that set only staging wrote into the real output tree and left files behind.
     """
     import importlib
 
@@ -55,8 +55,9 @@ def isolated_output(tmp_path, monkeypatch) -> Path:
     monkeypatch.setenv(paths.STAGING_ENV_VARS[0], str(tmp_path / "staging"))
     importlib.reload(paths)
     # Fail loudly rather than write into the real tree. Both tiers, because they resolve
-    # through different branches and only `results/` follows staging.
-    for resolved in (paths.outputs_dir(), paths.results_dir(), paths.logs_dir()):
+    # through different branches and only the big one follows staging.
+    for resolved in (paths.outputs_dir(), paths.big_outputs_dir(), paths.logs_dir(),
+                     paths.pretrained_dir(), paths.ood_cache_dir()):
         assert tmp_path in resolved.parents, f"not isolated: {resolved} is outside {tmp_path}"
     yield tmp_path
     importlib.reload(paths)
@@ -131,6 +132,9 @@ def _shrink(cfg: dict) -> dict:
     # is the artefact the cluster actually produces. Locally, real runs default to
     # no file at all (see src/utils/logging_setup.setup_logging).
     cfg["logging"] = {"level": "INFO", "console": False, "log_prior_every": 0, "to_file": True}
+    # The monitor records at step 0 since 28-09-2026: left on, every tiny training test would score
+    # the real development datasets and the OOD suites on the CPU. Its own tests switch it on.
+    cfg["progress"] = {**(cfg.get("progress") or {}), "every_datasets": 0}
     return cfg
 
 

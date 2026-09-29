@@ -31,6 +31,8 @@ such a pool a SAMPLE so a partial download can never be mistaken for the whole t
 
 from __future__ import annotations
 
+from src.visualize.draw import minority_share
+
 import json
 from typing import Any
 
@@ -260,12 +262,12 @@ def variant_summary(loaded: dict[str, list[SyntheticTask]], task: str) -> pd.Dat
                 }
             )
         else:
-            rates = np.array([float((t.y > 0.5).float().mean()) for t in tasks])
+            rates = np.array([minority_share(t.y) for t in tasks])
             rec.update(
                 {
-                    "base rate mean": round(float(rates.mean()), 4),
-                    "base rate p10": round(float(np.percentile(rates, 10)), 4),
-                    "base rate p90": round(float(np.percentile(rates, 90)), 4),
+                    "default rate mean": round(float(rates.mean()), 4),
+                    "default rate p10": round(float(np.percentile(rates, 10)), 4),
+                    "default rate p90": round(float(np.percentile(rates, 90)), 4),
                     "below 5%": round(float((rates < 0.05).mean()), 3),
                 }
             )
@@ -346,16 +348,17 @@ def plot_base_rate_by_variant(loaded: dict[str, list[SyntheticTask]], real_refer
     )
     ax = axes[0][0]
 
-    bins = np.linspace(0.0, 1.0, 41)
+    # The MINORITY share (`draw.minority_share`): both priors give labels a random identity, so a
+    # rate and one minus it are the same task to the model. Hence [0, 0.5], balance at the edge.
+    bins = np.linspace(0.0, 0.5, 41)
     for i, (variant, tasks) in enumerate(loaded.items()):
-        rates = np.array([float((t.y > 0.5).float().mean()) for t in tasks])
+        rates = np.array([minority_share(t.y) for t in tasks])
         ax.hist(rates, bins=bins, histtype="step", lw=1.8, color=variant_color(variant, i),
                 label=f"{style.variant_label(variant)} (median {np.median(rates):.0%})")
-    ax.axvline(0.5, color=style.MUTED, lw=1.0, ls=":", zorder=1, label="balance (50%)")
     # Below ~10% a default-threshold classifier collapses to the majority class on real credit
     # data (Tanna 2026). In the LEGEND: a rotated label beside the line was written across the bars.
     literature.line(ax, "tanna_paradox", label="Tanna: collapse below 10%", inline=False)
-    ax.set_xlim(0, 1)
+    ax.set_xlim(0, 0.5)
     ax.set_ylabel("number of tasks")
     # Legend OUTSIDE the axes, above it. Inside, it either sat on the bars or on the 50% line
     # depending on where the data happened to fall — which is a bug that reappears with new
@@ -371,13 +374,13 @@ def plot_base_rate_by_variant(loaded: dict[str, list[SyntheticTask]], real_refer
         strip.set_yticks([0])
         # The row is labelled on the AXIS, so no floating text can drift onto anything.
         strip.set_yticklabels(["real"], fontsize=7, color=style.STAR)
-        strip.set_xlabel("default rate per dataset")
+        strip.set_xlabel("default rate per task or dataset (minority-class share)")
         strip.grid(visible=False)
         for side in ("left", "right", "top"):
             strip.spines[side].set_visible(False)
         strip.xaxis.set_major_formatter(mpl.ticker.PercentFormatter(1.0, decimals=0))
     else:
-        ax.set_xlabel("default rate per dataset")
+        ax.set_xlabel("default rate per task (minority-class share)")
 
     # NO heading. The legend already occupies the space above the axes, and a title there
     # collides with it — as it did. The caption names the figure, which is the policy anyway:

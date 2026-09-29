@@ -31,11 +31,17 @@ from src.utils.config import (  # noqa: E402
     sweep_axes,
 )
 
-#: One file per experiment per track. Exp1 screens the prior grid; Exp2 and Exp3 build on
-#: its winner, so they stay templates until Exp1 has finished.
-EXPERIMENTS = [f"config/{e}_{t}.yaml" for e in ("Exp1", "Exp2", "Exp3") for t in ("LGD", "PD")]
-#: The runnable ones. Exp2/Exp3 hold `FILL_FROM_EXP1` and must not expand.
-CONFIGS = ["config/Exp1_LGD.yaml", "config/Exp1_PD.yaml"]
+#: One file per experiment per track, plus Experiment 2's search stage. Exp0 is the cluster debug
+#: suite; Exp2's main configs wait for its search (`FILL_FROM_SEARCH`), Exp3 for Exp1
+#: (`FILL_FROM_EXP1`).
+EXPERIMENTS = [f"config/{e}_{t}.yaml" for e in ("Exp0", "Exp1", "Exp2", "Exp2_search", "Exp3")
+               for t in ("LGD", "PD")]
+EXPERIMENTS = [p.replace("Exp2_search_LGD", "Exp2_LGD_search").replace("Exp2_search_PD", "Exp2_PD_search")
+               for p in EXPERIMENTS]
+#: The runnable ones: nothing left to fill in.
+CONFIGS = [p for p in EXPERIMENTS if "Exp0" in p or "Exp1" in p or "_search" in p]
+#: The templates.
+TEMPLATES = [p for p in EXPERIMENTS if p not in CONFIGS]
 
 
 def _load(path):
@@ -56,8 +62,9 @@ def test_task_matches_filename(path):
     cfg = _load(path)
     expected = "lgd" if "LGD" in path else "pd"
     assert cfg["task"] == expected
-    assert cfg["experiment"].endswith(expected)
-    assert cfg["experiment"].startswith(Path(path).stem.split("_")[0].lower())
+    exp, track = cfg["experiment"].split("_")[:2]
+    assert track == expected
+    assert exp == Path(path).stem.split("_")[0].lower()
 
 
 # -- the six-file layout, and prior_file: ------------------------------------
@@ -69,12 +76,12 @@ def test_task_matches_filename(path):
 
 @pytest.mark.parametrize("path", CONFIGS)
 def test_exp1_is_runnable_now(path):
-    """Exp1 depends on nothing, so it must load without the escape hatch."""
+    """Exp0, Exp1 and the Exp2 search depend on nothing, so they load without the escape hatch."""
     cfg = load(ROOT / path)
     assert find_placeholders(cfg) == []
 
 
-@pytest.mark.parametrize("path", [p for p in EXPERIMENTS if "Exp1" not in p])
+@pytest.mark.parametrize("path", TEMPLATES)
 def test_exp2_and_exp3_refuse_to_expand_until_exp1_has_run(path):
     """A config that runs with a placeholder burns GPU-hours measuring nothing. The
     refusal is the whole safeguard, so it gets a test."""
@@ -87,11 +94,13 @@ def test_exp2_and_exp3_refuse_to_expand_until_exp1_has_run(path):
 
 def test_exp2_refuses_a_silent_partial_load():
     """A name mismatch that loads nothing still runs and still outputs numbers — they are
-    just partly random. `strict_load` is what turns that into a crash."""
-    for track in ("LGD", "PD"):
-        cfg = _load(f"config/Exp2_{track}.yaml")
+    just partly random. `strict_load` is what turns that into a crash, and the trainer reads it."""
+    for name in ("Exp2_LGD", "Exp2_PD", "Exp2_LGD_search", "Exp2_PD_search"):
+        cfg = _load(f"config/{name}.yaml")
         assert cfg["init"]["strict_load"] is True
         assert cfg["init"]["pretrained_path"], "a warm start needs a checkpoint"
+    loop = (ROOT / "src" / "train" / "loop.py").read_text(encoding="utf-8")
+    assert 'strict=bool(icfg.get("strict_load", False))' in loop
 
 
 # -- the screening budget ------------------------------------------------------
@@ -116,7 +125,7 @@ def test_exp3_reports_more_seeds_than_the_screen():
 # -- the frozen evaluation split ----------------------------------------------
 
 
-@pytest.mark.parametrize("path", EXPERIMENTS)
+@pytest.mark.parametrize("path", [p for p in EXPERIMENTS if "_search" not in p])
 def test_dev_and_holdout_are_disjoint_and_non_empty(path):
     """A dataset in both splits leaks the holdout into prior selection, which is the one
     mistake that cannot be fixed after the fact."""
@@ -127,7 +136,7 @@ def test_dev_and_holdout_are_disjoint_and_non_empty(path):
     assert ev["select_on"] == "dev", "selecting on holdout invalidates the experiment"
 
 
-@pytest.mark.parametrize("path", EXPERIMENTS)
+@pytest.mark.parametrize("path", [p for p in EXPERIMENTS if "_search" not in p])
 def test_the_split_covers_every_dataset_on_disk(path):
     """A dataset in neither split is silently never evaluated."""
     from src.data.discovery import list_datasets
@@ -245,7 +254,7 @@ def test_credit_fraction_is_a_probability(path):
         assert 0.0 <= v <= 1.0
 
 
-@pytest.mark.parametrize("path", CONFIGS)
+@pytest.mark.parametrize("path", [p for p in CONFIGS if "Exp0" not in p])
 def test_control_arm_is_present(path):
     """credit_fraction = 0 is the baseline everything is measured against. If it
     is missing there is nothing to compare to."""
@@ -307,7 +316,10 @@ def test_exp1_sweeps_priors_and_never_the_architecture():
     for track in ("LGD", "PD"):
         axes = dict(sweep_axes(_load(f"config/Exp1_{track}.yaml")))
         prior_axes = [k for k in axes if k.startswith("prior.")]
-        assert len(prior_axes) >= 3, f"{track}: Exp1 must sweep the prior, got {prior_axes}"
+        # Since 28-09-2026 the one lever is how much of the calibrated credit prior is in the mix;
+        # the control (0.0) must be one of its values.
+        assert prior_axes == ["prior.credit_fraction"], f"{track}: Exp1 must sweep the mix, got {prior_axes}"
+        assert 0.0 in axes["prior.credit_fraction"] and max(axes["prior.credit_fraction"]) > 0
         banned = ("model", "embed_dim", "num_blocks", "nhead", "architecture")
         for key in axes:
             assert not any(b in key for b in banned), f"{track}: {key} is an architecture knob"
@@ -320,8 +332,8 @@ def test_exp1_defines_many_priors_and_exp3_exactly_one():
         n_priors = 1
         for _, values in axes:
             n_priors *= len(values)
-        # 3 credit_fraction x 3 filter.mode x 2 aggressive-range = 18 (redesigned 02-09-2026; was 32).
-        assert n_priors == 18, f"{track}: expected 18 Exp1 priors, got {n_priors}"
+        # 3 credit fractions (redesigned 28-09-2026; was 3 x 3 filters x 2 intensities = 18).
+        assert n_priors == 3, f"{track}: expected 3 Exp1 priors, got {n_priors}"
 
         exp3 = [(k, v) for k, v in sweep_axes(_load(f"config/Exp3_{track}.yaml")) if k != "seeds"]
         assert exp3 == [("prior.credit_fraction", [0.0, PLACEHOLDER])], (
@@ -363,35 +375,38 @@ def test_the_control_arm_prior_never_carries_a_placeholder():
 
 
 def test_exp2_uses_a_continued_pretraining_learning_rate():
-    """TabPFN-Wide (Kolberg et al. 2026) continued-pretrains at 1e-5. Applying pretraining's
-    8e-4 to already-trained weights destroys them in a few hundred steps, and the loss curve
-    would look like a bad prior rather than a bad learning rate."""
+    """Applying pretraining's 8e-4 to already-trained weights destroys them in a few hundred
+    steps. Every rate the search tries must be far below it: TabPFN's and TabICL's own fine-tuners
+    use 1e-5, upstream's stage 3 2e-5 (Muon), its stage 2 1e-4 (Muon)."""
+    from src.utils.config import expand_with_seeds
+
     for track in ("LGD", "PD"):
-        two = _load(f"config/Exp2_{track}.yaml")["train"]
         three = _load(f"config/Exp3_{track}.yaml")["train"]
-        # A LIST since 24-08-2026: Exp2 sweeps the rate, because the published continued-
-        # pretraining rates disagree by two orders of magnitude (Real-TabPFN 3e-7,
-        # TabPFN-Wide 1e-5, TabICLv2 stage 3 2e-5). Every value swept must still be far below
-        # pretraining's, or the sweep is testing "does destroying the weights help".
-        rates = two["lr"] if isinstance(two["lr"], list) else [two["lr"]]
-        assert max(rates) <= three["lr"] / 10, (
-            f"{track}: Exp2 rates {rates} are not far below Exp3's {three['lr']}"
-        )
-        assert two["muon_lr"] <= three["muon_lr"] / 10
-        assert two["warmup_proportion"] > three["warmup_proportion"], "warm start needs longer warmup"
-        assert two["gradient_clipping"] < three["gradient_clipping"]
+        runs = expand_with_seeds(_load(f"config/Exp2_{track}_search.yaml"))
+        for r in runs:
+            t = r["train"]
+            assert t["lr"] <= three["lr"] / 8, f"{r['arm']}: rate {t['lr']} is not far below {three['lr']}"
+            assert t["gradient_clipping"] < three["gradient_clipping"], "upstream stage 3 clips at 1"
+            if t["optimizer"] == "adamw":
+                assert t["warmup_proportion"] == 0.1, "TabPFN's fine-tuner warms up for 10 %"
+            if r["architecture"] == "tabpfn3":
+                assert t["optimizer"] == "adamw" and r["prior"]["encoding"] == "raw"
+        assert {r["architecture"] for r in runs} == {"tabicl", "tabpfn3"}
+        assert {r["train"]["optimizer"] for r in runs if r["architecture"] == "tabicl"} == {"adamw", "muon"}
 
 
 def test_exp2_sweeps_the_mixture_because_that_is_its_question():
-    """The model already knows the original prior, so how much of ours to add IS the experiment.
-    `1.0` must be included so 'forgetting the original prior' is measurable, and `0.0` so
-    'continued pretraining alone' is a control."""
+    """How much of our prior to add IS the experiment. `1.0` must be included so 'forgetting the
+    original prior' is measurable, `0.0` so 'continued pretraining alone' is the control — for
+    both released models. The search runs on the control mix alone."""
     for track in ("LGD", "PD"):
         axes = dict(sweep_axes(_load(f"config/Exp2_{track}.yaml")))
         mixture = axes["prior.credit_fraction"]
         assert 0.0 in mixture and 1.0 in mixture, f"{track}: mixture must span 0..1, got {mixture}"
-        assert len(mixture) >= 4, "an interior optimum needs interior points"
-        assert "init.strategy" in axes, "full vs parameter-efficient must be measured, not assumed"
+        assert sorted(axes["arm"]) == ["tabicl", "tabpfn3"]
+        search = _load(f"config/Exp2_{track}_search.yaml")
+        assert search["prior"]["credit_fraction"] == 0.0, "the recipe must not be tuned on our prior"
+        assert search["eval"]["holdout_datasets"] == [], "the search must never see the holdout"
 
 
 def test_exp2_is_cheaper_than_exp3():
@@ -407,28 +422,35 @@ def test_exp2_is_cheaper_than_exp3():
 
 
 def test_every_experiment_names_the_same_architecture():
-    """One architecture for all three, and it is TabICLv2's own. Two experiments on different
+    """TabICLv2's own architecture everywhere; Experiment 2 alone adds TabPFN-3, and only through
+    its arms (the top-level value is TabICL's in every file). Two experiments on different
     architectures cannot be compared, and the paper's claim is about the prior."""
+    from src.utils.config import expand_with_seeds
+
     named = {_load(p)["architecture"] for p in EXPERIMENTS}
     assert named == {"tabicl"}, f"experiments disagree on the architecture: {named}"
+    for p in CONFIGS:
+        archs = {r["architecture"] for r in expand_with_seeds(_load(p))}
+        allowed = {"tabicl", "tabpfn3"} if ("Exp2" in p or "Exp0" in p) else {"tabicl"}
+        assert archs <= allowed, f"{p}: {archs}"
 
 
 def test_config_folder_holds_exactly_the_six_experiments():
-    """Three experiments x two tracks, each self-contained. Anything else here is a file nobody
-    named, which is how a stale config gets submitted."""
+    """Four experiments x two tracks, plus Experiment 2's search, each self-contained. Anything
+    else here is a file nobody named, which is how a stale config gets submitted."""
     found = sorted(p.name for p in (ROOT / "config").iterdir())
     assert found == sorted(Path(p).name for p in EXPERIMENTS), f"unexpected: {found}"
 
 
 def test_exp2_and_exp3_differ_only_where_they_should():
-    """They are not identical any more — Exp2 is continued pre-training, so its budget, learning
-    rate and mixture all differ by design. What must still match is the EVALUATION, or the two
-    cannot be compared at all."""
+    """They are not identical — Exp2 is continued pre-training, so its budget, learning rate and
+    mixture differ by design. What must still match is the EVALUATION SPLIT, or the two cannot be
+    compared at all."""
     for track in ("LGD", "PD"):
         two, three = _load(f"config/Exp2_{track}.yaml"), _load(f"config/Exp3_{track}.yaml")
-        assert two["eval"] == three["eval"], f"{track}: evaluation must be identical"
+        for key in ("dev_datasets", "holdout_datasets", "select_on"):
+            assert two["eval"][key] == three["eval"][key], f"{track}: eval.{key} must be identical"
         assert two["task"] == three["task"]
-        assert two["architecture"] == three["architecture"]
         assert three["init"]["strategy"] == "scratch"
         assert two["init"]["strategy"] != "scratch"
         assert two["init"]["pretrained_path"], "a warm start needs a checkpoint"
@@ -513,3 +535,32 @@ def test_every_config_expands_including_the_templates(path):
     from src.utils.config import expand_with_seeds
 
     assert len(expand_with_seeds(_load(path))) > 0
+
+
+@pytest.mark.parametrize("track", ["LGD", "PD"])
+def test_the_search_chooses_on_exactly_the_development_datasets(track):
+    """Stage A of Experiment 2 sees the development datasets and nothing else: the same list as
+    Experiment 1's, and no holdout."""
+    search = _load(f"config/Exp2_{track}_search.yaml")["eval"]
+    exp1 = _load(f"config/Exp1_{track}.yaml")["eval"]
+    assert search["dev_datasets"] == exp1["dev_datasets"]
+    assert search["holdout_datasets"] == []
+    assert search["select_on"] == "dev"
+
+
+@pytest.mark.parametrize("track", ["LGD", "PD"])
+def test_every_experiment_trains_on_exactly_experiment_1s_prior(track):
+    """Experiment 2 asks whether Experiment 1's credit prior helps the released models, and
+    Experiment 0 checks the code paths Exp1/Exp2 use — so their prior blocks must be Exp1's, apart
+    from the mix and the encoding (which the arms set)."""
+    import copy
+
+    def strip(prior):
+        prior = copy.deepcopy(prior)
+        for key in ("credit_fraction", "encoding"):
+            prior.pop(key, None)
+        return prior
+
+    exp1 = strip(_load(f"config/Exp1_{track}.yaml")["prior"])
+    for name in (f"Exp0_{track}", f"Exp2_{track}", f"Exp2_{track}_search", f"Exp3_{track}"):
+        assert strip(_load(f"config/{name}.yaml")["prior"]) == exp1, f"{name} drifted from Exp1's prior"

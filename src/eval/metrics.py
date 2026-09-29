@@ -29,6 +29,10 @@ import math
 import numpy as np
 
 EPS = 1e-12
+#: How close to 0 or 1 an LGD counts as AT the boundary. Not 1e-6: `0003.axa`'s source squeezes its
+#: target into [1e-5, 1 - 1e-5] (a beta-regression convenience), so an exact test read its 29 % of
+#: complete recoveries and 6 % of total losses as interior values.
+BOUNDARY_TOL = 1e-4
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +66,7 @@ def interval_coverage(y_true: np.ndarray, lo: np.ndarray, hi: np.ndarray) -> flo
     return float(np.mean((y_true >= np.asarray(lo)) & (y_true <= np.asarray(hi))))
 
 
-def boundary_mass_error(y_true: np.ndarray, y_pred: np.ndarray, tol: float = 1e-6) -> dict[str, float]:
+def boundary_mass_error(y_true: np.ndarray, y_pred: np.ndarray, tol: float = BOUNDARY_TOL) -> dict[str, float]:
     """Does the model predict the right amount of mass at 0 and at 1?
 
     The metric this project exists to move, and one nothing in the library
@@ -162,7 +166,7 @@ def lgd_metrics(
     # -- where the error lives ------------------------------------------------
     # THE debugging split for LGD. A model can score a good overall RMSE while being useless
     # exactly on the boundary atoms — the part of the distribution this whole project is about.
-    at_boundary = (y_true <= 1e-6) | (y_true >= 1 - 1e-6)
+    at_boundary = (y_true <= BOUNDARY_TOL) | (y_true >= 1 - BOUNDARY_TOL)
     for label, mask in (("boundary", at_boundary), ("interior", ~at_boundary)):
         if mask.any():
             out[f"mae_{label}"] = float(np.mean(np.abs(resid[mask])))

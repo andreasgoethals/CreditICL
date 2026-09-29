@@ -20,10 +20,12 @@ The five:
   model whose *prior* we modify, so its stock performance is the number our
   retrained versions have to be read against.
 
-TabPFN and TabICL both cap the rows they will look at. Several of our datasets are
-far larger (Home Credit is 307k rows), so the wrapper subsamples the training set
-and **records what it did** in the result row. A silent subsample would make a
-model look worse than it is for reasons nothing in the output explains.
+EVERY MODEL GETS THE WHOLE TRAINING POOL (evaluation protocol 3, `src/eval/protocol.py`). Until
+28-09-2026 the foundation models were given at most 10,000 training rows (and the benchmark
+capped their context at 1,024); TabICLv2 and TabPFN-3 both handle hundreds of thousands, so
+neither cap is needed and neither is applied. Every model runs at its library's DEFAULT
+settings — CatBoost's 1,000 iterations with its automatic learning rate, TabPFN-3's and
+TabICLv2's own ensembles — so no column of the table is tuned and none is handicapped.
 """
 
 from __future__ import annotations
@@ -36,10 +38,16 @@ import numpy as np
 
 from src.utils.logging_setup import get_logger
 
-# Row caps for the in-context models. Above these, the training set is
-# subsampled and the fact is recorded in the results.
-TFM_MAX_TRAIN_ROWS = 10_000
+# Row cap for the in-context models: `None` = the whole training pool, which is the protocol.
+# Kept as a hook for debug runs only; a cap is recorded in every row it touches.
+TFM_MAX_TRAIN_ROWS: int | None = None
+# Column cap for the foundation models (top variance, training rows only). Since 29-09-2026 the
+# benchmark runners select `protocol.MAX_FEATURES` columns for EVERY model before any fit, so on
+# that path this is a no-op; it remains the guard for a caller that hands a wider table directly.
 TFM_MAX_FEATURES = 500
+
+#: The released TabICLv2 files: the ones Exp2 fine-tunes from and the reference column scores.
+TABICL_RELEASED = {"pd": "tabicl-classifier-v2-20260212.ckpt", "lgd": "tabicl-regressor-v2-20260212.ckpt"}
 
 
 def find_local_tabpfn_checkpoint(which: str) -> Path | None:
@@ -58,12 +66,12 @@ def find_local_tabpfn_checkpoint(which: str) -> Path | None:
     import os
 
     from src.utils.paths import REPO_ROOT as _repo
-    from src.utils.paths import checkpoints_dir
+    from src.utils.paths import pretrained_dir
 
     roots = []
     if os.environ.get("CREDITICL_TABPFN_DIR"):
         roots.append(Path(os.environ["CREDITICL_TABPFN_DIR"]))
-    roots.append(checkpoints_dir())
+    roots.append(pretrained_dir())
     roots.append(_repo / "checkpoints")
 
     for root in roots:
@@ -73,6 +81,26 @@ def find_local_tabpfn_checkpoint(which: str) -> Path | None:
         if matches:
             return matches[0].resolve()
     return None
+
+
+_IDENTITY_CACHE: dict[tuple[str, int], dict[str, Any]] = {}
+
+
+def tabpfn_checkpoint_identity(path: str | Path) -> dict[str, Any]:
+    """`{run_name, checkpoint_step}` of a TabPFN checkpoint our trainer wrote, `{}` for a released
+    one. Cached per file version: the benchmark fits every fold from the same file."""
+    import torch
+
+    p = Path(path)
+    key = (str(p.resolve()), p.stat().st_mtime_ns)
+    if key not in _IDENTITY_CACHE:
+        payload = torch.load(p, map_location="cpu", weights_only=False)
+        ident = {}
+        if payload.get("crediticl_run_name") is not None:
+            ident = {"run_name": payload["crediticl_run_name"],
+                     "checkpoint_step": int(payload.get("crediticl_step", -1))}
+        _IDENTITY_CACHE[key] = ident
+    return dict(_IDENTITY_CACHE[key])
 
 
 @dataclass
@@ -215,7 +243,7 @@ class _TFMBaseline(Baseline):
 
     def _maybe_subsample(self, X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         n = X.shape[0]
-        if n <= TFM_MAX_TRAIN_ROWS:
+        if TFM_MAX_TRAIN_ROWS is None or n <= TFM_MAX_TRAIN_ROWS:
             return X, y
         rng = np.random.default_rng(self.seed)
         # Stratified for classification, so a 7%-positive dataset does not lose
@@ -293,21 +321,21 @@ class CatBoostBaseline(Baseline):
 
         # CatBoost handles NaN natively, so no imputation — one of the reasons it
         # is strong on credit data, where missingness is informative.
-        common = dict(
-            iterations=int(self.kwargs.get("iterations", 500)),
-            learning_rate=float(self.kwargs.get("learning_rate", 0.05)),
-            depth=int(self.kwargs.get("depth", 6)),
-            random_seed=self.seed,
-            verbose=False,
-            allow_writing_files=False,
-        )
+        # LIBRARY DEFAULTS (1,000 iterations, depth 6, learning rate chosen from the data size),
+        # as every other model here runs at its defaults. Until 28-09-2026: 500 iterations at a
+        # fixed 0.05, a choice nobody could have defended in a paper.
+        common = dict(random_seed=self.seed, verbose=False, allow_writing_files=False, thread_count=-1)
+        for key in ("iterations", "learning_rate", "depth"):
+            if key in self.kwargs:
+                common[key] = self.kwargs[key]
         if self.task == "pd":
             self._model = CatBoostClassifier(**common)
             self._model.fit(X, (y >= 0.5).astype(int))
         else:
             self._model = CatBoostRegressor(**common)
             self._model.fit(X, y)
-        self.report.extra["iterations"] = common["iterations"]
+        self.report.extra["iterations"] = int(self._model.tree_count_)
+        self.report.extra["learning_rate"] = float(self._model.learning_rate_)
 
     def _predict(self, X: np.ndarray) -> np.ndarray:
         if self.task == "pd":
@@ -375,19 +403,26 @@ class TabPFNBaseline(_TFMBaseline):
         which = "classifier" if self.task == "pd" else "regressor"
         local = find_local_tabpfn_checkpoint(which)
         # A local file if we have one (no token, works offline); otherwise let
-        # tabpfn resolve "v3" itself, which needs a token and internet.
-        version = str(self.kwargs.get("model_path") or (str(local) if local else "v3"))
-        self.report.extra["weights_source"] = "local file" if local else "tabpfn download"
+        # tabpfn resolve "v3" itself, which needs a token and internet. An explicit `model_path`
+        # is one of OUR fine-tuned checkpoints (Experiment 2), which names its arm and step.
+        given = self.kwargs.get("model_path")
+        version = str(given or (str(local) if local else "v3"))
+        self.report.extra["weights_source"] = ("given checkpoint" if given else
+                                               "local file" if local else "tabpfn download")
+        if given:
+            self.report.extra.update(tabpfn_checkpoint_identity(given))
         common = dict(
             model_path=version,
             device=device,
             random_state=self.seed,
-            n_estimators=int(self.kwargs.get("n_estimators", 4)),
-            # Our datasets exceed the documented envelope; without this the wrapper
-            # refuses rather than subsampling, and we already subsample above.
+            # Our largest tables exceed the documented envelope; without this the wrapper
+            # refuses them. Nothing is subsampled: the protocol gives every model the whole pool.
             ignore_pretraining_limits=True,
             categorical_features_indices=cat_indices or None,
         )
+        # The library's own ensemble size (`"auto"`) unless one is asked for. Until 28-09-2026: 4.
+        if "n_estimators" in self.kwargs:
+            common["n_estimators"] = int(self.kwargs["n_estimators"])
         self.report.extra["model_path"] = version
         self.report.extra["device"] = device
 
@@ -402,6 +437,17 @@ class TabPFNBaseline(_TFMBaseline):
         if self.task == "pd":
             return self._model.predict_proba(X)[:, 1]
         return np.clip(self._model.predict(X), 0.0, 1.0)
+
+    def predict_quantiles(self, X: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
+        """TabPFN-3's predictive distribution at `protocol.QUANTILE_LEVELS`, clipped to [0, 1]."""
+        if self.task == "pd":
+            return None
+        from src.eval.protocol import QUANTILE_LEVELS
+
+        if getattr(self, "_keep", None) is not None:
+            X = X[:, self._keep]
+        q = self._model.predict(X, output_type="quantiles", quantiles=[float(a) for a in QUANTILE_LEVELS])
+        return np.clip(np.stack([np.asarray(c) for c in q], axis=1), 0.0, 1.0), QUANTILE_LEVELS
 
 
 class TabICLBaseline(_TFMBaseline):
@@ -421,22 +467,15 @@ class TabICLBaseline(_TFMBaseline):
             return False, f"{type(exc).__name__}: {exc}"
         return True, None
 
-    #: Cap on context rows handed to the wrapper. `None` = give it everything.
+    #: Cap on context rows handed to the wrapper. `None` = give it everything, which is the
+    #: protocol since 28-09-2026 (`src/eval/protocol.py`): the whole training pool is the context,
+    #: for our checkpoints and the released model alike.
     #:
-    #: WHY THIS EXISTS. The wrapper does not cap the context — TabICL scales to a million rows
-    #: with offloading — so it hands the model the whole training split: 47,089 rows on `heloc`.
-    #: We train on tables of at most 1,024 rows (upstream stage 1), so 5 of our 7 LGD datasets
-    #: are scored on contexts far longer than anything the model has ever seen, `heloc` by 46x.
-    #:
-    #: Upstream does not have this problem because their stages 2 and 3 train at 10,240 and
-    #: 60,000 rows. We cannot follow them: measured against a quadratic row-attention cost, a
-    #: proportionate curriculum would cost **307x our entire stage 1** — stage 1 is only 0.3 %
-    #: of upstream's total compute, so the curriculum IS the expense. For a 75-arm sweep it is
-    #: not affordable at any budget we have.
-    #:
-    #: So the mismatch is removed from the other end. Set on the SHARED base class, so our
-    #: column and the released model's column are always capped identically — the cap is part
-    #: of the measurement, not a handicap applied to one side.
+    #: Protocol 2 capped it at 1,024 rows, because we train on tables of at most 1,024 rows
+    #: (upstream stage 1) and `heloc`'s training split is 46x that. That made the comparison
+    #: about a context size nobody deploys; the length mismatch is now reported as a property of
+    #: our models (trained on stage 1 only) rather than removed from the measurement. The hook
+    #: stays for debug runs and is recorded in every row.
     max_context_rows: int | None = None
 
     def _cap_context(self, X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -470,15 +509,27 @@ class TabICLBaseline(_TFMBaseline):
         return X[keep], y[keep]
 
     def _wrapper_kwargs(self) -> dict[str, Any]:
-        """Extra arguments for upstream's wrapper. Empty here: the RELEASED weights.
+        """Extra arguments for upstream's wrapper: the RELEASED weights, from our own copy.
 
-        The one hook `CreditICLBaseline` needs. It returns `model_path=<our checkpoint>` and
-        changes nothing else, so our model and the released model go through the same
-        preprocessing, the same ensemble and the same decoding — and the only difference between
-        the two columns of a results table is the weights, which is the only difference the
-        experiment is about.
+        The local file (`TABICL_RELEASED`, found by `paths.find_pretrained`) is the file Exp2
+        fine-tunes from — tensor-for-tensor the wrapper's own download (Experiment 0 checks it) —
+        and a compute node has no internet to download anything, so the wrapper is pointed at it
+        and forbidden to fetch. Without a local copy the wrapper resolves its own, as before.
+
+        The one hook `CreditICLBaseline` overrides, returning `model_path=<our checkpoint>` and
+        nothing else, so our model and the released model go through the same preprocessing, the
+        same ensemble and the same decoding — the only difference between the two columns of a
+        results table is the weights, which is the only difference the experiment is about.
         """
-        return {}
+        from src.utils.paths import find_pretrained
+
+        try:
+            path = find_pretrained(f"checkpoints/{TABICL_RELEASED[self.task]}")
+        except FileNotFoundError:
+            self.report.extra["weights_source"] = "tabicl download"
+            return {}
+        self.report.extra["weights_source"] = str(path)
+        return {"model_path": str(path), "allow_auto_download": False}
 
     def _fit(self, X: np.ndarray, y: np.ndarray, cat_indices: list[int]) -> None:
         import torch
@@ -503,6 +554,18 @@ class TabICLBaseline(_TFMBaseline):
         if self.task == "pd":
             return self._model.predict_proba(X)[:, 1]
         return np.clip(self._model.predict(X), 0.0, 1.0)
+
+    def predict_quantiles(self, X: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
+        """TabICL's predictive distribution (`TabICLRegressor.predict(output_type="quantiles")`)
+        at `protocol.QUANTILE_LEVELS`, clipped to [0, 1]. Released weights and ours alike."""
+        if self.task == "pd":
+            return None
+        from src.eval.protocol import QUANTILE_LEVELS
+
+        if getattr(self, "_keep", None) is not None:
+            X = X[:, self._keep]
+        q = self._model.predict(X, output_type="quantiles", alphas=[float(a) for a in QUANTILE_LEVELS])
+        return np.clip(np.asarray(q, dtype=float), 0.0, 1.0), QUANTILE_LEVELS
 
 
 # ---------------------------------------------------------------------------

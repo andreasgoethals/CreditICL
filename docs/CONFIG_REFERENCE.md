@@ -18,7 +18,7 @@ Neighbours: [EXPERIMENTAL_DESIGN.md](EXPERIMENTAL_DESIGN.md) (what the experimen
 5. [Training budget: `max_steps`, `micro_batch_size`, `amp`](#5-training-budget)
 6. [`optimizer` — Muon from scratch, AdamW to fine-tune](#6-optimizer)
 7. [The prior knobs](#7-the-prior-knobs)
-8. [Experiment 2 — the fine-tuning knobs](#8-experiment-2-the-fine-tuning-knobs)
+8. [Experiment 2 — the continued-pretraining knobs](#8-experiment-2-the-continued-pretraining-knobs)
 9. [A note on the LGD R² band](#9-a-note-on-the-lgd-r-band)
 
 ---
@@ -27,13 +27,21 @@ Neighbours: [EXPERIMENTAL_DESIGN.md](EXPERIMENTAL_DESIGN.md) (what the experimen
 
 Any setting may be a single value or a list; a list means one run per value, and all lists are
 **crossed**. Names ending in `_range` are literal `[low, high]` intervals sampled *from*, never swept
-— to sweep one, nest it: `[[0.0, 0.1], [0.1, 0.3]]`. Inspect the expansion with
+— to sweep one, nest it: `[[0.0, 0.1], [0.1, 0.3]]`; names ending in `_mean_sd` are literal
+`[mean, sd]` pairs of a normal distribution. Inspect the expansion with
 `python scripts/pretrain.py --config config/Exp1_PD.yaml --list`.
 
-**Exp1 crosses `credit_fraction {0,.5,1} × filter {tabicl,banded,off} × intensity {mild,aggr}`, then
-× 3 seeds.** At `credit_fraction: 0.0` the credit knobs have no effect, so those combinations collapse
-to one control per seed (`effective_fingerprint` in `src/utils/config.py`) — which is what stops the
-control being run under several names. Net: **45 arms**.
+**Arms that are not a cross product** (Exp0, Exp2) are named presets: `sweep.arm` lists them and the
+`arms:` block gives each one's dotted overrides (`arms.tabpfn3_adamw_1e-5: {architecture: tabpfn3,
+train.lr: 1.0e-5, ...}`), applied after the sweep (`apply_arm_preset`). An override must name a key the
+config body already has, so a typo raises instead of doing nothing.
+
+**Exp1 sweeps `credit_fraction {0, .5, 1}` × 3 seeds = 9 arms** (since 28-09-2026; before, it also
+crossed three filters and two intensities, 45 arms). The control is TabICLv2's prior and filter exactly;
+the credit prior is set from the credit-risk literature (29-09-2026, [PRIORS.md](PRIORS.md) §5), never
+from the evaluation datasets, and is the same in Exp0-Exp3. At
+`credit_fraction: 0.0` the credit knobs have no effect, so such combinations collapse to one control
+per seed (`effective_fingerprint` in `src/utils/config.py`).
 
 **One knob, one home:** a knob in `sweep:` must not also appear in the config body —
 `apply_sweep_block` writes over the body, so a body literal is dead text that reads like a setting.
@@ -68,14 +76,15 @@ with learned inducing points and no per-feature weights, so a trained checkpoint
 
 What limits inference is *our* eval code, at a different number: `TFM_MAX_FEATURES = 500` (keep the 500
 highest-variance columns; `src/eval/ood.py` skips above it). Both limits live on the **shared** base
-class, so `crediticl` and `tabiclv2` get identical treatment — same rule as the 1,024-row context cap.
+class, so `crediticl` and `tabiclv2` get identical treatment. (The 1,024-row context cap of evaluation
+protocol 2 is gone: every model now gets the whole training pool — `src/eval/protocol.py`.)
 
 **Keep 100.** It is the control variable (a wider training distribution is a second difference from
 TabICLv2); training wider and then reporting a win on a 256-column table would measure feature width,
 not the prior; and nothing in the architecture wants it changed. The honest exposure: `base_modelisation`
 has 256 columns (2.6× the training width), so the model does extrapolate — but the exposure is
-**matched** (both sides get the same 256 columns), and much milder than the 46× the row count was
-before it was capped. Record feature width per dataset alongside `context_cap`; if a wide-table effect
+**matched** (both sides get the same 256 columns), and much milder than the row count's (`heloc`'s
+training pool is 46× the training tables). Record feature width per dataset; if a wide-table effect
 ever shows, the answer is an Exp3 stage that trains wider, not a silent bump here.
 
 ## 4. Why one stage
@@ -86,14 +95,16 @@ enter the cost quadratically** through the 12-block ICL predictor, so a stage-3 
 stage-1 step: keep upstream's 90.9/7.3/1.8 step split on our budget and stage 3 becomes ~227 steps —
 1.8% of the steps but ~61% of the cost — and at 1/40th the LR those 227 steps would move the weights
 almost not at all. Upstream's stages 2–3 are low-rate adaptation to long context, not more prior
-learning. **So: stage 1 only, and cap the *evaluation* context to 1,024 for both models from one shared
-setting.** Long context belongs in Exp3 on the winning prior — `init.strategy: full` + `pretrained_path`
+learning. **So: stage 1 only.** Evaluation gives every model the whole training pool (protocol 3), so
+our checkpoints meet contexts far longer than they trained on — the same for every arm, which keeps the
+arm-vs-control contrast matched, but not for the released model, which trained to 60,000 rows. Long
+context belongs in Exp3 on the winning prior — `init.strategy: full` + `pretrained_path`
 is upstream's `--checkpoint_path … --only_load_model True`, no new code.
 
 ## 5. Training budget
 
 **`max_steps`** is the compute lever, and the limit is credits: at batch 64, 12,500 steps ≈ 800k
-datasets/arm (2.5% of upstream's stage 1); a B200 costs 437.5 credits/GPU-minute, so Exp1's 45 arms
+datasets/arm (2.5% of upstream's stage 1); a B200 costs 437.5 credits/GPU-minute, so Exp1's 9 arms
 run tens of millions of credits and doubling `max_steps` doubles that. The three experiments spend
 deliberately differently — **Exp1 12,500** (a ranking), **Exp2 10,000** (a fine-tune, matching Kolberg's
 plateau), **Exp3 100,000** (the converged number on the winner). If the budget will not stretch, **cut
@@ -118,96 +129,126 @@ under AMP, so it is excluded; flash, mem-efficient and math remain, and the run 
   size we train. (It took three runs to see this, because every earlier measurement was at batch 1.)
 - **AdamW for Exp2**, for a mechanical reason: under `optimizer: muon`, `train.lr` is only the rate of
   Muon's *auxiliary* AdamW half, so sweeping it would move almost nothing and the LR sweep would falsely
-  read as "learning rate doesn't matter". Both continued-pretraining papers use AdamW anyway ([§8](#8-experiment-2-the-fine-tuning-knobs)).
+  read as "learning rate doesn't matter". Both continued-pretraining papers use AdamW anyway ([§8](#8-experiment-2-the-continued-pretraining-knobs)).
 
 The optimizer is held fixed *within* each experiment, so it is never the variable being measured.
 
 ## 7. The prior knobs
 
 **`prior.credit_fraction`** — the main switch: the probability a synthetic dataset comes from our
-credit path rather than the unmodified TabICL prior. `0.0` is the control. Exp1 sweeps `{0, .5, 1}`;
-Exp2 sweeps `{0, .25, .5, .75, 1}` (finer, because "how much of ours to add" *is* Exp2's question).
+credit path rather than the unmodified TabICL prior. `0.0` is the control. Exp1 and Exp2 (stage B)
+sweep `{0, .5, 1}`; Exp2's search runs at `0.0` so its recipe is not tuned in favour of our prior.
 Mixing rather than replacing is also the defence against the collapse Tanna 2026 reports for TabICL
 under aggressive adaptation — a model that keeps seeing the original prior keeps the distribution it
 was built for.
 
-**`prior.grouping`** — TabICL samples a meta-distribution per **group** of 4 datasets, values per
-**subgroup** of 2, then a graph per dataset, so a batch is relatives (some uniformly small, some
-uniformly hard). **On by default** — the control is supposed to *be* TabICL, so grouping makes it more
-faithful; `group_size: 1` is the ablation. A group sharing hyperparameters *is* a small domain, which
-is on-topic.
+**`prior.encoding`** — whose prediction path a credit table imitates: `tabicl` (TabICL's — gaps filled
+with the context mean, `prediction_view`, an LGD target standardised on the context) or `raw` (the
+table as recorded — gaps as NaN, the LGD target on [0, 1] — for TabPFN, whose own preprocessing does
+the rest). The TabPFN-3 arms set `raw`; `TabPFNTrainer` refuses anything else. The control tables are
+upstream's either way.
 
-**`prior.credit.target` — LGD:** `mode: quantile` sets boundary mass exactly (best for a controlled
-test); `mechanism` builds a latent loss fraction and lets the mass *emerge* (the true economic story).
-`shape_ab_range` are Kumaraswamy shape params (`a,b<1` → U; `a,b>1` → hump); `boundary_mass_range` is
-mass per atom; `atom_prob` whether each atom exists; `signal_strength` dilutes the feature link
-*before* ranking so shape and difficulty move independently. The target is **always** hard-clipped to
-[0,1] — LGD is a fraction and cannot leave it, and nothing in the original prior knows that. Boundary
-mass has to be a *family*: our seven real files range from 73% mass (heloc) to 0% (axa).
+**`prior.grouping`** — upstream's batch structure (`GraphPrior.get_batch`): groups of 4 datasets share
+the row count and the context/query split, and (subgroup = group, `subgroup_size: 4`) the feature
+count; the control draws 2–10 classes per table (`max_classes: 10`). `src/prior/stream.py` builds it,
+and every arm with the same seed sees the same TabICL tables in the same slots (common random numbers).
+A credit table keeps its slot's width even when it records the period factor as a column (the column
+takes a noise column's place).
 
-**`prior.credit.target` — PD:** `base_rate_range` targets real data's 6.7%–40% (the original prior
-sits at 0.500); `signal_strength` because credit PD lives at AUC 0.70–0.85; `flip_pos_to_neg`
-(asymmetric — cures book as non-default far more than the reverse); `rules` (Klein & Hoffart 2026 — *a
-position paper with zero experiments, the most speculative component, flag it*); `selection`
-(reject-inference truncation, which no general prior produces); `missingness` (target-linked — a thin
-file is a risk signal, which TabICLv2 mean-imputes away); `max_cat_size` (Purucker 2026: the
-GBDT-over-TFM margin grows with high-cardinality columns, ρ=+0.47).
+**`prior.credit.target` — LGD** (`mode: zoib`, 29-09-2026): the zero-and-one inflated beta regression
+of Li, Zhang & Zhao (2020, §2.1), one portfolio per table. `alpha0_mean_sd` / `beta0_mean_sd` /
+`gamma0_mean_sd` the intercepts of logit P(0), logit P(1) and the interior mean, normal around the
+published −0.54 / −1.46 / 0; `phi_range` the beta precision (log-uniform, contains the published 5);
+`loading_*_range` the effect of the recovery driver on each part and `macro_*_range` that of the period
+factor (each range contains the published value; the signs are the published ones); `signal_share_range`
+how much of the driver the features record; `component_overlap_range` how far the three parts share one
+driver; `macro_feature_prob` how often the period factor is a column; `cohort` the number of periods.
+The table [PRIORS.md](PRIORS.md) §5.2 gives every published value beside its range.
+`target_scaling: standard` standardises the target on the context rows under the `tabicl` encoding, as
+`TabICLRegressor` does to a real one (affine: the atoms stay two atoms). `mode: quantile` (dialled atoms)
+and `mode: mechanism` (collateral, workout, segments) remain for ablations.
+
+**`prior.credit.target` — PD** (`mode: mechanism`): `mechanism.base_rate_range` + `base_rate_log` the
+default rate (log-uniform on [1 %, 50 %]; Brown & Mues 2012's most imbalanced setting to balanced),
+`mechanism.rho_range` the Vasicek asset correlation (the Basel IRB range, 0.03 to 0.24),
+`mechanism.signal_share_range` the share of risk the features explain (wide: [0.05, 0.95]),
+`mechanism.cohort` the periods sharing the standard-normal systematic factor, `macro_feature_prob` how
+often the factor is a column; `rules.n_rules_range` hard cut-offs per table (Klein & Hoffart 2026 — *a
+position paper with zero experiments, the most speculative component, flag it*); `selection` (the
+approved book only: `selection_drop_range`, `selection_sharpness_range`, drawn per table). No label
+noise since 29-09-2026: its rates had no source.
+
+**`prior.credit.marginals`** — long-tailed amounts and ratios: a monotone warp on a
+`col_fraction_range` share of the continuous columns, strength per column from `strength_range` (both
+wide). Monotone, so every split a tree could make — and the dependence on the target — is unchanged.
+
+**`prior.credit.missingness`** — gaps in a `missing_prob` share of tables, in a
+`missing_col_fraction_range` share of the columns, `missing_rate_range` missing each, their chance
+coupled to the target with a strength drawn from `missing_target_coupling_range` (all wide: the
+literature says gaps are informative, not how often). Filled with the context mean under the `tabicl`
+encoding, left NaN under `raw`; `missing_indicators: true` is refused, since TabICL's prediction path
+adds no indicator.
 
 **`prior.filter`** — `tabicl` (as shipped), `off` (keep everything), `banded` (keep only difficulty in
-`quantile_band`, aiming at credit's low-signal range). `banded` is a **removal**, so it cannot be
-accused of adding capacity — but it contradicts a published convergence result and must beat that
-argument. Report the rejection rate per arm; it makes wall-clock incomparable across filter settings.
+`quantile_band`). `apply_to: base` (every experiment) judges only TabICL's tables, as upstream does; the
+credit tables are used as specified, since re-selecting them by learnability would change the specified
+prior. `all` judges the credit tables too. Report the rejection rate per arm; it makes wall-clock
+incomparable across filter settings.
 
-## 8. Experiment 2 — the fine-tuning knobs
+## 8. Experiment 2 — the continued-pretraining knobs
 
-Exp2 starts from the **released TabICLv2 weights** and continues training on a mixture of the original
-prior and ours. Everything here is a nuisance parameter that must be set well enough not to confound
-"how much of ours to add". Two published continued-pretraining recipes bracket it, both in the library
-(verified against `tfm-library` `52dab01`):
+Exp2 continues the pretraining of the **released TabICLv2 and TabPFN-3 weights** on a mixture of the
+original prior and ours. The recipe is a nuisance parameter that must be good enough not to confound
+"does our prior help" — so it is chosen by a search (stage A, `config/Exp2_<TRACK>_search.yaml`) on the
+development datasets with the control mix, then fixed for the comparison (stage B,
+`config/Exp2_<TRACK>.yaml`, `FILL_FROM_SEARCH` until then). The published recipes the search brackets,
+all in the library or the installed package:
 
-| | Real-TabPFN (Garg 2025) | TabPFN-Wide (Kolberg 2026) | TabICLv2 stage 3 |
-|---|---|---|---|
-| optimiser | AdamW | AdamW | Muon |
-| learning rate | **3e-7** | **1e-5** | 2e-5 |
-| schedule | warm-up → cosine | warm-up → cosine | cosine w/ restarts |
-| weight decay | — | **1e-4** | — |
-| grad clip | — | **1.0** | 1.0 |
-| L2-SP | **α = 0.003** | — (plain wd) | — |
+| | TabPFN's own fine-tuner (tabpfn 9.0.0) | TabPFN-Wide (Kolberg 2026) | Real-TabPFN (Garg 2025) | TabICLv2 stages 2 / 3 |
+|---|---|---|---|---|
+| optimiser | AdamW (torch betas) | AdamW | AdamW | Muon |
+| learning rate | **1e-5** | **1e-5** | 3e-7 | **1e-4 / 2e-5** |
+| schedule | 10 % warm-up → cosine | warm-up → cosine | warm-up → cosine | 1 % warm-up → cosine |
+| weight decay | 0.01 | 1e-4 | — | 0.01 |
+| grad clip | 1.0 | 1.0 | — | 10 / 1.0 |
+| batch | 1 dataset | 16 datasets | — | 64 datasets |
+| length | early stopping | plateau by 10,000 steps | — | 40,000 / 10,000 |
 
-**The published rates span 3e-7 to 2e-5 — two orders of magnitude, and neither CPT paper tuned them.**
-That disagreement is why `train.lr` is **swept** (`{1e-6, 1e-5}`), not picked; since we fine-tune on
-*synthetic* data we sit in Kolberg's regime (the hotter end).
+**The search:** TabICLv2 — AdamW 3e-6, 1e-5, 3e-5; Muon 2e-5, 1e-4. TabPFN-3 — AdamW 3e-6, 1e-5, 3e-5.
+10,000 steps each, checkpoints every 2,500 scored on the development datasets, so the length is chosen
+from them. `python -m src.eval.exp2_search` ranks the candidates (equal weight per dataset; a candidate
+must keep its out-of-domain score within 0.01 ROC-AUC / 0.02 R² of the released weights) and prints the
+values to fill in.
 
-**`train.l2sp_alpha`** — `Ω(w) = (α/2)‖w − w₀‖²` toward the released checkpoint `w₀`, penalising the
-drift that continued pretraining risks (learning credit by forgetting everything else). From Li et al.
-2018; used by Real-TabPFN at α = 0.003, swept here against 0 (off). Correctness details in
-`src/train/loop.py`: the penalty gradient is written directly onto `.grad` (not added to the loss —
-otherwise the micro-batch loop applies it `n_micro` times and the effective α depends on micro-batch
-size); applied after `scaler.unscale_` and before the clip; and `α > 0` with `init.strategy: scratch`
-raises (there is no starting point).
+**`architecture`** — set per arm: `tabicl` (our `Trainer`, `src/train/loop.py`) or `tabpfn3`
+(`TabPFNTrainer`, `src/train/tabpfn_trainer.py`, built on TabPFN's own fine-tuning path);
+`scripts/pretrain.py` dispatches on it and the benchmark scores each with the wrapper of its kind.
 
-**`init.strategy`** — `scratch` (random init; Exp1/Exp3), or three warm-start depths for Exp2:
-`full` (every parameter — both CPT papers do this, so it is the default), `icl_only` (freeze the column
-+ row encoders, train the ICL stack + target embeddings + head), `head_only` (the last layer alone).
-Freezing mirrors TabICL's own `_finetune/base.py` (`freeze_col`/`freeze_row`/`freeze_icl`), with one
-improvement: our change is to the *target* distribution, so `src/train/adapt.py` always keeps the
-target-side parameters trainable (`y_embed_in`, `y_embed_icl`, `out_ln`, `out_mlp`, `row_ln`,
-`row_cls_tokens`) even under a freeze — a naive "freeze the column stage" would freeze `y_embed_in`,
-the very parameter that must adapt to a bounded target.
+**`init.pretrained_path`** + **`init.strict_load: true`** — the released file, repo-relative; found in the
+repo or in `paths.pretrained_dir()` on project storage (`paths.find_pretrained`). Strict: every tensor
+must load (391/391 classifier, 347/347 regressor), or the run stops. TabPFN's own loader is strict by
+construction. **`init.strategy: full`** — every layer trains.
 
-**Why no LoRA, and why "be gentle":** searching the whole TabICL dump for "lora" returns zero matches
-(nothing upstream to validate against), Rubachev 2025 found full fine-tuning matches every
-parameter-efficient variant on TabPFNv2 while converging fastest, and it would be a third confound.
-And **fine-tuning TabICL is documented as dangerous** — Tanna 2026 reports full SFT drops TabZilla
-accuracy 0.873 → 0.567 (TabPFN survives intact), a strong architecture×adaptation interaction on the
-bad side for TabICL. That, plus the v2 authors' own very-low stage-3 LR, is *why* freeze depth is swept
-and the LR is kept low. **Loading the released weights** uses the upstream `tabicl` package (they only
-load into the code that saved them — see [PRIORS §7](PRIORS.md#7-open-item)); `load_pretrained` refuses
-to run when fewer than half the tensors match, rather than silently training a random init.
+**TabPFN-3 only:** `train.batch_size: 16` (tasks per update, TabPFN-Wide's), `train.n_estimators: 2`
+(ensemble members per training forward, the fine-tuner's `n_estimators_finetune`),
+`train.activation_checkpointing` (default true, as the fine-tuner), `train.regression_loss_weights`
+(default the fine-tuner's: CRPS 1 + MSE 1, no NLL term), `train.amp` (float16 autocast + GradScaler,
+as the fine-tuner). AdamW only.
 
-**Budget:** `5 × 3 × 2 × 2 = 60` arms, one seed — at ~3.5 h/arm that is already ~210 GPU-hours, and
-repeating a screen three times to denoise arms that will be discarded is the wrong place to spend
-seeds. Once the mixture axis has a winner, re-run *that* configuration with three seeds.
+**`train.l2sp_alpha: 0`** — L2-SP (`Ω(w) = (α/2)‖w − w₀‖²` toward the released weights, Real-TabPFN's
+α = 0.003) is implemented and tested but not in the design: the search's forgetting guard does the
+job of choosing a gentle enough recipe, and a second axis would confound the first. A later ablation.
+The drift L2-SP penalises is *measured* in every run instead (`weights.csv`: distance from the
+released weights per block).
+
+**Why no partial freezing or LoRA:** Rubachev 2025 found full fine-tuning matches every
+parameter-efficient variant on TabPFNv2 while converging fastest; searching the whole TabICL dump for
+"lora" returns zero matches; and fine-tuning TabICL is documented as fragile (Tanna 2026: full
+per-dataset SFT drops TabZilla accuracy 0.873 → 0.567, while TabPFN survives) — which is why the
+search includes rates three times below the fine-tuners' default and guards the out-of-domain score.
+
+**Budget (agreed 29-09-2026: ~400 GPU-h):** stage A 8 arms/track, stage B 18 arms/track, plus their
+benchmarks. Experiment 0 measures the per-arm and per-slot hours before either stage is submitted.
 
 ## 9. A note on the LGD R² band
 

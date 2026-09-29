@@ -58,30 +58,35 @@ def test_intensity_reads_mild_from_the_narrow_range():
 # -- the new training views build on a partial sweep --------------------------
 
 
-def _write_progress(man, arm, with_ood=True):
+def _run(arm):
+    """The arm's own folder, `output_CreditICL/experiment_<N>/runs/<arm>/`."""
+    from src.utils import paths
+
+    folder = paths.run_dir(arm)
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def _write_progress(arm, with_ood=True):
     cols = {"step": [0, 100, 200], "train_loss": [0.7, 0.5, 0.45],
             "real__german__roc_auc": [0.60, 0.68, 0.71], "real__hmeq__roc_auc": [0.70, 0.80, 0.85]}
     if with_ood:
         cols["ood__letter__roc_auc"] = [0.80, 0.74, 0.70]
-    pd.DataFrame(cols).to_csv(man / f"{arm}__progress.csv", index=False)
+    pd.DataFrame(cols).to_csv(_run(arm) / "progress.csv", index=False)
 
 
-def _write_telemetry(man, arm):
+def _write_telemetry(arm):
     pd.DataFrame({"step": [0, 100, 200], "gw_ratio_col": [1e-2, 8e-3, 6e-3],
                   "gw_ratio_row": [1e-3, 9e-4, 8e-4], "gw_ratio_icl": [5e-3, 4e-3, 3e-3],
                   "gw_ratio_head": [2e-2, 1e-2, 9e-3], "steps_per_s": [0.6, 0.63, 0.64],
-                  "gpu0_utilization_gpu": [88, 90, 91]}).to_csv(man / f"{arm}__telemetry.csv", index=False)
+                  "gpu0_utilization_gpu": [88, 90, 91]}).to_csv(_run(arm) / "telemetry.csv", index=False)
 
 
 def test_new_training_views_build_on_synthetic_manifests(isolated_output):
-    from src.utils import paths
-
-    man = paths.manifests_dir()
-    man.mkdir(parents=True, exist_ok=True)
     control = EXP1_ARM.replace("credit_fraction=1", "credit_fraction=0")
     for arm in (EXP1_ARM, control):
-        _write_progress(man, arm)
-        _write_telemetry(man, arm)
+        _write_progress(arm)
+        _write_telemetry(arm)
     assert _drew(tp.credit_vs_control_over_training("pd", "exp1"))
     assert _drew(tp.metric_by_lever("pd", "filter", "exp1"))
     assert _drew(tp.per_dataset_curves("pd", 1, "exp1"))
@@ -93,17 +98,14 @@ def test_new_training_views_build_on_synthetic_manifests(isolated_output):
 def test_story_figures_build_on_synthetic_manifests(isolated_output):
     """The Part A/B figures added for the story: the sweep map, the monitoring map, the cost of each
     arm, the lever-within-fraction view and the seed spread."""
-    from src.utils import paths
-
-    man = paths.manifests_dir()
-    man.mkdir(parents=True, exist_ok=True)
     control = EXP1_ARM.replace("credit_fraction=1", "credit_fraction=0")
     for arm in (EXP1_ARM, control, EXP1_ARM.replace("__s2", "__s1")):
-        _write_progress(man, arm)
-        _write_telemetry(man, arm)
-    for fn in (tp.sweep_map, tp.monitoring_coverage, tp.throughput, tp.lever_interaction,
-               tp.seed_spread, tp.real_vs_ood):
+        _write_progress(arm)
+        _write_telemetry(arm)
+    for fn in (tp.sweep_map, tp.monitoring_coverage, tp.throughput, tp.seed_spread, tp.real_vs_ood):
         assert _drew(fn("pd", "exp1")), fn.__name__
+    # Experiment 1 varies the mix alone (29-09-2026): there is no lever to draw within it.
+    assert not _drew(tp.lever_interaction("pd", "exp1"))
     assert "A. THE RUN" in tp.training_summary("pd", "exp1")
 
 
@@ -145,7 +147,8 @@ def test_aggregates_use_finished_arms_only(isolated_output):
 
     runs = _arms(**{EXP1_ARM: {"train_loss": [1, 1, 1]},
                     EXP1_ARM.replace("__s2", "__s0"): {"train_loss": [1, 1, 1]}})
-    paths.manifests_dir().mkdir(parents=True, exist_ok=True)
+    for arm in (EXP1_ARM, EXP1_ARM.replace("__s2", "__s0")):
+        paths.run_dir(arm).mkdir(parents=True, exist_ok=True)
     paths.run_summary_path(EXP1_ARM).write_text(json.dumps({"completed": True}), encoding="utf-8")
     paths.run_summary_path(EXP1_ARM.replace("__s2", "__s0")).write_text(
         json.dumps({"completed": False}), encoding="utf-8")
@@ -164,7 +167,7 @@ def test_metric_labels_and_fraction_colours_are_publication_ready():
 
 
 def test_new_training_views_degrade_without_data():
-    # No isolated_output: manifests_dir has no exp3_ files, so every view is a placeholder.
+    # No isolated_output: experiment_3 has no runs, so every view is a placeholder.
     for fn in (tp.credit_vs_control_over_training, tp.weight_gradient_ratios,
                tp.final_metric_by_lever):
         fig = fn("pd", "exp3")

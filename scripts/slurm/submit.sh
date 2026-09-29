@@ -72,7 +72,7 @@ usage() {
 
 TARGET="$1"
 TRACK="${2:-lgd}"
-SCRIPT="${3:-scripts/slurm/debug_exp1.slurm}"
+SCRIPT="${3:-scripts/slurm/exp0.slurm}"
 shift 3 2>/dev/null || shift $#
 
 case "${TRACK}" in

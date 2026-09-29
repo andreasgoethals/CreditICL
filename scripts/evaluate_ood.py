@@ -1,7 +1,10 @@
 """PIPELINE 4b — score models on NON-CREDIT tasks, to check we did not break them.
 
     python scripts/evaluate_ood.py --models linear,catboost
-    python scripts/evaluate_ood.py --models linear,catboost,tabiclv2 --seeds 0,1,2
+    python scripts/evaluate_ood.py --models linear,catboost,tabiclv2
+
+Same protocol as the credit datasets (`src/eval/protocol.py`): 5-fold CV, the whole training pool
+as context, the binary threshold tuned for F1 on a validation split, every metric.
 
 WHY: we deliberately bend the prior toward credit risk. If that buys credit performance
 by losing general performance, and we only ever measure credit datasets, we would never
@@ -23,17 +26,20 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.utils.logging_setup import log_environment, log_section, setup_logging  # noqa: E402
-from src.utils.paths import logs_dir, results_dir  # noqa: E402
+from src.utils.paths import benchmark_dir_for, logs_dir, owner_of  # noqa: E402
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--models", default="linear,catboost")
-    ap.add_argument("--seeds", default="0")
+    ap.add_argument("--seeds", default="0",
+                    help="fold-assignment seeds, one full CV each; the protocol is one: 0")
     ap.add_argument("--kinds", default="classification,regression")
-    ap.add_argument("--test-size", type=float, default=0.2)
-    ap.add_argument("--max-rows", type=int, default=10_000)
-    ap.add_argument("--max-context-rows", type=int, default=None)
+    ap.add_argument("--folds", type=int, default=5)
+    ap.add_argument("--max-rows", type=int, default=None,
+                    help="DEBUG ONLY: cap rows per dataset (seeded random subsample)")
+    ap.add_argument("--max-context-rows", type=int, default=None,
+                    help="DEBUG ONLY: cap the context rows given to every TFM")
     ap.add_argument("--reference", default=None,
                     help="model to report deltas against, e.g. the control checkpoint")
     ap.add_argument("--tag", default=None)
@@ -48,7 +54,9 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    log, _, log_path = setup_logging("evaluate_ood", logs_dir(), console=True)
+    owner_tag = args.tag or "adhoc"
+    log, _, log_path = setup_logging(f"evaluate_ood_{owner_tag}", logs_dir(owner_of(owner_tag)),
+                                     console=True)
     log_section(log, "CreditICL — OUT-OF-DOMAIN EVALUATION")
     log_environment(log, {"pipeline": "eval_ood", "models": args.models})
 
@@ -74,21 +82,25 @@ def main() -> int:
         ckpt = resolve_our_checkpoint(args.checkpoint, task, log)
         if ckpt is not None:
             model_kwargs["crediticl"] = {"checkpoint": str(ckpt)}
+    if "tabpfn3" in models and args.checkpoint:
+        # A fine-tuned TabPFN-3 checkpoint (Experiment 2): a classifier cannot score regression
+        # suites, so its kind is the one asked for.
+        model_kwargs["tabpfn3"] = {"model_path": str(args.checkpoint)}
 
     cfg = OODEvalConfig(
         models=models,
         seeds=[int(s) for s in args.seeds.split(",") if s.strip()],
         kinds=kinds,
         crediticl_task=(task if "crediticl" in models else None),
-        test_size=args.test_size,
+        n_folds=args.folds,
         max_rows=args.max_rows,
         max_context_rows=args.max_context_rows,
         model_kwargs=model_kwargs,
     )
     df = run_ood(cfg)
 
-    # OOD results are their OWN pipeline directory, never mixed with the credit results.
-    out = results_dir("ood", "eval")
+    # OOD results are their OWN folder, never mixed with the credit results.
+    out = benchmark_dir_for(owner_tag, "ood")
     out.mkdir(parents=True, exist_ok=True)
     suffix = f"_{args.tag}" if args.tag else ""
     df.to_csv(out / f"ood_results{suffix}.csv", index=False)

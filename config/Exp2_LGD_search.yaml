@@ -1,0 +1,187 @@
+# =============================================================================
+# EXPERIMENT 2 — LGD — STAGE A: THE CONTINUED-PRETRAINING RECIPE (8 arms, 1 seed)
+#
+# Continued pretraining of the RELEASED TabICLv2 and TabPFN-3 weights on the synthetic prior.
+# Stage A chooses, per model, the optimizer and rate (and, from the saved checkpoints, the
+# length) on the DEVELOPMENT datasets only, with the CONTROL mix — so the recipe is not tuned
+# in favour of our prior. Stage B (config/Exp2_LGD.yaml) then compares the credit mixes at that
+# recipe, 3 seeds each, on every dataset. Reasoning: docs/EXPERIMENTAL_DESIGN.md, Experiment 2.
+#
+#   python scripts/pretrain.py --config config/Exp2_LGD_search.yaml --list
+#
+# Design: docs/EXPERIMENTAL_DESIGN.md   Prior: docs/PRIORS.md   Runs: docs/RUNS.md
+# =============================================================================
+
+
+experiment: exp2_lgd_search
+task: lgd
+
+# ----------------------------------------------------------------------------
+# ARCHITECTURE — set per arm below: tabicl (TabICLv2) or tabpfn3 (TabPFN-3)
+# ----------------------------------------------------------------------------
+architecture: tabicl # overridden by every arm
+
+# ----------------------------------------------------------------------------
+# THE SWEEP — every multi-value knob, crossed. This block IS the experiment.
+# ----------------------------------------------------------------------------
+sweep:
+  arm: [tabicl_adamw_3e-6, tabicl_adamw_1e-5, tabicl_adamw_3e-5, tabicl_muon_2e-5, tabicl_muon_1e-4,
+        tabpfn3_adamw_3e-6, tabpfn3_adamw_1e-5, tabpfn3_adamw_3e-5] # model x optimizer x rate
+  seeds: [0] # one seed: a search, not a result
+
+arms: # one set of overrides per arm; `sweep.arm` picks one per run (src/utils/config.py)
+  tabicl_adamw_3e-6:  { architecture: tabicl, train.optimizer: adamw, train.warmup_proportion: 0.1, train.lr: 3.0e-6 } # TabICL's own fine-tuner's rate / 3
+  tabicl_adamw_1e-5:  { architecture: tabicl, train.optimizer: adamw, train.warmup_proportion: 0.1, train.lr: 1.0e-5 } # FinetunedTabICLClassifier's default
+  tabicl_adamw_3e-5:  { architecture: tabicl, train.optimizer: adamw, train.warmup_proportion: 0.1, train.lr: 3.0e-5 } # x3
+  tabicl_muon_2e-5:   { architecture: tabicl, train.optimizer: muon, train.warmup_proportion: 0.01, train.lr: 2.0e-5 } # upstream stage 3 (train_v2_*_stage3.sh)
+  tabicl_muon_1e-4:   { architecture: tabicl, train.optimizer: muon, train.warmup_proportion: 0.01, train.lr: 1.0e-4 } # upstream stage 2
+  tabpfn3_adamw_3e-6: { architecture: tabpfn3, prior.encoding: raw, init.pretrained_path: checkpoints/tabpfn-v3-regressor-v3_default.ckpt, train.batch_size: 16, train.warmup_proportion: 0.1, progress.every_datasets: 8000, train.lr: 3.0e-6 } # TabPFN's fine-tuner default / 3
+  tabpfn3_adamw_1e-5: { architecture: tabpfn3, prior.encoding: raw, init.pretrained_path: checkpoints/tabpfn-v3-regressor-v3_default.ckpt, train.batch_size: 16, train.warmup_proportion: 0.1, progress.every_datasets: 8000, train.lr: 1.0e-5 } # FinetunedTabPFN* default; TabPFN-Wide
+  tabpfn3_adamw_3e-5: { architecture: tabpfn3, prior.encoding: raw, init.pretrained_path: checkpoints/tabpfn-v3-regressor-v3_default.ckpt, train.batch_size: 16, train.warmup_proportion: 0.1, progress.every_datasets: 8000, train.lr: 3.0e-5 } # x3
+
+# ----------------------------------------------------------------------------
+# THE PRIOR — Experiment 1's, unchanged (literature-grounded; docs/PRIORS.md)
+# ----------------------------------------------------------------------------
+prior:
+  credit_fraction: 0.0 # the search runs on the control mix, so the recipe is not tuned in favour of our prior
+  encoding: tabicl # tabicl = TabICL's prediction encoding | raw = as recorded, for TabPFN (the tabpfn3 arms set it)
+  n_rows_range: [1024, 1024] # rows per dataset; upstream stage 1 is exactly 1,024
+  n_features_range: [1, 100] # columns; upstream's --min_features 1 --max_features 100
+  max_features: 100 # ceiling on generated columns; TabICLv2 uses 100 in all stages
+  n_nodes_range: [2, 33] # nodes in the causal graph; upstream's 2..32, exclusive upper
+  train_frac_range: [0.3, 0.9] # share of rows given as context; upstream's stage-1 range
+  max_filter_attempts: 40 # retries before giving up on a rejected dataset
+
+  pool:
+    source: generate # generate = build live | pool = read pre-generated shards
+    original_variant: original # pool folder for the unmodified TabICL prior
+    credit_variant: credit_v1 # pool folder for ours
+
+  grouping:
+    group_size: 4 # datasets sharing shape and difficulty; 1 disables grouping
+    subgroup_size: 4 # upstream v2: the subgroup is the whole group, which shares its feature count
+
+  base: # the UNMODIFIED TabICL prior — changing this changes the control arm
+    max_cat_size: 200 # upstream graph_scm: sample_categorical_sizes(max_cat_size=200)
+    category_frequency: balanced # how category counts are distributed
+
+  credit: # OUR credit prior. Every range is from the credit-risk literature or deliberately wide; none is set from the evaluation data (docs/PRIORS.md)
+    max_cat_size: 500 # credit has state, region, product codes — high cardinality
+    category_frequency: balanced # as the control
+
+    target:
+      target_scaling: standard # as TabICLRegressor does to a real target (y_scaler_ on the context); not applied under encoding: raw
+      mode: zoib # zero-and-one inflated beta regression, the LGD literature's simulation model (Li, Zhang & Zhao 2020; Ospina & Ferrari 2010)
+      zoib: # one portfolio per table; the published value in brackets (Li, Zhang & Zhao, section 2.1)
+        alpha0_mean_sd: [-0.54, 1.0] # intercept of logit P(LGD = 0), normal across tables [-0.54]
+        beta0_mean_sd: [-1.46, 1.0] # intercept of logit P(LGD = 1) [-1.46]
+        gamma0_mean_sd: [0.0, 1.0] # intercept of logit of the interior mean [0]
+        phi_range: [1.0, 20.0] # precision of the interior beta, log-uniform [5]
+        loading_p0_range: [0.2, 1.5] # effect of the recovery driver on logit P(0), in SD units [0.6]
+        loading_p1_range: [0.1, 1.5] # on logit P(1), opposite sign [0.15]
+        loading_mu_range: [0.1, 1.0] # on logit of the interior mean, opposite sign [0.15]
+        macro_p0_range: [-0.3, 0.0] # downturn effect per SD of the period factor on logit P(0) [-0.09]
+        macro_p1_range: [0.0, 0.3] # on logit P(1) [+0.11]
+        macro_mu_range: [0.0, 0.1] # on logit of the interior mean [+0.01]
+        component_overlap_range: [0.3, 1.0] # how far P(0), P(1) and the mean share one driver (1 = the same)
+        signal_share_range: [0.1, 1.0] # share of the driver the features record [their fits keep 0.11-1]
+        macro_feature_prob: 0.5 # the period factor is also a column, as their unemployment rate is
+        cohort: { min_cohorts: 1, max_cohorts: 40 } # periods sharing the macro factor [40 quarters]
+
+    marginals: # money amounts, balances and ratios are positive and right-skewed
+      col_fraction_range: [0.0, 1.0] # share of continuous columns given a tail, per table — wide
+      strength_range: [0.25, 2.5] # skew of the monotone warp, per column — wide
+
+    shift: # context and predicted rows come from different populations (economic cycles)
+      shift_prob: 0.3 # share of datasets given a shift
+      kind_weights: { cohort: 1.0, covariate: 1.0, prior_prob: 1.0 } # time | feature range | base rate
+      prior_prob_ratio_range: [1.25, 4.0] # query share of above-median losses over the context's, log-uniform, either way (docs/PRIORS.md)
+
+    missingness: # gaps in credit data are informative, not random (Baesens et al. 2026)
+      missing_prob: 0.5 # share of tables with any missing values — uninformative
+      missing_col_fraction_range: [0.05, 1.0] # share of columns with gaps, per table — wide
+      missing_rate_range: [0.01, 0.5] # how much is missing in those columns — wide
+      missing_target_coupling_range: [0.0, 1.0] # how strongly a gap depends on the target, per table — wide
+      missing_indicators: false # TabICL's prediction path adds none; the signal lives in the filled value
+
+    noise_features:
+      fraction: 0.3 # share of columns carrying no information
+      kind_weights: { pure_noise: 1.0, duplicate: 1.0, shuffled: 1.0, constant: 0.5 } # kinds of junk
+
+  filter: # which generated datasets get discarded as unlearnable
+    mode: tabicl # TabICLv2's own filter (bootstrap p < 0.05 on a 25-tree ExtraTrees), as upstream
+    apply_to: base # TabICL's tables only, as upstream; the credit tables are used as specified, not re-selected
+    quantile_band: [0.05, 0.40] # pseudo-R^2 band, read only by mode: banded
+    remove_trivial: false # also drop datasets that are too easy
+    trivial_threshold: 0.02 # what counts as too easy
+
+# ----------------------------------------------------------------------------
+# HOW TO START — from the released weights
+# ----------------------------------------------------------------------------
+init:
+  strategy: full # every layer trains
+  pretrained_path: checkpoints/tabicl-regressor-v2-20260212.ckpt # the released TabICLv2 weights; the tabpfn3 arms name TabPFN-3's
+  strict_load: true # every tensor must load (391/391 classifier, 347/347 regressor); anything less is the wrong file
+
+# ----------------------------------------------------------------------------
+# TRAINING — continued pretraining (docs/EXPERIMENTAL_DESIGN.md, Experiment 2)
+# ----------------------------------------------------------------------------
+train:
+  max_steps: 10000 # upstream's stage 3 is 10,000 steps; TabPFN-Wide's continued pretraining plateaus by 10,000
+  batch_size: 64 # datasets per UPDATE, upstream's; the tabpfn3 arms use 16, as TabPFN-Wide
+  micro_batch_size: 4 # datasets per TabICL forward pass (TabPFN takes one at a time)
+  num_quantiles: 999 # TabICL's quantile grid (LGD)
+  n_estimators: 2 # TabPFN ensemble members per training forward, as its fine-tuner (n_estimators_finetune)
+
+  optimizer: adamw # set per arm: adamw | muon (TabICL only)
+  lr: 1.0e-5 # set per arm
+  scheduler: cosine_with_restarts # warm-up then cosine decay — TabPFN's fine-tuner and upstream's stages alike
+  beta1: 0.9 # momentum
+  beta2: 0.999 # AdamW's variance decay, torch's default, which TabPFN's fine-tuner uses
+  weight_decay: 0.01 # TabPFN's fine-tuner and upstream's stages
+  gradient_clipping: 1.0 # TabPFN's fine-tuner and upstream's stage 3
+  warmup_proportion: 0.1 # set per arm: 0.1 for AdamW (TabPFN's fine-tuner), 0.01 for Muon (upstream)
+  cosine_num_cycles: 1 # restarts in the schedule
+  cosine_amplitude_decay: 1.0 # how much each cycle shrinks
+  cosine_lr_end: 1.0e-7 # floor of the schedule, upstream's
+  l2sp_alpha: 0.0 # no pull toward the released weights (Real-TabPFN's L2-SP is a later ablation)
+
+  amp: true # mixed precision on GPU (TabPFN: float16 + GradScaler, as its fine-tuner)
+  num_workers: 12 # CPU workers generating (and, for TabPFN, preprocessing) the tasks; the SLURM script sets it from the allocation
+  log_every: 100 # steps between log lines
+  save_temp_every: 250 # rolling checkpoints; caps what a kill loses
+  save_perm_every: 2500 # kept-forever checkpoints, each scored by the benchmark: the length is chosen from them
+  max_temp_checkpoints: 2 # rolling checkpoints retained
+
+# ----------------------------------------------------------------------------
+# PROGRESS CURVE — real development data scored mid-training
+# ----------------------------------------------------------------------------
+progress:
+  every_datasets: 32000 # 500 TabICL steps (the tabpfn3 arms: 8,000 = 500 of their steps); plus one at step 0
+  n_datasets: 5 # real credit datasets scored when `datasets` is empty; the trainer passes the development list
+  n_ood: 8 # out-of-domain datasets scored — forgetting shows up here first
+  context_rows: 4096 # fixed, stratified context per dataset — same rows at every step and in every arm
+  max_test_rows: 2048 # rows scored per dataset
+
+# ----------------------------------------------------------------------------
+# LOGGING
+# ----------------------------------------------------------------------------
+logging:
+  level: INFO # INFO | DEBUG | WARNING
+  console: true # also print to stdout
+  to_file: null # null = write files on the cluster only
+  log_prior_every: 500 # steps between prior-composition reports; 0 disables
+  log_prior_samples: 16 # datasets inspected per report
+  log_hardware_every: 100 # steps between GPU / memory / throughput samples; 0 disables
+  log_grad_every: 250 # steps between per-block gradient-norm reports; 0 disables
+
+# ----------------------------------------------------------------------------
+# EVALUATION — frozen before any prior tuning
+# ----------------------------------------------------------------------------
+eval:
+  data_dir: data/raw/lgd # where the real datasets live
+  dev_datasets: [0007.lgd_lendingclub, 0004.base_model, 0001.heloc] # used to choose the prior
+  holdout_datasets: [] # THE SEARCH NEVER SEES THE HOLDOUT: it chooses on the development datasets alone
+  metrics: [pinball, crps, coverage, boundary_mass, r2, rmse] # all computed in one run
+  select_on: dev # dev | holdout — anything but `dev` here invalidates the experiment
+  ood_suites: all # which out-of-domain suites to score; see src/eval/ood.py SUITES

@@ -27,14 +27,13 @@ def test_lists_by_default_and_deletes_only_when_asked(isolated_output, capsys) -
 
 
 def test_a_wipe_keeps_the_directory_skeleton(isolated_output) -> None:
-    """`rmtree` would take `output/figures/.gitkeep` with it, and the next clone would have
-    nowhere to write."""
-    from src.utils.paths import figures_dir, logs_dir
+    """`rmtree` would take the tracked markers and the tree's README with it."""
+    from src.utils.paths import figures_dir, logs_dir, outputs_dir
 
-    for folder in (logs_dir(), figures_dir()):
-        folder.mkdir(parents=True, exist_ok=True)
-        (folder / ".gitkeep").write_text("", encoding="utf-8")
-    per_notebook = figures_dir("nb")
+    logs_dir().mkdir(parents=True, exist_ok=True)
+    (logs_dir() / ".gitkeep").write_text("", encoding="utf-8")
+    (outputs_dir() / "README.md").write_text("index", encoding="utf-8")
+    per_notebook = figures_dir("1.3_pd_results")
     per_notebook.mkdir(parents=True, exist_ok=True)
     (per_notebook / "01_x.pdf").write_bytes(b"%PDF")
     (logs_dir() / "run.log").write_text("x", encoding="utf-8")
@@ -42,7 +41,7 @@ def test_a_wipe_keeps_the_directory_skeleton(isolated_output) -> None:
     removed = clean_run.wipe(clean_run.roots()[0])
     assert removed == 2                                  # the pdf and the log, not the markers
     assert (logs_dir() / ".gitkeep").is_file()
-    assert (figures_dir() / ".gitkeep").is_file()
+    assert (outputs_dir() / "README.md").is_file()
     assert not per_notebook.exists()                     # per-run, no marker, so it goes
 
 
@@ -56,11 +55,12 @@ def test_gitkeep_is_never_counted(isolated_output) -> None:
 
 
 def test_both_storage_tiers_are_cleared_on_the_cluster(isolated_output) -> None:
-    """`output/results/` lives on project storage there, so clearing only `$VSC_DATA` would leave
-    the largest files behind."""
-    roots = clean_run.roots()
-    assert len(roots) == 2
-    assert any("staging" in str(r) for r in roots)
+    """Checkpoints live on project storage there, so `--checkpoints` has to reach the big tier;
+    a plain clean touches only the small one."""
+    assert [r for r in clean_run.roots() if "staging" in str(r)] == []
+    big = [r for r in clean_run.roots(checkpoints=True) if "staging" in str(r)]
+    assert len(big) == 4 and all(r.name == "checkpoints" for r in big)
+    assert len(clean_run.roots(experiment=1, checkpoints=True)) == 2
 
 
 def test_processed_is_opt_in(isolated_output) -> None:
@@ -73,61 +73,59 @@ def test_processed_is_opt_in(isolated_output) -> None:
 
 
 
-def test_clean_run_spares_the_ood_cache_even_with_prior_cache(tmp_path, monkeypatch):
-    """`--prior-cache` clears the prior pools, and the out-of-domain cache happens to live
-    under the same root because that is where big things go. It is not a prior pool.
-
-    It also cannot be rebuilt where the deletion happens: compute nodes have no outbound
-    internet, so `fetch_ood` only works from a login node. A sweep that wiped it would report
-    every out-of-domain column empty and never say why.
-    """
+def test_clean_run_spares_the_ood_cache_and_the_released_weights(tmp_path, monkeypatch):
+    """The out-of-domain cache cannot be rebuilt where the deletion happens (compute nodes have
+    no outbound internet), and the released weights are a download, not ours. Neither may be
+    counted or wiped, whatever the flags."""
     from src.utils import clean_run
 
-    pool_root = tmp_path / "prior_cache"
-    (pool_root / "credit_v1").mkdir(parents=True)
-    (pool_root / "credit_v1" / "shard0.npz").write_bytes(b"pool")
-    (pool_root / "ood").mkdir(parents=True)
-    (pool_root / "ood" / "cache.npz").write_bytes(b"downloaded")
-    (pool_root / "ood" / "manifest.json").write_text("{}", encoding="utf-8")
+    root = tmp_path / "tree"
+    (root / "pool").mkdir(parents=True)
+    (root / "pool" / "shard0.npz").write_bytes(b"pool")
+    (root / "ood").mkdir(parents=True)
+    (root / "ood" / "cache.npz").write_bytes(b"downloaded")
+    (root / "weights").mkdir(parents=True)
+    (root / "weights" / "tabicl.ckpt").write_bytes(b"RELEASED")
+    monkeypatch.setattr(clean_run, "ood_cache_dir", lambda: root / "ood")
+    monkeypatch.setattr(clean_run, "pretrained_dir", lambda: root / "weights")
 
-    monkeypatch.setattr(clean_run, "prior_cache_root", lambda: pool_root)
-
-    n_before, _ = clean_run.measure(pool_root)
-    assert n_before == 1, "the ood cache must not even be COUNTED as deletable"
-
-    clean_run.wipe(pool_root)
-    assert not (pool_root / "credit_v1" / "shard0.npz").exists(), "the pool should go"
-    assert (pool_root / "ood" / "cache.npz").is_file(), "the ood cache must survive"
-    assert (pool_root / "ood" / "manifest.json").is_file()
+    prot = clean_run.protected_paths(checkpoints=True, prior_cache=True)
+    assert clean_run.measure(root, prot)[0] == 1, "only the pool is deletable"
+    clean_run.wipe(root, prot)
+    assert not (root / "pool" / "shard0.npz").exists(), "the pool should go"
+    assert (root / "ood" / "cache.npz").is_file(), "the ood cache must survive"
+    assert (root / "weights" / "tabicl.ckpt").is_file(), "the released weights must survive"
 
 
-def test_checkpoints_flag_clears_our_runs_but_not_the_released_weights(tmp_path, monkeypatch):
-    """The bug that cost job 11517891: our checkpoints used to fall back to `$VSC_DATA`, where
-    a normal clean removed them. Fixing the staging permission sent them to `checkpoints/` —
-    which `clean_run` protects — so every arm resumed at `max_steps`, trained nothing, and
-    exited 0 in two seconds while the evaluation scored the OLD weights."""
-    from src.utils import clean_run
+def test_checkpoints_are_opt_in_even_where_both_tiers_are_one_folder(tmp_path, monkeypatch):
+    """The bug that cost job 11517891: a rerun that finds an old checkpoint resumes at
+    `max_steps`, trains nothing, and exits 0. So `--checkpoints` must reach them — and a plain
+    clean must not, even locally where they sit inside the tree it walks."""
+    from src.utils import clean_run, paths
 
-    ckpt = tmp_path / "checkpoints"
-    (ckpt / "exp1_lgd_arm_s0").mkdir(parents=True)
-    (ckpt / "exp1_lgd_arm_s0" / "step-1500.ckpt").write_bytes(b"ours")
-    (ckpt / "exp2_pd_arm_s1").mkdir(parents=True)
-    (ckpt / "exp2_pd_arm_s1" / "step-900.ckpt").write_bytes(b"ours")
-    (ckpt / "tabicl-regressor-v2-20260212.ckpt").write_bytes(b"RELEASED")
-    monkeypatch.setattr("src.utils.paths.checkpoints_dir", lambda *a: ckpt)
+    for var in ("VSC_DATA", *paths.STAGING_ENV_VARS):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(paths, "REPO_ROOT", tmp_path)   # read at call time by every resolver
+    assert paths.big_outputs_dir() == paths.outputs_dir() == tmp_path / "output_CreditICL"
 
-    dirs = clean_run.run_checkpoint_dirs()
-    assert {d.name for d in dirs} == {"exp1_lgd_arm_s0", "exp2_pd_arm_s1"}
+    run = paths.run_checkpoints_dir("exp1_lgd__a__s0")
+    run.mkdir(parents=True)
+    (run / "step-1500.ckpt").write_bytes(b"ours")
+    log = paths.logs_dir(1) / "a.log"
+    log.parent.mkdir(parents=True)
+    log.write_text("x", encoding="utf-8")
 
-    for d in dirs:
-        clean_run.wipe(d)
-    assert not (ckpt / "exp1_lgd_arm_s0" / "step-1500.ckpt").exists()
-    assert not (ckpt / "exp2_pd_arm_s1" / "step-900.ckpt").exists()
-    assert (ckpt / "tabicl-regressor-v2-20260212.ckpt").is_file(), "released weights must live"
+    plain = clean_run.protected_paths()
+    for root in clean_run.roots():
+        clean_run.wipe(root, plain)
+    assert (run / "step-1500.ckpt").is_file(), "a plain clean must not reach checkpoints"
+    assert not log.exists()
 
-    # and it is opt-in: a plain clean must not reach them
-    assert clean_run.roots() == clean_run.roots(checkpoints=False)
-    assert dirs[0] not in clean_run.roots()
+    assert clean_run.run_checkpoint_dirs() == [run]
+    opted = clean_run.protected_paths(checkpoints=True)
+    for root in clean_run.roots(checkpoints=True):
+        clean_run.wipe(root, opted)
+    assert not (run / "step-1500.ckpt").exists()
 
 
 def test_resuming_at_max_steps_warns_that_nothing_will_train():
@@ -141,39 +139,28 @@ def test_resuming_at_max_steps_warns_that_nothing_will_train():
 
 
 def test_checkpoint_discovery_is_by_structure_not_by_name(tmp_path, monkeypatch):
-    """A run directory the prefix list did not anticipate is the dangerous one.
-
-    `run_checkpoint_dirs` matched `exp1_`, `exp2_`, `exp3_` and nothing else, so every other
-    thing the project has started writing — `debug_exp1_*`, pilots, benchmarks, an eventual
-    Exp4 — survived `--checkpoints`. That is not untidiness: a rerun RESUMES from a surviving
-    checkpoint and trains nothing, exits 0, and reports success. All four arms did exactly that
-    on 17-08-2026.
-    """
-    from src.utils import clean_run, paths
+    """A run directory whose name nobody anticipated is the dangerous one: a rerun RESUMES from
+    a surviving checkpoint and trains nothing. All four arms did exactly that on 17-08-2026."""
+    from src.utils import clean_run
 
     base = tmp_path / "checkpoints"
-    (base).mkdir()
-    monkeypatch.setattr(paths, "checkpoints_dir", lambda *a: base)
-    monkeypatch.setattr(clean_run, "protected_paths", list)
-
-    # The released TabICLv2 weights live at the TOP level and must never be found.
-    (base / "tabiclv2-reg.ckpt").write_bytes(b"released")
-    for name in ("exp1_abc", "debug_exp1_lgd", "pilot_batch_64", "exp4_something", "nested"):
+    base.mkdir()
+    monkeypatch.setattr(clean_run, "checkpoint_roots", lambda experiment=None: [base])
+    for name in ("exp1_abc", "debug_exp1_lgd", "pilot_batch_64", "nested"):
         d = base / name
         (d / "inner").mkdir(parents=True)
         (d / "inner" / "step-500.ckpt").write_bytes(b"ours")
     (base / "not_a_run").mkdir()          # a directory with no checkpoint in it
 
     found = {d.name for d in clean_run.run_checkpoint_dirs()}
-    assert found == {"exp1_abc", "debug_exp1_lgd", "pilot_batch_64", "exp4_something", "nested"}
-    assert (base / "tabiclv2-reg.ckpt").exists(), "released weights must never be a target"
+    assert found == {"exp1_abc", "debug_exp1_lgd", "pilot_batch_64", "nested"}
 
 
-def test_scratch_is_a_root_on_the_cluster_and_not_off_it(tmp_path, monkeypatch):
-    """Three tiers on VSC, one locally — and never the same tree listed twice."""
-    from src.utils import clean_run, paths
+def test_no_tree_is_listed_twice():
+    """Locally every tier collapses into the repo; listing a tree twice double-counts."""
+    from src.utils import clean_run
 
-    assert clean_run.scratch_outputs_dir() is None, "off-cluster scratch IS the repo"
-    monkeypatch.setattr(paths, "scratch_root", lambda: tmp_path / "scratch")
-    assert clean_run.scratch_outputs_dir() == tmp_path / "scratch" / paths.PROJECT_NAME
-    assert len(clean_run.roots()) == len({str(r) for r in clean_run.roots()})
+    for kwargs in ({}, {"checkpoints": True}, {"prior_cache": True, "processed": True},
+                   {"experiment": 0, "checkpoints": True}):
+        found = clean_run.roots(**kwargs)
+        assert len(found) == len({str(r) for r in found}), kwargs

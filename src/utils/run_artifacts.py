@@ -5,21 +5,21 @@ manifests and generated prior pools. Some are tiny and some are tens of gigabyte
 they live on **two different storage tiers**, so "delete the last run" is not one `rm`.
 Doing it by hand is how someone eventually deletes `data/raw`.
 
-THE TWO TIERS, and why it matters here:
+THE TWO TIERS, one layout (`src/utils/paths.py`):
 
     project staging ($CREDITICL_STAGING_ROOT / /lustre1/...)   BIG, no backup
-        checkpoints/      trained weights, ~100 MB each x 48 runs
-        prior_cache/      generated datasets, ~39 GB per variant
-        data/processed/   rebuildable in minutes from raw
+        output_CreditICL/experiment_<N>/checkpoints/   our trained weights
+        output_CreditICL/prior_cache/                  generated prior pools (optional)
 
     personal data ($VSC_DATA)                                   SMALL, backed up
-        output/logs/      timestamped run logs
-        output/manifests/ progress CSVs + each arm's summary/config, flat (one file apiece)
+        output_CreditICL/<owner>/logs/                 one file per job
+        output_CreditICL/experiment_<N>/runs/          each arm's config, summary, curves
+        output_CreditICL/<owner>/benchmark/            scores and receipts
 
 NEVER TOUCHED, at any protection level: `data/raw` (irreplaceable — the datasets
-themselves) and `checkpoints/` in the repo (the *downloaded* TabPFN/TabICL weights,
-which are not ours and would have to be fetched again). Those are excluded by
-construction rather than by a flag, so no combination of arguments can remove them.
+themselves), the out-of-domain cache, and the RELEASED weights in `pretrained_dir()` (a
+download, not ours). Those are excluded by construction rather than by a flag, so no
+combination of arguments can remove them.
 """
 
 from __future__ import annotations
@@ -31,18 +31,23 @@ from pathlib import Path
 from typing import Any
 
 from src.utils.paths import (
+    EXPERIMENTS,
+    GENERAL,
+    REFERENCE,
     REPO_ROOT,
-    checkpoints_dir,
+    benchmark_dir,
+    datasets_dir,
+    experiment_dir,
     logs_dir,
-    manifests_dir,
-    outputs_dir,
-    prior_cache_dir,
-    results_dir,
+    ood_cache_dir,
+    pretrained_dir,
+    prior_cache_root,
+    runs_dir,
 )
 
 #: What each category means, in the order a person usually wants to remove them:
 #: cheap-to-regenerate first, expensive last.
-CATEGORIES = ("logs", "manifests", "metrics", "results", "checkpoints", "prior_pools")
+CATEGORIES = ("logs", "runs", "results", "checkpoints", "prior_pools")
 
 #: Categories that cost real compute to rebuild. Removing these needs an explicit opt-in
 #: because "clean up the logs" should never quietly delete 39 GB of generated priors or
@@ -94,7 +99,10 @@ def _protected() -> list[Path]:
     """Paths that must never be removed, whatever the arguments say."""
     return [
         REPO_ROOT / "data" / "raw",
+        datasets_dir() / "raw",
+        ood_cache_dir(),
         REPO_ROOT / "checkpoints",  # DOWNLOADED TabPFN/TabICL weights, not ours
+        pretrained_dir(),
         REPO_ROOT / "src",
         REPO_ROOT / "config",
         REPO_ROOT / "tests",
@@ -118,26 +126,19 @@ def _is_protected(path: Path) -> bool:
 
 
 def find_artifacts(tasks: tuple[str, ...] = ("lgd", "pd")) -> list[Artifact]:
-    """Everything a previous run left behind, measured but not touched."""
-    candidates: list[tuple[str, Path]] = [
-        ("logs", logs_dir()),
-        ("manifests", manifests_dir()),
-        ("checkpoints", checkpoints_dir()),
-    ]
-    for task in tasks:
-        candidates.append(("prior_pools", prior_cache_dir(f"{task}__original")))
-        candidates.append(("prior_pools", prior_cache_dir(f"{task}__credit_v1")))
-        for pipeline in ("data", "prior", "training", "eval"):
-            candidates.append(("results", results_dir(task, pipeline)))
+    """Everything a previous run left behind, measured but not touched.
 
-    # Legacy/local per-run output directories (from before summary+config moved flat into
-    # manifests/) sit directly under the output root beside logs/ and manifests/; the cluster
-    # no longer creates them, but sweep any that a local run or an older run left behind.
-    out = outputs_dir()
-    if out.is_dir():
-        for child in sorted(out.iterdir()):
-            if child.is_dir() and child.name not in ("logs", "manifests"):
-                candidates.append(("metrics", child))
+    `tasks` is accepted for compatibility; the layout is per experiment, not per task.
+    """
+    del tasks
+    candidates: list[tuple[str, Path]] = []
+    for owner in (GENERAL, REFERENCE, *EXPERIMENTS):
+        candidates.append(("logs", logs_dir(owner)))
+        candidates.append(("results", benchmark_dir(owner)))
+    for exp in EXPERIMENTS:
+        candidates.append(("runs", runs_dir(exp)))
+        candidates.append(("checkpoints", experiment_dir(exp, big=True) / "checkpoints"))
+    candidates.append(("prior_pools", prior_cache_root()))
 
     found = []
     for category, path in candidates:
@@ -172,13 +173,13 @@ def summarise(artifacts: list[Artifact]) -> str:
     total = sum(a.bytes for a in artifacts)
     lines.append(f"TOTAL: {total / 1e9:.2f} GB across {len(artifacts)} locations")
     lines.append("")
-    lines.append("NEVER removed by this tool: data/raw (the datasets) and checkpoints/ in")
-    lines.append("the repo (the downloaded TabPFN/TabICL weights).")
+    lines.append("NEVER removed by this tool: data/raw (the datasets), the out-of-domain cache,")
+    lines.append("and the released TabICLv2/TabPFN weights.")
     return "\n".join(lines)
 
 
 def clean(
-    categories: tuple[str, ...] = ("logs", "manifests", "metrics", "results"),
+    categories: tuple[str, ...] = ("logs", "runs", "results"),
     *,
     dry_run: bool = True,
     tasks: tuple[str, ...] = ("lgd", "pd"),
@@ -201,8 +202,7 @@ def clean(
         try:
             if a.path.is_dir():
                 # Remove the CONTENTS, not the directory, so the tracked `.gitkeep`
-                # markers and the directory layout survive. `rmtree` on results/lgd/eval
-                # would delete a directory git expects to exist.
+                # markers and the directory layout survive.
                 for child in a.path.iterdir():
                     if child.name in KEEP_FILES:
                         continue

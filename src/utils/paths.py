@@ -4,8 +4,8 @@ Same split CreditPFN uses, for the same reasons:
 
 | tier | path | what goes here | backed up | quota |
 |---|---|---|---|---|
-| **project staging** | `/lustre1/project/stg_00211` (`$VSC_PROJECT_LUSTRE1/stg_00211`) | the **big files**: datasets, trained checkpoints, result CSVs | no | large (>=1 TB), low inode budget |
-| **personal data** | `$VSC_DATA` | the repo, plus **small durable outputs**: logs, metrics.jsonl, manifests, figures | **yes** | 75 GiB, tight |
+| **project staging** | `/lustre1/project/stg_00211` (`$VSC_PROJECT_LUSTRE1/stg_00211`) | the **big files**: datasets, released weights, and the big half of `output_CreditICL/` (our checkpoints, prior pools) | no | large (>=1 TB), low inode budget |
+| **personal data** | `$VSC_DATA` | the repo, plus the small half of `output_CreditICL/`: logs, run records, benchmark CSVs, figures | **yes** | 75 GiB, tight |
 | scratch | `$VSC_SCRATCH` | working scratch only | no | 500 GiB, **purged after 30 days of no access** |
 
 Rules of thumb:
@@ -31,6 +31,7 @@ run in the wrong place beats a crashed one.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 PROJECT_NAME = "CreditICL"
@@ -120,7 +121,45 @@ def _under(root: Path, *parts: str) -> Path:
     return root.joinpath(PROJECT_NAME, *parts)
 
 
-# -- the four things this project writes -------------------------------------
+# -- the output tree -----------------------------------------------------------
+#
+#   output_CreditICL/                      SMALL tier: the repo locally, $VSC_DATA/CreditICL on VSC
+#       README.md                          what lives where (committed)
+#       All_Results.md, CAPTIONS.md        every notebook's text summary / figure captions
+#       general/                           chapter 0 figures; logs of jobs that belong to no
+#                                          experiment (preprocess, OOD fetch, prior pools)
+#       reference/                         the models whose numbers do not depend on our prior
+#           benchmark/{pd,lgd,ood,receipts}  (released TabICLv2 / TabPFN-3, CatBoost, linear):
+#           logs/                            scored ONCE, read by every experiment
+#       experiment_<N>/                    N = 0 (the cluster debug suite), 1, 2, 3
+#           logs/                          one file per SLURM job (training, benchmark, checks)
+#           runs/<run name>/               one folder per trained arm: config.json, summary.json,
+#                                          progress.csv, telemetry.csv, weights.csv, logs/
+#           benchmark/{pd,lgd,ood,receipts}  one CSV per scored checkpoint, one receipt each
+#           figures/<notebook>/            the PDFs of that experiment's notebooks
+#
+#   output_CreditICL/                      BIG tier: <staging>/CreditICL on VSC, the SAME tree
+#       experiment_<N>/checkpoints/<run name>/step-*.ckpt
+#       prior_cache/                       pre-generated prior pools (optional)
+#
+# Locally both tiers are the same folder. The released weights (TabICLv2, TabPFN-3) are not
+# output — they are a download — and stay in `pretrained_dir()`.
+
+OUTPUT_NAME = "output_CreditICL"
+EXPERIMENTS = (0, 1, 2, 3)
+GENERAL = "general"
+REFERENCE = "reference"
+#: The four places a benchmark writes, per owner. `ood` never mixes with the credit results:
+#: a mean across both answers no question.
+BENCHMARK_PARTS = ("pd", "lgd", "ood", "receipts")
+#: What one run folder holds, by kind. Fixed names, so a reader needs no run-name globbing.
+RUN_FILES = {
+    "config": "config.json",
+    "summary": "summary.json",
+    "progress": "progress.csv",
+    "telemetry": "telemetry.csv",
+    "weights": "weights.csv",
+}
 
 
 def datasets_dir() -> Path:
@@ -128,63 +167,192 @@ def datasets_dir() -> Path:
     return _under(staging_root(), "data")
 
 
-def checkpoints_dir(*parts: str) -> Path:
-    """Pretrained weights, one dir per run. BIG -> staging.
+def pretrained_dir(*parts: str) -> Path:
+    """The RELEASED weights (TabICLv2, TabPFN-3), a HuggingFace download. BIG -> staging.
 
-    Never deleted by the cleaner: every file here is either downloaded from upstream or
-    cost a training run to reproduce.
+    Not output: never cleaned, never written by a run. Our own checkpoints go to
+    `run_checkpoints_dir`, inside the experiment they belong to.
     """
     return _under(staging_root(), "checkpoints", *parts)
 
 
-def outputs_dir() -> Path:
-    """THE single root for everything the code produces. SMALL -> $VSC_DATA on VSC.
+def find_pretrained(path: str | Path) -> Path:
+    """The released-weights file a config names, wherever this machine keeps it.
 
-    Every generated artefact lives under here — results, figures, logs, manifests — so
-    "what did this run produce?" and "what can I safely delete?" both have one answer.
-    Locally it is `output/` in the repo; on the cluster `$VSC_DATA/CreditICL/output/`,
-    which is the backed-up tier. Only genuinely large files (checkpoints, generated
-    prior pools, processed datasets) go elsewhere, to project storage.
+    Configs name the weights repo-relative (`checkpoints/tabicl-classifier-v2-20260212.ckpt`), which
+    is where a laptop has them; the cluster keeps them in `pretrained_dir()` on project storage. An
+    absolute path is taken as given. Raises rather than falling back to anything: fine-tuning from
+    the wrong file would be invisible in every number afterwards.
+    """
+    p = Path(path)
+    candidates = [p] if p.is_absolute() else [REPO_ROOT / p, pretrained_dir() / p.name, pretrained_dir() / p]
+    for c in candidates:
+        if c.is_file():
+            return c
+    raise FileNotFoundError(f"released weights {str(path)!r} not found; looked in: "
+                            + ", ".join(str(c) for c in candidates))
+
+
+def outputs_dir() -> Path:
+    """THE root of everything the code produces that is small. `$VSC_DATA` on VSC.
+
+    Named `output_CreditICL` so a downloaded copy says which project it came from. Locally it
+    sits in the repo; on the cluster under `$VSC_DATA/CreditICL/`, the backed-up tier.
     """
     if on_vsc():
-        return _under(data_root(), "output")
-    return REPO_ROOT / "output"
+        return _under(data_root(), OUTPUT_NAME)
+    return REPO_ROOT / OUTPUT_NAME
 
 
-def logs_dir() -> Path:
-    """Timestamped run logs. SMALL -> inside the output tree on $VSC_DATA.
+def big_outputs_dir() -> Path:
+    """The same tree on project storage, for the files too big for `$VSC_DATA`.
 
-    Under `output/logs/`, not a separate top-level `logs/`. Everything a run writes that
-    is small and durable now lives in one place, so "what did this run produce?" has a
-    single answer and the cleanup helper has a single tree to walk.
+    Only checkpoints and prior pools live here. Off-VSC, without a staging override, it IS
+    `outputs_dir()`: one folder, same layout.
     """
-    return outputs_dir() / "logs"
+    if _use_staging():
+        return _under(staging_root(), OUTPUT_NAME)
+    return outputs_dir()
 
 
-def manifests_dir() -> Path:
-    """Per-run CSV manifests — the training progress curves."""
-    return outputs_dir() / "manifests"
+def _check_experiment(exp: int | str) -> int:
+    n = int(exp)
+    if n not in EXPERIMENTS:
+        raise ValueError(f"experiment must be one of {EXPERIMENTS}, got {exp!r}")
+    return n
+
+
+def experiment_dir(exp: int | str, *, big: bool = False) -> Path:
+    """`output_CreditICL/experiment_<N>/` on the small tier, or its mirror on the big one."""
+    root = big_outputs_dir() if big else outputs_dir()
+    return root / f"experiment_{_check_experiment(exp)}"
+
+
+def general_dir() -> Path:
+    """Chapter 0 and the jobs that belong to no experiment."""
+    return outputs_dir() / GENERAL
+
+
+def reference_dir() -> Path:
+    """The reference column: models whose numbers do not depend on our prior."""
+    return outputs_dir() / REFERENCE
+
+
+_EXPERIMENT_NAME = re.compile(r"^exp(\d+)[a-z]*_")  # exp1_, exp1bench_, exp2searchbench_
+
+
+def experiment_of(name: str) -> int:
+    """The experiment a run name or benchmark tag belongs to.
+
+    `exp1_pd__...__s0` and `exp1bench_pd_a3` are Exp1, `exp2searchbench_pd_a0` Exp2 (its search);
+    `debug_...` and `exp0_...` are the
+    debug suite, Exp0. Anything else RAISES: a checkpoint filed under the wrong experiment
+    is scored against the wrong grid, and a guess would hide that.
+    """
+    if name.startswith("debug_"):
+        return 0
+    m = _EXPERIMENT_NAME.match(name)
+    if not m:
+        raise ValueError(f"cannot tell which experiment {name!r} belongs to (want exp<N>_...)")
+    return _check_experiment(m.group(1))
+
+
+def owner_of(tag: str) -> int | str:
+    """Who owns a benchmark tag: an experiment number, `reference`, or `general` (ad hoc)."""
+    if tag.startswith(f"{REFERENCE}_"):
+        return REFERENCE
+    try:
+        return experiment_of(tag)
+    except ValueError:
+        return GENERAL
+
+
+def owner_dir(owner: int | str) -> Path:
+    """The folder of an experiment number, or of `general` / `reference`."""
+    if owner in (GENERAL, REFERENCE):
+        return outputs_dir() / str(owner)
+    return experiment_dir(owner)
+
+
+def logs_dir(owner: int | str = GENERAL) -> Path:
+    """Job logs of one experiment (or of `reference` / `general`). SMALL."""
+    return owner_dir(owner) / "logs"
+
+
+def runs_dir(exp: int | str) -> Path:
+    """Every trained arm of one experiment, one folder each."""
+    return experiment_dir(exp) / "runs"
+
+
+def run_dir(run_name: str) -> Path:
+    """One trained arm's folder: its config, summary, curves and training logs."""
+    return runs_dir(experiment_of(run_name)) / run_name
+
+
+def run_file(run_name: str, kind: str) -> Path:
+    """`run_dir(run_name) / RUN_FILES[kind]` — `config`, `summary`, `progress`, ..."""
+    if kind not in RUN_FILES:
+        raise ValueError(f"run file kind must be one of {sorted(RUN_FILES)}, got {kind!r}")
+    return run_dir(run_name) / RUN_FILES[kind]
 
 
 def run_summary_path(run_name: str) -> Path:
-    """A finished arm's summary, FLAT in manifests/ — no per-arm folder.
-
-    Until 02-09-2026 each arm got its own `output/<run_name>/` holding just two small files
-    (the resolved config and this summary); 150 near-empty folders made the output tree
-    unbrowsable. They now sit beside the progress/telemetry CSVs, one flat file per arm.
-    """
-    return manifests_dir() / f"{run_name}__summary.json"
+    """A finished arm's summary. The authority on whether the arm completed."""
+    return run_file(run_name, "summary")
 
 
 def run_config_path(run_name: str) -> Path:
-    """A run's resolved config, FLAT in manifests/ beside its summary (see run_summary_path)."""
-    return manifests_dir() / f"{run_name}__config.json"
+    """A run's resolved config, exactly as trained."""
+    return run_file(run_name, "config")
 
 
-def figures_dir(notebook: str | None = None) -> Path:
-    """Generated figures. One folder per notebook, plus a shared CAPTIONS.md."""
-    root = outputs_dir() / "figures"
-    return root / notebook if notebook else root
+def run_checkpoints_dir(run_name: str) -> Path:
+    """OUR checkpoints of one arm. BIG: project storage, inside the arm's experiment."""
+    return experiment_dir(experiment_of(run_name), big=True) / "checkpoints" / run_name
+
+
+def benchmark_dir(owner: int | str, part: str | None = None) -> Path:
+    """`<owner>/benchmark/` or one of its parts: `pd`, `lgd`, `ood`, `receipts`.
+
+    The part is checked: a typo would silently create a new folder and the scores would go
+    missing instead of raising.
+    """
+    root = owner_dir(owner) / "benchmark"
+    if part is None:
+        return root
+    if part not in BENCHMARK_PARTS:
+        raise ValueError(f"benchmark part must be one of {BENCHMARK_PARTS}, got {part!r}")
+    return root / part
+
+
+def benchmark_dir_for(tag: str, part: str) -> Path:
+    """Where the benchmark files of one tag go — the tag names its owner."""
+    return benchmark_dir(owner_of(tag), part)
+
+
+def chapter_of(notebook: str) -> int | None:
+    """`1.3_pd_results` -> 1. None for a name without a chapter number."""
+    m = re.match(r"^(\d+)\.", notebook)
+    return int(m.group(1)) if m else None
+
+
+def figures_dir(notebook: str) -> Path:
+    """One notebook's figures, inside the chapter it belongs to.
+
+    Chapter 0 (and a name without a chapter) goes to `general/figures/`; chapter N to
+    `experiment_N/figures/`.
+    """
+    chapter = chapter_of(notebook)
+    owner = GENERAL if not chapter else chapter
+    return owner_dir(owner) / "figures" / notebook
+
+
+def all_figure_dirs() -> list[Path]:
+    """Every per-notebook figure folder that exists, in notebook order."""
+    roots = [general_dir()] + [experiment_dir(n) for n in EXPERIMENTS]
+    found = [d for r in roots if (r / "figures").is_dir()
+             for d in (r / "figures").iterdir() if d.is_dir()]
+    return sorted(found, key=lambda d: d.name)
 
 
 def all_results_path() -> Path:
@@ -194,7 +362,7 @@ def all_results_path() -> Path:
 
 def captions_path() -> Path:
     """The single shared captions file for every generated figure."""
-    return figures_dir() / "CAPTIONS.md"
+    return outputs_dir() / "CAPTIONS.md"
 
 
 def repo_dir() -> Path:
@@ -260,7 +428,7 @@ def ensure(path: Path) -> Path:
     """`mkdir -p` the directory and return the path unchanged.
 
     Given a file path (anything with a suffix) it creates the *parent*, so a caller can
-    write `ensure(results_dir("lgd") / "scores.csv").write_text(...)` in one line.
+    write `ensure(run_file(name, "summary")).write_text(...)` in one line.
     """
     target = path.parent if path.suffix else path
     target.mkdir(parents=True, exist_ok=True)
@@ -366,69 +534,30 @@ def processed_write_dir(task: str, dataset: str) -> Path:
 
 
 def prior_cache_root() -> Path:
-    """The parent of every pre-generated prior pool. BIG -> staging.
+    """The parent of every pre-generated prior pool. BIG -> the big output tree.
 
     Separate from `prior_cache_dir` so the cleaner can name the whole tree without
     inventing a pool name.
     """
-    if _use_staging():
-        return _under(staging_root(), "prior_cache")
-    return REPO_ROOT / "prior_cache"
+    return big_outputs_dir() / "prior_cache"
 
 
 def prior_cache_dir(name: str) -> Path:
-    """Where one pre-generated pool of synthetic datasets lives. BIG -> staging.
+    """Where one pre-generated pool of synthetic datasets lives. BIG.
 
-    Pools are the largest thing this project writes (40,000 datasets per variant),
-    so `$CREDITICL_STAGING_ROOT` is honoured off-VSC too — otherwise they land
-    inside the repo, which is exactly where they must not be.
+    Pools are the largest thing this project can write (40,000 datasets per variant), so
+    `$CREDITICL_STAGING_ROOT` is honoured off-VSC too — otherwise they land inside the repo.
     """
     return prior_cache_root() / name
 
 
-# ---------------------------------------------------------------------------
-# Results
-#
-# Layout: results/<task>/<pipeline>/ — task first, then pipeline.
-# `logs/` is for information only and never holds results; that separation is
-# deliberate so a results file is always something you meant to keep.
-# ---------------------------------------------------------------------------
+def ood_cache_dir() -> Path:
+    """The downloaded out-of-domain (OpenML) tables. INPUT data, beside the credit datasets.
 
-PIPELINES = ("data", "prior", "training", "eval")
-
-
-#: Extra results namespaces that are not modelling tasks. `ood` holds the
-#: out-of-domain (non-credit) scores, which must never be mixed into the credit results
-#: — the two answer different questions and a mean across both is meaningless.
-RESULT_NAMESPACES = TASKS + ("ood",)
-
-
-def results_dir(*parts: str) -> Path:
-    """`results/`, `results/<namespace>/` or `results/<namespace>/<pipeline>/`.
-
-    THE ONE PART OF `output/` ON PROJECT STORAGE. Per-row predictions across every
-    dataset, arm and seed reach gigabytes; leaving them on `$VSC_DATA`'s 75 GiB would
-    fill it and then every job that writes a log fails too. Everything else in
-    `output/` is small and stays on the backed-up, browsable tier.
-
-    Variadic to match the template, but the first two components are still checked
-    against a whitelist: a typo'd namespace silently creates `results/lgd_/` and the
-    scores go missing rather than erroring, which is far more expensive than a raise.
-    `ood` is a namespace alongside the real tasks so out-of-domain scores never land
-    next to the credit numbers — a mean across both would be meaningless.
+    Never cleaned: compute nodes have no outbound internet, so it can only be rebuilt from a
+    login node with `python -m src.utils.fetch_ood`.
     """
-    if parts:
-        namespace = parts[0].lower()
-        if namespace not in RESULT_NAMESPACES:
-            raise ValueError(
-                f"results namespace must be one of {RESULT_NAMESPACES}, got {parts[0]!r}"
-            )
-        if len(parts) > 1 and parts[1] not in PIPELINES:
-            raise ValueError(f"pipeline must be one of {PIPELINES}, got {parts[1]!r}")
-        parts = (namespace, *parts[1:])
-    if _use_staging():
-        return _under(staging_root(), "output", "results", *parts)
-    return outputs_dir().joinpath("results", *parts)
+    return datasets_dir() / "ood"
 
 
 def resolve_writable(preferred: Path, fallback: Path | None = None) -> Path:
@@ -474,6 +603,7 @@ def describe() -> dict[str, str]:
         "staging_root": str(staging_root()),
         "data_root": str(data_root()),
         "datasets_dir": str(datasets_dir()),
-        "checkpoints_dir": str(checkpoints_dir()),
+        "pretrained_dir": str(pretrained_dir()),
         "outputs_dir": str(outputs_dir()),
+        "big_outputs_dir": str(big_outputs_dir()),
     }

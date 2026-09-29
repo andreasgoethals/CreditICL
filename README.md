@@ -82,8 +82,9 @@ checkpoint plus a shared reference column (released TabICLv2, TabPFN-3, CatBoost
 
 ## The four code pipelines
 
-Each lives in `src/`, is driven by a thin runnable in `scripts/`, and writes under `output/` (small,
-backed-up) or project storage (large, regenerable) — the code picks the tier automatically.
+Each lives in `src/`, is driven by a thin runnable in `scripts/`, and writes under `output_CreditICL/`
+(one folder per experiment; small files on the backed-up tier, checkpoints on project storage under
+the same layout) — the code picks the tier automatically (`output_CreditICL/README.md`).
 
 | # | pipeline | code | run it with | produces |
 |---|---|---|---|---|
@@ -135,7 +136,7 @@ CreditICL/
 │   ├── CHANGELOG.md             one chapter per date
 │   └── TEMPLATE.md              the layout this project started from
 ├── notebooks/         0. General · 1. Experiment 1 · 2. Experiment 2 — one story (see its README)
-├── output/            everything generated: logs/ manifests/ figures/ results/  [mostly gitignored]
+├── output_CreditICL/  everything generated: general/ reference/ experiment_0..3/  [mostly gitignored]
 ├── scripts/           every runnable; calls into src/ · slurm/ holds the SLURM jobs
 ├── src/               data/ prior/ train/ eval/ models/ visualize/ utils/
 └── tfm-library/       PINNED SUBMODULE — READ-ONLY (one exception)
@@ -216,8 +217,9 @@ all in **[docs/VSC.md](docs/VSC.md)**.
 - **Cite code dumps by symbol name, never line number** — the dumps are refreshed and lines drift.
 - **Distinguish evaluated from supported.** A mechanism existing in a paper's code is not that paper
   having measured it; several of this project's premises turned on exactly this.
-- **`output/` is generated; a handful of tracked files in it are the exception** (`All_Results.md`,
-  `figures/CAPTIONS.md`, the `.gitkeep`s) — never sweep them into a deletion.
+- **`output_CreditICL/` is generated; a handful of tracked files in it are the exception**
+  (`README.md`, `All_Results.md`, `CAPTIONS.md`, each figure folder's `_figures.json`) — never sweep them
+  into a deletion.
 - **Never write project content into `tfm-library/`** (the one permitted file is
   `tfm-library/PROJECT_SPECIFIC.md`).
 

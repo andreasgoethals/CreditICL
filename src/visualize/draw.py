@@ -11,6 +11,13 @@ A request smaller than `MIN_PARALLEL` stays in this process, exactly as before: 
 ~10 s of imports, which only pays for itself on a large draw — and the tests' small draws keep
 their single-process results.
 
+THE CREDIT READING (`credit_reading=True`, the default). Training gives a credit table the view the
+model gets at prediction: PD labels of random identity (half the tables say 0 = default) and an LGD
+target standardised on the context. The figures read a table as a credit table instead: a PD
+credit table's labels are swapped back so 1 = default, and an LGD credit target is drawn on its
+[0, 1] loss scale (the same values up to an affine map, so the atoms and the shape are unchanged).
+TabICL's own tables are left as they are. `False` draws exactly the training view.
+
 Worker processes are SPAWNED. Notebooks run in a Jupyter kernel — interactively or through
 `run_notebooks` — whose main module is not a script, so a worker re-runs nothing; a plain script
 calling `draw` needs the usual `if __name__ == "__main__":` guard. Workers run torch on one
@@ -61,12 +68,41 @@ def _one_thread() -> None:
     torch.set_num_threads(1)
 
 
-def _draw_chunk(task: str, prior: dict, n: int, seed: int, worker_id: int):
+def minority_share(y: Any) -> float:
+    """The rarer class's share of a binary table — its default rate. Both priors give class labels
+    a random identity (as upstream's `permute_labels` does), so "share of label 1" is the default
+    rate only half the time; the minority share is it always, as for every real PD table."""
+    import numpy as np
+
+    p = float((np.asarray(y, dtype=float) > 0.5).mean())
+    return min(p, 1.0 - p)
+
+
+def credit_reading(task_obj: Any) -> Any:
+    """A PD credit table with its labels swapped back so 1 = default (in place; see the module
+    docstring). Every other table is returned unchanged."""
+    if task_obj.meta.get("labels_swapped"):
+        task_obj.y = 1.0 - task_obj.y
+        task_obj.meta["labels_swapped"] = False
+        task_obj.meta["labels_swapped_back_for_plots"] = True
+    return task_obj
+
+
+def _draw_chunk(task: str, prior: dict, n: int, seed: int, worker_id: int, reading: bool = True):
+    import copy
+
     from src.prior.generator import TaskGenerator
     from src.prior.rng import PriorRNG
 
+    if reading and task == "lgd":
+        prior = copy.deepcopy(prior)
+        prior.setdefault("credit", {}).setdefault("target", {})["target_scaling"] = "none"
     gen = TaskGenerator(prior, task, PriorRNG(seed, worker_id=worker_id))
-    tasks = [gen.sample() for _ in range(n)]
+    # PD figures compare default rates, so the control's tables are drawn BINARY here, like every
+    # credit table; in training upstream's prior gives them 2-10 classes (`max_classes`).
+    tasks = [gen.sample(num_classes=2 if task == "pd" else None) for _ in range(n)]
+    if reading:
+        tasks = [credit_reading(t) for t in tasks]
     return tasks, gen.filter.stats, gen.invalid_candidates, gen.filter_fallbacks
 
 
@@ -87,18 +123,18 @@ def _merge_filter(parts: list[tuple]) -> dict[str, Any]:
     return {**total.summary(), "invalid_candidates": invalid, "filter_fallbacks": fallbacks}
 
 
-def draw(task: str, prior: dict, n: int, seed: int = 0,
-         workers: int | None = None) -> tuple[list[Any], dict[str, Any]]:
+def draw(task: str, prior: dict, n: int, seed: int = 0, workers: int | None = None,
+         credit_reading: bool = True) -> tuple[list[Any], dict[str, Any]]:
     """`n` tasks from `TaskGenerator(prior, task)`, and the draw's filter summary."""
     workers = min(workers or default_workers(), max(1, n))
     if workers <= 1 or n < MIN_PARALLEL:
-        parts = [_draw_chunk(task, prior, n, seed, 0)]
+        parts = [_draw_chunk(task, prior, n, seed, 0, credit_reading)]
     else:
         # About four chunks per worker, so a worker that finishes early takes the next chunk
         # rather than idling while the slowest one ends (a task's cost varies with its graph).
         size = max(4, -(-n // (4 * workers)))
         sizes = [min(size, n - start) for start in range(0, n, size)]
-        futures = [_pool(workers).submit(_draw_chunk, task, prior, s, seed, k)
+        futures = [_pool(workers).submit(_draw_chunk, task, prior, s, seed, k, credit_reading)
                    for k, s in enumerate(sizes)]
         parts = [f.result() for f in futures]
     return [t for part in parts for t in part[0]], _merge_filter(parts)

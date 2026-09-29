@@ -8,6 +8,8 @@ inverted. Both would look like a real finding in the loss curve.
 
 from __future__ import annotations
 
+import copy
+
 import pytest
 
 pytest.importorskip("torch", reason="torch not installed — run: pip install -e '.[dev]'")
@@ -279,10 +281,11 @@ def test_batches_are_dense_and_consistent(lgd_cfg, pd_cfg, task):
     ds = PriorBatchDataset(cfg["prior"], task, batch_size=3, seed=0)
     it = iter(ds)
     for _ in range(4):
-        X, y, train_size = next(it)
+        X, y, d, seq_lens, train_sizes = next(it)   # upstream's batch format
         assert X.shape[0] == 3 and y.shape[0] == 3
-        assert X.shape[1] == y.shape[1]
-        assert 0 < train_size < X.shape[1]
+        assert X.shape[1] == y.shape[1] == int(seq_lens.max())
+        assert ((0 < train_sizes) & (train_sizes < seq_lens)).all()
+        assert (d >= 1).all() and int(d.max()) <= X.shape[2]
         assert torch.isfinite(X).all() and torch.isfinite(y).all()
 
 
@@ -294,18 +297,20 @@ def test_batch_rows_are_never_ragged(pd_cfg):
     ds = PriorBatchDataset(pd_cfg["prior"], "pd", batch_size=4, seed=0)
     it = iter(ds)
     for _ in range(6):
-        X, y, _ = next(it)
+        X, y, *_ = next(it)
         assert X.shape[:2] == y.shape[:2]
 
 
 def test_pd_batches_keep_both_classes_in_context(pd_cfg):
-    """In-context learning needs both classes on the context side of the split."""
+    """Upstream's `cls_sanity_check`: the context and the query of every classification table
+    hold the SAME set of classes, and at least two."""
     ds = PriorBatchDataset(pd_cfg["prior"], "pd", batch_size=4, seed=0)
     it = iter(ds)
     for _ in range(5):
-        _, y, train_size = next(it)
-        for row in y:
-            assert len(row[:train_size].unique()) >= 1  # at minimum, not empty
+        _, y, _, seq_lens, train_sizes = next(it)
+        for row, n, ts in zip(y, seq_lens.tolist(), train_sizes.tolist()):
+            ctx, qry = set(row[:ts].tolist()), set(row[ts:n].tolist())
+            assert ctx == qry and len(ctx) >= 2
 
 
 @pytest.mark.parametrize("track", ["LGD", "PD"])
@@ -325,15 +330,19 @@ def test_informative_missingness_fires_on_both_tracks(track):
 
     root = Path(__file__).resolve().parents[1]
     arm = expand_with_seeds(load(root / "config" / f"Exp1_{track}.yaml"))[3]
-    prior = dict(arm["prior"])
+    prior = copy.deepcopy(arm["prior"])
     prior["credit_fraction"] = 1.0
+    # Every table, for this check; the configs give gaps to a `missing_prob` share of them.
+    prior["credit"]["missingness"]["missing_prob"] = 1.0
     gen = TaskGenerator(prior, task=track.lower(), rng=PriorRNG(0))
 
     assert gen.credit_missing_cfg, f"{track}: credit.missingness must be read"
     for _ in range(3):
-        meta = gen._sample_candidate(shape=(512, 20)).meta
+        meta = gen.sample(shape=(512, 20)).meta
         assert meta.get("missing_cols", 0) > 0, f"{track}: missingness never applied"
-        assert meta.get("missing_indicators", 0) > 0, f"{track}: no was-missing flags added"
+        # NO indicator columns since 28-09-2026: TabICL's prediction path mean-imputes and adds
+        # none, so a flag seen in training would be a column that never exists on real data.
+        assert meta.get("missing_indicators", 0) == 0, f"{track}: indicator columns added"
 
 
 @pytest.mark.parametrize("track", ["LGD", "PD"])
@@ -374,7 +383,7 @@ def test_the_control_arm_runs_upstreams_own_class_not_a_transcription():
     assert prior["credit_fraction"] == 0.0, "arm 0 is the control"
     gen = TaskGenerator(prior, task="lgd", rng=PriorRNG(0))
     assert gen.base_impl == "upstream"
-    assert gen._sample_candidate(shape=(256, 12)).meta["base_impl"] == "upstream.GraphSCM"
+    assert gen.sample(shape=(256, 12)).meta["base_impl"] == "upstream.GraphSCM"
 
 
 @pytest.mark.parametrize("track", ["LGD", "PD"])
@@ -392,17 +401,17 @@ def test_the_credit_arms_share_the_control_s_base_distribution(track):
     prior = dict(expand_with_seeds(load(root / "config" / f"Exp1_{track}.yaml"))[3]["prior"])
     prior["credit_fraction"] = 1.0
     gen = TaskGenerator(prior, task=track.lower(), rng=PriorRNG(0))
-    task = gen._sample_candidate(shape=(256, 12))
+    task = gen.sample(shape=(256, 12))
     assert task.source == "credit"
     assert task.meta["base_impl"] == "upstream.graph_lib"
     # And both arms must come out the same width, or the padding itself leaks which prior a
     # dataset came from.
     control = dict(prior)
     control["credit_fraction"] = 0.0
-    other = TaskGenerator(control, task=track.lower(), rng=PriorRNG(1))._sample_candidate(
-        shape=(256, 12)
-    )
+    other = TaskGenerator(control, task=track.lower(), rng=PriorRNG(1)).sample(shape=(256, 12))
     assert task.X.shape[1] == other.X.shape[1] == prior["max_features"]
+    # ...and the same number of REAL columns: the noise columns live inside the feature budget.
+    assert task.meta["d"] <= 12 and other.meta["d"] <= 12
 
 
 def test_upstream_absence_is_a_loud_error_not_a_silent_fallback():
@@ -417,3 +426,20 @@ def test_upstream_absence_is_a_loud_error_not_a_silent_fallback():
 
         _pytest.skip("upstream is installed here; the error path is covered by the message")
     assert "git+https://github.com/soda-inria/tabicl.git" in why
+
+
+def test_a_skewed_boundary_mass_reaches_the_largest_real_atom_with_a_small_median():
+    """Real total-loss shares run 0.3 %, 4 %, 6 %, 8 %, 12 %, 16 %, 52 % (heloc): a uniform draw wide
+    enough for heloc puts the median far too high; `U ** power` keeps most atoms small."""
+    import numpy as np
+
+    from src.prior.targets.lgd import sample_lgd_shape
+
+    rng = PriorRNG(0)
+    cfg = {"atom_prob_0": 0.0, "atom_prob_1": 1.0, "boundary_mass_1_range": [0.0, 0.6],
+           "boundary_mass_1_power": 3.5, "max_total_boundary_mass": 1.0}
+    p1 = np.array([sample_lgd_shape(rng, cfg)["p1"] for _ in range(2000)])
+    assert p1.max() > 0.52, "still reaches heloc's 52 %"
+    assert 0.04 < np.median(p1) < 0.07  # 0.6 * 0.5 ** 3.5 = 0.053
+    uniform = np.array([sample_lgd_shape(rng, {**cfg, "boundary_mass_1_power": 1.0})["p1"] for _ in range(2000)])
+    assert np.median(uniform) > 0.25

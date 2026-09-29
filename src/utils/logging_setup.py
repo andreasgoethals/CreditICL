@@ -255,10 +255,10 @@ def _storage_state() -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         return {"paths": f"unavailable ({exc})"}
     for name, fn in (
-        ("outputs", paths.outputs_dir), ("logs", paths.logs_dir),
-        ("manifests", paths.manifests_dir), ("results", paths.results_dir),
-        ("checkpoints", paths.checkpoints_dir), ("datasets", paths.datasets_dir),
-        ("prior_cache", paths.prior_cache_root), ("staging", paths.staging_root),
+        ("outputs", paths.outputs_dir), ("big_outputs", paths.big_outputs_dir),
+        ("pretrained", paths.pretrained_dir), ("datasets", paths.datasets_dir),
+        ("ood_cache", paths.ood_cache_dir), ("prior_cache", paths.prior_cache_root),
+        ("staging", paths.staging_root),
     ):
         try:
             path = Path(fn())

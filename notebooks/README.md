@@ -1,7 +1,7 @@
 # The notebooks, as one story
 
 Eleven notebooks in three chapters, read in order. Each chapter is a folder, and each notebook's number
-starts with its chapter's, so the file list, `output/All_Results.md` and `output/figures/CAPTIONS.md`
+starts with its chapter's, so the file list, `output_CreditICL/All_Results.md` and `output_CreditICL/CAPTIONS.md`
 all read in the same order as the story. Every notebook opens with a line linking the one before and the
 one after.
 
@@ -40,7 +40,7 @@ the notebook's opening says so.
 - **The results notebooks** go **A · Which configuration does development select?** → **B · How does
   it do on the holdout?** → **C · Where does it hold?** → **D · Where the field sits**.
 
-Every notebook ends by printing its findings in the same order, which is what `output/All_Results.md`
+Every notebook ends by printing its findings in the same order, which is what `output_CreditICL/All_Results.md`
 collects.
 
 ## The one rule the whole story rests on

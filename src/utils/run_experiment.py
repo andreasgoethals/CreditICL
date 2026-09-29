@@ -110,16 +110,22 @@ def queued_job_names() -> set[str]:
     raise RuntimeError("Cannot read squeue across clusters; submission is blocked")
 
 
-def _train_stage(exp: int, track: str, queued: set[str], single_cluster: bool) -> Stage:
+def _config(exp: int, track: str, variant: str | None) -> Path:
+    """`config/Exp<N>_<TRACK>[_<variant>].yaml` — `variant="search"` is Experiment 2's stage A."""
+    return ROOT / "config" / f"Exp{exp}_{track.upper()}{'_' + variant if variant else ''}.yaml"
+
+
+def _train_stage(exp: int, track: str, queued: set[str], single_cluster: bool,
+                 variant: str | None = None) -> Stage:
     from src.utils.sweep_status import DONE, arm_states
 
-    cfg = ROOT / "config" / f"Exp{exp}_{track.upper()}.yaml"
+    cfg = _config(exp, track, variant)
     states = arm_states(cfg)
-    job_name = f"crediticl-exp{exp}-{track}"
+    job_name = f"crediticl-exp{exp}{variant or ''}-{track}"
     script = f"scripts/slurm/pretrain_{track}.slurm"
 
     stage = Stage(
-        name=f"exp{exp}-{track}-train", exp=exp, track=track, kind="train",
+        name=f"exp{exp}{variant or ''}-{track}-train", exp=exp, track=track, kind="train",
         total=len(states), done=sum(1 for s in states if s.state == DONE),
         queued=job_name in queued or (exp == 1 and f"crediticl-{track}" in queued),
     )
@@ -148,36 +154,36 @@ def _train_stage(exp: int, track: str, queued: set[str], single_cluster: bool) -
             ["sbatch", "--clusters=mindwell", f"--array={spec}%8", script]
         )
     for cmd in stage.commands:
-        cmd[1:1] = [f"--job-name={job_name}", f"--export=ALL,EXP={exp}"]
+        cmd[1:1] = [f"--job-name={job_name}", f"--export=ALL,EXP={exp},VARIANT={variant or ''}"]
     return stage
 
 
-def _benchmark_stage(exp: int, track: str, queued: set[str], train: Stage) -> Stage:
-    from src.utils.config import expand_with_seeds, load
-
-    cfg = ROOT / "config" / f"Exp{exp}_{track.upper()}.yaml"
-    n_arms = len(expand_with_seeds(load(cfg, allow_placeholders=True)))
-    from src.eval.benchmark_status import complete
-    missing = [i for i in range(n_arms + 1) if not complete(exp, track, i)]
-    done = n_arms + 1 - len(missing)
+def _benchmark_stage(exp: int, track: str, queued: set[str], train: Stage,
+                     variant: str | None = None) -> Stage:
+    # One slot per (arm, saved checkpoint) plus one per reference model: `benchmark_status`.
+    from src.eval.benchmark_status import complete, n_slots
+    total = n_slots(exp, track, variant=variant)
+    missing = [i for i in range(total) if not complete(exp, track, i, variant=variant)]
+    done = total - len(missing)
+    job_name = f"crediticl-exp{exp}{variant or ''}-{track}-bench"
 
     stage = Stage(
-        name=f"exp{exp}-{track}-benchmark", exp=exp, track=track, kind="benchmark",
-        total=n_arms + 1, done=done,
-        queued=f"crediticl-exp{exp}-{track}-bench" in queued or "crediticl-bench" in queued,
+        name=f"exp{exp}{variant or ''}-{track}-benchmark", exp=exp, track=track, kind="benchmark",
+        total=total, done=done,
+        queued=job_name in queued or "crediticl-bench" in queued,
         blocked_by=None if train.complete else train.name,
     )
     if stage.complete or stage.queued or stage.blocked_by:
         return stage
     stage.commands.append([
-        "sbatch", "--clusters=mindwell", f"--export=ALL,EXP={exp},TRACK={track}",
-        f"--job-name=crediticl-exp{exp}-{track}-bench",
+        "sbatch", "--clusters=mindwell", f"--export=ALL,EXP={exp},TRACK={track},VARIANT={variant or ''}",
+        f"--job-name={job_name}",
         f"--array={','.join(map(str, missing))}%8", "scripts/slurm/benchmark.slurm",
     ])
     return stage
 
 
-def unconfigured_tracks(exp: int, tracks: list[str]) -> list[str]:
+def unconfigured_tracks(exp: int, tracks: list[str], variant: str | None = None) -> list[str]:
     """Tracks whose config still holds `FILL_FROM_EXP1`. Empty for a runnable experiment.
 
     Exp2 and Exp3 ship as templates: the prior mix and (for Exp3) the winning arm are blank
@@ -188,13 +194,14 @@ def unconfigured_tracks(exp: int, tracks: list[str]) -> list[str]:
 
     blocked = []
     for track in tracks:
-        cfg = load_yaml(ROOT / "config" / f"Exp{exp}_{track.upper()}.yaml")
+        cfg = load_yaml(_config(exp, track, variant))
         if find_placeholders(cfg):
             blocked.append(track)
     return blocked
 
 
-def plan(exp: int, tracks: list[str], single_cluster: bool = False) -> list[Stage]:
+def plan(exp: int, tracks: list[str], single_cluster: bool = False,
+         variant: str | None = None) -> list[Stage]:
     """Every stage of ONE experiment, in dependency order, state read off the filesystem."""
     queue_error = None
     try:
@@ -203,9 +210,9 @@ def plan(exp: int, tracks: list[str], single_cluster: bool = False) -> list[Stag
         queued, queue_error = set(), str(exc)
     stages: list[Stage] = []
     for track in tracks:
-        train = _train_stage(exp, track, queued, single_cluster)
+        train = _train_stage(exp, track, queued, single_cluster, variant)
         stages.append(train)
-        stages.append(_benchmark_stage(exp, track, queued, train))
+        stages.append(_benchmark_stage(exp, track, queued, train, variant))
     if queue_error:
         for stage in stages:
             if not stage.complete:
@@ -223,9 +230,10 @@ def render(stages: list[Stage], exp: int, blocked_tracks: list[str] | None = Non
     ]
     if blocked_tracks:
         lines += [
-            f"  EXPERIMENT {exp} IS NOT CONFIGURED YET: {', '.join(blocked_tracks)} still hold",
-            "  FILL_FROM_EXP1. Finish Exp1, choose the winning prior, and fill it into",
-            f"  config/Exp{exp}_*.yaml before running this. Nothing will be submitted.",
+            f"  EXPERIMENT {exp} IS NOT CONFIGURED YET: {', '.join(blocked_tracks)} still hold a",
+            "  placeholder (FILL_FROM_EXP1 / FILL_FROM_SEARCH). Run what decides it (Exp1, or",
+            "  Exp2's search: python -m src.eval.exp2_search), fill the values into",
+            f"  config/Exp{exp}_*.yaml, then run this again. Nothing will be submitted.",
             "=" * 78,
         ]
         return "\n".join(lines)
@@ -266,16 +274,20 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--phase", choices=("all", "train", "benchmark"), default="all")
     ap.add_argument("--single-cluster", action="store_true",
                     help="keep everything on Mindwell instead of splitting LGD across two")
+    ap.add_argument("--variant", default=None, choices=("search",),
+                    help="`search`: Experiment 2's stage A (config/Exp2_<TRACK>_search.yaml)")
     args = ap.parse_args(argv)
+    if args.variant and args.exp != 2:
+        ap.error("--variant search exists for Experiment 2 only")
 
-    blocked = unconfigured_tracks(args.exp, args.track)
+    blocked = unconfigured_tracks(args.exp, args.track, args.variant)
     if blocked:
         # Refuse a template. Print the plan header with the reason and stop — no filesystem
         # scan, no submission.
         print(render([], args.exp, blocked_tracks=blocked))
         return 1
 
-    stages = plan(args.exp, args.track, args.single_cluster)
+    stages = plan(args.exp, args.track, args.single_cluster, args.variant)
     if args.phase != "all":
         stages = [s for s in stages if s.kind == args.phase]
     print(render(stages, args.exp))

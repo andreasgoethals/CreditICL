@@ -58,7 +58,7 @@ from typing import Any
 import numpy as np
 
 from src.utils.logging_setup import get_logger
-from src.utils.paths import prior_cache_dir
+from src.utils.paths import ood_cache_dir
 
 #: Suites resolved by NAME through the OpenML API — never by hard-coded DATASET id.
 #: A FLAT list, and the task's OWN type decides which bucket it lands in.
@@ -215,8 +215,8 @@ def pd_to_float(series: Any) -> np.ndarray | None:
 
 
 def ood_root() -> Path:
-    """Where the cached OOD tables live. BIG-ish -> the same tier as prior pools."""
-    return prior_cache_dir("ood").parent / "ood"
+    """Where the cached OOD tables live: `data/ood/`, beside the credit datasets (input data)."""
+    return ood_cache_dir()
 
 
 def manifest_path() -> Path:

@@ -98,9 +98,9 @@ core.log
 wandb/
 slurm-*.out
 slurm-*.err
-# Run logs now live under the output tree (results/_local/logs locally,
-# $VSC_DATA/CreditICL/output/logs on the cluster), so everything a run writes is in
-# one place. The old top-level logs/ stays ignored so a stray write cannot be committed.
+# Job logs live in the output tree (output_CreditICL/<experiment>/logs/), so everything a run
+# writes is in one place. The old top-level logs/ stays ignored so a stray write cannot be
+# committed.
 
 # ---------------------------------------------------------------------------
 # Editor / OS
@@ -119,31 +119,35 @@ desktop.ini
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# output/ — THE single root for everything the code generates.
+# output_CreditICL/ — THE single root for everything the code generates (src/utils/paths.py).
 #
-# Committed:  CAPTIONS.md, All_Results.md and each notebook's _figures.json — the
-#             readable record of a run, worth having in git history.
-# Ignored:    PDF figures (regenerated), logs, per-run metrics, manifests, results
-#             (downloaded from the cluster's project storage: ~550 CSVs per benchmark),
-#             and any large array.
+# Committed:  README.md (what lives where), CAPTIONS.md, All_Results.md and each notebook's
+#             _figures.json — the readable record of a run, worth having in git history.
+# Ignored:    PDF figures (regenerated), job logs, run folders, benchmark scores (downloaded
+#             from the cluster), checkpoints, prior pools, and any large array.
 # ---------------------------------------------------------------------------
-output/**/*.pdf
-output/logs/*
-!output/logs/.gitkeep
-output/manifests/*
-!output/manifests/.gitkeep
-output/results/*
-!output/results/.gitkeep
-output/**/*.npy
-output/**/*.npz
-output/**/*.parquet
-output/**/*.pkl
-output/**/*.jsonl
-output/**/_stdout.txt
+output_CreditICL/**/*.pdf
+output_CreditICL/*/logs/
+output_CreditICL/*/runs/
+output_CreditICL/*/benchmark/
+output_CreditICL/*/checkpoints/
+output_CreditICL/*/report/
+output_CreditICL/prior_cache/
+output_CreditICL/general/data/
+output_CreditICL/general/prior/
+output_CreditICL/**/*.ckpt
+output_CreditICL/**/*.npy
+output_CreditICL/**/*.npz
+output_CreditICL/**/*.parquet
+output_CreditICL/**/*.pkl
+output_CreditICL/**/*.jsonl
+output_CreditICL/**/_stdout.txt
 
 # Superseded top-level output locations, kept ignored so a stray write cannot be
 # committed. LEADING SLASH matters: a bare `figures/` matches at any depth and would
-# also swallow `output/figures/`, which is the one place figures now belong.
+# also swallow the figure folders inside output_CreditICL/. `/output/` is the layout before
+# 29-09-2026 (one flat tree for every experiment).
+/output/
 /logs/
 /res/
 /results/

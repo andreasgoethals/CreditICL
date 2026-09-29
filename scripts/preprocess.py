@@ -25,7 +25,7 @@ if str(ROOT) not in sys.path:
 from src.data.discovery import describe_availability  # noqa: E402
 from src.data.pipeline import cache_report, ensure_processed  # noqa: E402
 from src.utils.logging_setup import log_environment, log_section, setup_logging  # noqa: E402
-from src.utils.paths import describe, logs_dir, results_dir  # noqa: E402
+from src.utils.paths import describe, general_dir, logs_dir  # noqa: E402
 
 
 def main() -> int:
@@ -49,7 +49,7 @@ def main() -> int:
         result = ensure_processed(task, datasets, force=args.force)
         failures += sum(v is None for v in result.values())
 
-        out = results_dir(task, "data")
+        out = general_dir() / "data" / task
         out.mkdir(parents=True, exist_ok=True)
         report = cache_report(task)
         path = out / "processed_summary.csv"

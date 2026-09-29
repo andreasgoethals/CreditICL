@@ -33,11 +33,18 @@ def sample_tasks(
     credit_fraction: float | None = None,
     seed: int = 0,
     grid_index: int = 0,
+    loss_scale: bool = True,
 ) -> tuple[list[Any], dict[str, Any]]:
-    """Draw `n` tasks exactly as training would, plus a summary dict.
+    """Draw `n` tasks as training would, plus a summary dict.
 
     `credit_fraction=None` uses whatever the config says. Override it to compare
     the original prior (0.0) against ours (1.0) side by side.
+
+    `loss_scale=True` (the default) is the credit reading (`src/visualize/draw.py`): an LGD credit
+    target on its [0, 1] loss scale, where it can be read against a real LGD target, and PD credit
+    labels with 1 = default. Training sees the same values standardised on the context and labels of
+    random identity — an affine map and a relabelling, so the shape, the atoms and the default rate
+    are the same. `False` draws exactly the training view.
     """
     from src.visualize.draw import draw
 
@@ -47,7 +54,7 @@ def sample_tasks(
         cfg["prior"]["credit_fraction"] = credit_fraction
 
     # In parallel worker processes for a large draw (src/visualize/draw.py).
-    tasks, filter_summary = draw(task, cfg["prior"], n, seed)
+    tasks, filter_summary = draw(task, cfg["prior"], n, seed, credit_reading=loss_scale)
 
     info = {
         "config": config_path,

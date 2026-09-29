@@ -1,6 +1,6 @@
 """Put two `benchmark_gpu.py` JSON files side by side and say which layer differs.
 
-    python -m src.utils.compare_gpubench output/logs/gpubench_*.json
+    python -m src.utils.compare_gpubench output_CreditICL/general/logs/gpubench_*.json
 
 The comparison is the measurement. One card's numbers alone cannot say whether 0.5 steps/s is
 bad — only that the same work ran 12x faster elsewhere can, which is why the benchmark is
@@ -70,7 +70,7 @@ def main(argv: list[str]) -> int:
             "    sacct --clusters=mindwell -u $USER --starttime=today \\\n"
             "        --format=JobID%18,JobName%22,State,ExitCode,Elapsed\n"
             "and if a job has finished but wrote no JSON, read its log:\n"
-            "    ls -t $VSC_DATA/CreditICL/output/logs/gpubench_*.out | head -2",
+            "    ls -t $VSC_DATA/CreditICL/output_CreditICL/general/logs/gpubench_*.out | head -2",
             file=sys.stderr,
         )
         return 2

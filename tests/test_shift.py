@@ -27,7 +27,8 @@ import torch
 from src.prior.rng import PriorRNG
 from src.prior.shift import SHIFT_KINDS, apply_shift
 
-CFG = {"shift_prob": 1.0, "prior_prob_range": [0.15, 0.45]}
+CFG = {"shift_prob": 1.0, "prior_prob_ratio_range": [1.25, 4.0]}
+PRIOR_PROB = {**CFG, "kind_weights": {"prior_prob": 1.0}}
 
 
 @pytest.fixture
@@ -118,16 +119,64 @@ def test_covariate_shift_makes_the_query_range_unseen(table):
 
 
 def test_prior_prob_shift_moves_the_base_rate(table):
-    """The dangerous shift: a model anchoring on the context's rate is miscalibrated."""
+    """The dangerous shift: a model anchoring on the context's rate is miscalibrated. The query's
+    rate of high rows is the context's times the drawn ratio, up or down."""
     X, y = table
-    weights = {"prior_prob": 1.0, "cohort": 0.0, "covariate": 0.0}
-    for seed in range(10):
-        _, _, meta = apply_shift(PriorRNG(seed), X, y, {**CFG, "kind_weights": weights})
+    ratios = []
+    for seed in range(40):
+        _, _, meta = apply_shift(PriorRNG(seed), X, y, PRIOR_PROB)
+        assert meta["shift"] == "prior_prob"
+        realised = meta["query_high_rate"] / meta["context_high_rate"]
+        if meta["query_high_rate"] < 0.99:  # a query that is nearly all high rows caps the ratio
+            assert realised == pytest.approx(meta["rate_ratio"], rel=0.1)
+        assert 1 / 4.4 <= realised <= 4.4 and not 1 / 1.2 < realised < 1.2
+        ratios.append(realised)
+    assert min(ratios) < 1 < max(ratios), "the shift must go both ways"
+
+
+def _binary_book(rate: float, n: int = 1024, seed: int = 0) -> tuple[torch.Tensor, torch.Tensor]:
+    """A PD-like table: exactly `rate` of the rows default, defaults driven by X[:, 0]."""
+    rng = PriorRNG(seed)
+    X = rng.randn(n, 4)
+    y = torch.zeros(n)
+    y[X[:, 0].argsort(descending=True)[: int(round(rate * n))]] = 1.0
+    return X, y
+
+
+@pytest.mark.parametrize("rate", [0.02, 0.07, 0.3, 0.5])
+@pytest.mark.parametrize("train_frac", [0.3, 0.7, 0.9])
+def test_prior_prob_shift_is_relative_to_the_books_own_default_rate(rate, train_frac):
+    """Regression: the knob used to set the context's share of defaults to an absolute 15-85 %,
+    which assumes defaults are half the book. On a 7 % book that put almost every default in the
+    context and left the query ONE (85 % of shifted PD tables, 29-09-2026). Now the query's
+    default rate is a multiple of the context's, whatever the book's rate and split."""
+    X, y = _binary_book(rate)
+    n_def = int(y.sum())
+    for seed in range(12):
+        Xo, yo, meta = apply_shift(PriorRNG(seed), X, y, PRIOR_PROB, train_frac=train_frac)
+        assert meta["shift"] == "prior_prob"
+        cut = meta["shift_cut"]
+        n_query = len(y) - cut
+        k = int(yo[cut:].sum())  # defaults left in the query
+        # The ratio holds up to one default of rounding, unless one half is (nearly) all defaults.
+        if k < n_query - 1 and n_def - k < cut - 1:
+            ratio_at = lambda j: (j / n_query) / ((n_def - j) / cut)  # noqa: E731
+            assert ratio_at(max(k - 1, 0)) <= meta["rate_ratio"] <= ratio_at(k + 1), (rate, train_frac, seed)
+        # The query keeps a real share of the defaults: at least a quarter of its fair share.
+        assert k >= max(1, int(rate * n_query / 4) - 1), (rate, train_frac, seed, k)
+        assert torch.equal(yo.sort().values, y.sort().values), "a row was dropped or invented"
+
+
+def test_prior_prob_shift_never_empties_a_side_of_a_class():
+    """Both halves keep both classes, or the context-and-query class check rejects the table."""
+    X, y = _binary_book(0.01)  # ~10 defaults: the hardest case the prior draws
+    for seed in range(40):
+        _, yo, meta = apply_shift(PriorRNG(seed), X, y, PRIOR_PROB, train_frac=0.9)
         if meta["shift"] != "prior_prob":
             continue
-        assert abs(meta["context_high_rate"] - meta["query_high_rate"]) > 0.1
-        return
-    pytest.skip("no prior_prob draw in 10 tries")
+        cut = meta["shift_cut"]
+        for part in (yo[:cut], yo[cut:]):
+            assert 0 < float(part.sum()) < len(part)
 
 
 def test_selection_shift_poses_reject_inference(table):

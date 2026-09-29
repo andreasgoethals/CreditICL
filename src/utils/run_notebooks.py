@@ -7,9 +7,11 @@
 It prints a line as each notebook finishes, and every 30 s names the ones not finished yet.
 A partial run (`--only`) keeps every other notebook's block in `All_Results.md`.
 
-    output/figures/<notebook>/*.pdf   written by the notebooks themselves
-    output/figures/CAPTIONS.md        ONE file, all notebooks, notebook order
-    output/All_Results.md             every notebook's printed summary, alphabetical
+    output_CreditICL/<chapter>/figures/<notebook>/*.pdf   written by the notebooks themselves;
+                                                           <chapter> is general/ for 0.x,
+                                                           experiment_N/ for N.x
+    output_CreditICL/CAPTIONS.md                           ONE file, all notebooks, notebook order
+    output_CreditICL/All_Results.md                        every notebook's printed summary
 
 SEPARATE PROCESSES, NOT THREADS: matplotlib's figure registry is global, so two notebooks in
 one interpreter would capture each other's figures — silently, giving plausible figures
@@ -31,8 +33,8 @@ documents. A hard-coded list silently stops covering a notebook someone added.
 NOTEBOOKS LIVE IN NUMBERED CHAPTER FOLDERS (`0. General/`, `1. Experiment 1/`, ...), so discovery
 recurses. A notebook is still identified by its file STEM alone (`1.1_pd_training`): figures,
 `--only` and both summary documents are keyed by it, which is why stems must be unique across
-folders and why each carries its chapter number. That keeps `output/figures/<notebook>/` exactly as
-the template lays it out, and makes alphabetical order the reading order. (A project deviation from
+folders and why each carries its chapter number. The chapter number also files the figures under
+the experiment they belong to (`paths.figures_dir`), and alphabetical order is the reading order. (A project deviation from
 the template's flat `notebooks/`; the recursion itself is generic and worth upstreaming.)
 """
 
@@ -52,6 +54,7 @@ from src.utils.paths import (
     captions_path,
     figures_dir,
     notebooks_dir,
+    outputs_dir,
 )
 
 #: Per-notebook wall-clock limit. A notebook summarises a finished computation; one needing
@@ -80,7 +83,7 @@ def _notebook_files() -> list[Path]:
     """Every notebook under `notebooks/`, at any depth, skipping Jupyter's checkpoint copies.
 
     Raises on a duplicated stem: two notebooks called `x` in different folders would write into the
-    same `output/figures/x/` and each would clear the other's figures on construction.
+    same figure folder and each would clear the other's figures on construction.
     """
     files = [p for p in notebooks_dir().rglob("*.ipynb") if ".ipynb_checkpoints" not in p.parts]
     stems = [p.stem for p in files]
@@ -427,7 +430,7 @@ def summarise(results: list[NotebookResult]) -> str:
     lines += [
         "",
         f"{ok}/{len(results)} notebooks OK, {sum(r.n_figures for r in results)} figures",
-        f"  figures   -> {figures_dir()}",
+        f"  figures   -> {outputs_dir()}/<general|experiment_N>/figures/",
         f"  captions  -> {captions_path()}",
         f"  summaries -> {all_results_path()}",
     ]

@@ -21,10 +21,23 @@ And it is the early-warning system for the out-of-domain question. If general
 performance falls while credit performance rises, that trade-off shows up here, mid-run,
 rather than after every arm has finished.
 
-COST CONTROL. Evaluation is capped hard: a handful of datasets, a small context, one
-seed. This is a *trend*, not the final measurement — `scripts/evaluate.py` produces the
-numbers that go in the paper. A progress hook that noticeably slowed training would be
-a bad trade, so the defaults are deliberately cheap and everything is configurable.
+HOW IT MEASURES (protocol 3, 28-09-2026). Exactly the way the benchmark does, minus the size:
+the CURRENT weights are put inside upstream's own `TabICLClassifier` / `TabICLRegressor` — the
+same preprocessing, 8-member ensemble and decoding that score the final checkpoints — and each
+dataset is scored on ONE FIXED split (same rows at every step, in every arm), so a curve moves
+only because the weights did. Every metric the benchmark reports without a tuned threshold is
+recorded: for PD ROC-AUC, PR-AUC, Brier, log-loss, ECE, KS, calibration slope and the hard-label
+family at the base-rate threshold; for LGD R², RMSE, MAE, CRPS, pinball, coverage and the
+boundary masses. The first row is written at step 0, before any training, so every arm's curve
+starts from the same untrained model.
+
+Until 28-09-2026 the monitor ran its own forward pass instead: no outlier clipping, no ensemble,
+and — once the LGD prior standardised its target — raw [0, 1] context labels the model no longer
+trained on. Its numbers were a different measurement from the benchmark's.
+
+COST CONTROL. A fixed subsample per dataset (`context_rows` context, `max_test_rows` scored),
+the development datasets only, a handful of out-of-domain suites. This is a *trend*, not the
+final measurement — `scripts/evaluate.py` produces the numbers that go in the paper.
 
 NEVER FATAL. Any failure inside the hook is caught and recorded as a row with an
 `error` column. A diagnostic that can kill a 3-day training run is worse than no
@@ -58,11 +71,16 @@ class ProgressConfig:
     n_datasets: int = 4
     #: Out-of-domain datasets to score, if the cache is present.
     n_ood: int = 4
-    #: Context rows for in-context scoring. Smaller than evaluation's 1024 on purpose.
-    context_rows: int = 512
+    #: Context rows for in-context scoring: a fixed, stratified subsample per dataset. The
+    #: benchmark gives the model the whole training pool; the monitor keeps the cost of a
+    #: measurement to seconds.
+    context_rows: int = 4096
     #: Cap on test rows scored per dataset.
-    max_test_rows: int = 2_000
+    max_test_rows: int = 2_048
     seed: int = 0
+
+#: Bumped when the measurement changes; a CSV of an older protocol is set aside, never appended to.
+PROGRESS_PROTOCOL = 3
 
 
 class ProgressTracker:
@@ -72,20 +90,31 @@ class ProgressTracker:
         self.cfg = cfg
         self.task = task
         self.run_name = run_name
-        self.path = Path(out_dir) / f"{run_name}__progress.csv"
+        self.path = Path(out_dir) / "progress.csv"
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if self.path.is_file():
             with self.path.open(encoding="utf-8", newline="") as fh:
                 header = next(csv.reader(fh), [])
-            if "progress_protocol" not in header:
-                # Old curves used other splits/precision. Keep them as evidence, never
-                # append the new protocol to the same plotted series.
-                self.path.rename(self.path.with_name(
-                    f"{run_name}__progress_legacy_{time.time_ns()}.csv"))
+            protocol = None
+            if "progress_protocol" in header:
+                with self.path.open(encoding="utf-8", newline="") as fh:
+                    first = next(csv.DictReader(fh), {}) or {}
+                protocol = str(first.get("progress_protocol", "")).strip()
+            if protocol != str(PROGRESS_PROTOCOL):
+                # Old curves used other splits, contexts and scoring paths. Keep them as
+                # evidence, never append the new protocol to the same plotted series.
+                self.path.rename(self.path.with_name(f"progress_legacy_{time.time_ns()}.csv"))
         self._fieldnames: list[str] | None = None
         self._next_at = cfg.every_datasets
         self._cached_real: list[tuple[str, Any]] | None = None
         self._cached_ood: list[Any] | None = None
+        self._splits: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+
+    def resume_from(self, datasets_seen: int) -> None:
+        """After a restart, measure next at the next multiple of the interval — not at once."""
+        interval = self.cfg.every_datasets
+        if interval > 0:
+            self._next_at = (int(datasets_seen) // interval + 1) * interval
 
     @property
     def enabled(self) -> bool:
@@ -142,105 +171,121 @@ class ProgressTracker:
         return entries
 
     # -- the measurement -----------------------------------------------------
-    def _score(self, model, X: np.ndarray, y: np.ndarray, rng: np.random.Generator,
-               *, scale_target: bool = False) -> dict[str, float]:
-        """Score one table with the CURRENT weights, in context. Pure numpy in, floats out."""
+    def _split(self, key: str, y: np.ndarray, classification: bool) -> tuple[np.ndarray, np.ndarray]:
+        """`(context_idx, test_idx)` for one dataset: drawn once, from a seed of the dataset's
+        NAME, so it is the same rows at every step and in every arm. Stratified for a class
+        target, so the context always holds both classes."""
+        if key in self._splits:
+            return self._splits[key]
+        import zlib
+
+        from sklearn.model_selection import train_test_split
+
+        n = len(y)
+        ctx_n = min(self.cfg.context_rows, max(8, n // 2))
+        test_n = min(self.cfg.max_test_rows, n - ctx_n)
+        seed = int(zlib.crc32(f"{self.cfg.seed}:{key}".encode()) % (2**31))
+        index = np.arange(n)
+        strat = (y >= 0.5).astype(int) if classification else None
+        if strat is not None and np.bincount(strat, minlength=2).min() < 4:
+            strat = None
+        ctx, rest = train_test_split(index, train_size=ctx_n, random_state=seed, stratify=strat)
+        if len(rest) > test_n:
+            rest_strat = strat[rest] if strat is not None else None
+            rest, _ = train_test_split(rest, train_size=test_n, random_state=seed + 1, stratify=rest_strat)
+        self._splits[key] = (np.sort(ctx), np.sort(rest))
+        return self._splits[key]
+
+    def _wrapper(self, model, regression: bool):
+        """Upstream's sklearn wrapper, holding the IN-TRAINING weights instead of a file: the same
+        preprocessing, ensemble and decoding the benchmark scores the saved checkpoints with."""
+        from tabicl import TabICLClassifier, TabICLRegressor
+
+        device = next(model.parameters()).device
+        cls = TabICLRegressor if regression else TabICLClassifier
+        est = cls(device=device, random_state=self.cfg.seed, allow_auto_download=False)
+
+        def _use_training_weights() -> None:
+            est.model_ = model
+            est.model_path_ = None
+            est.model_config_ = {}
+            est.model_.eval()
+
+        est._load_model = _use_training_weights
+        return est
+
+    def _fit_predict(self, model, Xc: np.ndarray, yc: np.ndarray, Xt: np.ndarray, *,
+                     regression: bool) -> dict[str, np.ndarray]:
+        """The CURRENT weights on one table: `{"point", "quantiles"}` for a continuous target,
+        `{"prob"}` (P(class 1)) for a binary one. Upstream's TabICL wrapper; `TabPFNProgressTracker`
+        overrides this for TabPFN-3 and leaves everything else — data, split, metrics — shared."""
         import torch
 
-        n = len(X)
-        ctx_n = min(self.cfg.context_rows, max(8, n // 2))
-        perm = rng.permutation(n)
-        ctx_idx, test_idx = perm[:ctx_n], perm[ctx_n : ctx_n + self.cfg.max_test_rows]
-        if len(test_idx) < 8:
-            return {}
+        est = self._wrapper(model, regression)
+        with torch.no_grad():
+            est.fit(Xc, yc)
+            if regression:
+                from src.eval.protocol import QUANTILE_LEVELS
 
-        Xc, yc = X[ctx_idx], y[ctx_idx]
-        Xt, yt = X[test_idx], y[test_idx]
+                out = est.predict(Xt, output_type=["mean", "quantiles"],
+                                  alphas=[float(a) for a in QUANTILE_LEVELS])
+                return {"point": np.asarray(out["mean"]), "quantiles": np.asarray(out["quantiles"])}
+            prob = np.asarray(est.predict_proba(Xt), dtype=float)
+            # Column of class 1: the wrapper's LabelEncoder sorts the labels.
+            return {"prob": prob[:, list(est.classes_).index(1)]}
 
+    def _score(self, model, key: str, X: np.ndarray, y: np.ndarray, *, regression: bool,
+               scale_target: bool = False, bounded_target: bool = True) -> dict[str, float]:
+        """Score one table with the CURRENT weights, in context. Pure numpy in, floats out."""
         # A NON-FINITE TARGET CANNOT BE SCORED, AND IS NOT THE SAME AS A BROKEN MODEL.
         # sklearn raises the same "Input contains NaN." for a NaN label and a NaN prediction,
         # which is why the 14-08-2026 run said only that and nothing about which dataset or
-        # which side. Features are imputed just below; targets cannot be — an invented label
+        # which side. Features are imputed by the wrapper; targets cannot be — an invented label
         # is a fabricated measurement — so those rows are dropped and counted instead.
-        keep_ctx = np.isfinite(yc)
-        keep_test = np.isfinite(yt)
-        dropped = int((~keep_test).sum())
-        if not keep_ctx.all():
-            Xc, yc = Xc[keep_ctx], yc[keep_ctx]
-        if dropped:
-            Xt, yt = Xt[keep_test], yt[keep_test]
-        if len(yt) < 8 or len(yc) < 8:
-            return {"skipped_nonfinite_target": 1.0}
+        finite = np.isfinite(y)
+        dropped = int((~finite).sum())
+        X, y = X[finite], y[finite]
+        if len(y) < 32:
+            return {"skipped_nonfinite_target": 1.0} if dropped else {}
+        ctx_idx, test_idx = self._split(key, y, classification=not regression)
+        Xc, yc, Xt, yt = X[ctx_idx], y[ctx_idx], X[test_idx], y[test_idx]
+        if len(yt) < 8:
+            return {}
         if scale_target:
             lo, hi = float(yc.min()), float(yc.max())
             if hi - lo < 1e-12:
                 raise ValueError("Constant OOD context target")
             yc, yt = (yc - lo) / (hi - lo), (yt - lo) / (hi - lo)
-        # Impute from the CONTEXT only; using test statistics would leak.
-        med = np.nan_to_num(np.nanmedian(np.where(np.isfinite(Xc), Xc, np.nan), axis=0))
-        Xc = np.where(np.isfinite(Xc), Xc, med)
-        Xt = np.where(np.isfinite(Xt), Xt, med)
-        # STANDARDISE, context statistics only. Upstream's `PreprocessingPipeline` starts with
-        # `CustomStandardScaler().fit_transform(X)`; we skipped it and `col_embedder.in_linear`
-        # overflowed float16 on every dataset whose features reach millions, giving 100 % NaN
-        # predictions on 4 of 7 real LGD tables. See `standardise_from_context`.
-        from src.eval.crediticl_baseline import standardise_from_context
 
-        Xc, Xt = standardise_from_context(Xc, Xt)
-
-        device = next(model.parameters()).device
-        x = torch.from_numpy(np.concatenate([Xc, Xt]).astype(np.float32)).unsqueeze(0).to(device)
-        yy = torch.from_numpy(yc.astype(np.float32)).unsqueeze(0).to(device)
-        import inspect
-        inference_kwargs = {}
-        if "inference_config" in inspect.signature(model.forward).parameters:
-            from tabicl._model.inference_config import InferenceConfig
-            # TabICL enables its own fp16 autocast in eval mode, even outside the
-            # trainer's AMP context. Rare query outliers can overflow it after scaling.
-            inference_kwargs["inference_config"] = InferenceConfig(**{
-                k: {"use_amp": False} for k in ("COL_CONFIG", "ROW_CONFIG", "ICL_CONFIG")
-            })
-        with torch.no_grad(), torch.autocast(device_type=device.type, enabled=False):
-            out = model(x, yy, **inference_kwargs)
-        q = out[0].float().cpu().numpy()
-        if not np.isfinite(q).all():
-            raise ValueError(f"Non-finite predictions in float32: fraction={float((~np.isfinite(q)).mean()):.6g}")
-
-        if self.task == "lgd":
-            from src.eval.metrics import lgd_metrics
-            from src.train.loop import enforce_monotonic_quantiles, quantile_levels
-
-            # Sort first: column Q//2 is the median only if the row is ordered, and coverage,
-            # PIT and CRPS all assume it. See `enforce_monotonic_quantiles`.
-            q = enforce_monotonic_quantiles(q)
-            levels = quantile_levels(q.shape[1]).numpy()
-            point = np.clip(q[:, q.shape[1] // 2], 0.0, 1.0)
-            m = lgd_metrics(yt, point, quantiles=np.clip(q, 0.0, 1.0), levels=levels)
-            return {k: float(v) for k, v in m.items() if isinstance(v, (int, float))}
-
-        from scipy.special import softmax
-        from sklearn.metrics import average_precision_score, roc_auc_score
-
-        # Defensive slice, matching upstream. MEASURED: a no-op with `tabicl`, whose forward
-        # already returns exactly the classes present in the context.
-        n_classes = min(max(2, int(np.nanmax(yc)) + 1), q.shape[-1])
-        prob = softmax(q[..., :n_classes], axis=-1)[:, 1]
-        if len(np.unique(yt)) < 2:
+        if not regression and len(np.unique(yt)) < 2:
             return {}
-        # A non-finite PREDICTION is a model failure, not a data problem. Report it as one
-        # rather than letting sklearn raise a message that names neither.
-        if not np.isfinite(prob).all():
-            return {
-                "pred_nonfinite_frac": round(float(np.mean(~np.isfinite(prob))), 6),
-                "n_dropped_nonfinite_target": float(dropped),
-            }
-        out = {
-            "roc_auc": float(roc_auc_score(yt, prob)),
-            "pr_auc": float(average_precision_score(yt, prob)),
-        }
+        pred = self._fit_predict(model, Xc, yc, Xt, regression=regression)
+        if regression:
+            from src.eval.metrics import lgd_metrics
+            from src.eval.protocol import QUANTILE_LEVELS
+
+            point = np.clip(np.asarray(pred["point"], dtype=float), 0.0, 1.0)
+            q = np.clip(np.asarray(pred["quantiles"], dtype=float), 0.0, 1.0)
+            if not (np.isfinite(point).all() and np.isfinite(q).all()):
+                raise ValueError("Non-finite predictions")
+            m = lgd_metrics(yt, point, quantiles=q, levels=QUANTILE_LEVELS, decoding="mean")
+            if not bounded_target:
+                from src.eval.runner import BOUNDARY_KEYS
+
+                m = {k: v for k, v in m.items() if not k.startswith(BOUNDARY_KEYS)}
+        else:
+            from src.eval.metrics import pd_metrics
+
+            prob = np.asarray(pred["prob"], dtype=float)
+            if not np.isfinite(prob).all():
+                return {"pred_nonfinite_frac": round(float(np.mean(~np.isfinite(prob))), 6),
+                        "n_dropped_nonfinite_target": float(dropped)}
+            m = pd_metrics(yt, prob)
+        out_m = {k: float(v) for k, v in m.items()
+                 if isinstance(v, (int, float, np.floating, np.integer)) and not isinstance(v, bool)}
         if dropped:
-            out["n_dropped_nonfinite_target"] = float(dropped)
-        return out
+            out_m["n_dropped_nonfinite_target"] = float(dropped)
+        return out_m
 
     def record(self, model, *, step: int, datasets_seen: int, train_loss: float,
                elapsed_s: float) -> dict[str, Any]:
@@ -257,9 +302,8 @@ class ProgressTracker:
             "datasets_seen": datasets_seen,
             "train_loss": round(float(train_loss), 6),
             "elapsed_s": round(elapsed_s, 1),
-            "progress_protocol": 2,
+            "progress_protocol": PROGRESS_PROTOCOL,
         }
-        rng = np.random.default_rng(self.cfg.seed)
 
         # ONE DATASET MUST NOT COST ALL THE OTHERS. A single `try` around both loops meant
         # that on 14-08-2026 a NaN target in the SECOND real dataset discarded the remaining
@@ -271,8 +315,9 @@ class ProgressTracker:
             for slug, ds in self._real_datasets():
                 short = slug.split(".", 1)[-1]
                 try:
-                    for k, v in self._score(model, np.asarray(ds.X, np.float32),
-                                            np.asarray(ds.y, np.float32), rng).items():
+                    for k, v in self._score(model, f"real/{slug}", np.asarray(ds.X, np.float32),
+                                            np.asarray(ds.y, np.float32),
+                                            regression=self.task == "lgd").items():
                         row[f"real__{short}__{k}"] = round(v, 6)
                 except Exception as exc:  # noqa: BLE001 — one dataset, one failure
                     errors.append(f"real/{short}: {type(exc).__name__}: {exc}")
@@ -284,9 +329,10 @@ class ProgressTracker:
                     Xo, yo, _ = load_ood_dataset(entry)
                     if self.task == "pd" and len(np.unique(yo)) > 2:
                         yo = (yo == np.bincount(yo.astype(int)).argmax()).astype(np.float32)
-                    for k, v in self._score(model, np.asarray(Xo, np.float32),
-                                            np.asarray(yo, np.float32), rng,
-                                            scale_target=self.task == "lgd").items():
+                    for k, v in self._score(model, f"ood/{entry.name}", np.asarray(Xo, np.float32),
+                                            np.asarray(yo, np.float32), regression=self.task == "lgd",
+                                            scale_target=self.task == "lgd",
+                                            bounded_target=False).items():
                         row[f"ood__{entry.name}__{k}"] = round(v, 6)
                 except Exception as exc:  # noqa: BLE001 — a missing OOD file is not fatal
                     errors.append(f"ood/{entry.name}: {type(exc).__name__}: {exc}")
@@ -310,8 +356,7 @@ class ProgressTracker:
             if was_training:
                 model.train()
 
-        interval = self.cfg.every_datasets
-        self._next_at = (datasets_seen // interval + 1) * interval if interval else 0
+        self.resume_from(datasets_seen)
         headline = {k: v for k, v in row.items() if k.startswith(("real__", "ood__"))}
         log.info(
             "[progress] datasets=%s step=%d took %.1fs | %s",

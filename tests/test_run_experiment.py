@@ -27,24 +27,31 @@ def fake_tree(tmp_path, monkeypatch):
     from src.utils import paths
     from src.utils import run_experiment as pipeline
 
+    for var in ("VSC_DATA", *paths.STAGING_ENV_VARS):
+        monkeypatch.delenv(var, raising=False)
+    # Off-VSC both tiers resolve through `outputs_dir`, so one patch isolates the whole tree.
     monkeypatch.setattr(paths, "outputs_dir", lambda: tmp_path / "output")
-    monkeypatch.setattr(paths, "results_dir", lambda: tmp_path / "output" / "results")
-    monkeypatch.setattr(paths, "checkpoints_dir", lambda *a: tmp_path / "ckpt")
     monkeypatch.setattr(pipeline, "queued_job_names", set)
     return tmp_path
+
+
+def _n_arms(track: str) -> int:
+    from src.utils.config import expand_with_seeds, load
+
+    return len(expand_with_seeds(load(ROOT / "config" / f"Exp1_{track.upper()}.yaml")))
 
 
 def _finish_arms(tmp_path, track, indices):
     """Write the `summary.json` a completed arm leaves behind."""
     from src.utils.config import expand_with_seeds, load, run_name
 
+    from src.utils import paths
+
     runs = expand_with_seeds(load(ROOT / "config" / f"Exp1_{track.upper()}.yaml"))
-    man = tmp_path / "output" / "manifests"
-    man.mkdir(parents=True, exist_ok=True)
     for i in indices:
-        (man / f"{run_name(runs[i])}__summary.json").write_text(
-            json.dumps({"steps": 12_500, "completed": True}), encoding="utf-8"
-        )
+        summary = paths.run_summary_path(run_name(runs[i]))
+        summary.parent.mkdir(parents=True, exist_ok=True)
+        summary.write_text(json.dumps({"steps": 12_500, "completed": True}), encoding="utf-8")
 
 
 def test_benchmark_is_blocked_until_every_arm_has_trained(fake_tree):
@@ -57,16 +64,17 @@ def test_benchmark_is_blocked_until_every_arm_has_trained(fake_tree):
 
 
 def test_one_arm_short_still_blocks_the_benchmark(fake_tree):
-    """44 of 45 is not done. Scoring then would silently benchmark a partial sweep."""
-    _finish_arms(fake_tree, "lgd", range(44))
+    """n-1 of n is not done. Scoring then would silently benchmark a partial sweep."""
+    n = _n_arms("lgd")
+    _finish_arms(fake_tree, "lgd", range(n - 1))
     stages = {s.name: s for s in plan(1, ["lgd"])}
-    assert stages["exp1-lgd-train"].done == 44
+    assert stages["exp1-lgd-train"].done == n - 1
     assert stages["exp1-lgd-train"].state == "ready"
     assert stages["exp1-lgd-benchmark"].state == "blocked"
 
 
 def test_a_finished_sweep_unblocks_the_benchmark(fake_tree):
-    _finish_arms(fake_tree, "lgd", range(45))
+    _finish_arms(fake_tree, "lgd", range(_n_arms("lgd")))
     stages = {s.name: s for s in plan(1, ["lgd"])}
     assert stages["exp1-lgd-train"].state == "done"
     assert not stages["exp1-lgd-train"].commands, "a finished stage must offer no command"
@@ -80,18 +88,24 @@ def test_after_a_drain_only_the_missing_arms_are_resubmitted(fake_tree):
     resubmitting the array would redo everything already trained."""
     from src.utils.run_experiment import plan as _plan
 
-    _finish_arms(fake_tree, "lgd", list(range(40)) + [42, 43])
+    n = _n_arms("lgd")  # 9 since 28-09-2026
+    _finish_arms(fake_tree, "lgd", list(range(n - 4)) + [n - 2])
     train = next(s for s in _plan(1, ["lgd"]) if s.kind == "train")
-    assert train.done == 42
+    assert train.done == n - 3
     joined = " ".join(train.commands[0])
-    assert "--array=40-41,44%8" in joined, joined
+    assert f"--array={n - 4}-{n - 3},{n - 1}%8" in joined, joined
     # A scattered spec goes to ONE cluster: splitting it across two gains nothing.
     assert len(train.commands) == 1
 
 
-def test_a_fresh_sweep_is_split_across_two_clusters_but_a_partial_one_is_not(fake_tree):
+def test_a_fresh_sweep_is_split_across_two_clusters_but_a_partial_one_is_not(fake_tree, monkeypatch):
     """Two clusters means two queues, which halves the wall-clock on a fresh run. It is a
-    scheduling choice and nothing about LGD requires wICE — `--single-cluster` turns it off."""
+    scheduling choice and nothing about LGD requires wICE — `--single-cluster` turns it off.
+    (Exp1's 9 arms fit inside mindwell's share, so the split is exercised with a smaller one.)"""
+    from src.utils import run_experiment as pipeline
+
+    monkeypatch.setattr(pipeline, "SPLIT_LGD", [("mindwell", "gpu_b200", 24, "180G", 0, 5),
+                                                ("wice", "gpu_a100", 18, "120G", 5, None)])
     fresh = next(s for s in plan(1, ["lgd"]) if s.kind == "train")
     assert len(fresh.commands) == 2
     assert any("wice" in " ".join(c) for c in fresh.commands)
@@ -105,9 +119,12 @@ def test_a_fresh_sweep_is_split_across_two_clusters_but_a_partial_one_is_not(fak
 def test_pd_and_lgd_are_treated_identically(fake_tree):
     """They were not, and the asymmetry was accidental: LGD got two sbatch commands and PD one
     because LGD was split across clusters. Same stages, same rules, same arm count."""
+    from src.eval.benchmark_status import n_slots
+
     stages = {s.name: s for s in plan(1, ["lgd", "pd"])}
-    assert {s.total for s in stages.values() if s.kind == "train"} == {45}
-    assert {s.total for s in stages.values() if s.kind == "benchmark"} == {46}
+    assert {s.total for s in stages.values() if s.kind == "train"} == {_n_arms("lgd")} == {_n_arms("pd")}
+    # One benchmark slot per (arm, saved checkpoint) plus one per reference model.
+    assert {s.total for s in stages.values() if s.kind == "benchmark"} == {n_slots(1, "lgd")} == {n_slots(1, "pd")}
     for track in ("lgd", "pd"):
         assert stages[f"exp1-{track}-benchmark"].state == "blocked"
 
@@ -139,7 +156,9 @@ def test_training_submission_carries_experiment_and_in_bounds_indices(fake_tree,
     from src.utils.run_experiment import _train_stage
     stage = _train_stage(exp, "lgd", set(), False)
     for cmd in stage.commands:
-        assert f"--export=ALL,EXP={exp}" in cmd
+        # VARIANT is set EXPLICITLY, empty here: `--export=ALL` would otherwise pass on a
+        # `VARIANT=search` left in the submitting shell, and a main-stage job would train the search.
+        assert f"--export=ALL,EXP={exp},VARIANT=" in cmd
         assert f"--job-name=crediticl-exp{exp}-lgd" in cmd
         spec = next(c for c in cmd if c.startswith("--array=")).split("=", 1)[1].split("%")[0]
         indices = []

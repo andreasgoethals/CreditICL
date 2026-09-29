@@ -91,9 +91,21 @@ def _frozen_block_lists(model: nn.Module, strategy: str) -> list[nn.Module]:
 
 
 def apply_freezing(model: nn.Module, strategy: str) -> dict[str, Any]:
-    """Set `requires_grad` per the strategy. Returns a trainable-parameter report."""
-    for p in model.parameters():
-        p.requires_grad = True
+    """Set `requires_grad` per the strategy. Returns a trainable-parameter report.
+
+    A parameter the ARCHITECTURE builds as fixed stays fixed under every strategy. TabICL
+    constructs its rotary-embedding frequencies (`row_interactor.tf_row.rope.freqs`) with
+    `requires_grad=False`; until 28-09-2026 this function first set every parameter trainable,
+    so Experiment 1 learned the RoPE frequencies that TabICLv2 keeps constant. The equivalence
+    check against upstream's trainer (`scripts/check_equivalence.py`) found it: that one tensor
+    was the only parameter whose updates differed.
+    """
+    fixed_by_architecture = getattr(model, "_crediticl_fixed_params", None)
+    if fixed_by_architecture is None:
+        fixed_by_architecture = {n for n, p in model.named_parameters() if not p.requires_grad}
+        model._crediticl_fixed_params = fixed_by_architecture   # remembered across calls
+    for name, p in model.named_parameters():
+        p.requires_grad = name not in fixed_by_architecture
 
     frozen = _frozen_block_lists(model, strategy)
     for sub in frozen:
@@ -102,7 +114,7 @@ def apply_freezing(model: nn.Module, strategy: str) -> dict[str, Any]:
 
     # Re-enable the target-side parameters even if they sit inside a frozen stack.
     for name, p in model.named_parameters():
-        if any(name.startswith(prefix) for prefix in ALWAYS_TRAINABLE):
+        if any(name.startswith(prefix) for prefix in ALWAYS_TRAINABLE) and name not in fixed_by_architecture:
             p.requires_grad = True
 
     total = sum(p.numel() for p in model.parameters())

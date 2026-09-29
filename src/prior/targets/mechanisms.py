@@ -416,11 +416,24 @@ def pd_vasicek(
     """
     n = y_latent.numel()
     rho = float(rng.uniform(*cfg.get("rho_range", list(BASEL_RHO_RANGE))))
-    pd_rate = float(rng.uniform(*cfg.get("base_rate_range", [0.02, 0.30])))
+    br_lo, br_hi = (float(v) for v in cfg.get("base_rate_range", [0.02, 0.30]))
+    # `base_rate_log: true` draws the default rate log-uniformly: equal mass per factor of two,
+    # so the imbalanced end (1-5 %) is as present as the 25-50 % end rather than a sliver of it.
+    pd_rate = float(rng.lognum(br_lo, br_hi) if cfg.get("base_rate_log", False) else rng.uniform(br_lo, br_hi))
 
     # Idiosyncratic part: the latent, mapped to a standard normal through its ranks
     # so the Vasicek algebra is on the right scale.
     eps = _normal_icdf(_uniform_from_latent(y_latent))
+    # SIGNAL SHARE (added 28-09-2026): the share of the idiosyncratic variance the FEATURES
+    # explain. At 1.0 — the only value before — eps IS the feature latent, so within one cohort
+    # default is a deterministic threshold on the features: Exp1's credit tables scored a median
+    # pseudo-R^2 of 0.57 against 0.06 on real credit data. Real borrowers also default for
+    # reasons no bureau file records; the rest of eps is that. Still N(0, 1), so the Vasicek
+    # algebra and the base rate are unchanged.
+    s_lo, s_hi = cfg.get("signal_share_range", [1.0, 1.0])
+    share = float(rng.uniform(float(s_lo), float(s_hi))) if float(s_hi) > float(s_lo) else float(s_hi)
+    if share < 1.0:
+        eps = math.sqrt(share) * eps + math.sqrt(1.0 - share) * rng.randn(n)
     z = shock if shock is not None else torch.zeros(n)
     if float(z.std()) < 1e-9:
         # No cohort structure requested: draw one scalar systematic factor so the
@@ -438,6 +451,7 @@ def pd_vasicek(
         "target_base_rate": round(pd_rate, 4),
         "realised_base_rate": round(realised, 4),
         "threshold": round(threshold, 4),
+        "signal_share": round(share, 4),
     }
     return y, meta
 
@@ -522,6 +536,8 @@ def apply_pd_mechanism(
     y, mech_meta = pd_vasicek(rng, latent, cfg, shock)
     meta.update(cohort_meta)
     meta.update(mech_meta)
+    # Handed back (and popped by `apply_pd_target`) so the period can become a column.
+    meta["_period_factor"] = shock
 
     # A single-class Vasicek draw is unlearnable, but it must NOT crash the run: raising here
     # escaped the dataloader and killed 6 PD mechanism arms on 26-08-2026 (job 11529827). The

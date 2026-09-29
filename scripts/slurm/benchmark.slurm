@@ -6,31 +6,31 @@
 #  PHASE 2 is this script. It cannot start until phase 1 has finished, because it scores the
 #  checkpoints phase 1 wrote — that ordering is a fact about the data, not a convention.
 #
-#      python -m src.utils.sweep_status --config config/Exp1_LGD.yaml   # must say 45 done
+#      python -m src.utils.sweep_status --config config/Exp1_PD.yaml    # must say all done
+#      python -m src.eval.benchmark_status --exp 1 --track pd --count   # array size (Exp1: 49)
+#      sbatch --clusters=mindwell --export=ALL,EXP=1,TRACK=pd  scripts/slurm/benchmark.slurm
 #      sbatch --clusters=mindwell --export=ALL,EXP=1,TRACK=lgd scripts/slurm/benchmark.slurm
-#      sbatch --clusters=mindwell --export=ALL,EXP=2,TRACK=lgd scripts/slurm/benchmark.slurm
-#      sbatch --clusters=mindwell --export=ALL,EXP=3,TRACK=lgd scripts/slurm/benchmark.slurm
 #
-#  THE REFERENCE COLUMN IS REUSED UNDER THE SAME PROTOCOL. CatBoost, TabPFN-3, released TabICLv2 and
-#  logistic/linear regression do not depend on our prior, so their numbers are identical in
-#  Exp1, Exp2 and Exp3 — and re-running them per experiment would not only waste GPU time, it
-#  would introduce three slightly different reference columns to compare against. The last
-#  array index writes `reference_<track>` and skips only with a valid paired-domain receipt; pass
-#  `FORCE_REFERENCE=1` to rescore it deliberately.
+#  THE PROTOCOL (src/eval/protocol.py, version 3): 5-fold cross-validation on every real credit
+#  dataset and every out-of-domain suite; the WHOLE training pool as context, for every model;
+#  the PD threshold chosen to maximise F1 on a validation split of the training pool; every
+#  metric (ROC-AUC, PR-AUC, Brier, log-loss, ECE, F1, ... / R2, RMSE, CRPS, boundary mass, ...).
 #
-#  ONE ARRAY TASK = ONE MODEL, scored on every real credit dataset and every out-of-domain
-#  suite, at every seed:
+#  ONE ARRAY TASK = ONE CHECKPOINT OR ONE REFERENCE MODEL (`benchmark_status.slot_for`):
 #
-#      tasks 0-44   our 45 checkpoints, one per Exp1 arm
-#      task  45     THE REFERENCE COLUMN: released TabICLv2, CatBoost, logistic/linear
+#      index = position x n_arms + arm   every saved checkpoint of every arm — position 0 is
+#                                        the FINAL step, so the headline table comes first,
+#                                        then 2,500, 5,000, ... for the learning curves
+#      the last len(REFERENCE_MODELS)    released TabICLv2, TabPFN-3, CatBoost, logistic/linear,
+#                                        one per task (TabPFN-3 at full context is the slow one)
 #
-#  Keeping the reference inside the same array is deliberate. It is scored by the same code,
-#  on the same day, with the same `--max-context-rows`, the same seeds and the same splits as
-#  the 45. Every previous comparison this project got wrong got it wrong by scoring the two
-#  sides through different paths.
+#  THE REFERENCE COLUMN IS REUSED. Those models do not depend on our prior, so their numbers are
+#  identical in Exp1, Exp2 and Exp3; each writes `reference_<track>_<model>` and skips only with a
+#  valid receipt for this protocol. Pass FORCE_REFERENCE=1 to rescore deliberately.
 #
-#  Set TRACK=lgd or TRACK=pd. Logs and results are small and go to $VSC_DATA; the checkpoints
-#  they read are large and live on project storage. See docs/VSC.md.
+#  Set TRACK=lgd or TRACK=pd. Logs and results are small and go to $VSC_DATA
+#  (output_CreditICL/experiment_<N>/, the reference column to output_CreditICL/reference/); the
+#  checkpoints they read are large and live on project storage. See docs/VSC.md.
 # =============================================================================
 #SBATCH --job-name=crediticl-bench
 #SBATCH --clusters=mindwell
@@ -41,17 +41,17 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=24
 #SBATCH --mem=180G
-# Scoring is minutes per model, not hours — but `0014.algorithmwatch` is 158,700 x 2,986 and
-# the 8-member ensemble runs once per dataset per seed. 4 h is generous and schedules well.
-#SBATCH --time=04:00:00
+# Full context is the expensive part: `0006.hackerearth` puts ~426,000 training rows in front of
+# ~106,000 test rows, five times, and PD scores each fold twice (validation pass, then the refit).
+#SBATCH --time=12:00:00
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
 #SBATCH --export=ALL
 #SBATCH --requeue
-# 0-45 fits Exp1 (45 arms + 1 reference). OVERRIDE IT for the others:
-#     Exp2: --array=0-60%8      Exp3: --array=0-10%8
-# Indices past the reference slot exit in seconds, so an oversized range is safe.
-#SBATCH --array=0-45%8
+# Exp1: 9 arms x 5 saved checkpoints + 4 reference models = 49 slots, 0-48. For the others run
+#     python -m src.eval.benchmark_status --exp N --track T --count
+# and pass --array=0-<count-1>%8. Indices past the last slot exit in seconds.
+#SBATCH --array=0-48%8
 
 sleep $((RANDOM % 30 + 1))
 
@@ -62,14 +62,17 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 
 TRACK="${TRACK:-lgd}"
 EXP="${EXP:-1}"
-CONFIG="config/Exp${EXP}_$(echo "$TRACK" | tr '[:lower:]' '[:upper:]').yaml"
+# VARIANT=search scores Experiment 2's stage A: development datasets only, no reference slots.
+VARIANT="${VARIANT:-}"
+CONFIG="config/Exp${EXP}_$(echo "$TRACK" | tr '[:lower:]' '[:upper:]')${VARIANT:+_${VARIANT}}.yaml"
 IDX="${SLURM_ARRAY_TASK_ID}"
 
-export CREDITICL_OUTPUT_ROOT="${CREDITICL_OUTPUT_ROOT:-${VSC_DATA}/CreditICL}"
-mkdir -p "${CREDITICL_OUTPUT_ROOT}/output/logs"
+OUTPUT_ROOT="${VSC_DATA}/CreditICL/output_CreditICL"   # = src.utils.paths.outputs_dir()
+LOGDIR="${OUTPUT_ROOT}/experiment_${EXP}/logs"
+mkdir -p "${LOGDIR}"
 
 TS=$(date +%Y%m%d_%H%M%S)
-LOG="${CREDITICL_OUTPUT_ROOT}/output/logs/bench_exp${EXP}_${TRACK}_${TS}_j${SLURM_ARRAY_JOB_ID}_a${IDX}.log"
+LOG="${LOGDIR}/bench_exp${EXP}_${TRACK}_${TS}_j${SLURM_ARRAY_JOB_ID}_a${IDX}.log"
 exec > "$LOG" 2>&1
 
 _log_exit() {
@@ -98,87 +101,68 @@ echo "Commit         : $(git rev-parse --short HEAD 2>/dev/null || echo '?')  di
 nvidia-smi || true
 echo "=========================================="
 
-# CONTEXT CAP, matched to what every model here was trained on (upstream stage 1 is 1,024 rows
-# exactly, and so are we). Applied from ONE variable to OUR checkpoints and to the reference
-# alike, so it is part of the measurement rather than a handicap on one side, and recorded in
-# every row — including on the datasets where it does not bind.
-CONTEXT_CAP="${CONTEXT_CAP:-1024}"
-SEEDS="${SEEDS:-0,1,2}"
-echo "context cap ${CONTEXT_CAP} rows | seeds ${SEEDS} | applies to EVERY model in this array"
+# One 5-fold CV (fold-assignment seed 0) — the same folds for every model and every checkpoint.
+SEEDS="${SEEDS:-0}"
+REFERENCE_MODELS="${REFERENCE_MODELS:-tabiclv2,tabpfn3,catboost,linear}"
+STATUS_ARGS=(--exp "$EXP" --track "$TRACK" --index "$IDX" --seeds "$SEEDS"
+             --reference-models "$REFERENCE_MODELS" --variant "$VARIANT")
+read -r SLOT_KIND TAG ARM STEP MODEL <<< "$(python -m src.eval.benchmark_status "${STATUS_ARGS[@]}" --describe)"
+echo "slot ${IDX}: kind=${SLOT_KIND} tag=${TAG} arm=${ARM} step=${STEP} model=${MODEL} | seeds ${SEEDS} | whole training pool as context"
 
-N_ARMS=$(python -c "
-from src.utils.config import expand_with_seeds, load
-print(len(expand_with_seeds(load('${CONFIG}'))))
-")
-echo "grid has ${N_ARMS} arms; this task is index ${IDX}"
+if [[ "$SLOT_KIND" == "none" ]]; then
+    echo "index ${IDX} is past the last slot. Nothing to do."
+    exit 0
+fi
+
 DATASETS=$(python -c "from src.utils.config import load; e=load('${CONFIG}')['eval']; print(','.join(sorted(set(e['dev_datasets'] + e['holdout_datasets']))))")
 KIND=classification
 if [[ "$TRACK" == "lgd" ]]; then KIND=regression; fi
-STATUS_ARGS=(--exp "$EXP" --track "$TRACK" --index "$IDX"
-             --context-cap "$CONTEXT_CAP" --seeds "$SEEDS"
-             --reference-models "${REFERENCE_MODELS:-tabiclv2,tabpfn3,catboost,linear}")
-
-# EXACTLY ONE index is the reference: the first past the grid. Anything beyond it exists only
-# because `--array` is a fixed range and the three experiments have different arm counts
-# (Exp1 45, Exp2 60, Exp3 10). Those tasks exit immediately rather than all racing to write the
-# same reference file.
-if [ "${IDX}" -gt "${N_ARMS}" ]; then
-    echo "index ${IDX} is past the grid (${N_ARMS} arms) and past the reference slot. Nothing to do."
-    exit 0
-fi
 
 if [[ "${FORCE_REFERENCE:-0}" != "1" ]] && python -m src.eval.benchmark_status "${STATUS_ARGS[@]}"; then
-    echo "Complete credit and OOD benchmark already verified for this protocol."
+    echo "Complete credit and OOD benchmark already verified for this slot and protocol."
     exit 0
 fi
 
-if [ "${IDX}" -eq "${N_ARMS}" ]; then
-    # ------------------------------------------------------------------ the reference column
-    echo "=== REFERENCE MODELS (no checkpoint of ours involved) ==="
+if [[ "$SLOT_KIND" == "reference" ]]; then
+    # ------------------------------------------------------------------ one reference model
     # `linear` is Ridge for LGD and logistic regression for PD — the floor to beat.
-    # `tabpfn3` is TabPFN-3 via `model_path="v3"`, a tabular foundation model whose prior we
-    # never touch, so it is the "someone else's prior, properly trained" yardstick.
-    MODELS="${REFERENCE_MODELS:-tabiclv2,tabpfn3,catboost,linear}"
-    REF_TAG="reference_${TRACK}"
-    echo "models: ${MODELS}   ->  ${REF_TAG}"
+    # `tabpfn3` is TabPFN-3, a tabular foundation model whose prior we never touch, so it is the
+    # "someone else's prior, properly trained" yardstick.
+    echo "=== REFERENCE MODEL ${MODEL} (no checkpoint of ours involved) -> ${TAG} ==="
     python scripts/evaluate.py \
         --task "${TRACK}" \
         --datasets "${DATASETS}" \
-        --models "${MODELS}" \
-        --max-context-rows "${CONTEXT_CAP}" \
+        --models "${MODEL}" \
         --seeds "${SEEDS}" \
-        --tag "${REF_TAG}"
+        --tag "${TAG}"
     python scripts/evaluate_ood.py \
-        --models "${MODELS}" \
+        --models "${MODEL}" \
         --kinds "${KIND}" \
-        --max-context-rows "${CONTEXT_CAP}" \
         --seeds "${SEEDS}" \
-        --tag "${REF_TAG}"
+        --tag "${TAG}"
     python -m src.eval.benchmark_status "${STATUS_ARGS[@]}" --write
     exit 0
 fi
 
-# ---------------------------------------------------------------------- one of our 45 arms --
+# ------------------------------------------------------------- one checkpoint of one arm --
 read -r RUN_NAME CKPT_DIR <<< "$(python -c "
-import sys
 from src.utils import paths
 from src.utils.config import expand_with_seeds, load, run_name
 runs = expand_with_seeds(load('${CONFIG}'))
-name = run_name(runs[${IDX}])
-print(name, paths.checkpoints_dir() / name)
+name = run_name(runs[${ARM}])
+print(name, paths.run_checkpoints_dir(name))
 ")"
-echo "arm ${IDX}: ${RUN_NAME}"
+echo "arm ${ARM}: ${RUN_NAME}, step ${STEP}"
 echo "checkpoint dir: ${CKPT_DIR}"
 
-# Use the configured final checkpoint, never an older rolling checkpoint selected by a
-# lexical path sort. A missing final file cannot produce a completion receipt.
-FINAL_STEP=$(python -c "from src.utils.config import load; print(load('${CONFIG}')['train']['max_steps'])")
-CKPT="${CKPT_DIR}/step-${FINAL_STEP}.ckpt"
+# The slot's own step — a permanent checkpoint (a multiple of save_perm_every) or the final one,
+# never a rolling checkpoint picked by a lexical sort.
+CKPT="${CKPT_DIR}/step-${STEP}.ckpt"
 if [ ! -f "$CKPT" ]; then
-    # NOT a failure. This arm has not been trained yet. Exit 0 so it does not show as FAILED
-    # and does not trigger a requeue; `pipeline.py` sees no result file and resubmits phase 2
-    # once phase 1 has produced the checkpoint. Run phase 1 first:
-    echo "SKIPPED: no checkpoint under ${CKPT_DIR} — arm ${IDX} not trained yet."
+    # NOT a failure. This arm has not been trained (that far) yet. Exit 0 so it does not show as
+    # FAILED and does not trigger a requeue; `run_experiment` sees no receipt and resubmits
+    # phase 2 once phase 1 has produced the checkpoint. Run phase 1 first:
+    echo "SKIPPED: no checkpoint under ${CKPT_DIR} for step ${STEP} — arm ${ARM} not trained yet."
     echo "  python -m src.utils.sweep_status --config ${CONFIG}   # what is done"
     exit 0
 fi
@@ -195,7 +179,7 @@ from src.utils import paths
 from src.utils.config import load
 
 ckpt, run_name, config = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
-summary = paths.run_summary_path(run_name)  # flat in manifests/, not a per-arm folder
+summary = paths.run_summary_path(run_name)  # experiment_<N>/runs/<run>/summary.json
 if not summary.is_file():
     raise SystemExit(f"FATAL: {summary} is missing — phase 1 never finished this arm.")
 data = json.loads(summary.read_text(encoding="utf-8"))
@@ -208,27 +192,27 @@ if not data.get("completed"):
 print(f"phase 1 OK: {data.get('steps')}/{want} steps, completed={data.get('completed')}")
 PYCHECK
 
-echo "=== real credit datasets ==="
+# THE WRAPPER FOLLOWS THE ARCHITECTURE (`benchmark_status.arm_model`): `crediticl` for a TabICL
+# checkpoint, `tabpfn3` for a TabPFN-3 one — the same wrapper the released weights are scored with.
+echo "=== real credit datasets (model ${MODEL}) ==="
 python scripts/evaluate.py \
     --task "${TRACK}" \
     --datasets "${DATASETS}" \
-    --models crediticl \
+    --models "${MODEL}" \
     --checkpoint "$CKPT" \
-    --max-context-rows "${CONTEXT_CAP}" \
     --seeds "${SEEDS}" \
-    --tag "exp${EXP}bench_${TRACK}_a${IDX}"
+    --tag "${TAG}"
 
 echo "=== out of domain ==="
 # A prior that helps credit by destroying generality has to be visible, not inferred.
 python scripts/evaluate_ood.py \
-    --models crediticl \
+    --models "${MODEL}" \
     --kinds "${KIND}" \
-    --max-context-rows "${CONTEXT_CAP}" \
     --task "${TRACK}" \
     --checkpoint "$CKPT" \
     --seeds "${SEEDS}" \
-    --tag "exp${EXP}bench_${TRACK}_a${IDX}"
+    --tag "${TAG}"
 
 python -m src.eval.benchmark_status "${STATUS_ARGS[@]}" --write
 
-echo "arm ${IDX} benchmarked."
+echo "arm ${ARM} step ${STEP} benchmarked."

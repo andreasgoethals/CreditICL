@@ -1,4 +1,4 @@
-"""The eval pipeline: metrics, splits, and baseline plumbing."""
+"""The eval pipeline: metrics, the protocol (folds, validation threshold), and baseline plumbing."""
 
 from __future__ import annotations
 
@@ -19,7 +19,8 @@ from src.eval.metrics import (
     pinball_loss,
     recall_at_top_k,
 )
-from src.eval.runner import make_split
+from src.eval.protocol import checkpoint_steps, cv_folds, f1_optimal_threshold, validation_split
+from src.eval.runner import check_split
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -130,32 +131,93 @@ def test_log_loss_baseline_is_reported():
 # --- splits ------------------------------------------------------------------
 
 
-def test_split_is_disjoint_and_complete():
-    tr, te = make_split(100, test_size=0.2, seed=0)
-    assert len(set(tr) & set(te)) == 0
-    assert len(tr) + len(te) == 100
+def test_folds_score_every_row_exactly_once():
+    y = np.random.default_rng(0).random(103)
+    folds = cv_folds(y, "lgd")
+    assert len(folds) == 5
+    tested = np.concatenate([te for _, te in folds])
+    assert sorted(tested.tolist()) == list(range(103)), "each row is in exactly one test fold"
+    for tr, te in folds:
+        assert not set(tr) & set(te)
 
 
-def test_split_is_deterministic():
-    a = make_split(500, test_size=0.2, seed=7)
-    b = make_split(500, test_size=0.2, seed=7)
-    assert np.array_equal(a[0], b[0]) and np.array_equal(a[1], b[1])
+def test_folds_are_deterministic_and_shared_by_every_model():
+    y = (np.random.default_rng(1).random(500) < 0.2).astype(float)
+    a, b = cv_folds(y, "pd", seed=7), cv_folds(y, "pd", seed=7)
+    assert all(np.array_equal(x[1], z[1]) for x, z in zip(a, b))
 
 
-def test_stratified_split_keeps_positives_on_both_sides():
-    """Otherwise an imbalanced dataset can land a test set with zero positives,
+def test_stratified_folds_keep_defaults_in_every_fold():
+    """Otherwise an imbalanced dataset can land a test fold with zero positives,
     which makes ROC-AUC undefined and wastes the run."""
     y = np.zeros(500)
     y[:15] = 1  # 3% positives
-    tr, te = make_split(500, test_size=0.2, seed=0, y=y, task="pd")
-    assert y[tr].sum() > 0 and y[te].sum() > 0
+    for tr, te in cv_folds(y, "pd"):
+        assert y[te].sum() == 3 and y[tr].sum() == 12
+
+
+def test_the_validation_split_is_inside_the_training_pool_and_stratified():
+    y = np.zeros(400)
+    y[:40] = 1
+    fit, val = validation_split(y, "pd")
+    assert not set(fit) & set(val) and len(fit) + len(val) == 400
+    assert y[val].sum() == 8, "20 % of the pool, with the pool's default rate"
+
+
+def test_the_threshold_maximises_f1():
+    y = np.array([0, 0, 0, 0, 1, 1, 0, 1])
+    p = np.array([0.1, 0.2, 0.3, 0.4, 0.45, 0.6, 0.7, 0.9])
+    thr, f1 = f1_optimal_threshold(y, p)
+    best = max(
+        (2 * ((p >= t) & (y == 1)).sum() / ((p >= t).sum() + (y == 1).sum()), t) for t in np.unique(p)
+    )
+    assert f1 == pytest.approx(best[0]) and thr == pytest.approx(best[1])
+
+
+def test_every_saved_checkpoint_is_scored_final_first():
+    cfg = {"train": {"max_steps": 12500, "save_perm_every": 2500}}
+    assert checkpoint_steps(cfg) == [12500, 2500, 5000, 7500, 10000]
+    assert checkpoint_steps({"train": {"max_steps": 600, "save_perm_every": 0}}) == [600]
 
 
 def test_temporal_split_refuses_rather_than_faking_it():
     """Silently falling back to random would report a temporal result that was not
     temporal, which is worse than an error."""
     with pytest.raises(NotImplementedError, match="date column"):
-        make_split(100, test_size=0.2, seed=0, split="temporal")
+        check_split("temporal")
+
+
+def test_a_pd_fold_tunes_its_threshold_on_validation_and_reports_everything():
+    """The protocol end to end on the linear floor: a validation-tuned threshold, the tuned
+    hard-label family beside every threshold-free metric, and the whole pool as training set."""
+    from src.eval.runner import score_fold
+
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(600, 4))
+    y = (X[:, 0] + rng.normal(scale=1.0, size=600) > 1.0).astype(float)
+    out = score_fold("pd", "linear", X[:480], y[:480], X[480:], y[480:], [], seed=0, fold=0)
+    for key in ("roc_auc", "brier", "log_loss", "ece", "f1_tuned", "precision_tuned", "recall_tuned",
+                "mcc_tuned", "threshold_tuned", "val_f1", "n_val"):
+        assert key in out, key
+    assert out["n_train_used"] == 480, "the refit uses the WHOLE training pool"
+    assert out["n_val"] == 96
+    assert 0.0 < out["threshold_tuned"] < 1.0
+
+
+def test_a_dataset_is_scored_fold_by_fold_with_every_row_once(monkeypatch):
+    from types import SimpleNamespace
+
+    from src.eval import runner
+
+    rng = np.random.default_rng(1)
+    X = rng.normal(size=(250, 3))
+    y = np.clip(0.5 + 0.2 * X[:, 0] + rng.normal(scale=0.1, size=250), 0, 1)
+    ds = SimpleNamespace(X=X, y=y, n_rows=250, n_features=3, cat_indices=[])
+    monkeypatch.setattr(runner, "load_processed", lambda task, name: ds)
+    rows = runner.evaluate_dataset("lgd", "toy", ["linear"], 0)
+    assert [r["fold"] for r in rows] == [0, 1, 2, 3, 4]
+    assert all(r["status"] == "ok" and r["protocol"] == 3 for r in rows)
+    assert sum(r["n_test"] for r in rows) == 250
 
 
 # --- baselines ---------------------------------------------------------------
@@ -215,10 +277,11 @@ def test_imputation_uses_train_statistics_only():
     assert filled[0, 0] == pytest.approx(2.0), "should use the TRAIN median"
 
 
-def test_tfm_row_cap_subsamples_and_records_it():
-    """A silent subsample makes a model look worse for a reason nothing in the
-    output explains."""
+def test_the_foundation_models_get_the_whole_training_pool():
+    """Protocol 3: no row cap. Until 28-09-2026 TabPFN-3 and TabICLv2 saw at most 10,000 rows."""
     from src.eval.baselines import TFM_MAX_TRAIN_ROWS, _TFMBaseline
+
+    assert TFM_MAX_TRAIN_ROWS is None
 
     class Dummy(_TFMBaseline):
         name = "dummy"
@@ -229,18 +292,18 @@ def test_tfm_row_cap_subsamples_and_records_it():
         def _predict(self, X):
             return np.zeros(X.shape[0])
 
-    n = TFM_MAX_TRAIN_ROWS + 5000
-    X = np.zeros((n, 3), dtype=np.float32)
-    y = np.zeros(n, dtype=np.float32)
-    rep = Dummy(task="lgd", seed=0).fit(X, y, [])
-    assert rep.subsampled is True
-    assert rep.n_train_used == TFM_MAX_TRAIN_ROWS
-    assert rep.n_train_available == n
+    n = 25_000
+    rep = Dummy(task="lgd", seed=0).fit(np.zeros((n, 3), dtype=np.float32), np.zeros(n, dtype=np.float32), [])
+    assert rep.subsampled is False and rep.n_train_used == n
 
 
-def test_tfm_row_cap_is_stratified_for_pd():
-    """A uniform draw from a 3%-positive dataset can lose the positives."""
-    from src.eval.baselines import TFM_MAX_TRAIN_ROWS, _TFMBaseline
+def test_a_debug_row_cap_is_stratified_for_pd_and_recorded(monkeypatch):
+    """The cap survives as a debug hook; when used, a uniform draw from a 3%-positive dataset
+    must not lose the positives, and the subsample is recorded."""
+    from src.eval import baselines
+    from src.eval.baselines import _TFMBaseline
+
+    monkeypatch.setattr(baselines, "TFM_MAX_TRAIN_ROWS", 10_000)
 
     class Dummy(_TFMBaseline):
         name = "dummy"
@@ -251,11 +314,12 @@ def test_tfm_row_cap_is_stratified_for_pd():
         def _predict(self, X):
             return np.zeros(X.shape[0])
 
-    n = TFM_MAX_TRAIN_ROWS + 20000
+    n = 30_000
     y = np.zeros(n, dtype=np.float32)
     y[: int(0.03 * n)] = 1.0
     m = Dummy(task="pd", seed=0)
     rep = m.fit(np.zeros((n, 3), dtype=np.float32), y, [])
+    assert rep.subsampled is True and rep.n_train_used == 10_000
     assert rep.extra["subsample_strategy"] == "stratified"
     assert m.y_seen.sum() > 0, "positives must survive the subsample"
 
@@ -539,10 +603,13 @@ def test_forward_width_follows_the_data_not_the_head():
         )
 
 
-def test_the_classification_loss_still_slices():
-    """Kept even though it is a no-op today: it is the guard for the case above changing."""
+def test_the_classification_loss_runs_over_every_logit_as_upstream_does():
+    """Upstream's `run_micro_batch` takes the cross-entropy over all `max_classes` logits the
+    training-mode head returns; slicing to the classes present (as we did until 28-09-2026)
+    trains a different objective. `tests/test_equivalence.py` checks the losses bit for bit."""
     src = (ROOT / "src" / "train" / "loop.py").read_text(encoding="utf-8")
-    assert "pred[..., :n_classes]" in src, "the classification loss must slice the logits"
+    assert "flat = pred.flatten(end_dim=-2)" in src
+    assert "pred[..., :n_classes]" not in src
 
 
 def test_evaluation_row_cap_is_a_random_subsample_and_is_recorded():
@@ -556,13 +623,14 @@ def test_evaluation_row_cap_is_a_random_subsample_and_is_recorded():
     """
     src = (ROOT / "src" / "eval" / "runner.py").read_text(encoding="utf-8")
     cap = src[src.index("if max_rows is not None"):]
-    cap = cap[: cap.index("row.update(")]
+    cap = cap[: cap.index("return X, y")]
     assert "default_rng(seed).choice" in cap, "must be a seeded random subsample"
     assert "[:max_rows]" not in cap, "must not take the head"
-    assert 'row["row_cap"]' in cap and 'row["n_rows_full"]' in cap, "the cap must be recorded"
+    assert 'info["row_cap"]' in cap and 'info["n_rows_full"]' in cap, "the cap must be recorded"
 
     # capping happens BEFORE the split, or a full-size copy is made anyway and the OOM stands
-    assert src.index("if max_rows is not None") < src.index("train_idx, test_idx = make_split")
+    body = src[src.index("def evaluate_dataset("):]
+    assert body.index("load_arrays(") < body.index("cv_folds(")
 
 
 def test_a_real_result_is_uncapped_by_default():
@@ -572,10 +640,8 @@ def test_a_real_result_is_uncapped_by_default():
     assert EvalConfig(task="pd").max_rows is None
 
 
-def test_the_debug_job_caps_but_the_configs_do_not():
-    """The cap belongs to the debug JOB, not to any experiment config."""
-    job = (ROOT / "scripts" / "slurm" / "debug_exp1.slurm").read_text(encoding="utf-8")
-    assert "--max-rows" in job and "DEBUG_EVAL_ROWS" in job
+def test_no_config_caps_the_rows():
+    """A row cap is a debugging hook of `scripts/evaluate.py`, never part of an experiment."""
     for cfg in (ROOT / "config").glob("Exp*.yaml"):
         assert "max_rows" not in cfg.read_text(encoding="utf-8"), (
             f"{cfg.name} must not cap rows — that would silently shrink a real result"
@@ -643,19 +709,15 @@ def test_scoring_goes_through_upstreams_wrapper_not_our_own_code():
     )
 
 
-def test_the_progress_hook_standardises_because_it_cannot_use_the_wrapper():
-    """The one place that still rolls its own inference, and it has to.
-
-    The progress curve scores the LIVE model mid-training; upstream's wrapper loads weights from
-    a file, so it cannot be used here. It therefore mirrors the wrapper's first step —
-    `CustomStandardScaler` — explicitly. It is a diagnostic trend, never a reported number;
-    `scripts/evaluate.py` produces those, through the wrapper.
-    """
+def test_the_progress_hook_scores_through_upstreams_wrapper_too():
+    """Since 28-09-2026 the monitor puts the LIVE weights inside upstream's `TabICLClassifier` /
+    `TabICLRegressor` (their `_load_model` is pointed at the in-memory model), so the curve and
+    the benchmark are one measurement at two sizes — not a hand-rolled forward pass that skipped
+    the outlier clip and the ensemble and fed the LGD model raw [0, 1] labels."""
     progress = (ROOT / "src" / "train" / "progress.py").read_text(encoding="utf-8")
-    assert "standardise_from_context(Xc, Xt)" in progress
-    assert progress.index("np.isfinite") < progress.index("standardise_from_context(Xc, Xt)"), (
-        "standardising around NaNs would poison the statistics; impute first"
-    )
+    assert "TabICLClassifier" in progress and "TabICLRegressor" in progress
+    assert "est._load_model = _use_training_weights" in progress
+    assert "standardise_from_context(" not in progress
 
 
 def test_context_cap_lives_on_the_shared_base_class():

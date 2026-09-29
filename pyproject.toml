@@ -144,7 +144,8 @@ dev = [
 # ---------------------------------------------------------------------------
 eval = [
     "catboost>=1.2",          # the GBDT baseline every credit paper reports
-    "tabpfn>=2.0",            # TabPFN v2 / v3 inference (open weights)
+    "tabpfn==9.0.0",          # TabPFN-3: inference, and Exp2's continued pretraining, which calls
+                              # tabpfn.finetuning internals of exactly this version (Exp0 checks it)
     "tabicl>=2.0",            # released TabICLv2 checkpoints, inference only
 
     # OUT-OF-DOMAIN benchmarks: OpenML-CC18 (classification, the suite O'Prior used)

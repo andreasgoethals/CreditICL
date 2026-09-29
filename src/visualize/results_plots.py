@@ -1,14 +1,18 @@
 """Level-1 RESULTS visualisation: how the trained arms score on the real datasets.
 
-Reads the benchmark output — `output/results/<task>/eval/results_<tag>.csv`, one row per
-(dataset, model, seed) written by `scripts/evaluate.py` — and turns it into the final-scores
+Reads the benchmark output — `output_CreditICL/experiment_<N>/benchmark/<task>/results_<tag>.csv`
+and the shared `output_CreditICL/reference/benchmark/<task>/`, one row per (dataset, model, seed,
+fold) written by `scripts/evaluate.py` — and turns it into the final-scores
 figures for `1.3_pd_results` / `1.4_lgd_results` (Exp1, `exp="exp1"`) and
 `2.3_pd_results` / `2.4_lgd_results` (Exp2, `exp="exp2"`).
 
-Each phase-2 array task writes its own `results_<tag>.csv` (arms tagged `exp{N}bench_<track>_a<i>`,
-the shared reference column `reference_<track>`), so an experiment's table is the concatenation of
-its arm files plus the reference. `exp` selects which arm files to read; the reference is shared
-across experiments and always included.
+Each phase-2 array task writes its own `results_<tag>.csv` (an arm's FINAL checkpoint is tagged
+`exp{N}bench_<track>_a<i>`, its earlier ones `..._a<i>_s<step>`, each reference model
+`reference_<track>_<model>`), so an experiment's table is the concatenation of its arm files plus
+the reference. `exp` selects which arm files to read; the reference is shared across experiments
+and always included. Rows of ONE evaluation protocol are read (`src/eval/protocol.py`) — the newest
+present, unless one is asked for: a table mixing a 1,024-row-context score (protocol 2) with a
+full-context 5-fold one (protocol 3) would compare two different measurements.
 
 The benchmark only runs once every arm of a track has trained, so until then these degrade to a
 single "not scored yet" panel rather than an error: the notebook is meant to be safe to run at
@@ -29,37 +33,19 @@ from src.visualize import style
 
 HEADLINE = {"pd": "roc_auc", "lgd": "r2"}
 HIGHER_IS_BETTER = {"auc": True, "ap": True, "r2": True, "rmse": False, "mae": False,
-                    "roc_auc": True, "pr_auc": True,
-                    "pinball": False, "crps": False, "brier": False, "logloss": False}
+                    "roc_auc": True, "pr_auc": True, "f1_tuned": True, "mcc_tuned": True,
+                    "pinball": False, "crps": False, "brier": False, "logloss": False,
+                    "log_loss": False, "ece": False}
 
 # Names that are external baselines rather than one of our trained arms.
 BASELINES = ("catboost", "xgboost", "lightgbm", "tabpfn", "tabpfn3", "tabiclv2", "tabicl", "logreg",
              "linear", "mean", "gbm", "rf", "randomforest")
 
 # Sweep levers that identify an Exp2 arm, as they appear in a run name / benchmark tag.
-_LEVER_TOKENS = ("credit_fraction=", "strategy=", "l2sp_alpha=", "-lr=", "exp1_", "exp2_")
+_LEVER_TOKENS = ("credit_fraction=", "arm=", "strategy=", "l2sp_alpha=", "-lr=", "exp1_", "exp2_")
 
 
-def load_results(track: str, exp: str = "exp1") -> pd.DataFrame | None:
-    """Per-(dataset, model, seed) results for `exp` on `track`, or `None` if none exist.
-
-    Concatenates the experiment's arm files (`results_<exp>bench_<track>_*.csv`) with the shared
-    reference (`results_reference_<track>.csv`). Other experiment and legacy CSVs are
-    excluded so old results cannot be mistaken for this experiment's benchmark.
-    """
-    out = paths.results_dir(track, "eval")
-    if not out.exists():
-        return None
-    from src.eval.selection import ROOT
-    from src.utils.config import expand_with_seeds, load
-    cfg = load(ROOT / f"config/Exp{int(exp.removeprefix('exp'))}_{track.upper()}.yaml",
-               allow_placeholders=True)
-    files = [out / f"results_{exp}bench_{track}_a{i}.csv"
-             for i in range(len(expand_with_seeds(cfg)))]
-    files = [p for p in files if p.is_file()]
-    ref = out / f"results_reference_{track}.csv"
-    if ref.is_file():
-        files.append(ref)
+def _read_frames(files: list[Any], protocol: int | None) -> pd.DataFrame | None:
     frames = []
     for path in files:
         try:
@@ -71,7 +57,49 @@ def load_results(track: str, exp: str = "exp1") -> pd.DataFrame | None:
     df = pd.concat(frames, ignore_index=True)
     if "status" in df:
         df = df[df["status"].eq("ok")]
+    # Rows written before the protocol column existed are protocol 2 (one split per seed,
+    # context capped at 1,024 rows).
+    version = pd.to_numeric(df["protocol"], errors="coerce").fillna(2) if "protocol" in df \
+        else pd.Series(2, index=df.index)
+    want = int(version.max()) if protocol is None and len(df) else protocol
+    df = df[version.eq(want)].assign(protocol=want)
     return df if len(df) else None
+
+
+def load_results(track: str, exp: str = "exp1", protocol: int | None = None) -> pd.DataFrame | None:
+    """Per-(dataset, model, seed, fold) results of the FINAL checkpoints for `exp` on `track`, or
+    `None` if none exist.
+
+    Concatenates the experiment's arm files (`results_<exp>bench_<track>_a<i>.csv`) with the shared
+    reference (`results_reference_<track>_<model>.csv`). Other experiments and earlier checkpoints are
+    excluded, and so is every protocol but one: the newest present when `protocol` is None (the
+    `protocol` column says which), else the one asked for.
+    """
+    out = paths.benchmark_dir(paths.experiment_of(f"{exp}_"), track)
+    ref = paths.benchmark_dir(paths.REFERENCE, track)
+    if not out.exists() and not ref.exists():
+        return None
+    # Every FINAL-checkpoint arm file (no `_s<step>` suffix), whatever grid wrote it: the protocol
+    # filter below keeps one benchmark.
+    final = re.compile(rf"results_{re.escape(exp)}bench_{re.escape(track)}_a\d+\.csv$")
+    files = sorted(p for p in out.glob(f"results_{exp}bench_{track}_a*.csv") if final.match(p.name))
+    files += sorted(ref.glob(f"results_reference_{track}_*.csv"))
+    return _read_frames(files, protocol)
+
+
+def load_checkpoint_results(track: str, exp: str = "exp1", protocol: int | None = None) -> pd.DataFrame | None:
+    """Every saved checkpoint of every arm — the final one and the `_s<step>` ones — with the
+    step in `checkpoint_step`: the learning curve on real data, one point per saved checkpoint.
+    One protocol only, as `load_results`."""
+    out = paths.benchmark_dir(paths.experiment_of(f"{exp}_"), track)
+    if not out.exists():
+        return None
+    files = sorted(out.glob(f"results_{exp}bench_{track}_a*.csv"))
+    df = _read_frames(files, protocol)
+    if df is None or "info_checkpoint_step" not in df:
+        return None
+    df = df.assign(checkpoint_step=pd.to_numeric(df["info_checkpoint_step"], errors="coerce"))
+    return df.dropna(subset=["checkpoint_step"])
 
 
 def _model_col(df: pd.DataFrame) -> str:
@@ -179,8 +207,9 @@ def _with_identity(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
 
 
 def available_metrics(df: pd.DataFrame) -> list[str]:
-    known = ["roc_auc", "pr_auc", "auc", "ap", "r2", "rmse", "mae", "pinball", "crps", "brier", "logloss", "ks",
-             "calibration_slope", "boundary_mass_abs_err", "coverage_80"]
+    known = ["roc_auc", "pr_auc", "auc", "ap", "f1_tuned", "mcc_tuned", "r2", "rmse", "mae", "pinball", "crps",
+             "brier", "log_loss", "logloss", "ece", "ks", "calibration_slope", "boundary_mass_abs_err",
+             "coverage_80"]
     return [m for m in known if m in df.columns]
 
 
@@ -228,7 +257,7 @@ def overall_ranking(track: str, exp: str = "exp1", metric: str | None = None):
     metric = metric or HEADLINE[track]
     style.apply()
     if df is None or metric not in df.columns:
-        return _placeholder(f"no benchmark results in output/results/{track}/eval/ yet")
+        return _placeholder(f"no benchmark results in output_CreditICL/experiment_<N>/benchmark/{track}/ yet")
 
     from src.eval.selection import development_ranking
     agg = development_ranking(df, track, exp, metric)
@@ -342,15 +371,71 @@ def credit_vs_control(track: str, exp: str = "exp1", metric: str | None = None,
     return fig
 
 
+def _checkpoint_means(track: str, exp: str, metric: str, role: str | None) -> pd.DataFrame | None:
+    """`(share, checkpoint_step, mean, low, high)`: each arm's score per saved checkpoint — folds
+    within a dataset first, then datasets equally — then the mean and range over training seeds."""
+    df = load_checkpoint_results(track, exp)
+    if df is not None:
+        df = _restrict(df, track, exp, role)
+    if df is None or metric not in df.columns or not len(df) or df["checkpoint_step"].nunique() < 2:
+        return None
+    df, mc = _with_identity(df)
+    per_arm = (df.groupby([mc, "checkpoint_step", "dataset"])[metric].mean()
+               .groupby(level=[0, 1]).mean().reset_index())
+    per_arm["share"] = per_arm[mc].map(_share)
+    per_arm = per_arm.dropna(subset=["share"])
+    out = per_arm.groupby(["share", "checkpoint_step"])[metric].agg(["mean", "min", "max"]).reset_index()
+    return out.rename(columns={"min": "low", "max": "high"})
+
+
+def checkpoint_curve(track: str, exp: str = "exp1", metric: str | None = None,
+                     role: str | None = "holdout"):
+    """The learning curve on real data: every saved checkpoint's score, one line per share of our
+    credit prior (the mean over its training seeds, the band their range), and the reference
+    models' scores as dashed horizontal lines."""
+    metric = metric or HEADLINE[track]
+    style.apply()
+    curve = _checkpoint_means(track, exp, metric, role)
+    if curve is None:
+        return _placeholder("no learning curve yet: the protocol-3 benchmark scores every saved checkpoint")
+    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.42))
+    handles = []
+    for share, part in curve.groupby("share"):
+        colour = _group_colour(share)
+        ax.fill_between(part["checkpoint_step"], part["low"], part["high"], color=colour, alpha=0.18, lw=0)
+        line, = ax.plot(part["checkpoint_step"], part["mean"], color=colour, marker=_group_marker(share),
+                        lw=1.6, ms=4, label=_group_label(share))
+        handles.append(line)
+    ref = load_results(track, exp)
+    if ref is not None:
+        ref = _restrict(ref, track, exp, role)
+    if ref is not None and len(ref) and metric in ref.columns:
+        ref = ref[ref["model"].map(_kind).eq("baseline")]
+        per_ref = ref.groupby(["model", "dataset"])[metric].mean().groupby(level=0).mean()
+        right = float(curve["checkpoint_step"].max())
+        for model, value in per_ref.items():
+            ax.axhline(value, color=style.BASELINE, lw=1.0, ls="--", zorder=1)
+        if len(per_ref):
+            style.place_labels(ax, [right] * len(per_ref), per_ref.values,
+                               [style.reference_label(m, track) for m in per_ref.index], color=style.BASELINE)
+            handles.append(plt.Line2D([], [], color=style.BASELINE, lw=1.0, ls="--", label=_REFERENCES))
+    ax.set_xlabel("training step of the saved checkpoint")
+    ax.set_ylabel(f"{style.metric_label(metric)}, mean over {ROLE_LABEL.get(role, role)}")
+    style.legend_below(ax, handles, ncol=min(len(handles), 4))
+    return fig
+
+
 # ---------------------------------------------------------------------------
 # 4. Which fine-tuning lever moved the score (Exp2)
 # ---------------------------------------------------------------------------
 
 #: The Exp2 sweep levers, and how each reads in a benchmark tag / run name.
+#: Experiment 2's levers, read off the run name: the released model continued, the share of our
+#: prior (stage B), and the optimizer and rate (the stage-A search).
 _LEVERS = (("credit_fraction", r"credit_fraction=([0-9p.]+)", "prior mix"),
-           ("strategy", r"strategy=(full|icl_only|head_only|scratch)", "layers trained"),
-           ("l2sp_alpha", r"l2sp_alpha=([0-9pm.e+-]+)", "L2-SP"),
-           ("lr", r"-lr=([0-9pm.e+-]+)", "learning rate"))
+           ("model", r"arm=(tabicl|tabpfn3)", "released model continued"),
+           ("optimizer", r"arm=(?:tabicl|tabpfn3)_(adamw|muon)", "optimizer"),
+           ("lr", r"arm=(?:tabicl|tabpfn3)_(?:adamw|muon)_([0-9.e-]+)", "learning rate"))
 
 
 def _lever_tick(key: str, value: str) -> str:
@@ -358,19 +443,20 @@ def _lever_tick(key: str, value: str) -> str:
     text = str(value).replace("p", ".").replace("m", "-")
     if key == "credit_fraction":
         return style.prior_mix_label(float(text))
-    if key == "strategy":
-        return style.STRATEGY_LABEL.get(str(value), str(value))
-    if key == "l2sp_alpha":
-        return "no L2-SP" if float(text) == 0 else f"L2-SP {text}"
-    return text
+    if key == "model":
+        return style.CONTINUED_LABEL.get(str(value), str(value))
+    if key == "optimizer":
+        return {"adamw": "AdamW", "muon": "Muon"}.get(str(value), str(value))
+    return str(value)
 
 
 def lever_effect(track: str, exp: str = "exp2", metric: str | None = None):
     """One panel per fine-tuning lever: mean headline score grouped by that lever's value.
 
-    Reads the arm's swept levers out of its benchmark tag and averages the headline metric over
-    every arm that shares a value, so each panel isolates one knob — credit fraction, freeze
-    strategy, L2-SP on/off, learning rate. Degrades to a placeholder before the benchmark runs.
+    Reads the arm's swept levers out of its run name and averages the headline metric over every
+    arm that shares a value, so each panel isolates one knob — the credit fraction, the released
+    model continued, and (in the search) the optimizer and the rate. A lever with one value draws
+    no panel. Degrades to a placeholder before the benchmark runs.
     """
     df = load_results(track, exp)
     metric = metric or HEADLINE[track]
@@ -420,7 +506,7 @@ def metric_grid(track: str, exp: str = "exp1", role: str | None = None):
         df = df if len(df) else None
     metrics = available_metrics(df) if df is not None else []
     if df is None or not metrics:
-        return _placeholder("no benchmark results in output/results/ yet")
+        return _placeholder("no benchmark results in output_CreditICL/ yet")
     ncols = 3
     nrows = max(1, int(np.ceil(len(metrics) / ncols)))
     fig, axes = plt.subplots(nrows, ncols, figsize=style.grid_figsize(ncols, nrows, panel_ratio=0.7))
@@ -523,8 +609,12 @@ def results_summary(track: str, exp: str = "exp1") -> str:
     it does on the holdout."""
     df = load_results(track, exp)
     title = f"{exp.upper()} {track.upper()} RESULTS — the benchmark"
+    if df is not None and "protocol" in df:
+        title += (f" (evaluation protocol {int(df['protocol'].iloc[0])}: "
+                  + ("5-fold CV, whole training pool as context, validation-tuned F1)"
+                     if int(df["protocol"].iloc[0]) >= 3 else "one split per seed, context capped at 1,024 rows)"))
     if df is None:
-        return (f"{title}\n  no benchmark output in output/results/{track}/eval/ yet.\n"
+        return (f"{title}\n  no benchmark output in output_CreditICL/experiment_<N>/benchmark/{track}/ yet.\n"
                 f"  The benchmark (phase 2) runs once every arm of the track has trained;\n"
                 f"  re-run this notebook after the phase-2 array finishes scoring.")
     metric = HEADLINE[track]
@@ -563,6 +653,14 @@ def results_summary(track: str, exp: str = "exp1") -> str:
 
         for g in sorted(means.index, key=order):
             lines.append(f"  {means[g]:.4f}  {g}")
+    curve = _checkpoint_means(track, exp, metric, "holdout" if roles else None)
+    lines += ["", f"B4. EVERY SAVED CHECKPOINT ({label}, holdout datasets, mean over training seeds)"]
+    if curve is None:
+        lines.append("  no learning curve yet: only final checkpoints have been scored")
+    else:
+        for share, part in curve.groupby("share"):
+            steps = ", ".join(f"{int(r.checkpoint_step):,}: {r.mean:.4f}" for r in part.itertuples())
+            lines.append(f"  {style.prior_mix_label(share)} — {steps}")
     lines += ["", "C. OUR CREDIT PRIOR AGAINST THE CONTROL — matched arms that differ only in "
               "the credit share", "  (same filter and training seed; a positive difference "
               "means the credit prior helped)"]

@@ -59,6 +59,20 @@ import torch
 from ..rng import PriorRNG
 
 
+def _per_table(rng: PriorRNG, cfg: dict, key: str, default: float) -> float:
+    """`<key>_range: [lo, hi]` drawn uniformly per table, else the fixed `<key>`."""
+    span = cfg.get(f"{key}_range")
+    if span is not None:
+        return float(rng.uniform(float(span[0]), float(span[1])))
+    return float(cfg.get(key, default))
+
+
+def max_selection_drop(cfg: dict) -> float:
+    """The largest share of rows the screen can remove — what the generator oversamples for."""
+    span = cfg.get("selection_drop_range")
+    return float(span[1]) if span is not None else float(cfg.get("selection_drop", 0.0))
+
+
 def _quantile_cut(latent: torch.Tensor, positive_rate: float) -> torch.Tensor:
     """Label the top `positive_rate` fraction of `latent` as 1. Exact by construction."""
     n = latent.numel()
@@ -81,7 +95,11 @@ def apply_threshold_rules(
     of the column's scale, and weights are large enough to matter against a
     standardised latent.
     """
-    n_rules = int(cfg.get("n_rules", 0))
+    # `n_rules_range: [lo, hi]` draws the count per table (inclusive), so some books have no hard
+    # cut-offs at all; `n_rules` is a fixed count.
+    counts = cfg.get("n_rules_range")
+    n_rules = (int(rng.randint(int(counts[0]), int(counts[1]) + 1)) if counts is not None
+               else int(cfg.get("n_rules", 0)))
     if n_rules <= 0 or X.shape[1] == 0:
         return latent, {"n_rules": 0}
 
@@ -125,15 +143,15 @@ def apply_underwriting_selection(
     is never asked to extrapolate across the acceptance boundary. That extrapolation is posed
     separately by the `selection` shift kind (`shift.py`), which withholds the rejected region
     from the context while keeping it in the query. Only the quantile-mode path calls this;
-    the mechanism-mode arm poses the problem through the shift instead.
+    Both target modes call it (the mechanism mode only since 28-09-2026).
     """
-    drop = float(cfg.get("selection_drop", 0.0))
+    drop = _per_table(rng, cfg, "selection_drop", 0.0)
     if drop <= 0.0 or X.shape[0] < 32:
         return X, latent, {"selection_drop": 0.0}
 
     drop = min(drop, 0.5)
     # Screen on a noisy version of the latent: policy is informed but imperfect.
-    sharpness = float(cfg.get("selection_sharpness", 0.7))
+    sharpness = _per_table(rng, cfg, "selection_sharpness", 0.7)
     z = (latent - latent.mean()) / (latent.std() + 1e-8)
     score = sharpness * z + (1.0 - sharpness) * rng.randn_like(z)
 
@@ -149,8 +167,13 @@ def apply_informative_missingness(
     y: torch.Tensor,
     cfg: dict,
     max_features: int,
+    fit_rows: int | None = None,
+    fill: str = "mean",
 ) -> tuple[torch.Tensor, dict]:
     """MNAR missingness whose rate depends on the target, plus optional indicators.
+
+    `fill="mean"` fills a gap as TabICL's wrapper does (the observed context mean); `fill="nan"`
+    leaves it missing, for a model that handles missing values itself (TabPFN).
 
     A thin credit file — no bureau record, no income documentation — is itself a
     risk signal, so the *fact* of missingness carries information. Arm A's prior
@@ -158,13 +181,19 @@ def apply_informative_missingness(
     discards exactly this signal.
     """
     rate_lo, rate_hi = cfg.get("missing_rate_range", [0.05, 0.35])
-    frac_cols = float(cfg.get("missing_col_fraction", 0.0))
+    frac = cfg.get("missing_col_fraction_range", cfg.get("missing_col_fraction", 0.0))
+    # A `[lo, hi]` range draws the share per table: real credit tables go from one gappy column
+    # to nearly all of them.
+    frac_cols = float(rng.uniform(float(frac[0]), float(frac[1]))) if isinstance(frac, (list, tuple)) else float(frac)
     if frac_cols <= 0.0 or X.shape[1] == 0:
         return X, {"missing_cols": 0}
 
     n_cols = max(1, int(round(frac_cols * X.shape[1])))
     cols = rng.randperm(X.shape[1])[:n_cols]
-    beta = float(cfg.get("missing_target_coupling", 1.0))
+    coupling = cfg.get("missing_target_coupling_range", cfg.get("missing_target_coupling", 1.0))
+    # A `[lo, hi]` range draws the strength per table: in real data it runs from none to
+    # strong (hmeq: whether DEBTINC is missing alone gives an AUC of 0.78).
+    beta = float(rng.uniform(float(coupling[0]), float(coupling[1]))) if isinstance(coupling, (list, tuple)) else float(coupling)
     add_indicators = bool(cfg.get("missing_indicators", True))
 
     X = X.clone()
@@ -177,8 +206,14 @@ def apply_informative_missingness(
         mask = rng.rand_like(logits) < torch.sigmoid(logits)
         if mask.all() or not mask.any():
             continue
-        # Impute with the observed mean, as TabICLv2 does at inference.
-        X[mask, j] = X[~mask, j].mean()
+        # Impute with the observed mean, as TabICLv2 does at inference — of the CONTEXT rows
+        # (`fit_rows`) when given, which is where upstream's imputer is fitted.
+        observed = ~mask
+        if fit_rows is not None:
+            observed = observed & (torch.arange(len(mask)) < int(fit_rows))
+            if not observed.any():
+                continue
+        X[mask, j] = float("nan") if fill == "nan" else X[observed, j].mean()
         if add_indicators:
             indicators.append(mask.float())
 
@@ -186,6 +221,27 @@ def apply_informative_missingness(
         X = torch.cat([X, torch.stack(indicators, dim=-1)], dim=-1)
 
     return X, {"missing_cols": len(cols), "missing_indicators": len(indicators)}
+
+
+def apply_label_noise(rng: PriorRNG, y: torch.Tensor, cfg: dict) -> tuple[torch.Tensor, dict]:
+    """Asymmetric label noise on a 0/1 default flag: cures (1 -> 0, `flip_pos_to_neg`) are far
+    commoner than defaults that go unrecorded (0 -> 1, `flip_neg_to_pos`). Each can be a fixed
+    rate or a `[lo, hi]` range drawn per table."""
+    def rate(key: str) -> float:
+        # `<key>_range: [lo, hi]` draws per table (a `_range` key is never a sweep axis);
+        # `<key>: value` is a fixed rate.
+        v = cfg.get(f"{key}_range", cfg.get(key, 0.0))
+        return float(rng.uniform(*v)) if isinstance(v, (list, tuple)) else float(v)
+
+    q10, q01 = rate("flip_pos_to_neg"), rate("flip_neg_to_pos")
+    if q10 > 0 or q01 > 0:
+        u = rng.rand_like(y)
+        flip_pos = (y == 1) & (u < q10)
+        flip_neg = (y == 0) & (u < q01)
+        y = y.clone()
+        y[flip_pos] = 0.0
+        y[flip_neg] = 1.0
+    return y, {"flip_pos_to_neg": round(q10, 4), "flip_neg_to_pos": round(q01, 4)}
 
 
 def apply_pd_target(
@@ -207,17 +263,32 @@ def apply_pd_target(
 
         latent, rule_meta = apply_threshold_rules(rng, X, y_latent, cfg.get("rules", {}))
         meta.update(rule_meta)
+        # Selection: the observed book holds only the approved applicants. Until 28-09-2026 this
+        # branch returned before selection and before the label noise below, so Exp1's credit
+        # tasks had neither although the config set both (docs/AGENTS_MEMORY.md, 28-09-2026).
+        X, latent, sel_meta = apply_underwriting_selection(rng, X, latent, cfg.get("selection", {}))
+        meta.update(sel_meta)
         y, mech_meta = apply_pd_mechanism(rng, latent, cfg.get("mechanism", {}))
+        period = mech_meta.pop("_period_factor", None)
         meta.update(mech_meta)
-        # SAME GUARD AS THE QUANTILE PATH BELOW. The mechanism branch returns early and so
-        # never reached that guard; a single-class Vasicek draw then crashed the arm. Rescue
-        # it by quantile-cutting the scored latent to a floor base rate — deterministic, and
-        # identical in spirit to step 4 + the guard used for `mode: quantile`.
+        # The period factor as a column, with `macro_feature_prob`: macroeconomic variables are
+        # explanatory variables in credit models (economic cycle dependency; Bellotti & Crook
+        # 2012, as surveyed by Baesens et al. 2026). Otherwise it stays an unrecorded driver.
+        mcfg = cfg.get("mechanism", {}) or {}
+        if (period is not None and meta.get("cohorts", 1) > 1 and X.shape[1] < max_features
+                and rng.boolean(float(mcfg.get("macro_feature_prob", 0.0)))):
+            X = torch.cat([X, period.unsqueeze(1).to(X.dtype)], dim=1)
+            meta["macro_feature"] = True
+        y, noise_meta = apply_label_noise(rng, y, cfg)
+        meta.update(noise_meta)
+        # SAME GUARD AS THE QUANTILE PATH BELOW: the model and the loss need two classes. Rescue
+        # a single-class draw by quantile-cutting the scored latent to a floor base rate.
         if float(y.sum()) < 2 or float(y.sum()) > y.numel() - 2:
             zc = (latent - latent.mean()) / (latent.std() + 1e-8)
             y = _quantile_cut(zc, 3.0 / max(y.numel(), 1))
             meta["mechanism_single_class_rescued"] = True
         meta["mode"] = "mechanism"
+        meta["realised_base_rate"] = float(y.mean())
         return X, y.float(), meta
 
     # 1. Hard policy rules on top of the smooth SCM latent.
@@ -246,16 +317,8 @@ def apply_pd_target(
 
     # 5. Asymmetric label noise: cures (1->0) are far more common than
     #    unobserved-default relabelling (0->1).
-    q10 = float(cfg.get("flip_pos_to_neg", 0.0))
-    q01 = float(cfg.get("flip_neg_to_pos", 0.0))
-    if q10 > 0 or q01 > 0:
-        u = rng.rand_like(y)
-        flip_pos = (y == 1) & (u < q10)
-        flip_neg = (y == 0) & (u < q01)
-        y = y.clone()
-        y[flip_pos] = 0.0
-        y[flip_neg] = 1.0
-    meta["flip_pos_to_neg"], meta["flip_neg_to_pos"] = q10, q01
+    y, noise_meta = apply_label_noise(rng, y, cfg)
+    meta.update(noise_meta)
 
     # Guard: the model and the loss both need two classes present.
     if float(y.sum()) < 2 or float(y.sum()) > y.numel() - 2:

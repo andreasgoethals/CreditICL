@@ -162,8 +162,9 @@ def test_unknown_optimizer_is_rejected():
 
 def test_muon_is_available_and_builds():
     model = torch.nn.Sequential(torch.nn.Linear(4, 4), torch.nn.LayerNorm(4))
-    opt = build_optimizer(model, {"optimizer": "muon"})
-    assert len(opt.param_groups) == 2, "matrices under Muon, the rest under AdamW"
+    opt = build_optimizer(model, {"optimizer": "muon", "lr": 8e-4})
+    assert len(opt.param_groups) == 1, "upstream: one group, every parameter, use_muon=True"
+    assert opt.param_groups[0]["use_muon"] is True
 
 
 # --- freezing ----------------------------------------------------------------
@@ -274,6 +275,10 @@ def test_gradients_actually_reach_the_weights(tmp_path, lgd_cfg):
     one hard-coded layer: the previous version reached into `out_mlp`, which only exists on the
     vendored fallback, so it broke the moment the real TabICL was installed — and a test that
     names one layer would not have noticed a whole stack sitting frozen anyway."""
+    # No warm-up here: like upstream's scheduler, ours now gives step 0 a rate of exactly 0
+    # during warm-up, which would leave a 2-step run with one real update. This test is about
+    # connectivity, so it wants both.
+    lgd_cfg["train"]["warmup_proportion"] = 0.0
     trainer = Trainer(lgd_cfg, tmp_path / "out", device="cpu", ckpt_dir=tmp_path / "ck", log_dir=tmp_path / "logs")
     before = {n: p.detach().clone() for n, p in trainer.model.named_parameters() if p.requires_grad}
     assert before, "no trainable parameters at all"
@@ -593,9 +598,8 @@ def test_optim_docstring_matches_the_configs():
     }
     # PRETRAINING IS MUON, CONTINUED PRETRAINING IS ADAMW, and the split is deliberate. Exp1
     # and Exp3 train from scratch and must match how the released weights were made. Exp2
-    # continues FROM those weights, where both published recipes (Real-TabPFN, TabPFN-Wide)
-    # use AdamW — and the deciding argument is mechanical: under Muon, `train.lr` is only the
-    # AUXILIARY AdamW rate, so Exp2's learning-rate sweep would move almost nothing.
+    # continues FROM those weights, and follows the continued-pretraining recipes it takes its
+    # rates and L2-SP from (Real-TabPFN, TabPFN-Wide, upstream's `_finetune`), all AdamW.
     pretrain = {v for k, v in chosen.items() if k.startswith(("Exp1", "Exp3"))}
     assert pretrain == {"muon"}, f"Exp1/Exp3 must match upstream's optimiser, got {pretrain}"
     cpt = {v for k, v in chosen.items() if k.startswith("Exp2")}
@@ -830,7 +834,7 @@ def test_the_smoke_test_cannot_write_into_the_real_manifests():
     smoke = (root / "src" / "utils" / "smoke_test.py").read_text(encoding="utf-8")
     assert "manifest_dir=" in smoke, "the smoke test must pin its own manifests directory"
     loop = (root / "src" / "train" / "loop.py").read_text(encoding="utf-8")
-    assert "self.manifest_dir or (" in loop, "the override must actually be honoured"
+    assert "self.manifest_dir or self.out_dir" in loop, "the override must actually be honoured"
 
 
 def test_the_job_banner_reads_the_real_walltime_from_slurm():

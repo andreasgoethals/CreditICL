@@ -17,8 +17,10 @@ EVERYTHING HERE IS BEST-EFFORT AND NEVER FATAL. A diagnostic that can kill a thr
 worse than no diagnostic, so every probe is wrapped and a failure degrades to a missing column.
 `nvidia-smi` in particular is absent on a login node and on the Windows dev machine.
 
-Output goes to the run's `.log` (human-readable) and to `output/manifests/<run>__telemetry.csv`
-(one row per sample, for plotting afterwards).
+Output goes to the run's `.log` (human-readable) and into the run folder
+(`output_CreditICL/experiment_<N>/runs/<run>/`): `telemetry.csv` (hardware, throughput, time
+per phase, gradients — one row per sample) and `weights.csv` (how far each block has moved
+from its initial weights, and how fast it is moving).
 """
 
 from __future__ import annotations
@@ -32,6 +34,43 @@ from pathlib import Path
 from typing import Any
 
 log = logging.getLogger(__name__)
+
+
+def _read_rows(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    """The rows and column order of an existing CSV, numbers parsed back to floats.
+
+    A requeued run is a new process; without this its first `record` rewrote the CSV from
+    memory and the rows of every earlier segment were lost.
+    """
+    if not path.is_file():
+        return [], []
+    try:
+        with path.open(encoding="utf-8", newline="") as fh:
+            reader = csv.DictReader(fh)
+            fields = list(reader.fieldnames or [])
+            rows = []
+            for raw in reader:
+                row: dict[str, Any] = {}
+                for k, v in raw.items():
+                    if v in ("", None):
+                        continue
+                    try:
+                        row[k] = int(v)
+                    except ValueError:
+                        try:
+                            row[k] = float(v)
+                        except ValueError:
+                            row[k] = v
+                rows.append(row)
+        return rows, fields
+    except (OSError, csv.Error) as exc:
+        log.debug("could not read %s: %s", path, exc)
+        return [], []
+
+
+def _trim_rows(rows: list[dict[str, Any]], step: int) -> list[dict[str, Any]]:
+    """Rows up to `step`: the ones after the checkpoint are about to be recomputed."""
+    return [r for r in rows if isinstance(r.get("step"), (int, float)) and r["step"] <= step]
 
 #: Queried in one `nvidia-smi` call. Order matters — it is the CSV column order too.
 _SMI_FIELDS = (
@@ -48,10 +87,12 @@ _SMI_FIELDS = (
 #: head, and "which stage is learning" is the question, so grouping by these prefixes is more
 #: informative than either one global norm or 390 per-tensor norms.
 _BLOCK_PREFIXES = (
-    ("col", ("col_", "x_embed", "tf_col", "col_embedder")),
+    # TabPFN-3 (Exp2) adds `feature_distribution_embedder` + `column_aggregator` (its column
+    # stage), `icl_blocks` and `many_class_decoder` / `output_norm` (its head).
+    ("col", ("col_", "x_embed", "tf_col", "col_embedder", "column_aggregator", "feature_distribution")),
     ("row", ("row_", "tf_row", "row_interaction")),
     ("icl", ("icl_", "tf_icl", "learning")),
-    ("head", ("head", "out_", "y_embed", "quantile")),
+    ("head", ("head", "out_", "y_embed", "quantile", "decoder", "output_norm")),
 )
 
 
@@ -211,9 +252,8 @@ class Telemetry:
         self.micro_batch_size = int(micro_batch_size) if micro_batch_size else None
         self.hardware_every = int(hardware_every or 0)
         self.grad_every = int(grad_every or 0)
-        self.path = Path(out_dir) / f"{run_name}__telemetry.csv"
-        self._fields: list[str] = []
-        self._rows: list[dict[str, Any]] = []
+        self.path = Path(out_dir) / "telemetry.csv"
+        self._rows, self._fields = _read_rows(self.path)
         self._started = time.time()
         #: Recorded once and reported in the summary. Answers "what was this actually run on?",
         #: which no amount of later inspection can recover.
@@ -222,6 +262,10 @@ class Telemetry:
     @property
     def enabled(self) -> bool:
         return bool(self.hardware_every or self.grad_every)
+
+    def resume(self, step: int) -> None:
+        """Keep the rows of earlier segments up to the step training continues from."""
+        self._rows = _trim_rows(self._rows, step)
 
     def due_hardware(self, step: int) -> bool:
         return bool(self.hardware_every) and step % self.hardware_every == 0
@@ -341,3 +385,126 @@ def _describe_environment() -> dict[str, str]:
     except Exception:  # noqa: BLE001
         pass
     return info
+
+
+class WeightTracker:
+    """How far each block has moved from the weights training started from, and how fast.
+
+    Two questions the loss cannot answer. **Did the whole model learn?** A block whose weights
+    never leave their initial values was, in effect, frozen. **How far did fine-tuning go?** In
+    Exp2 the distance from the released weights is the quantity that trades adaptation against
+    forgetting (Real-TabPFN's L2-SP penalises exactly this distance), so it has to be measured
+    rather than inferred from the learning rate.
+
+    Per block (`_classify`: col / row / icl / head / other) and over all weights (`all`):
+
+        weight_<b>      ||w||                       the size of the block
+        drift_<b>       ||w - w0||                  distance from the start
+        drift_rel_<b>   ||w - w0|| / ||w0||         the same, relative — comparable across blocks
+        update_rel_<b>  ||w - w_prev|| / ||w||      movement since the previous sample
+
+    `w0` is snapshotted when the tracker starts: after the model is built (a fixed seed, so a
+    resumed run rebuilds the same initial weights) and after any pretrained weights are loaded,
+    but BEFORE a checkpoint is resumed — so a resumed run still measures from the true start.
+    Kept in float32 on the model's device: a bf16 copy would round away the small drifts a
+    fine-tuning learning rate produces. Best-effort like the rest of this module.
+    """
+
+    def __init__(self, out_dir: str | Path, *, every: int = 250) -> None:
+        self.path = Path(out_dir) / "weights.csv"
+        self.every = int(every or 0)
+        self._init: dict[str, Any] | None = None
+        self._prev: dict[str, Any] | None = None
+        self._rows, self._fields = _read_rows(self.path)
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.every)
+
+    @property
+    def started(self) -> bool:
+        return self._init is not None
+
+    def due(self, step: int) -> bool:
+        return self.enabled and self._init is not None and step % self.every == 0
+
+    def start(self, model: Any) -> None:
+        """Snapshot the starting weights. Call once, before any checkpoint is resumed."""
+        if not self.enabled:
+            return
+        try:
+            import torch
+
+            with torch.no_grad():
+                self._init = {n: p.detach().float().clone() for n, p in model.named_parameters()}
+            self._prev = {n: t.clone() for n, t in self._init.items()}
+        except Exception as exc:  # noqa: BLE001 — never fatal
+            log.debug("weight snapshot failed: %s", exc)
+            self._init = self._prev = None
+
+    def resume(self, step: int) -> None:
+        """Keep the rows up to the step training continues from. The previous sample is then
+        unknown, so the first `update_rel` after a resume is left empty rather than reported as
+        the jump from the initial weights."""
+        self._rows = _trim_rows(self._rows, step)
+        if step > 0:
+            self._prev = None
+
+    def sample(self, model: Any, *, step: int, datasets_seen: int) -> dict[str, Any]:
+        """One row: the four quantities per block. `{}` if the tracker is off or failed."""
+        if self._init is None:
+            return {}
+        try:
+            import torch
+
+            sq: dict[str, dict[str, float]] = {}
+            current: dict[str, Any] = {}
+            with torch.no_grad():
+                for name, param in model.named_parameters():
+                    w0 = self._init.get(name)
+                    if w0 is None or w0.shape != param.shape:
+                        continue
+                    w = param.detach().float()
+                    for block in (_classify(name), "all"):
+                        acc = sq.setdefault(block, {"w": 0.0, "w0": 0.0, "d": 0.0, "u": 0.0})
+                        acc["w"] += float(torch.linalg.vector_norm(w) ** 2)
+                        acc["w0"] += float(torch.linalg.vector_norm(w0) ** 2)
+                        acc["d"] += float(torch.linalg.vector_norm(w - w0) ** 2)
+                        if self._prev is not None and name in self._prev:
+                            acc["u"] += float(torch.linalg.vector_norm(w - self._prev[name]) ** 2)
+                    current[name] = w.clone()
+            row: dict[str, Any] = {"step": step, "datasets_seen": datasets_seen}
+            for block, acc in sq.items():
+                w, w0, d = acc["w"] ** 0.5, acc["w0"] ** 0.5, acc["d"] ** 0.5
+                row[f"weight_{block}"] = w
+                row[f"drift_{block}"] = d
+                row[f"drift_rel_{block}"] = d / w0 if w0 > 0 else float("nan")
+                row[f"update_rel_{block}"] = (acc["u"] ** 0.5 / w if (self._prev is not None and w > 0)
+                                              else float("nan"))
+            self._prev = current
+            self._record(row)
+            return row
+        except Exception as exc:  # noqa: BLE001 — never fatal
+            log.debug("weight probe failed: %s", exc)
+            return {}
+
+    def _record(self, row: dict[str, Any]) -> None:
+        self._rows.append(row)
+        self._fields.extend(k for k in row if k not in self._fields)
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self.path.open("w", newline="", encoding="utf-8") as fh:
+                writer = csv.DictWriter(fh, fieldnames=self._fields)
+                writer.writeheader()
+                writer.writerows(self._rows)
+        except Exception as exc:  # noqa: BLE001 — see Telemetry.record
+            log.debug("could not write weights to %s: %s", self.path, exc)
+
+    def summary(self) -> str:
+        if not self._rows:
+            return "weights: nothing sampled."
+        last = self._rows[-1]
+        parts = [f"{b}={last[f'drift_rel_{b}']:.3g}" for b in ("col", "row", "icl", "head", "other", "all")
+                 if isinstance(last.get(f"drift_rel_{b}"), float)]
+        return f"weights: {len(self._rows)} samples -> {self.path}\n  relative drift at step " \
+               f"{last['step']}: " + "  ".join(parts)

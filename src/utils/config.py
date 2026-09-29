@@ -15,8 +15,8 @@ Levers are addressed by dotted path (``prior.credit.target.atom_prob``).
 
 **Literal lists vs sweeps.** Some values genuinely *are* lists — an interval to
 sample from, a seed list. The rule is a naming convention, not a hand-maintained
-allowlist: any key ending in ``_range`` (or named in ``NO_EXPAND_EXACT``) is
-literal data and is never crossed. A curated list was tried first and immediately
+allowlist: any key ending in ``_range`` or ``_mean_sd`` (or named in ``NO_EXPAND_EXACT``)
+is literal data and is never crossed. A curated list was tried first and immediately
 leaked two keys (`n_nodes_range`, `rule_quantile_range`) into the grid, silently
 turning a sampling interval into a two-point sweep — hence the suffix rule.
 
@@ -39,6 +39,8 @@ import yaml
 # A suffix rule rather than an allowlist, so a new `*_range` lever cannot be
 # silently reinterpreted as a two-point sweep.
 NO_EXPAND_SUFFIX: str = "_range"
+# The same for a literal [mean, sd] pair of a normal distribution (e.g. the ZOIB intercepts).
+MEAN_SD_SUFFIX: str = "_mean_sd"
 
 # Literal lists that do not follow the suffix convention. Getting one of these
 # wrong is not a crash but something worse: `metrics: [pinball, crps, coverage]`
@@ -67,7 +69,7 @@ def is_literal_list(key: str, value: list | None = None) -> bool:
     """
     if value is not None and any(isinstance(v, (dict, list)) for v in value):
         return False
-    return key.endswith(NO_EXPAND_SUFFIX) or key in NO_EXPAND_EXACT
+    return key.endswith((NO_EXPAND_SUFFIX, MEAN_SD_SUFFIX)) or key in NO_EXPAND_EXACT
 
 
 def resolve_config_path(path: str | Path) -> Path:
@@ -109,6 +111,9 @@ def load_yaml(path: str | Path) -> dict[str, Any]:
 #: would be worse than a hole: it would submit, run for hours, and quietly measure the
 #: wrong arm.
 PLACEHOLDER = "FILL_FROM_EXP1"
+#: Every placeholder a template may hold: Exp1's winner, and Experiment 2's hyperparameter search
+#: (`config/Exp2_*_search.yaml`), whose chosen recipe fills the main Exp2 configs.
+PLACEHOLDERS = (PLACEHOLDER, "FILL_FROM_SEARCH")
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -135,7 +140,7 @@ def find_placeholders(node: Any, prefix: str = "") -> list[str]:
     elif isinstance(node, list):
         for i, value in enumerate(node):
             found += find_placeholders(value, f"{prefix}[{i}].")
-    elif node == PLACEHOLDER:
+    elif isinstance(node, str) and node in PLACEHOLDERS:
         found.append(prefix.rstrip("."))
     return found
 
@@ -169,9 +174,10 @@ def load(path: str | Path, *, allow_placeholders: bool = False) -> dict[str, Any
         if holes:
             raise ValueError(
                 f"{resolved.name} is still a template: {len(holes)} unfilled value(s) — "
-                f"{', '.join(holes)}. Run Exp1 first, then replace every "
-                f"{PLACEHOLDER} with the winning value. Refusing to expand it, because a "
-                f"config that runs with a placeholder wastes GPU-hours measuring nothing."
+                f"{', '.join(holes)}. Run the experiment that decides them first (Exp1, or "
+                f"the Exp2 search), then replace every {' / '.join(PLACEHOLDERS)} with the "
+                f"chosen value. Refusing to expand it, because a config that runs with a "
+                f"placeholder wastes GPU-hours measuring nothing."
             )
     return apply_sweep_block(cfg)
 
@@ -301,12 +307,17 @@ def expand_grid(cfg: dict[str, Any]) -> list[dict[str, Any]]:
     Every returned config has all sweep lists collapsed to single values, plus a
     ``_grid`` block recording which combination it is. Order is deterministic.
     """
-    cfg = apply_sweep_block(cfg)
+    # A shallow copy: popping `arms` below must not change the caller's config.
+    cfg = dict(apply_sweep_block(cfg))
+    # ARM PRESETS: `arms:` names sets of dotted overrides, and the sweep axis `arm:` picks one per
+    # run — for arms that are not a cross product (Experiment 2: Muon exists for TabICL, not for
+    # TabPFN). Held out of the axis walk, then applied per run after the sweep values.
+    presets = cfg.pop("arms", None)
     axes = sweep_axes(cfg)
     if not axes:
         out = copy.deepcopy(cfg)
         out["_grid"] = {"index": 0, "total": 1, "assignments": {}, "tag": "base", "hash": _hash({})}
-        return [out]
+        return [apply_arm_preset(out, presets)]
 
     paths = [p for p, _ in axes]
     value_lists = [v for _, v in axes]
@@ -326,8 +337,27 @@ def expand_grid(cfg: dict[str, Any]) -> list[dict[str, Any]]:
             "tag": grid_tag(assignments),
             "hash": _hash(assignments),
         }
-        expanded.append(out)
+        expanded.append(apply_arm_preset(out, presets))
     return expanded
+
+
+def apply_arm_preset(run: dict[str, Any], presets: dict[str, Any] | None) -> dict[str, Any]:
+    """Write the overrides of the run's `arm` into it (see `expand_grid`)."""
+    if presets is None:
+        if "arm" in run:
+            raise ValueError("`arm` is set but the config has no `arms:` block defining it")
+        return run
+    name = run.get("arm")
+    if name is None:
+        raise ValueError("the config defines `arms:` but no `arm` is chosen (sweep `arm:`)")
+    if name not in presets:
+        raise ValueError(f"arm {name!r} is not defined in `arms:` (known: {sorted(presets)})")
+    for path, value in (presets[name] or {}).items():
+        if _get_path(run, path) is _MISSING:
+            raise ValueError(f"arms.{name}.{path}: no such key in the config body to override")
+        _set_path(run, path, copy.deepcopy(value))
+    run["_grid"]["arm_overrides"] = dict(presets[name] or {})
+    return run
 
 
 def _short(path: str) -> str:

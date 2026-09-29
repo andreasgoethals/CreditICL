@@ -162,6 +162,16 @@ def _prior_prob_shift(
     Built by over-sampling high-target rows into one half and low-target rows into the
     other. Rows are only REARRANGED, never invented, so the marginal of the table as a
     whole is untouched and the shift is purely about how it was split.
+
+    The size of the move is a RATE RATIO: the query's share of high rows (for PD, its default
+    rate) is the context's times r, log-uniform in `prior_prob_ratio_range`, r or 1/r with equal
+    chance. A ratio is how a default rate moves: under the Vasicek model this prior already
+    uses (`mechanisms.py`), a one-to-two standard-deviation move of the systematic factor
+    multiplies a book's default rate by 1.1 to 6.1 over the prior's rho in [0.03, 0.24] and
+    default rates of 1-50 % (docs/PRIORS.md). Until 29-09-2026 the knob set the context's share
+    of high rows directly (`prior_prob_range`), which assumes that group is half the table; for
+    a binary target it is the default rate, so a 7 % book had almost every default put in the
+    context and the query kept one.
     """
     median = float(y.median())
     high = torch.nonzero(y > median, as_tuple=False).flatten()
@@ -169,16 +179,22 @@ def _prior_prob_shift(
     if len(high) < 8 or len(low) < 8:
         return X, y, {"shift": "none"}
 
-    # How lopsided each half is. 0.5 would be no shift at all.
-    ctx_high_frac = float(rng.uniform(*cfg.get("prior_prob_range", [0.15, 0.45])))
+    ratio = rng.lognum(*(float(v) for v in cfg.get("prior_prob_ratio_range", [1.25, 4.0])))
     if rng.boolean(0.5):
-        ctx_high_frac = 1.0 - ctx_high_frac  # shift can go either direction
+        ratio = 1.0 / ratio  # the query can default more, or less, than the context
+    # The shares that keep every row: context c and query ratio * c, with
+    # c * cut + ratio * c * (n - cut) = len(high); a query cannot be more than all high rows.
+    n = int(y.shape[0])
+    ctx_share = len(high) / (cut + ratio * (n - cut))
+    if ratio * ctx_share > 1.0:
+        ctx_share = (len(high) - (n - cut)) / cut
 
-    want_high = int(round(cut * ctx_high_frac))
-    want_high = max(1, min(len(high) - 1, min(want_high, cut - 1)))
-    want_low = cut - want_high
-    if want_low < 1 or want_low > len(low) - 1:
+    # Each half keeps at least one row of each group, so both still hold both classes.
+    fewest, most = max(1, cut - (len(low) - 1)), min(len(high) - 1, cut - 1)
+    if fewest > most:
         return X, y, {"shift": "none"}
+    want_high = max(fewest, min(most, int(round(cut * ctx_share))))
+    want_low = cut - want_high
 
     high = high[rng.randperm(len(high))]
     low = low[rng.randperm(len(low))]
@@ -193,6 +209,7 @@ def _prior_prob_shift(
     return X[order], y[order], {
         "shift": "prior_prob",
         "shift_cut": cut,
+        "rate_ratio": round(ratio, 4),
         "context_high_rate": round(ctx_rate, 4),
         "query_high_rate": round(qry_rate, 4),
     }

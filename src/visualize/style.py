@@ -355,6 +355,12 @@ INTENSITY_LABEL = {"[0.03,0.12]": "mild correlation", "[0.12,0.3]": "strong corr
 STRATEGY_LABEL = {"full": "all layers", "icl_only": "ICL stack + head", "head_only": "head only",
                   "scratch": "from scratch"}
 
+#: The released model an Exp2 arm continues to pretrain (`arm=tabicl` / `arm=tabpfn3_...`).
+CONTINUED_LABEL = {"tabicl": "TabICLv2", "tabpfn3": "TabPFN-3"}
+#: Experiment 0's three training paths.
+EXP0_LABEL = {"scratch_tabicl": "TabICL from scratch", "finetune_tabicl": "TabICLv2 fine-tuned",
+              "finetune_tabpfn3": "TabPFN-3 fine-tuned"}
+
 #: The reference models, which we score but do not train.
 REFERENCE_LABEL = {"tabiclv2": "released TabICLv2", "tabpfn3": "TabPFN-3", "catboost": "CatBoost",
                    "xgboost": "XGBoost", "lightgbm": "LightGBM"}
@@ -379,17 +385,28 @@ def arm_name(identifier: str, track: str | None = None, *, seed: bool = True,
              mix: bool = True) -> str:
     """One trained model's plain-language name, from its run name — or a reference model's.
 
-    Exp1: `50 % credit · band filter · strong correlation · seed 2` (the intensity only where our
-    prior is in the mix). Exp2: `50 % credit · ICL stack + head · L2-SP · lr 1e-05 · seed 0`.
-    `seed=False` names a configuration (its seeds averaged); `mix=False` drops the credit share,
-    for a figure already grouped by it.
+    Exp1: `50 % credit · seed 2`. Exp2: `TabPFN-3 · 50 % credit · seed 0`, and its search
+    `TabICLv2 · Muon · lr 2e-05`. Exp0: `TabPFN-3 fine-tuned`. `seed=False` names a configuration
+    (its seeds averaged); `mix=False` drops the credit share, for a figure already grouped by it.
+    Run names of the retired Exp1/Exp2 grids (filter, intensity, freeze strategy, L2-SP) still read.
     """
     import re
 
     text = str(identifier)
-    if not text.startswith(("exp1", "exp2", "exp3")):
+    if not text.startswith(("exp0", "exp1", "exp2", "exp3")):
         return reference_label(text, track)
     parts: list[str] = []
+    arm = re.search(r"arm=([a-z0-9_.e-]+?)(?=__|$)", text)
+    if arm and arm.group(1) in EXP0_LABEL:
+        parts.append(EXP0_LABEL[arm.group(1)])
+    elif arm:
+        model, _, recipe = arm.group(1).partition("_")
+        parts.append(CONTINUED_LABEL.get(model, model))
+        if recipe:
+            optimizer, _, rate = recipe.partition("_")
+            parts.append({"adamw": "AdamW", "muon": "Muon"}.get(optimizer, optimizer))
+            if rate:
+                parts.append(f"lr {rate}")
     cf = re.search(r"credit_fraction=([0-9p.]+)", text)
     fraction = float(cf.group(1).replace("p", ".")) if cf else None
     if mix and fraction is not None:
@@ -448,7 +465,14 @@ def credit_fraction_colour(fraction: float) -> str:
 METRIC_LABEL = {
     "roc_auc": "ROC-AUC", "auc": "ROC-AUC", "pr_auc": "PR-AUC", "ap": "PR-AUC",
     "r2": "R²", "rmse": "RMSE", "mae": "MAE", "crps": "CRPS", "pinball": "pinball loss",
-    "brier": "Brier score", "logloss": "log loss", "ks": "KS statistic", "bias": "bias",
+    "brier": "Brier score", "logloss": "log loss", "log_loss": "log loss", "ece": "ECE",
+    "ks": "KS statistic", "bias": "bias",
+    "f1_tuned": "F1 (validation-tuned threshold)", "mcc_tuned": "MCC (validation-tuned threshold)",
+    "precision_tuned": "precision (validation-tuned threshold)",
+    "recall_tuned": "recall (validation-tuned threshold)",
+    "balanced_accuracy_tuned": "balanced accuracy (validation-tuned threshold)",
+    "f1_at_base_rate": "F1 at the base-rate threshold", "mcc_at_base_rate": "MCC at the base-rate threshold",
+    "balanced_accuracy_at_base_rate": "balanced accuracy at the base-rate threshold",
     "calibration_slope": "calibration slope", "spearman": "Spearman ρ", "kendall": "Kendall τ",
     "boundary_mass_abs_err": "boundary-mass error", "boundary_mass_err_0": "mass error at 0",
     "boundary_mass_err_1": "mass error at 1", "coverage_50": "50% interval coverage",
@@ -476,7 +500,10 @@ METRIC_GOAL: dict[str, Any] = {
     "roc_auc": "max", "auc": "max", "pr_auc": "max", "ap": "max", "r2": "max", "ks": "max",
     "spearman": "max", "kendall": "max",
     "rmse": "min", "mae": "min", "pinball": "min", "crps": "min", "brier": "min",
-    "logloss": "min", "ece": "min", "boundary_mass_abs_err": "min", "pit_uniformity_error": "min",
+    "logloss": "min", "log_loss": "min", "ece": "min", "boundary_mass_abs_err": "min",
+    "pit_uniformity_error": "min", "f1_tuned": "max", "mcc_tuned": "max", "precision_tuned": "max",
+    "recall_tuned": "max", "balanced_accuracy_tuned": "max", "f1_at_base_rate": "max",
+    "mcc_at_base_rate": "max", "balanced_accuracy_at_base_rate": "max",
     "mae_boundary": "min", "mae_interior": "min",
     "calibration_slope": 1.0, "bias": 0.0, "pit_mean": 0.5, "coverage_50": 0.5,
     "coverage_80": 0.8, "coverage_90": 0.9, "boundary_mass_err_0": 0.0, "boundary_mass_err_1": 0.0,

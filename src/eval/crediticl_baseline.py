@@ -356,14 +356,14 @@ def resolve_our_checkpoint(
 
 
 def find_our_checkpoints(root: str | Path | None = None) -> list[Path]:
-    """Every `step-*.ckpt` under the checkpoints tree, newest step per run directory.
+    """Every `step-*.ckpt` under the big output tree, newest step per run directory.
 
     Returns one checkpoint per run — the highest step — because scoring every
     intermediate checkpoint of 48 runs is rarely what anyone means.
     """
-    from src.utils.paths import checkpoints_dir
+    from src.utils.paths import big_outputs_dir
 
-    base = Path(root) if root is not None else checkpoints_dir()
+    base = Path(root) if root is not None else big_outputs_dir()
     if not base.is_dir():
         return []
     best: dict[Path, tuple[int, Path]] = {}

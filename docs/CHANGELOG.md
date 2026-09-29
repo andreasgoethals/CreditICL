@@ -8,6 +8,85 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 29-09-2026
+
+- **Output per experiment**: everything under `output_CreditICL/` (was `output/`) — `general/`,
+  `reference/`, `experiment_<N>/{logs,runs/<run>,benchmark,figures,report}`; the same tree on project
+  storage for checkpoints and prior pools; one module (`src/utils/paths.py`) builds every path; the OOD
+  cache moved to `data/ood/`; `clean_run` per experiment, checkpoints opt-in.
+- **Credit prior from the literature, not from the evaluation data** (the calibration was test
+  leakage): PD — Basel IRB correlations, default rate log-uniform 1–50 % (Brown & Mues 2012), wide
+  ranges elsewhere, no label noise; LGD — new `zoib` mode, the ZOIB regression of Li, Zhang & Zhao
+  (2020) around their published values, with a period factor; both filters judge TabICL's tables only.
+  Sources in `docs/PRIORS.md` §5.
+- **`prior.encoding: raw`** for TabPFN (gaps kept as NaN, raw [0, 1] LGD target); `*_mean_sd` keys are
+  literal like `*_range`.
+- **Experiment 2 redesigned**: continued pretraining of the released TabICLv2 AND TabPFN-3; stage A
+  searches optimizer/rate/length on development data with the control mix (`Exp2_*_search.yaml`,
+  `src/eval/exp2_search.py`), stage B compares the mixes (2 models × 3 mixes × 3 seeds). New
+  `TabPFNTrainer` on TabPFN's own fine-tuning path; arm presets (`sweep.arm` + `arms:`);
+  `FILL_FROM_SEARCH`; benchmark slots pick the wrapper by architecture; `VARIANT=search`.
+- **Experiment 0**, the cluster debug suite: `config/Exp0_*.yaml`, `scripts/exp0_checks.py`,
+  `scripts/slurm/exp0.slurm`, `src/utils/exp0_verify.py`; replaces `debug_exp1.slurm`.
+- **Telemetry**: weight drift per block (`weights.csv`), time per phase, learning rate and window loss
+  in `telemetry.csv`, training time over every restart; telemetry survives a requeue (it was rewritten
+  from memory, losing earlier segments).
+- **The same ≤ 500 columns for every model** (top variance, training fold), not only the foundation
+  models.
+- **Released weights found on project storage** (`paths.find_pretrained`), `init.strict_load` honoured;
+  the TabICL reference reads our copy (compute nodes cannot download).
+- Fixed: a recorded period factor widened a credit table past its slot and a real column was zeroed;
+  a class repair after the context encoding left the encoding fitted on the wrong rows.
+- Fixed: the prior-probability shift set the context's default share to an absolute 15–85 %, leaving
+  a low-default book's query one default (85 % of those PD tables); now a rate ratio, query over
+  context, 1.25–4 either way (`prior_prob_ratio_range`, from the Vasicek model; `docs/PRIORS.md` §5.3).
+- 0.2/0.3 read under the new prior; the missingness figure shows coupling 1, the configs' maximum (was 2);
+  `literature.PIN` and the notebooks re-pinned to `81c749b` (the bump added papers only).
+
+## 28-09-2026
+
+- **Training is upstream's, bit for bit** (`scripts/check_equivalence.py`, `tests/test_equivalence.py`
+  against upstream's `Trainer` on CPU): Muon built as `Trainer.configure_optimizer` builds it (one
+  group, `lr` 8e-4 for every parameter, momentum 0.9, Moonlight scaling; `train.muon_lr` removed);
+  cross-entropy over all 10 logits; parameters the architecture fixes (RoPE frequencies) stay frozen;
+  fractional warm-up; TF32; a checkpoint records its optimiser class.
+- **Task stream as upstream batches it** (`src/prior/stream.py`): groups of 4 share rows, split and
+  feature count; control tables draw 2–10 classes; constant columns deleted and the class check
+  applied as upstream; every arm sees the same base tasks (common random numbers); resumable;
+  `PYTHONHASHSEED=0`. `src/prior/grouping.py` removed (unused).
+- **Credit prior calibrated to the real datasets** (`src/prior/realism.py`, same statistics for both,
+  incl. in the model's view after the prediction preprocessing): PD label noise and underwriting
+  selection now applied in mechanism mode; per-table signal share, long-tailed marginals, missingness
+  rates and target coupling; noise columns inside the feature budget; no indicator columns; LGD
+  boundary atoms and interior per the 7 datasets; `filter.apply_to` (PD: base only).
+- **Credit tables reach the model as a real table does at prediction**: last step is upstream's
+  `UniqueFeatureFilter` + `PreprocessingPipeline("none")` fitted on the context (`prediction_view`);
+  LGD target standardised on the context (`y_scaler_`); gaps added after the context/query order and
+  filled with the context mean; rows reshuffled unless a shift orders them; NaN graphs redrawn.
+- **Exp1 redesigned**: 3 credit mixes (0 / 50 / 100 %) x 3 seeds = 9 arms per track, the control being
+  upstream's prior and filter exactly; pretraining arrays 0-8.
+- **Evaluation protocol 3** (`src/eval/protocol.py`): 5-fold CV; the whole training pool as context
+  (no row or context cap); PD threshold maximising F1 on a validation split, then refit; every metric,
+  plus CRPS and coverage from TabICL's and TabPFN-3's quantiles; CatBoost and TabPFN-3 at library
+  defaults; OOD suites by the same protocol with every cached row.
+- **Every saved checkpoint is benchmarked**: one array slot per (arm, checkpoint), final first, and one
+  per reference model (`benchmark_status.slot_for`); results loaders read protocol-3 rows only;
+  `load_checkpoint_results` gives the learning curve.
+- **Training monitor scores the live weights through upstream's wrapper**, on fixed splits, all
+  development datasets and 8 OOD suites, every 500 steps and at step 0; interval-mean loss.
+- Exp2 `micro_batch_size` 16 -> 4 (above the group size of 4, which the trainer refuses).
+- LGD atoms drawn skewed (`boundary_mass_*_power`) so the prior reaches heloc's 52 % total losses with a real-like
+  median; prior figures read a credit table as one (1 = default, LGD on [0, 1], default rate = minority share);
+  the mechanism figures and the 0.2/0.3 prose follow the calibrated prior instead of the old intensity levers.
+- Figures read one sweep and one evaluation protocol at a time (the old 45-arm, protocol-2 outputs until the
+  new ones exist; never a mixture); 1.3/1.4 gain B4, the learning curve over every saved checkpoint;
+  the development ranking reads fold rows and old grids.
+- LGD boundary tests use a 1e-4 tolerance (`metrics.BOUNDARY_TOL`): `axa` stores its atoms at 1e-5 and 1 − 1e-5.
+- Notebooks describe the model as TabICLv2's full architecture (~28 M parameters) trained on a small
+  budget, not as "nano-scale".
+- Audit of Exp1 against upstream TabICLv2 recorded in `AGENTS_MEMORY.md`: the Muon deviation and
+  the PD credit prior's unused label noise and selection.
+
 ## 25-09-2026
 
 - `run_notebooks` executes each notebook in a Jupyter kernel and saves its outputs (figures, printed

@@ -69,14 +69,105 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 
 ## Dead ends
 
+### 29-09-2026 — The prior-probability shift emptied the query of a low-default book
+- **Tried:** `prior_prob_range: [0.15, 0.45]` as the context's share of above-median rows ("0.5 = no shift"), unchanged since 24-09, when 0.2 already showed PD queries with < 1 % defaults.
+- **Result:** for a binary target that share is the default rate itself, so a 7 % book put nearly every default in the context: 85 % of PD prior-probability tables kept ≤ 2 query defaults (LGD 19 %, at high train fractions).
+- **Why:** "0.5 = no shift" holds only when the high group is half the table; the literature base rates (median 7 %) made the exception the rule.
+- **Instead:** a rate ratio, query over context, log-uniform 1.25–4 either way, solved so every row is kept (`prior_prob_ratio_range`); ≤ 2 query defaults in 5 % (the ~1 % books), LGD 0 %. A figure that shows a defect is a bug report: fix it, or log it as open.
+
+### 29-09-2026 — The credit prior was calibrated to the datasets it is scored on
+- **Tried:** set every credit-prior range so the synthetic tables matched the 14 PD and 7 LGD datasets (`src/prior/realism.py`), holdout included.
+- **Result:** a prior that looks like the test data by construction; any win would be unattributable to domain knowledge.
+- **Why:** calibration is fitting, and the fitted-to set included the holdout — test leakage.
+- **Instead:** every number from the credit-risk literature or deliberately wide (`docs/PRIORS.md` §5); `realism.py` stays as a descriptive comparison only.
+
+### 29-09-2026 — A list-valued knob that is not a `_range` becomes a sweep axis
+- **Tried:** `alpha0: [-0.54, 1.0]` for a normal's [mean, sd] in the ZOIB block.
+- **Result:** the grid silently multiplied (each pair read as a two-point sweep).
+- **Why:** the config treats any list under a non-literal key as a sweep (`is_literal_list`).
+- **Instead:** `*_mean_sd` keys, literal like `*_range`; `--list` shows the arm count before anything runs.
+
+### 29-09-2026 — A recorded period factor widened the table and a real column was zeroed
+- **Tried:** append the period factor as a column after the target, on top of the slot's width.
+- **Result:** `delete_constant_columns` scans only `plan.num_features` columns, so the last real column was zeroed and the rest misaligned; found by the train/predict round-trip test.
+- **Why:** the width budget is fixed per slot (upstream's group structure).
+- **Instead:** a target-added column takes a noise column's place (`_credit_candidate`).
+
+### 29-09-2026 — The class repair ran after the context encoding
+- **Tried:** leave upstream's row-permutation repair (context and query must hold the same classes) in `_valid`, after `prediction_view`.
+- **Result:** with 1 % default rates the repair is common, and the repaired table's encoding was fitted on rows that were no longer the context.
+- **Why:** anything fitted on the context must come after the row order is final.
+- **Instead:** the repair runs in `_credit_candidate` before the gaps are filled and the table encoded.
+
+### 29-09-2026 — Telemetry was rewritten from memory on every record
+- **Tried:** `Telemetry.record` rewrote the CSV from its in-memory rows (for a union of columns).
+- **Result:** a requeued arm's new process lost every earlier segment's rows.
+- **Why:** the rows were never read back at start.
+- **Instead:** read the existing CSV at start and trim to the resumed step (`_read_rows`, `resume`); `weights.csv` the same.
+
+### 29-09-2026 — TabPFN's regressor fine-tuner does not train on the bar-distribution NLL
+- **Tried:** assume continued pretraining of TabPFN-3's regressor uses its pretraining loss.
+- **Result:** `FinetunedTabPFNRegressor` defaults to CRPS + MSE (`ce_loss_weight 0`); the loss function's own defaults (NLL 1) differ from the class's.
+- **Why:** undocumented choice in tabpfn 9.0.0.
+- **Instead:** `TabPFNTrainer` calls TabPFN's `_compute_regression_loss` with the fine-tuner's defaults (`train.regression_loss_weights`), and sets `n_classes_` per task for classification (the fine-tuner assumes one dataset).
+
 Anything that cost more than a couple of minutes and did not work — including what you eventually
 fixed, because the fix is one changelog line and the dead end was the hour.
+
+### 28-09-2026 — Every credit PD table carried a cohort shift between context and query
+- **Tried:** `shift_prob: 0.3` in `credit.shift`, read as "30 % of credit tables have a context/query shift".
+- **Result:** the PD mechanism stacks vintages in contiguous row blocks (`sample_cohort_factor`) and nothing reshuffled the rows of the other 70 %, so every table with more than one vintage had its context from the early vintages and its query from the late ones.
+- **Why:** the cohort shift (`shift._cohort_shift`) relies on that order on purpose; the unshifted path never undid it. The model cannot see row order, but it does see which rows are context.
+- **Instead:** fixed — unshifted credit tables are randomly permuted (`TaskGenerator._credit_candidate`), as upstream's i.i.d. rows and a CV fold are; `test_without_a_shift_the_context_query_split_is_random_like_a_cv_fold`.
+
+### 28-09-2026 — Credit tables were standardised on the whole table; prediction standardises on the context
+- **Tried:** credit features through `process_features` (clip + standardise over all rows, as upstream's training does), checked against upstream's `PreprocessingPipeline` fitted on the context.
+- **Result:** shifted tables came out up to 4 SD away from what prediction would show the model (`tests/test_train_predict_consistency.py`, first version).
+- **Why:** whole-table statistics describe the context by numbers that include the shifted query rows — no real table can do that. Unshifted tables differ by sampling noise only, which is why upstream's own prior gets away with it.
+- **Instead:** credit tables end in `prediction_view` (upstream's `UniqueFeatureFilter` + `PreprocessingPipeline("none")`, fitted on the context); the control keeps upstream's training encoding. Re-applying the pipeline is not a test: its soft clip is not idempotent.
+
+### 28-09-2026 — Target-coupled missingness alone made credit PD tasks far too easy
+- **Tried:** `missing_target_coupling: 1.0` in every table (Exp1 PD).
+- **Result:** credit PD pseudo-R² far above real data; setting coupling to 0 alone brought most of the gap back.
+- **Why:** with logit coupling 1.0 the missingness pattern of a few columns nearly encodes the label; real tables range from none to strong (hmeq's DEBTINC-missing alone: AUC 0.78).
+- **Instead:** `missing_target_coupling_range: [0.0, 0.6]` drawn per table, gaps in half the tables (`missing_prob`), calibrated with `src/prior/realism.py`.
+
+### 28-09-2026 — `interior_shape_range` was a dead key, and list-valued knobs became sweep axes
+- **Tried:** (1) `interior_shape_range` in the LGD configs; (2) new per-table knobs written as lists (`flip_pos_to_neg: [0.05, 0.15]`, `boundary_mass_range_0: [...]`).
+- **Result:** (1) nothing read it — the LGD interior used the default [0.3, 4.0]; (2) the config expander turned each list into a sweep axis: 51, then 27 runs instead of 9.
+- **Why:** (1) `sample_lgd_shape` read `shape_ab_range`; (2) `expand_grid` treats any list-valued key not ending in `_range` as a lever.
+- **Instead:** per-table ranges end in `_range` (`flip_pos_to_neg_range`, `boundary_mass_0_range`, ...), code reads both forms; `interior_a_range`/`interior_b_range` added, falling back to the old keys. Check `--list` after any config edit.
+
+### 28-09-2026 — `axa`'s boundary atoms sit at 1e-5 and 1 − 1e-5, so exact 0/1 tests missed them
+- **Tried:** LGD boundary mass as `y <= 0` / `y >= 1` (realism statistics) and `tol=1e-6` (`metrics.boundary_mass_error`).
+- **Result:** `0003.axa` read as 0 % at both ends; it holds 28.8 % complete recoveries and 5.6 % total losses. The calibration targets and the benchmark's boundary-mass error for axa were wrong.
+- **Why:** the source squeezes `lgd_time` into [1e-5, 1 − 1e-5], a beta-regression convenience; the recipe passes it through.
+- **Instead:** `metrics.BOUNDARY_TOL = 1e-4` for every boundary test. With axa read correctly all 7 LGD tables have losses of exactly 0, so `atom_prob_0` is 1.0.
+
+### 28-09-2026 — Upstream's graph sampler returns NaN graphs; the credit path kept them as zeros
+- **Tried:** `upstream.sample_base_latent` for the credit tables, followed by `nan_to_num` in `_candidate`.
+- **Result:** about 1 credit draw in 60 had NaN features and latent; it was zeroed and kept, rows of zeros with made-up labels.
+- **Why:** `GraphSCM.__call__` marks such datasets invalid (y = -100) and they are redrawn; our credit path bypasses `GraphSCM.__call__` and never checked.
+- **Instead:** a non-finite graph is an invalid candidate and the slot redraws it.
 
 ### 25-09-2026 — LGD 100 % credit arms collapse in the benchmark; the target scale, most likely
 - **Tried:** Exp1 LGD with the credit target left raw in [0, 1] (`target_scaling` defaults to `none`; not set in `Exp1_LGD.yaml` or `Exp2_LGD.yaml`).
 - **Result:** benchmark holdout R² −0.13 for every 100 % credit arm (0.46 at 0 %, 0.45 at 50 %), calibration slope 4.1. The training monitor ranks the other way round: 50 % credit ~0.19 on `base_model`, control ~−0.03.
 - **Why (likely, untested):** TabICL's prior standardises regression targets and `TabICLRegressor.fit` standardises y (`y_scaler_`), so the benchmark feeds standardised targets — which a 100 % credit arm never saw; `progress._score` feeds raw [0, 1] targets — which a control arm never saw. Only 50 % arms saw both.
 - **Instead:** read LGD credit-vs-control only at 0 % vs 50 % in the benchmark. Before Exp2 LGD: set `prior.credit.target.target_scaling: standard`, or score one 100 % checkpoint without y standardisation to confirm first (Andreas's call).
+- **Since 28-09-2026:** `target_scaling: standard` (context statistics, as `y_scaler_`) in every LGD config, and the monitor scores through upstream's wrapper, so both see the benchmark's scale.
+
+### 28-09-2026 — Three more differences from upstream's trainer, found only by running both
+- **Tried:** reading our `Trainer.train_step` against upstream's `Trainer.run_batch` and calling them equivalent (a code comment even said the class slice was "MEASURED" to be a no-op).
+- **Result:** `scripts/check_equivalence.py` (same batches, same weights, upstream's own optimizer and scheduler) showed: (1) PD loss differed at step 0 — we took cross-entropy over the classes present, upstream over all 10 logits the training-mode head returns; (2) the RoPE frequencies `row_interactor.tf_row.rope.freqs`, built with `requires_grad=False`, were trained, because `apply_freezing` first set everything trainable; (3) warm-up was rounded down to whole steps. Exp1 ran with (1) and (2).
+- **Why:** the "no-op" was measured in eval mode, where the head does slice; the loss convention was copied from upstream's FINE-TUNING module; and "set all, then freeze some" never looked at what the architecture had fixed.
+- **Instead:** fixed; the two trainers now agree bit for bit on CPU (`tests/test_equivalence.py`). Compare implementations by running them, never by reading them.
+
+### 28-09-2026 — "Muon, as TabICLv2" was not TabICLv2's Muon
+- **Tried:** `optimizer: muon`, `muon_lr: 8e-4` in Exp1, read as upstream's stage-1 optimiser.
+- **Result:** the cluster (torch 2.11) took `torch.optim.Muon` with its defaults: Keller's `sqrt(max(1, A/B))` step scaling instead of upstream's Moonlight `0.2·sqrt(max(A, B))` — weight-matrix steps 4.8× smaller (parameter-weighted), momentum 0.95 instead of 0.9 — and biases, norms and embeddings went to AdamW at 3e-4, where upstream runs every parameter through Muon at 8e-4 (`Trainer.configure_optimizer`: one `use_muon=True` group, `matched_adamw_rms=0.2`, `momentum=beta1`).
+- **Why:** `src/train/optim.py::_resolve_muon` prefers torch's class and `build_optimizer` passes only lr and weight decay; its docstring assumed torch 2.8 and the vendored class. The vendored fallback would have been worse: the matrices are passed as a plain list, no group carries `use_muon`, so its `step()` sends them to its internal AdamW branch.
+- **Instead:** for a re-run, build upstream's optimiser exactly — the vendored `Muon` with `param_groups=[dict(params=all_params, use_muon=True)]`, `lr=8e-4`, `momentum=0.9`, `matched_adamw_rms=0.2` — or run upstream's own `tabicl.train` Trainer, and test that a weight matrix's update is orthogonalised.
 
 ### 28-09-2026 — Exp1's PD credit prior ran without its label noise and its underwriting selection
 - **Tried:** reading `config/Exp1_PD.yaml`'s `credit.target` block (`flip_pos_to_neg: 0.10`, `flip_neg_to_pos: 0.01`, `selection: {selection_drop: 0.2, ...}`, `base_rate_range`) as part of the prior Exp1 trained on, as `docs/PRIORS.md` describes it.

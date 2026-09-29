@@ -87,17 +87,16 @@ def arm_states(config: Path, out_root: Path | None = None) -> list[ArmState]:
     from src.utils.config import expand_with_seeds, load, run_name
 
     runs = expand_with_seeds(load(config, allow_placeholders=True))
-    root = Path(out_root) if out_root else paths.outputs_dir()
 
     states: list[ArmState] = []
     for index, run in enumerate(runs):
         name = run_name(run)
-        out_dir = root / name
-        # Summary is flat in manifests/ now, not a per-arm folder (see paths.run_summary_path).
-        summary = root / "manifests" / f"{name}__summary.json"
-        ckpt = _latest_checkpoint_name(paths.checkpoints_dir() / name) or _latest_checkpoint_name(
-            out_dir / "checkpoints"
-        )
+        # `out_root` mirrors `pretrain.py --out-root`: everything of the arm in <root>/<name>/.
+        out_dir = Path(out_root) / name if out_root else paths.run_dir(name)
+        summary = out_dir / "summary.json"
+        ckpt = (_latest_checkpoint_name(out_dir / "checkpoints") if out_root else
+                _latest_checkpoint_name(paths.run_checkpoints_dir(name))
+                or _latest_checkpoint_name(out_dir / "checkpoints"))
 
         if summary.is_file():
             try:

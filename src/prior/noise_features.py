@@ -44,18 +44,22 @@ def add_noise_features(
     X: torch.Tensor,
     cfg: dict,
     max_features: int,
+    n_add: int | None = None,
 ) -> tuple[torch.Tensor, dict]:
     """Append irrelevant columns to X.
 
-    `fraction` is relative to the current width: 0.3 on a 20-column table adds 6.
-    Capped at `max_features` so batches stay a predictable width.
+    `n_add` columns when given — the generator passes the count that keeps the table at its
+    slot's feature budget (`generator.split_noise_budget`). Otherwise `fraction` is relative to
+    the current width: 0.3 on a 20-column table adds 6. Capped at `max_features`.
     """
-    fraction = float(cfg.get("fraction", 0.0))
-    if fraction <= 0.0 or X.shape[0] == 0:
+    if X.shape[0] == 0 or X.shape[1] == 0:
         return X, {"noise_features": 0}
-
-    n_add = int(round(fraction * X.shape[1]))
-    n_add = min(n_add, max_features - X.shape[1])
+    if n_add is None:
+        fraction = float(cfg.get("fraction", 0.0))
+        if fraction <= 0.0:
+            return X, {"noise_features": 0}
+        n_add = int(round(fraction * X.shape[1]))
+    n_add = min(int(n_add), max_features - X.shape[1])
     if n_add <= 0:
         return X, {"noise_features": 0}
 

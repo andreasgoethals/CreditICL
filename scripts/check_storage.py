@@ -75,13 +75,13 @@ def main() -> int:
     args = ap.parse_args()
 
     from src.utils.paths import (
-        checkpoints_dir,
-        logs_dir,
-        manifests_dir,
+        big_outputs_dir,
+        ood_cache_dir,
         on_vsc,
-        prior_cache_dir,
+        outputs_dir,
+        pretrained_dir,
+        prior_cache_root,
         processed_dir,
-        results_dir,
         staging_root,
     )
 
@@ -95,15 +95,14 @@ def main() -> int:
     # how you know the project directory is healthy and one subdirectory is not.
     targets: list[tuple[str, Path]] = [
         ("staging root", staging_root()),
-        ("checkpoints  <- the one that failed", Path(checkpoints_dir())),
+        ("big output tree (our checkpoints)  <- the tier that failed", Path(big_outputs_dir())),
+        ("released weights", Path(pretrained_dir())),
         ("processed data", Path(processed_dir())),
-        ("results", Path(results_dir("pd", "eval"))),
-        # `.parent`: `prior_cache_dir(name)` returns a per-cache SUBdirectory, so passing a
-        # made-up name would test a path no run ever uses — and `--fix` would then create it,
-        # leaving a stray directory on project storage. Test the cache root itself.
-        ("prior cache", Path(prior_cache_dir("probe")).parent),
-        ("logs", Path(logs_dir())),
-        ("manifests", Path(manifests_dir())),
+        ("out-of-domain cache", Path(ood_cache_dir())),
+        # The root itself, not a made-up pool name: `--fix` would create that name and leave a
+        # stray directory on project storage.
+        ("prior cache", Path(prior_cache_root())),
+        ("small output tree (logs, runs, benchmark, figures)", Path(outputs_dir())),
     ]
 
     broken: list[Path] = []

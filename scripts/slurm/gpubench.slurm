@@ -35,14 +35,14 @@ REPO="${VSC_DATA}/CreditICL"
 cd "$REPO"
 source scripts/slurm/_activate_env.sh
 
-# Argument 1 is the config, for symmetry with debug_exp1.slurm — only its task is used.
+# Argument 1 is the config (as submit.sh passes one) — only its task is used.
 CONFIG="${1:-config/Exp1_PD.yaml}"
 case "$CONFIG" in
     *_PD.yaml) TASK=pd ;;
     *)         TASK=lgd ;;
 esac
 
-LOGDIR="${VSC_DATA}/CreditICL/output/logs"
+LOGDIR="${VSC_DATA}/CreditICL/output_CreditICL/general/logs"   # = paths.logs_dir()
 mkdir -p "$LOGDIR"
 # The PARTITION is in the filename: the two runs differ only by hardware, so a name that
 # does not say which card it was is useless the moment the second one lands.

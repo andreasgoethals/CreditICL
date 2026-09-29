@@ -74,7 +74,11 @@ def pools(tmp_path, monkeypatch, lgd_cfg):
             # and ignores atom_prob — so pinning the mode here is what makes this
             # fixture actually exercise the lever it claims to.
             cfg["credit"]["target"]["mode"] = "quantile"
+            # The shared lever; the calibrated configs also set one chance per atom, which
+            # would override it.
             cfg["credit"]["target"]["atom_prob"] = atom
+            cfg["credit"]["target"].pop("atom_prob_0", None)
+            cfg["credit"]["target"].pop("atom_prob_1", None)
             cfg["credit"]["target"]["target_scaling"] = "none"
         for shard in range(2):
             pool.generate_shard(
@@ -107,7 +111,10 @@ def test_an_unknown_variant_name_still_appears(pools, tmp_path):
     make a newly-invented arm invisible in the notebook."""
     import torch
 
-    d = tmp_path / "CreditICL" / "prior_cache" / "lgd__wild_experiment"
+    from src.utils.paths import prior_cache_dir
+
+    d = prior_cache_dir("lgd__wild_experiment")  # under the big output tree, in tmp_path
+    assert tmp_path in d.parents
     d.mkdir(parents=True)
     torch.save([{"X": torch.zeros(8, 3), "y": torch.zeros(8), "source": "credit"}],
                d / "shard_00000.pt")
@@ -287,7 +294,7 @@ def test_summary_has_one_row_per_variant_with_task_specific_columns(pools):
     frame = pools.variant_summary(loaded, "lgd")
     assert len(frame) == 3
     assert "boundary mass mean" in frame.columns and "in [0,1]" in frame.columns
-    assert "base rate mean" not in frame.columns
+    assert "default rate mean" not in frame.columns
 
 
 def test_summary_separates_the_original_from_ours(pools):
@@ -317,8 +324,8 @@ def test_pd_summary_reports_base_rate_not_boundary_mass():
     y = torch.tensor([0.0] * 9 + [1.0])
     loaded = {"v": [SyntheticTask(X=torch.zeros(10, 3), y=y)]}
     frame = pp.variant_summary(loaded, "pd")
-    assert "base rate mean" in frame.columns and "boundary mass mean" not in frame.columns
-    assert frame["base rate mean"].iloc[0] == pytest.approx(0.1)
+    assert "default rate mean" in frame.columns and "boundary mass mean" not in frame.columns
+    assert frame["default rate mean"].iloc[0] == pytest.approx(0.1)
 
 
 # -- comparison figures ------------------------------------------------------

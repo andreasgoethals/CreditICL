@@ -24,8 +24,8 @@ def tree(tmp_path, monkeypatch):
     """A fake output tree, with BOTH storage tiers redirected into `tmp_path`.
 
     `VSC_DATA` has to be set, not deleted. Without it `paths.on_vsc()` is false, so
-    `outputs_dir()` — and therefore `logs_dir()` and `manifests_dir()` — resolves to the REAL
-    repository `output/`. These tests then write files there and the cleanup tests below
+    `outputs_dir()` — and therefore `logs_dir()` and `runs_dir()` — resolves to the REAL
+    repository `output_CreditICL/`. These tests then write files there and the cleanup tests below
     delete from it: the earlier version of this fixture destroyed a notebook's committed
     figures and `CAPTIONS.md` on every run, silently, three test files away from the cause.
     """
@@ -46,9 +46,10 @@ def tree(tmp_path, monkeypatch):
 
     (paths.logs_dir()).mkdir(parents=True, exist_ok=True)
     (paths.logs_dir() / "run.log").write_text("x" * 500, encoding="utf-8")
-    (paths.manifests_dir()).mkdir(parents=True, exist_ok=True)
-    (paths.manifests_dir() / "a__progress.csv").write_text("a,b\n1,2\n", encoding="utf-8")
-    ck = paths.checkpoints_dir() / "some_run"
+    run = paths.run_dir("exp1_pd__a__s0")
+    run.mkdir(parents=True, exist_ok=True)
+    (run / "progress.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+    ck = paths.run_checkpoints_dir("exp1_pd__a__s0")
     ck.mkdir(parents=True, exist_ok=True)
     (ck / "step-100.ckpt").write_bytes(b"0" * 4096)
     pool = paths.prior_cache_dir("lgd__original")
@@ -63,7 +64,7 @@ def tree(tmp_path, monkeypatch):
 def test_finds_every_category(tree):
     mod, _ = tree
     cats = {a.category for a in mod.find_artifacts()}
-    assert {"logs", "manifests", "checkpoints", "prior_pools"} <= cats
+    assert {"logs", "runs", "checkpoints", "prior_pools"} <= cats
 
 
 def test_raw_data_is_never_removable(tree):
@@ -100,14 +101,15 @@ def test_expensive_categories_need_an_explicit_opt_in(tree):
     mod, paths = tree
     mod.clean(dry_run=False)  # the defaults
     assert not (paths.logs_dir() / "run.log").exists(), "logs should be gone"
-    assert (paths.checkpoints_dir() / "some_run" / "step-100.ckpt").exists()
+    assert (paths.run_checkpoints_dir("exp1_pd__a__s0") / "step-100.ckpt").exists()
     assert (paths.prior_cache_dir("lgd__original") / "shard_00000.pt").exists()
+    assert not (paths.run_dir("exp1_pd__a__s0") / "progress.csv").exists(), "runs are cheap"
 
 
 def test_expensive_categories_are_removed_when_named(tree):
     mod, paths = tree
     mod.clean(("checkpoints", "prior_pools"), dry_run=False)
-    assert not (paths.checkpoints_dir() / "some_run" / "step-100.ckpt").exists()
+    assert not (paths.run_checkpoints_dir("exp1_pd__a__s0") / "step-100.ckpt").exists()
     assert not (paths.prior_cache_dir("lgd__original") / "shard_00000.pt").exists()
 
 
@@ -260,11 +262,11 @@ def test_progress_scores_a_real_dataset(tmp_path):
     if find_raw_path("lgd", "0003.axa") is None:
         pytest.skip("raw data not present")
 
-    from src.models.nanotabiclv2 import NanoTabICLv2
+    # The monitor scores through upstream's `TabICLRegressor`, so the model is upstream's TabICL.
+    from src.models.architecture import build_model
 
-    model = NanoTabICLv2(max_classes=0, out_dim=16, embed_dim=32, col_num_blocks=1,
-                         row_num_blocks=1, icl_num_blocks=1, col_nhead=2, row_nhead=2,
-                         icl_nhead=2, n_cls_rows=8)
+    model = build_model("lgd", embed_dim=32, col_num_blocks=1, row_num_blocks=1, icl_num_blocks=1,
+                        col_nhead=2, row_nhead=2, icl_nhead=2, n_cls_rows=8)
     t = ProgressTracker(
         ProgressConfig(every_datasets=10, n_datasets=1, n_ood=0, context_rows=64,
                        max_test_rows=100),

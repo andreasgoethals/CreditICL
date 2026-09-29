@@ -82,35 +82,45 @@ def _base_rate(t: Any) -> float:
 # ---------------------------------------------------------------------------
 
 
-def intensity_atoms(config_path: str, n: int = 100, seed: int = 0):
-    """LGD: the original prior against our prior at the two swept boundary intensities.
+def boundary_atoms(config_path: str, n: int = 100, seed: int = 0, real: dict | None = None):
+    """LGD: the target pooled over `n` tasks of the original prior and of our prior as configured,
+    beside the real LGD datasets pooled with equal weight per dataset.
 
-    One panel per prior, each the target pooled over `n` tasks as a share of rows. The panel title
-    carries the mean boundary mass — for our prior the share of rows at exactly 0 or 1, for the
-    original prior (whose target is standard-scaled, not on [0, 1]) the share tied at its own
-    minimum or maximum, which is what the ±4 SD outlier clamp produces.
+    Each panel's annotation is the mean boundary mass — for our prior and the real data the share
+    of rows at 0 or 1 (within `metrics.BOUNDARY_TOL`), for the original prior (standard-scaled,
+    not on [0, 1]) the share tied at its own minimum or maximum, which the ±4 SD outlier clamp
+    produces. The prior's setting comes from the literature (docs/PRIORS.md, 5.2); the real
+    datasets are shown for comparison only.
     """
+    from src.eval.metrics import BOUNDARY_TOL
+
     task, prior = _prior(config_path)
     if task != "lgd":
-        raise ValueError("intensity_atoms is an LGD figure")
-    arms = [
-        ("original prior", style.ORIGINAL, {"credit_fraction": 0.0}),
-        ("credit prior, mild", style.CREDIT_MILD,
-         {"credit_fraction": 1.0, "filter.mode": "off", "credit.target.boundary_mass_range": [0.02, 0.30]}),
-        ("credit prior, aggressive", style.CREDIT_STRONG,
-         {"credit_fraction": 1.0, "filter.mode": "off", "credit.target.boundary_mass_range": [0.15, 0.60]}),
-    ]
-    style.apply()
-    fig, axes = plt.subplots(1, 3, figsize=style.figsize(style.WIDTH_FULL, 0.36))
-    for ax, (label, color, ov) in zip(axes, arms):
+        raise ValueError("boundary_atoms is an LGD figure")
+    panels: list[tuple[str, str, np.ndarray, np.ndarray, float, bool]] = []
+    for label, color, ov in (("original prior", style.ORIGINAL, {"credit_fraction": 0.0}),
+                             ("credit prior", style.CREDIT, {"credit_fraction": 1.0, "filter.mode": "off"})):
         tasks = _generate(task, prior, n, seed, ov)
         pooled = np.concatenate([t.y.numpy() for t in tasks]).astype(float)
-        bounded = pooled.min() >= -1e-6 and pooled.max() <= 1 + 1e-6
-        bins = np.linspace(0, 1, 41) if bounded else np.linspace(pooled.min(), pooled.max(), 41)
-        ax.hist(pooled, bins=bins, weights=np.full(pooled.size, 1.0 / pooled.size), color=color,
-                linewidth=0)
+        weights = np.full(pooled.size, 1.0 / pooled.size)
         stats = [target_stats(t.y) for t in tasks]
-        bm = float(np.mean([s["frac_at_min"] + s["frac_at_max"] for s in stats]))
+        bm = float(np.mean([s_["frac_at_min"] + s_["frac_at_max"] for s_ in stats]))
+        bounded = pooled.min() >= -1e-6 and pooled.max() <= 1 + 1e-6
+        panels.append((label, color, pooled, weights, bm, bounded))
+    if real:
+        ys = [np.asarray(d.y, dtype=float).ravel() for d in real.values()]
+        ys = [y[np.isfinite(y)] for y in ys]
+        pooled = np.concatenate(ys)
+        # Equal weight per dataset: `heloc`'s 59k rows would otherwise be most of the panel.
+        weights = np.concatenate([np.full(y.size, 1.0 / (y.size * len(ys))) for y in ys])
+        bm = float(np.mean([np.mean((y <= BOUNDARY_TOL) | (y >= 1 - BOUNDARY_TOL)) for y in ys]))
+        panels.append((f"real LGD datasets ({len(ys)})", style.REAL, pooled, weights, bm, True))
+
+    style.apply()
+    fig, axes = plt.subplots(1, len(panels), figsize=style.figsize(style.WIDTH_FULL, 0.36))
+    for ax, (label, color, pooled, weights, bm, bounded) in zip(np.atleast_1d(axes), panels):
+        bins = np.linspace(0, 1, 41) if bounded else np.linspace(pooled.min(), pooled.max(), 41)
+        ax.hist(pooled, bins=bins, weights=weights, color=color, linewidth=0)
         ax.set_xlabel("LGD target" if bounded else "target, standardised scale")
         ax.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(1.0, decimals=0))
         ax.set_title(label, loc="left", fontsize=9)
@@ -120,7 +130,7 @@ def intensity_atoms(config_path: str, n: int = 100, seed: int = 0):
         ax.annotate(f"{bm:.0%} of rows\n{where}", (0.5, 0.95) if bounded else (0.03, 0.95),
                     xycoords="axes fraction", ha="center" if bounded else "left", va="top",
                     fontsize=7, color=style.INK)
-    axes[0].set_ylabel("share of rows")
+    np.atleast_1d(axes)[0].set_ylabel("share of rows")
     return fig
 
 
@@ -162,45 +172,55 @@ def imbalance_control(config_path: str, n: int = 200, seed: int = 0):
 
 
 def correlated_defaults(config_path: str, n: int = 200, seed: int = 0):
-    """PD: with the target rate fixed, a higher `rho` widens the realised rate — a bad year
-    moves the whole book. This is what "correlated defaults" buys, and why `rho` is swept."""
+    """PD: with the target rate fixed, the Vasicek factor spreads the realised rate — a bad year
+    moves the whole book. Independent defaults (ρ = 0) against the configured ρ range, and the
+    spread at fixed values of ρ.
+
+    Label noise and underwriting selection are switched off here, so the factor is the only thing
+    moving the realised rate away from the target; in the prior they lower it further."""
     task, prior = _prior(config_path)
     if task != "pd":
         raise ValueError("correlated_defaults is a PD figure")
+    rho_lo, rho_hi = (float(v) for v in
+                      ((prior.get("credit", {}).get("target", {}).get("mechanism", {}) or {})
+                       .get("rho_range", [0.03, 0.24])))
     # Fix the TARGET rate so the only thing dispersing the REALISED rate is the correlation.
     fixed = {
         "credit_fraction": 1.0, "filter.mode": "off",
         "credit.target.base_rate_range": [0.15, 0.15],
         "credit.target.mechanism.base_rate_range": [0.15, 0.15],
         "credit.target.mechanism.woe_prob": 0.0,
+        "credit.target.flip_pos_to_neg_range": [0.0, 0.0],
+        "credit.target.flip_neg_to_pos": 0.0,
+        "credit.target.selection.selection_drop": 0.0,
     }
-    mild = _generate(task, prior, n, seed, {**fixed, "credit.target.mechanism.rho_range": [0.03, 0.12]})
-    aggr = _generate(task, prior, n, seed, {**fixed, "credit.target.mechanism.rho_range": [0.12, 0.30]})
-    r_mild = np.array([_base_rate(t) for t in mild])
-    r_aggr = np.array([_base_rate(t) for t in aggr])
+    indep = _generate(task, prior, n, seed, {**fixed, "credit.target.mechanism.rho_range": [0.0, 0.0]})
+    configured = _generate(task, prior, n, seed, {**fixed, "credit.target.mechanism.rho_range": [rho_lo, rho_hi]})
+    r_indep = np.array([_base_rate(t) for t in indep])
+    r_conf = np.array([_base_rate(t) for t in configured])
 
     style.apply()
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=style.figsize(style.WIDTH_FULL, 0.42))
     bins = np.linspace(0, 0.4, 33)
-    ax1.hist(r_mild, bins=bins, color=style.CREDIT_MILD, alpha=0.8,
-             label=f"mild, ρ in [0.03, 0.12] (SD {r_mild.std():.3f})")
-    ax1.hist(r_aggr, bins=bins, color=style.CREDIT_STRONG, alpha=0.8,
-             label=f"aggressive, ρ in [0.12, 0.30] (SD {r_aggr.std():.3f})")
+    ax1.hist(r_indep, bins=bins, color=style.MUTED, alpha=0.7,
+             label=f"independent defaults, ρ = 0 (SD {r_indep.std():.3f})")
+    ax1.hist(r_conf, bins=bins, color=style.CREDIT, alpha=0.7,
+             label=f"configured, ρ in [{rho_lo:g}, {rho_hi:g}] (SD {r_conf.std():.3f})")
     ax1.axvline(0.15, color=style.INK, ls="--", lw=1.1, label="target rate 15%")
     ax1.set_xlabel("realised default rate per task")
     ax1.set_ylabel("number of tasks")
     ax1.xaxis.set_major_formatter(mpl.ticker.PercentFormatter(1.0, decimals=0))
     ax1.set_title("Realised rate at a fixed 15% target", loc="left", fontsize=9)
 
-    rhos = [0.03, 0.08, 0.15, 0.22, 0.30]
+    rhos = [0.0, 0.03, 0.08, 0.15, 0.24]
     sds = []
     for r in rhos:
         ts = _generate(task, prior, max(30, n // 3), seed,
                        {**fixed, "credit.target.mechanism.rho_range": [r, r]})
         sds.append(float(np.std([_base_rate(t) for t in ts])))
     ax2.plot(rhos, sds, "o-", color=style.CREDIT, label="our prior at a fixed ρ")
-    # The Basel IRB corporate asset-correlation cap sits on this exact axis; our aggressive arm
-    # (ρ up to 0.30) reaches past it. External domain knowledge, so it draws amber and marked.
+    # The Basel IRB corporate asset-correlation cap sits on this exact axis and bounds the
+    # configured range. External domain knowledge, so it draws amber and marked.
     literature.line(ax2, "basel_corp", label="Basel IRB corporate cap 0.24", inline=False)
     ax2.set_xlabel("asset correlation ρ")
     ax2.set_ylabel("SD of the realised default rate")
@@ -359,8 +379,9 @@ def shift_kinds(config_path: str, n: int = 40, seed: int = 0):
 def informative_missingness(task: str, n_rows: int = 4000, seed: int = 0):
     """The missing rate depends on the outcome (MNAR) — a thin file is itself a risk signal.
 
-    Applies the real `apply_informative_missingness` to a controlled (X, y) at two couplings, and
-    reads the missing rate back off the was-missing indicator columns it appends.
+    Applies the real `apply_informative_missingness` to a controlled (X, y) at two couplings — none,
+    and 1, the strongest the configs draw (`missing_target_coupling_range`) — and reads the missing
+    rate back off the was-missing indicator columns it appends.
     """
     torch.manual_seed(seed)
     X = torch.randn(n_rows, 6)
@@ -372,7 +393,7 @@ def informative_missingness(task: str, n_rows: int = 4000, seed: int = 0):
     style.apply()
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.44))
     for beta, color, label in [(0.0, style.MUTED, "completely at random (coupling 0)"),
-                               (2.0, style.CREDIT, "tied to the outcome (coupling 2)")]:
+                               (1.0, style.CREDIT, "tied to the outcome (coupling 1)")]:
         rng = PriorRNG(seed)
         Xn, meta = apply_informative_missingness(
             rng, X.clone(), y,

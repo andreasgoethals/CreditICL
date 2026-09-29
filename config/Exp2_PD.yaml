@@ -1,9 +1,11 @@
 # =============================================================================
-# EXPERIMENT 2 — PD — CONTINUED PRE-TRAINING FROM THE RELEASED WEIGHTS
+# EXPERIMENT 2 — PD — STAGE B: IS THE CREDIT PRIOR USEFUL FOR THE REAL MODELS? (2 x 3 x 3 = 18 arms)
 #
-# Every knob below carries at most a one-line note. The REASONING — why each
-# value, what evidence backs it, what upstream does — lives in
-# docs/CONFIG_REFERENCE.md, section by section under the same knob names.
+# Continued pretraining of the RELEASED TabICLv2 and TabPFN-3 weights on the synthetic prior.
+# Stage A chooses, per model, the optimizer and rate (and, from the saved checkpoints, the
+# length) on the DEVELOPMENT datasets only, with the CONTROL mix — so the recipe is not tuned
+# in favour of our prior. Stage B (config/Exp2_PD.yaml) then compares the credit mixes at that
+# recipe, 3 seeds each, on every dataset. Reasoning: docs/EXPERIMENTAL_DESIGN.md, Experiment 2.
 #
 #   python scripts/pretrain.py --config config/Exp2_PD.yaml --list
 #
@@ -15,30 +17,33 @@ experiment: exp2_pd
 task: pd
 
 # ----------------------------------------------------------------------------
-# ARCHITECTURE — TabICLv2's own, never swept
+# ARCHITECTURE — set per arm below: tabicl (TabICLv2) or tabpfn3 (TabPFN-3)
 # ----------------------------------------------------------------------------
-architecture: tabicl # the upstream TabICL class; see src/models/architecture.py
+architecture: tabicl # overridden by every arm
 
 # ----------------------------------------------------------------------------
-# THE SWEEP — every multi-value knob, crossed. This block IS the experiment
+# THE SWEEP — every multi-value knob, crossed. This block IS the experiment.
 # ----------------------------------------------------------------------------
 sweep:
-  prior.credit_fraction: [0.0, 0.25, 0.5, 0.75, 1.0] # how much of OUR prior to add; 0.0 = pure continued pretraining
-  init.strategy: [full, icl_only, head_only] # every layer, the ICL stack + head, or the head alone
-  train.l2sp_alpha: [0.0, 0.003] # pull toward the loaded weights; 0.003 is Real-TabPFN's value
-  train.lr: [1.0e-6, 1.0e-5] # AdamW rate; published CPT rates span 3e-7 to 2e-5
-  seeds: [0] # ONE seed: 5x3x2x2 is already 60 arms. Seeds come after a winner is picked.
+  arm: [tabicl, tabpfn3] # the two released foundation models
+  prior.credit_fraction: [0.0, 0.5, 1.0] # share of each batch from our prior; 0.0 = continued pretraining on the control prior
+  seeds: [0, 1, 2] # repeats
+
+arms: # one set of overrides per arm; `sweep.arm` picks one per run (src/utils/config.py)
+  tabicl:  { architecture: tabicl, train.optimizer: FILL_FROM_SEARCH, train.lr: FILL_FROM_SEARCH, train.warmup_proportion: FILL_FROM_SEARCH } # TabICLv2, the recipe the search chose
+  tabpfn3: { architecture: tabpfn3, prior.encoding: raw, init.pretrained_path: checkpoints/tabpfn-v3-classifier-v3_default.ckpt, train.batch_size: 16, train.warmup_proportion: 0.1, progress.every_datasets: 8000, train.lr: FILL_FROM_SEARCH } # TabPFN-3, the rate the search chose
 
 # ----------------------------------------------------------------------------
-# THE PRIOR — the parts that are NOT swept
+# THE PRIOR — Experiment 1's, unchanged (literature-grounded; docs/PRIORS.md)
 # ----------------------------------------------------------------------------
 prior:
+  encoding: tabicl # tabicl = TabICL's prediction encoding | raw = as recorded, for TabPFN (the tabpfn3 arms set it)
   n_rows_range: [1024, 1024] # rows per dataset; upstream stage 1 is exactly 1,024
   n_features_range: [1, 100] # columns; upstream's --min_features 1 --max_features 100
   max_features: 100 # ceiling on generated columns; TabICLv2 uses 100 in all stages
   n_nodes_range: [2, 33] # nodes in the causal graph; upstream's 2..32, exclusive upper
   train_frac_range: [0.3, 0.9] # share of rows given as context; upstream's stage-1 range
-  n_classes: 2 # binary: default or not
+  max_classes: 10 # the control draws 2..10 classes per table, as upstream (--max_classes 10); credit tables are binary
   max_filter_attempts: 40 # retries before giving up on a rejected dataset
 
   pool:
@@ -48,103 +53,112 @@ prior:
 
   grouping:
     group_size: 4 # datasets sharing shape and difficulty; 1 disables grouping
-    subgroup_size: 2 # datasets sharing exact values within a group
+    subgroup_size: 4 # upstream v2: the subgroup is the whole group, which shares its feature count
 
   base: # the UNMODIFIED TabICL prior — changing this changes the control arm
     max_cat_size: 200 # upstream graph_scm: sample_categorical_sizes(max_cat_size=200)
     category_frequency: balanced # how category counts are distributed
 
-  credit: # OUR credit-targeted path
-    max_cat_size: 500 # credit has state, MSA, servicer — high cardinality
-    category_frequency: balanced # strong baseline, matching Exp1 (was swept; washed out)
+  credit: # OUR credit prior. Every range is from the credit-risk literature or deliberately wide; none is set from the evaluation data (docs/PRIORS.md)
+    max_cat_size: 500 # credit has state, region, product codes — high cardinality
+    category_frequency: balanced # as the control
 
     target:
-      mode: mechanism # strong baseline, matching Exp1 (Vasicek factor model always on)
-      base_rate_range: [0.01, 0.30] # share of positives; real data is 6.7%-40%
-      flip_pos_to_neg: 0.10 # defaults booked as non-default (cures) — the common direction
-      flip_neg_to_pos: 0.01 # unobserved defaults — rarer
+      mode: mechanism # Merton/Vasicek one-factor default model, the basis of the Basel IRB formula (Vasicek 2002)
+      mechanism:
+        rho_range: [0.03, 0.24] # asset correlation: the Basel IRB range, other retail 0.03 to corporate 0.24 (BCBS 2005)
+        base_rate_range: [0.01, 0.50] # default rate: from Brown & Mues (2012)'s most imbalanced 1 % up to balanced
+        base_rate_log: true # log-uniform: the imbalanced end as present as the balanced one
+        signal_share_range: [0.05, 0.95] # share of a borrower's risk the recorded features explain — wide, no published value
+        woe_prob: 0.5 # scorecard-style monotone binning of the risk driver, in half the tables
+        macro_feature_prob: 0.5 # the period factor is also a column (economic-cycle variables; Bellotti & Crook 2012)
+        cohort: { min_cohorts: 1, max_cohorts: 40, cohort_sd_range: [1.0, 1.0] } # periods sharing the systematic factor Z ~ N(0, 1)
 
-      mechanism: # only read when mode: mechanism
-        rho_range: FILL_FROM_EXP1 # Exp1's winning default correlation ([0.03,0.12] mild | [0.12,0.30] aggressive)
-        base_rate_range: [0.02, 0.30] # share of positives under the factor model
-        woe_prob: 0.3 # chance of a scorecard-style monotone binning first
-        cohort: { min_cohorts: 1, max_cohorts: 12 } # vintage blocks sharing an economic shock
-
-      rules: # hard underwriting cut-offs (Klein & Hoffart 2026 — a position paper, so speculative)
-        n_rules: 3 # threshold rules added to the latent
+      rules: # hard underwriting cut-offs (Klein & Hoffart 2026 — a position paper; flagged in docs/PRIORS.md)
+        n_rules_range: [0, 3] # rules per table, drawn; some books have none
         rule_weight_range: [0.5, 2.5] # how strongly each rule shifts risk
         rule_quantile_range: [0.1, 0.9] # where the cut-offs sit
         conjunction_prob: 0.3 # chance a rule needs two conditions at once
 
-      selection: # you only observe approved applicants
-        selection_drop: 0.2 # share of rows removed as rejected
-        selection_sharpness: 0.7 # how strictly the cut-off is applied
+      selection: # only approved applicants are observed (reject inference; Banasik & Crook 2007)
+        selection_drop_range: [0.0, 0.5] # share of applicants rejected, per table — wide, acceptance rates are not published
+        selection_sharpness_range: [0.3, 1.0] # how closely the screen follows risk, per table — wide
 
+    marginals: # money amounts, balances and incomes are positive and right-skewed
+      col_fraction_range: [0.0, 1.0] # share of continuous columns given a tail, per table — wide
+      strength_range: [0.25, 2.5] # skew of the monotone warp, per column — wide
 
-    shift: # context and predicted rows come from different populations
+    shift: # context and predicted rows come from different populations (economic cycles, reject inference)
       shift_prob: 0.3 # share of datasets given a shift
       kind_weights: { cohort: 1.0, covariate: 1.0, prior_prob: 1.0, selection: 1.0 } # time | feature range | base rate | reject inference
-      prior_prob_range: [0.15, 0.45] # how far the base rate moves
-      selection_sharpness: 0.35 # reject-inference screen strength; soft, realistic screen (approved book keeps ~8-10% defaults). 0.6+ is near-perfect and unrealistic
+      prior_prob_ratio_range: [1.25, 4.0] # query default rate over the context's, log-uniform, either way: a 1-2 SD move of the Vasicek factor (docs/PRIORS.md)
+      selection_sharpness: 0.35 # reject-inference screen strength
 
-    missingness:
-      missing_col_fraction: 0.3 # share of columns that get missing values
-      missing_rate_range: [0.05, 0.35] # how much is missing in those columns
-      missing_target_coupling: 1.0 # 1.0 = missingness carries signal (a thin file is a risk signal)
-      missing_indicators: true # add a was-missing flag column
+    missingness: # gaps in credit data are informative, not random (reject inference as a missing-data problem; Baesens et al. 2026)
+      missing_prob: 0.5 # share of tables with any missing values — uninformative
+      missing_col_fraction_range: [0.05, 1.0] # share of columns with gaps, per table — wide
+      missing_rate_range: [0.01, 0.5] # how much is missing in those columns — wide
+      missing_target_coupling_range: [0.0, 1.0] # how strongly a gap depends on default, per table — wide
+      missing_indicators: false # TabICL's prediction path adds none; the signal lives in the filled value
+
     noise_features:
       fraction: 0.3 # share of columns carrying no information
       kind_weights: { pure_noise: 1.0, duplicate: 1.0, shuffled: 1.0, constant: 0.5 } # kinds of junk
 
   filter: # which generated datasets get discarded as unlearnable
-    mode: FILL_FROM_EXP1 # Exp1's winner: tabicl | banded | off
-    quantile_band: [0.02, 0.30] # pseudo-R^2 band kept when mode: banded; PD is lower-signal than LGD
+    mode: tabicl # TabICLv2's own filter (bootstrap p < 0.05 on a 25-tree ExtraTrees), as upstream
+    apply_to: base # TabICL's tables only, as upstream; the credit tables are used as specified, not re-selected
+    quantile_band: [0.02, 0.30] # pseudo-R^2 band, read only by mode: banded
     remove_trivial: false # also drop datasets that are too easy
     trivial_threshold: 0.1 # what counts as too easy
 
 # ----------------------------------------------------------------------------
-# HOW TO START
+# HOW TO START — from the released weights
 # ----------------------------------------------------------------------------
 init:
-  pretrained_path: checkpoints/tabicl-classifier-v2-20260212.ckpt # the released weights
-  strict_load: true # a name mismatch must FAIL, never load silently and half-work
+  strategy: full # every layer trains
+  pretrained_path: checkpoints/tabicl-classifier-v2-20260212.ckpt # the released TabICLv2 weights; the tabpfn3 arms name TabPFN-3's
+  strict_load: true # every tensor must load (391/391 classifier, 347/347 regressor); anything less is the wrong file
 
 # ----------------------------------------------------------------------------
-# TRAINING
+# TRAINING — continued pretraining (docs/EXPERIMENTAL_DESIGN.md, Experiment 2)
 # ----------------------------------------------------------------------------
 train:
-  max_steps: 10000 # gradient updates
-  batch_size: 16 # datasets per update
-  micro_batch_size: 16 # datasets per forward pass, for gradient accumulation
+  max_steps: 10000 # upstream's stage 3 is 10,000 steps; TabPFN-Wide's continued pretraining plateaus by 10,000
+  batch_size: 64 # datasets per UPDATE, upstream's; the tabpfn3 arms use 16, as TabPFN-Wide
+  micro_batch_size: 4 # datasets per TabICL forward pass (TabPFN takes one at a time)
+  num_quantiles: 999 # TabICL's quantile grid (LGD)
+  n_estimators: 2 # TabPFN ensemble members per training forward, as its fine-tuner (n_estimators_finetune)
 
-  optimizer: adamw # NOT muon: `lr` is Muon's AUXILIARY rate, so the sweep would do nothing
-  muon_lr: 8.0e-5 # Muon's rate; it prefers ~8x AdamW's
-  scheduler: cosine_with_restarts # linear warmup then cosine decay, as both CPT papers use
-  beta1: 0.9 # AdamW momentum
-  beta2: 0.95 # AdamW variance decay
-  weight_decay: 1.0e-4 # TabPFN-Wide's continued-pretraining value, not pretraining's 0.01
-  gradient_clipping: 1.0 # max gradient norm; TabICLv2 raised this from 1 to 10
-  warmup_proportion: 0.05 # share of steps spent ramping the rate up
+  optimizer: adamw # set per arm: adamw | muon (TabICL only)
+  lr: 1.0e-5 # set per arm
+  scheduler: cosine_with_restarts # warm-up then cosine decay — TabPFN's fine-tuner and upstream's stages alike
+  beta1: 0.9 # momentum
+  beta2: 0.999 # AdamW's variance decay, torch's default, which TabPFN's fine-tuner uses
+  weight_decay: 0.01 # TabPFN's fine-tuner and upstream's stages
+  gradient_clipping: 1.0 # TabPFN's fine-tuner and upstream's stage 3
+  warmup_proportion: 0.1 # set per arm: 0.1 for AdamW (TabPFN's fine-tuner), 0.01 for Muon (upstream)
   cosine_num_cycles: 1 # restarts in the schedule
   cosine_amplitude_decay: 1.0 # how much each cycle shrinks
-  cosine_lr_end: 1.0e-7 # floor of the schedule
+  cosine_lr_end: 1.0e-7 # floor of the schedule, upstream's
+  l2sp_alpha: 0.0 # no pull toward the released weights (Real-TabPFN's L2-SP is a later ablation)
 
-  amp: true # mixed precision, GPU only
-  num_workers: 12 # CPU workers generating datasets
-  log_every: 50 # steps between log lines
-  save_temp_every: 250 # steps between rolling checkpoints; caps what a kill loses
-  save_perm_every: 2500 # steps between kept-forever checkpoints
+  amp: true # mixed precision on GPU (TabPFN: float16 + GradScaler, as its fine-tuner)
+  num_workers: 12 # CPU workers generating (and, for TabPFN, preprocessing) the tasks; the SLURM script sets it from the allocation
+  log_every: 100 # steps between log lines
+  save_temp_every: 250 # rolling checkpoints; caps what a kill loses
+  save_perm_every: 2500 # kept-forever checkpoints, each scored by the benchmark: the length is chosen from them
   max_temp_checkpoints: 2 # rolling checkpoints retained
 
 # ----------------------------------------------------------------------------
-# PROGRESS CURVE — real data scored mid-training
+# PROGRESS CURVE — real development data scored mid-training
 # ----------------------------------------------------------------------------
 progress:
-  every_datasets: 40000 # synthetic datasets between measurements; 0 disables
-  n_datasets: 4 # real credit datasets scored, smallest first
-  n_ood: 8 # out-of-domain datasets scored, if the cache exists
-  context_rows: 512 # rows given as context when scoring
-  max_test_rows: 2000 # rows scored per dataset
+  every_datasets: 32000 # 500 TabICL steps (the tabpfn3 arms: 8,000 = 500 of their steps); plus one at step 0
+  n_datasets: 5 # real credit datasets scored when `datasets` is empty; the trainer passes the development list
+  n_ood: 8 # out-of-domain datasets scored — forgetting shows up here first
+  context_rows: 4096 # fixed, stratified context per dataset — same rows at every step and in every arm
+  max_test_rows: 2048 # rows scored per dataset
 
 # ----------------------------------------------------------------------------
 # LOGGING
@@ -162,6 +176,7 @@ logging:
 # EVALUATION — frozen before any prior tuning
 # ----------------------------------------------------------------------------
 eval:
+  headline_step: FILL_FROM_SEARCH # the checkpoint the search chose on development data; every saved one is scored
   data_dir: data/raw/pd # where the real datasets live
   dev_datasets: [0001.gmsc, 0004.lendingclub, 0002.taiwan_creditcard, 0008.german, 0005.myhom] # used to choose the prior
   holdout_datasets: [0003.vehicle_loan, 0006.hackerearth, 0007.cobranded, 0009.bank_status,

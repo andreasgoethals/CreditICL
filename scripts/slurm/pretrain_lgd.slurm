@@ -34,11 +34,11 @@
 # picks the checkpoint up. See docs/VSC.md.
 #SBATCH --requeue
 #SBATCH --signal=B:USR1@600
-# 0-44 = the 45 arms of Exp1. %8 caps how many run at once: gpu_b200 has 24 GPUs TOTAL
+# 0-8 = the 9 arms of Exp1 (3 credit mixes x 3 seeds). %8 caps how many run at once: gpu_b200 has 24 GPUs TOTAL
 # shared with every other user, and both MaxSubmitJobsPerUser and MaxTRESPerUser apply.
 # Check yours before raising it:
 #     sacctmgr show qos normal format=Name,MaxSubmitJobsPerUser%15,MaxTRESPerUser%30
-#SBATCH --array=0-44%8
+#SBATCH --array=0-8%8
 
 # Jitter the start so concurrent tasks do not hammer the filesystem at once.
 sleep $((RANDOM % 30 + 1))
@@ -46,15 +46,21 @@ sleep $((RANDOM % 30 + 1))
 set -euo pipefail
 export PYTHONUNBUFFERED=1
 export PYTHONIOENCODING=utf-8
+# Fixed string hashing: upstream's graph sampler orders feature groups by a Python set, so
+# identical tasks across arms (src/prior/stream.py) need the same hash seed in every process.
+export PYTHONHASHSEED=0
 export EXP="${EXP:-1}"
-CONFIG="config/Exp${EXP}_LGD.yaml"
+# VARIANT=search runs Experiment 2's stage A (config/Exp2_LGD_search.yaml).
+export VARIANT="${VARIANT:-}"
+CONFIG="config/Exp${EXP}_LGD${VARIANT:+_${VARIANT}}.yaml"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
-export CREDITICL_OUTPUT_ROOT="${CREDITICL_OUTPUT_ROOT:-${VSC_DATA}/CreditICL}"
-mkdir -p "${CREDITICL_OUTPUT_ROOT}/output/logs" "${CREDITICL_OUTPUT_ROOT}/output"
+OUTPUT_ROOT="${VSC_DATA}/CreditICL/output_CreditICL"   # = src.utils.paths.outputs_dir()
+LOGDIR="${OUTPUT_ROOT}/experiment_${EXP}/logs"
+mkdir -p "${LOGDIR}"
 
 TS=$(date +%Y%m%d_%H%M%S)
-LOG="${CREDITICL_OUTPUT_ROOT}/output/logs/pretrain_lgd_${TS}_j${SLURM_ARRAY_JOB_ID}_a${SLURM_ARRAY_TASK_ID}.log"
+LOG="${LOGDIR}/pretrain_lgd_${TS}_j${SLURM_ARRAY_JOB_ID}_a${SLURM_ARRAY_TASK_ID}.log"
 exec > "$LOG" 2>&1
 
 _log_exit() {
@@ -136,7 +142,7 @@ if [[ "$RC" -eq 64 ]]; then
     # partition allows. (On mindwell these equal the header, so nothing changes there.)
     sbatch --clusters="${SLURM_CLUSTER_NAME:-mindwell}" \
            --job-name="crediticl-exp${EXP}-lgd" \
-           --export="ALL,EXP=${EXP}" \
+           --export="ALL,EXP=${EXP},VARIANT=${VARIANT}" \
            "${RESUME_TIME[@]}" \
            --partition="${SLURM_JOB_PARTITION:-gpu_b200}" \
            --cpus-per-task="${SLURM_CPUS_PER_TASK}" \
@@ -149,16 +155,13 @@ fi
 
 
 # NO EVALUATION HERE. Phase 1 produces checkpoints; phase 2 scores them, and it is a
-# SEPARATE array so that all 45 arms and the reference column (released TabICLv2,
-# CatBoost, logistic/linear) are benchmarked by the same code, on the same day, with the
-# same context cap, seeds and splits. Every comparison this project got wrong, it got
-# wrong by scoring the two sides through different paths.
+# SEPARATE array so that every saved checkpoint of every arm and the reference column (released
+# TabICLv2, TabPFN-3, CatBoost, logistic/linear) are benchmarked by the same code, with the same
+# folds and the same protocol (src/eval/protocol.py). Every comparison this project got wrong,
+# it got wrong by scoring the two sides through different paths.
 #
-#     python -m src.utils.sweep_status --config config/Exp1_<TRACK>.yaml   # 75 done?
+#     python -m src.utils.sweep_status --config config/Exp1_<TRACK>.yaml   # all 9 done?
 #     sbatch --clusters=mindwell --export=ALL,TRACK=<track> \
 #            scripts/slurm/benchmark.slurm
 
 
-
-mkdir -p "${CREDITICL_OUTPUT_ROOT}/.sentinels"
-touch "${CREDITICL_OUTPUT_ROOT}/.sentinels/pretrain_ok_lgd_${SLURM_ARRAY_TASK_ID}"

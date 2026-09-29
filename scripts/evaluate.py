@@ -1,13 +1,14 @@
-"""PIPELINE 4 — score the baselines on every real credit dataset.
+"""PIPELINE 4 — score the models on every real credit dataset, by `src/eval/protocol.py`:
+5-fold cross-validation, the whole training pool as context, the PD threshold chosen to maximise
+F1 on a validation split, every metric.
 
     python scripts/evaluate.py --task lgd
-    python scripts/evaluate.py --task both --seeds 0,1,2
     python scripts/evaluate.py --task pd --models catboost,tabiclv2 --datasets 0008.german
 
 Preprocesses anything missing first, so one command is enough from a fresh clone.
 
 Writes to results/<task>/eval/:
-    results_<timestamp>.csv    one row per (dataset, model, seed)
+    results_<timestamp>.csv    one row per (dataset, model, seed, fold)
     summary_<timestamp>.csv    mean of the headline metrics per model
 Logs go to logs/ and contain nothing you need to keep.
 
@@ -29,9 +30,10 @@ if str(ROOT) not in sys.path:
 from src.eval.baselines import DEFAULT_BASELINES, availability_report  # noqa: E402
 from src.eval.crediticl_baseline import register_or_warn as register_crediticl  # noqa: E402
 from src.eval.crediticl_baseline import resolve_our_checkpoint  # noqa: E402
+from src.eval.protocol import N_FOLDS, PROTOCOL, VALIDATION_FRACTION  # noqa: E402
 from src.eval.runner import EvalConfig, run, summarise  # noqa: E402
 from src.utils.logging_setup import log_environment, log_section, setup_logging  # noqa: E402
-from src.utils.paths import describe, logs_dir, results_dir  # noqa: E402
+from src.utils.paths import benchmark_dir_for, describe, logs_dir, owner_of  # noqa: E402
 
 
 def main() -> int:
@@ -39,8 +41,11 @@ def main() -> int:
     ap.add_argument("--task", choices=("pd", "lgd", "both"), default="both")
     ap.add_argument("--datasets", default=None, help="comma-separated slugs; default all")
     ap.add_argument("--models", default=",".join(DEFAULT_BASELINES))
-    ap.add_argument("--seeds", default="0", help="comma-separated, e.g. 0,1,2")
-    ap.add_argument("--test-size", type=float, default=0.2)
+    ap.add_argument("--seeds", default="0",
+                    help="fold-assignment seeds, one full CV each; the protocol is one: 0")
+    ap.add_argument("--folds", type=int, default=N_FOLDS, help="cross-validation folds")
+    ap.add_argument("--val-fraction", type=float, default=VALIDATION_FRACTION,
+                    help="share of each training pool held out to choose the PD threshold")
     ap.add_argument("--split", default="random", choices=("random", "temporal"))
     ap.add_argument("--tag", default=None, help="suffix for the output filenames")
     ap.add_argument(
@@ -51,11 +56,8 @@ def main() -> int:
     )
     ap.add_argument(
         "--max-context-rows", type=int, default=None,
-        help="cap the CONTEXT rows given to every TFM baseline (ours AND the released "
-             "model). We train at <=1,024 rows and the wrapper would otherwise pass "
-             "47,089 on heloc, which the model has never seen; upstream avoids that "
-             "with stages 2-3, which would cost 307x our stage 1. Applied identically "
-             "to both, so it is part of the measurement, not a handicap.",
+        help="DEBUG ONLY: cap the context rows given to every TFM. The protocol gives every "
+             "model the whole training pool; a cap is recorded in every row.",
     )
     ap.add_argument(
         "--checkpoint", default=None,
@@ -68,9 +70,13 @@ def main() -> int:
     tasks = ["pd", "lgd"] if args.task == "both" else [args.task]
     stamp = args.tag or datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    log, _, log_path = setup_logging(f"evaluate_{stamp}", logs_dir(), level="INFO", console=True)
+    # The tag names the owner: `exp<N>bench_...` -> experiment_<N>/, `reference_...` -> reference/,
+    # anything else (an ad hoc run) -> general/. See `paths.owner_of`.
+    log, _, log_path = setup_logging(f"evaluate_{stamp}", logs_dir(owner_of(stamp)), level="INFO",
+                                     console=True)
     log_section(log, "CreditICL — EVAL PIPELINE")
-    log_environment(log, {"pipeline": "eval", "split": args.split, "test_size": args.test_size})
+    log_environment(log, {"pipeline": "eval", "split": args.split, "folds": args.folds,
+                          "val_fraction": args.val_fraction, "protocol": PROTOCOL})
     log.info("storage:\n%s", "\n".join(f"    {k} = {v}" for k, v in describe().items()))
     log.info("log file -> %s", log_path)
 
@@ -94,13 +100,18 @@ def main() -> int:
             ckpt = resolve_our_checkpoint(args.checkpoint, task, log)
             if ckpt is not None:
                 model_kwargs["crediticl"] = {"checkpoint": str(ckpt)}
+        if "tabpfn3" in models and args.checkpoint:
+            # One of OUR fine-tuned TabPFN-3 checkpoints (Experiment 2), scored by the same wrapper
+            # as the released weights; without --checkpoint `tabpfn3` IS the released model.
+            model_kwargs["tabpfn3"] = {"model_path": str(Path(args.checkpoint))}
 
         cfg = EvalConfig(
             task=task,
             datasets=args.datasets.split(",") if args.datasets else None,
             models=models,
             seeds=[int(s) for s in args.seeds.split(",")],
-            test_size=args.test_size,
+            n_folds=args.folds,
+            val_fraction=args.val_fraction,
             split=args.split,
             model_kwargs=model_kwargs,
             max_rows=args.max_rows,
@@ -108,7 +119,7 @@ def main() -> int:
         )
         df = run(cfg)
 
-        out = results_dir(task, "eval")
+        out = benchmark_dir_for(stamp, task)
         out.mkdir(parents=True, exist_ok=True)
         res_path = out / f"results_{stamp}.csv"
         df.to_csv(res_path, index=False)

@@ -28,7 +28,8 @@ def test_a_small_draw_is_the_single_process_draw_it_always_was():
     one by one — so every small draw in the tests and the plotting helpers is unchanged."""
     prior, n = _prior(), D.MIN_PARALLEL - 1
     gen = TaskGenerator(prior, "pd", PriorRNG(3))
-    expected = [gen.sample() for _ in range(n)]
+    # The plotting draw pins PD control tables to two classes (training draws 2-10).
+    expected = [gen.sample(num_classes=2) for _ in range(n)]
     got, summary = D.draw("pd", prior, n, seed=3)
     assert len(got) == n
     assert all(torch.equal(a.X, b.X) and torch.equal(a.y, b.y) for a, b in zip(expected, got))

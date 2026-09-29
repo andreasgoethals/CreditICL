@@ -35,7 +35,7 @@ if str(ROOT) not in sys.path:
 
 from src.utils.config import expand_with_seeds, load  # noqa: E402
 from src.utils.logging_setup import log_environment, log_section, setup_logging  # noqa: E402
-from src.utils.paths import describe, logs_dir, results_dir  # noqa: E402
+from src.utils.paths import describe, general_dir, logs_dir  # noqa: E402
 
 #: What each variant means. `credit_fraction` is FORCED, so a pool can never end up
 #: being a silent mixture of the two.
@@ -68,7 +68,7 @@ def main() -> int:
         from src.prior.pool import verify_pools
 
         report = verify_pools(task, sorted(VARIANTS), expect=args.n_datasets)
-        out = results_dir(task, "prior")
+        out = general_dir() / "prior" / task
         out.mkdir(parents=True, exist_ok=True)
         (out / "pool_status.json").write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
         log.info("wrote %s", out / "pool_status.json")

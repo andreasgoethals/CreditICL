@@ -9,7 +9,7 @@ each run actually did in [RUNS.md](RUNS.md). Library pin `52dab01`.
 
 1. [The claim, and how it fails](#1-the-claim-and-how-it-fails)
 2. [Verified premises — and two corrections](#2-verified-premises)
-3. [The three experiments](#3-the-three-experiments)
+3. [The experiments](#3-the-experiments)
 4. [Matched compute, seeds, and the two phases](#4-matched-compute-seeds-and-the-two-phases)
 5. [Evaluation](#5-evaluation)
 6. [Risks](#6-risks)
@@ -43,7 +43,7 @@ harder. Only selectivity discriminates (a) from (b) and (c).
 Each is a publishable negative. The design is built to learn which is true, not so that credit wins.
 
 **One honest limitation.** A generic-realism control arm (O'Prior-style: realism *without* credit
-targeting) was designed but **not built** — see [§3](#3-the-three-experiments). Without it we cannot
+targeting) was designed but **not built** — see [§3](#3-the-experiments). Without it we cannot
 fully separate "credit-specific structure" from "any added realism". The **double dissociation across
 the two tracks** ([§5.2](#52-the-double-dissociation)) is the substitute control: it rules out
 "narrower/harder" using only our own experiment, with no external control domain.
@@ -93,34 +93,56 @@ U-shaped (11.4% at 0, 8.1% at 1); LendingClub LGD is unimodal, left-skewed, peak
 is fully interior. PD base rates span 6.7% (GMSC) to 40% (myhom). **Consequence:** the prior must be
 a *family* over boundary mass and base rate, not a single shape — else it overfits one dataset.
 
-## 3. The three experiments
+## 3. The experiments
 
-All three share the same architecture (TabICLv2's, vendored from NanoTabICL — the only public TFM
-with regression *and* an open prior generator), the same real datasets, and the same frozen
-evaluation ([§5](#5-evaluation)). They differ only in the prior sweep and how training starts.
+All share the same real datasets and the same frozen evaluation ([§5](#5-evaluation)).
 `credit_fraction` is the master switch throughout: the share of each batch drawn from our
-credit-targeted path, the rest from the unmodified TabICL prior; `0.0` is the control.
+credit-targeted path, the rest from the unmodified TabICL prior; `0.0` is the control. **The credit
+prior is the same in every experiment and every number in it comes from the credit-risk literature or
+is deliberately wide — none from the evaluation datasets** ([PRIORS.md](PRIORS.md) §5; until
+29-09-2026 it was calibrated to the 21 datasets it is scored on, holdout included, which is test
+leakage and was removed).
 
-| | **Exp1 — which prior?** | **Exp2 — fine-tune?** | **Exp3 — run long** |
-|---|---|---|---|
-| start | from scratch | warm-start released TabICLv2 | from scratch |
-| swept knobs | `credit_fraction {0, .5, 1} × filter.mode {tabicl, banded, off} × intensity {mild, aggr} × 3 seeds` | `credit_fraction {0,.25,.5,.75,1} × init.strategy {full, icl_only, head_only} × l2sp_alpha {0, .003} × lr {1e-6, 1e-5}` | `credit_fraction {0, Exp1-winner}` |
-| arms/track | 45 (control-dedup) | 60 (1 seed) | small |
-| steps | 12,500 | 10,000 | 100,000 |
-| optimizer | Muon | AdamW | Muon |
-| asks | does the credit prior beat control, and does the cheap `banded` removal help? | does fine-tuning transfer, and at what **out-of-domain** cost? | confirm the winner at length |
+| | **Exp0 — does it run?** | **Exp1 — does the prior help, all else equal?** | **Exp2 — is it useful for the real models?** | **Exp3 — run long** |
+|---|---|---|---|---|
+| start | the three paths below | from scratch | the released TabICLv2 and TabPFN-3 weights | from scratch |
+| swept | `arm {scratch TabICL, fine-tuned TabICLv2, fine-tuned TabPFN-3}` | `credit_fraction {0, .5, 1} × 3 seeds` | stage A: `arm {5 TabICLv2 + 3 TabPFN-3 recipes}`, control mix, 1 seed; stage B: `arm {TabICLv2, TabPFN-3} × credit_fraction {0, .5, 1} × 3 seeds` | `credit_fraction {0, Exp1-winner}` × 5 seeds |
+| arms/track | 3 | 9 | 8 (A) + 18 (B) | 10 |
+| steps | 600 | 12,500 | 10,000 | 100,000 |
+| optimizer | as the path it checks | Muon (upstream stage 1) | chosen by stage A | Muon |
+| asks | every path works on the cluster; what a real arm and a real benchmark slot cost | the pure effect of the prior on what the model learns, at a small matched budget | whether the knowledge helps models trained at full scale, and at what out-of-domain cost | confirm the winner at length |
 
-**Exp1** screens the prior. Its cheapest sharp result is the **predictability filter**: `banded` keeps
-only tasks whose ExtraTrees pseudo-R² sits in credit's low-signal range — a *removal*, so it cannot
-be accused of adding capacity, and it contradicts a published convergence claim ([§2.5](#2-verified-premises)).
+**Exp0** is not an experiment but a gate: a checks job (versions, paths, data, weights — including that
+the file Exp2 fine-tunes from is the file the reference column scores — prior throughput, a few
+training steps on the GPU, one benchmark fold, and our TabICL trainer against upstream's on the same
+batches), three 600-step arms per track through the real SLURM scripts (one stopped by SIGUSR1,
+resubmitted and resumed), and the benchmark of their final checkpoints plus the reference column on
+every dataset with the full protocol. `python -m src.utils.exp0_verify` reads it back.
 
-**Exp2** asks the fine-tuning question, and is where **out-of-domain retention** is measured: `l2sp_alpha`
-(pull toward the loaded weights) and `init.strategy` (freeze depth) are the levers that trade credit
-gain against forgetting. Its hyperparameters are literature-grounded and genuinely unsettled — see
-[CONFIG_REFERENCE](CONFIG_REFERENCE.md) and the memory note on TFM fine-tuning; TabICL specifically is
-the architecture that degrades most under naive full fine-tuning, which is *why* freeze depth is swept.
+**Exp1** measures the prior's effect in its purest form: the same architecture trained from scratch on
+each mix, with the same compute. With so little training (2.5 % of upstream's stage 1) the arms are not
+expected to reach the released model; the question is the contrast between mixes.
 
-**Exp3** runs the single Exp1-winning prior long, against its control.
+**Exp2** asks whether the effect survives where it matters: the released, fully trained models, whose
+pretraining continues on our prior. Two models, because a result for one architecture could be an
+accident of it: TabICLv2 (open prior, trained through our own trainer, verified equal to upstream's)
+and TabPFN-3 (trained through TabPFN's own fine-tuning path, `src/train/tabpfn_trainer.py`). **Stage A**
+chooses each model's recipe — optimizer, learning rate and, from the checkpoints saved every 2,500
+steps, the length — on the development datasets only, with the CONTROL mix, so the recipe is not tuned
+in favour of our prior; a candidate must keep its out-of-domain score within 0.01 ROC-AUC / 0.02 R² of
+the released weights (`src/eval/exp2_search.py`). The candidates bracket the published values:
+AdamW 3e-6 / 1e-5 / 3e-5 for both models (TabPFN's and TabICL's own fine-tuners use 1e-5, as does
+TabPFN-Wide's continued pretraining; Real-TabPFN uses 3e-7 with L2-SP), and for TabICLv2 also Muon at
+upstream's own continuation rates, 2e-5 (stage 3) and 1e-4 (stage 2). 10,000 steps is upstream's
+stage 3 and where TabPFN-Wide's continued pretraining plateaus. **Stage B** then compares the mixes at
+that recipe, 3 seeds each, on every dataset, at the checkpoint stage A chose (every saved checkpoint is
+scored). L2-SP and partial freezing are not in the design (a later ablation). Two limits are shared by
+every arm and must be stated: TabPFN's prior is not public, so its control continues on TabICL's
+prior; and all arms train on 1,024-row tables where the released models also saw far longer ones, so
+the comparison with the released weights mixes our prior's effect with that change, while the
+comparison between mixes does not.
+
+**Exp3** runs the single Exp1-winning mix long, against its control.
 
 **What was designed but not built.** An **O'Prior-style generic-realism arm** (the ideal causal
 control) and an **unrealistic-but-complex arm** (TabForestPFN's counter-hypothesis that complexity
@@ -144,14 +166,15 @@ steps/datasets, and report the rejection rate per arm); and TabICLv2's own ablat
 prior×architecture interaction, so a prior change may need retuning — **log every arm's loss curve
 and treat divergence as a reportable outcome, never tune it away silently.**
 
-**Seeds.** 3 per arm in Exp1 (Exp2 uses 1 — 60 arms already, seeds come after a winner). Report
-mean ± spread; never rank arms on a gap smaller than the seed spread.
+**Seeds.** 3 per arm in Exp1 and in Exp2's stage B, 5 in Exp3; Exp2's stage A is a search and uses
+1. Report mean ± spread; never rank arms on a gap smaller than the seed spread.
 
 **Two phases, and the order is a fact about the data.** Phase 1 (`pretrain_{pd,lgd}.slurm`) trains one
-checkpoint per arm; phase 2 (`benchmark.slurm`) scores every checkpoint **plus a shared reference
-column** (released TabICLv2, TabPFN-3, CatBoost, linear) at array index *N*. Phase 2 cannot start
+checkpoint per saved step per arm; phase 2 (`benchmark.slurm`) scores every saved checkpoint — one array
+slot each, final checkpoints first — **plus a shared reference column** (released TabICLv2, TabPFN-3,
+CatBoost, linear), one slot per model after them (`benchmark_status.slot_for`). Phase 2 cannot start
 until phase 1 has written the checkpoints. The reference sits **inside the same array** so it is
-scored by the same code, same day, same context cap, seeds and splits as our arms — every comparison
+scored by the same code, the same folds and the same protocol as our arms — every comparison
 this project got wrong, it got wrong by scoring the two sides through different paths. Evaluation is
 *not* inside the training job for the same reason: an arm would otherwise be benchmarked by whatever
 the code looked like the hour it finished.
@@ -169,10 +192,24 @@ credit datasets and the out-of-domain suites. The split is fixed:
 | **PD** (14) | gmsc, lendingclub, taiwan_creditcard, german, myhom | vehicle_loan, hackerearth, cobranded, bank_status, thomas, loan_default, home_credit, hmeq, algorithmwatch |
 | **LGD** (7) | lgd_lendingclub, base_model, heloc | loss2, axa, base_modelisation, lgd_freddie |
 
-Row/feature caps for the in-context models are applied uniformly and **recorded in every result row**
-(a silent subsample makes a model look worse for a reason nothing explains).
+**The protocol** (`src/eval/protocol.py`, version 3 since 28-09-2026) is the same for every model —
+our checkpoints, released TabICLv2, TabPFN-3, CatBoost, the linear floor — and for the out-of-domain
+suites: **5-fold cross-validation** (stratified for PD, one fixed fold assignment); **the whole training
+pool is the context** — no row cap, no context selection; for PD, **the decision threshold maximises F1
+on a validation split** (20 % of the training pool), after which the model is refitted on the whole pool
+and the test fold is scored at that threshold. Every model runs at its library defaults. The one input
+limit left is 500 columns, and it applies to **every** model alike (since 29-09-2026): a wider table
+keeps its 500 highest-variance columns of the training fold — label-free, so the choice cannot leak —
+for the foundation models, CatBoost and the linear floor (`protocol.select_columns`). It binds on
+`loan_default` (759) and `algorithmwatch` (2,986) and is recorded in every result row. Every
+saved checkpoint (every 2,500 steps and the final one) is scored, so each arm has a learning curve on
+real data as well as a final number. Our checkpoints train on 1,024-row tables and are scored on contexts
+of up to ~426,000 rows: that length gap is identical for every arm, so the arm-vs-control contrast is
+matched, but the released TabICLv2 was trained on up to 60,000 rows and is not — report the reference
+gap with that caveat.
 
-**Metrics** (all computed in one run). PD: ROC-AUC, PR-AUC, Brier, log-loss, KS, calibration slope —
+**Metrics** (all computed in one run). PD: ROC-AUC, PR-AUC, Brier, log-loss, KS, calibration slope, and
+F1, precision, recall, MCC and balanced accuracy at the validation-tuned threshold —
 **never accuracy alone** (at a 7% base rate "never defaults" already scores 0.93), and ECE with MCE
 because the sparse high-score tail is where the defaults are. LGD: pinball, CRPS, interval coverage,
 **boundary-mass calibration** (predicted vs observed P(y=0), P(y=1) — the metric that most directly
@@ -221,5 +258,6 @@ dataset-dependent (Freddie has an origination date; Home Credit has none) — se
    first, to avoid a strawman) or accept the two-track dissociation as the control.
 3. **ZOIB/mixture LGD head** — held in reserve behind decoding + support constraints
    ([§2.4](#2-verified-premises)); revisit only if those are insufficient.
-4. **Which prior fills Exp2/Exp3's `FILL_FROM_EXP1`** — the Exp1 winner; if Exp1 gives no clean
-   winner, run the downstream experiments across several prior settings rather than betting on one.
+4. **Which mix fills Exp3's `FILL_FROM_EXP1`** — the Exp1 winner on the development datasets; if Exp1
+   gives no clean winner, run Exp3 across several mixes rather than betting on one. Exp2 needs no
+   winner: it compares every mix itself, at the recipe its own search chose (`FILL_FROM_SEARCH`).

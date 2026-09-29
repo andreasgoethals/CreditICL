@@ -12,6 +12,8 @@ printing keeps it testable, and lets a caller write it to `results/` if they wan
 
 from __future__ import annotations
 
+from src.visualize.draw import minority_share
+
 from typing import Any
 
 import numpy as np
@@ -116,8 +118,9 @@ def prior_summary(
                 )
             lines.append(f"  any atoms      {np.mean([b > 0.01 for b in boundary]):.1%} of datasets")
         else:
-            rates = [float((t.y > 0.5).float().mean()) for t in tasks]
-            lines.append(f"  base rate      {_fmt_range(rates, pct=True)}")
+            # The minority share: label identity is random in both priors (`draw.minority_share`).
+            rates = [minority_share(t.y) for t in tasks]
+            lines.append(f"  default rate   {_fmt_range(rates, pct=True)}  (minority-class share)")
             lines.append(f"  below 5%       {np.mean([r < 0.05 for r in rates]):.1%} of datasets")
             lines.append(f"  below 10%      {np.mean([r < 0.10 for r in rates]):.1%} of datasets")
 
@@ -141,7 +144,7 @@ def prior_summary(
                     for t in tasks
                 ]
             else:
-                vals = [float((t.y > 0.5).float().mean()) for t in tasks]
+                vals = [minority_share(t.y) for t in tasks]
             lo, hi = min(vals), max(vals)
             covered = [k for k, v in real.items() if lo <= v <= hi]
             # Range coverage on its own is a WEAK claim: a range can span a real value
@@ -165,16 +168,45 @@ def prior_summary(
 
     lines.append("\n--- WHAT THIS MEANS " + "-" * 58)
     target = _credit_target(config)
-    if task == "lgd" and target.get("mode", "quantile") in ("quantile", "censor"):
-        lo, hi = target.get("boundary_mass_range", [0.02, 0.25])
+    if task == "lgd" and target.get("mode") == "zoib":
+        z = target.get("zoib", {}) or {}
+        a0 = z.get("alpha0_mean_sd", [-0.54, 1.0])
+        b0 = z.get("beta0_mean_sd", [-1.46, 1.0])
+        phi = z.get("phi_range", [1.0, 20.0])
+        lines.append(
+            "The original TabICL prior standard-scales its target, so it puts almost\n"
+            "nothing inside [0,1] and produces boundary atoms only by chance ties at the\n"
+            "+-4 SD outlier clamp. Our prior draws LGD from the zero-and-one inflated beta\n"
+            "regression the LGD literature simulates from (Li, Zhang & Zhao 2020):\n"
+            "the chance of a full recovery (0) and of a total loss (1) and the mean of\n"
+            "the interior beta each depend on the features and on a macro factor shared\n"
+            "by a period's defaults. Each table is its own portfolio: intercepts\n"
+            f"normal({float(a0[0]):g}, {float(a0[1]):g}) and normal({float(b0[0]):g}, {float(b0[1]):g}) "
+            "around the published\n-0.54 and -1.46, precision log-uniform on "
+            f"[{float(phi[0]):g}, {float(phi[1]):g}] around the published 5.\n"
+            "Nothing is set from the datasets above; they are shown only for comparison.\n"
+            "Training sees the target standardised on the context rows (an affine map:\n"
+            "the atoms stay atoms)."
+        )
+    elif task == "lgd" and target.get("mode", "quantile") in ("quantile", "censor"):
+        shared = target.get("boundary_mass_range", [0.02, 0.25])
+        atoms = []
+        for end, name in ((0, "0"), (1, "1")):
+            lo, hi = target.get(f"boundary_mass_{end}_range", shared)
+            prob = float(target.get(f"atom_prob_{end}", target.get("atom_prob", 0.75)))
+            power = float(target.get(f"boundary_mass_{end}_power", target.get("boundary_mass_power", 1.0)))
+            shape = "uniformly" if power == 1.0 else f"skewed towards small shares (U^{power:g})"
+            atoms.append(f"at {name}: in {prob:.0%} of tables, a share drawn {shape} from [{float(lo):g}, {float(hi):g}]")
         lines.append(
             "The original TabICL prior standard-scales its target, so it puts almost\n"
             "nothing inside [0,1] and produces boundary atoms only by chance ties at the\n"
             f"+-4 SD outlier clamp. Our prior, in this config's '{target.get('mode', 'quantile')}' mode, "
-            "sets the\natoms DIRECTLY: the share of rows at 0 and the share at 1 are each drawn\n"
-            f"uniformly from boundary_mass_range [{lo:g}, {hi:g}], and the interior follows a\n"
-            "Kumaraswamy curve. The collateral / workout / segment loss stories exist in\n"
-            "the code ('mechanism' mode) but are not used by this experiment."
+            "sets the\natoms DIRECTLY:\n  "
+            + "\n  ".join(atoms) + "\n"
+            "and the interior follows a Kumaraswamy curve. Training sees the same target\n"
+            "standardised on the context rows (an affine map: the atoms stay atoms). The\n"
+            "collateral / workout / segment loss stories exist in the code ('mechanism'\n"
+            "mode) but are not used by this experiment."
         )
     elif task == "lgd":
         lines.append(
@@ -185,12 +217,17 @@ def prior_summary(
             "over-collateralisation and total loss rather than being dialled in."
         )
     else:
+        mech = target.get("mechanism", {}) or {}
+        br = mech.get("base_rate_range", [0.01, 0.5])
+        rho = mech.get("rho_range", [0.03, 0.24])
         lines.append(
-            "Real PD base rates sit well below balance. Our prior assigns defaults with\n"
-            "the Merton/Vasicek one-factor model — the basis of the Basel IRB formula —\n"
-            "so defaults are CORRELATED through a systematic factor and the realised rate\n"
-            "varies between cohorts. A prior of independent labels never shows the model\n"
-            "a bad year."
+            "Our prior assigns defaults with the Merton/Vasicek one-factor model — the\n"
+            "basis of the Basel IRB formula — so defaults are CORRELATED through a\n"
+            "systematic factor and the realised rate varies between periods. Asset\n"
+            f"correlation from the Basel IRB range [{float(rho[0]):g}, {float(rho[1]):g}]; base rate "
+            f"{'log-uniform' if mech.get('base_rate_log') else 'uniform'} on\n"
+            f"[{float(br[0]):g}, {float(br[1]):g}], from Brown & Mues (2012)'s most imbalanced 1 % up to balanced.\n"
+            "Nothing is set from the datasets above; they are shown only for comparison."
         )
     lines.append(
         "\nCaveat: this describes the PRIOR, not downstream performance. Whether a\n"

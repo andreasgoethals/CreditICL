@@ -106,23 +106,23 @@ def _progress(with_ood: bool) -> pd.DataFrame:
     return pd.DataFrame(cols)
 
 
-def test_progress_is_loaded_per_experiment_not_across_them(isolated_output):
+def _run(arm):
     from src.utils import paths
 
-    man = paths.manifests_dir()
-    man.mkdir(parents=True, exist_ok=True)
-    _progress(True).to_csv(man / "exp1_pd__a__progress.csv", index=False)
-    _progress(True).to_csv(man / "exp2_pd__b__progress.csv", index=False)
+    folder = paths.run_dir(arm)
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def test_progress_is_loaded_per_experiment_not_across_them(isolated_output):
+    _progress(True).to_csv(_run("exp1_pd__a") / "progress.csv", index=False)
+    _progress(True).to_csv(_run("exp2_pd__b") / "progress.csv", index=False)
     assert set(tp.load_progress("pd", "exp1")) == {"exp1_pd__a"}
     assert set(tp.load_progress("pd", "exp2")) == {"exp2_pd__b"}
 
 
 def test_real_vs_ood_draws_both_curves_when_ood_is_logged(isolated_output):
-    from src.utils import paths
-
-    man = paths.manifests_dir()
-    man.mkdir(parents=True, exist_ok=True)
-    _progress(True).to_csv(man / f"{ARM}__progress.csv", index=False)
+    _progress(True).to_csv(_run(ARM) / "progress.csv", index=False)
     fig = tp.real_vs_ood("pd", "exp2")
     labels = [ln.get_label() for ln in fig.axes[0].get_lines()]
     assert any("real" in str(x) for x in labels), labels
@@ -130,11 +130,7 @@ def test_real_vs_ood_draws_both_curves_when_ood_is_logged(isolated_output):
 
 
 def test_real_vs_ood_degrades_to_the_credit_curve_without_ood(isolated_output):
-    from src.utils import paths
-
-    man = paths.manifests_dir()
-    man.mkdir(parents=True, exist_ok=True)
-    _progress(False).to_csv(man / f"{ARM}__progress.csv", index=False)
+    _progress(False).to_csv(_run(ARM) / "progress.csv", index=False)
     fig = tp.real_vs_ood("pd", "exp2")  # must not raise when no ood__ columns exist
     labels = [str(ln.get_label()) for ln in fig.axes[0].get_lines()]
     assert any("real" in x for x in labels)
@@ -143,25 +139,25 @@ def test_real_vs_ood_degrades_to_the_credit_curve_without_ood(isolated_output):
 # -- the lever-effect figure groups by each swept knob ------------------------
 
 
-def test_lever_effect_groups_the_score_by_each_finetuning_lever(isolated_output):
+def test_lever_effect_groups_the_score_by_each_exp2_lever(isolated_output):
     from src.utils import paths
 
-    out = paths.results_dir("pd", "eval")
+    out = paths.benchmark_dir(2, "pd")
     out.mkdir(parents=True, exist_ok=True)
-    # Two learning rates, two strategies — a real benchmark carries the run name in info_run_name.
+    # Two released models x two mixes — a real benchmark carries the run name in info_run_name.
     rows = []
-    for lr in ("1em05", "1em06"):
-        for strat in ("full", "icl_only"):
-            name = (f"exp2_pd__init-strategy={strat}__prior-credit_fraction=0p5__"
-                    f"train-l2sp_alpha=0p003__train-lr={lr}__s0")
-            rows.append({"dataset": "german", "model": "crediticl", "seed": 0,
-                         "info_run_name": name, "roc_auc": 0.70 if lr == "1em06" else 0.73})
+    for arm in ("tabicl", "tabpfn3"):
+        for share in ("0", "0p5"):
+            name = f"exp2_pd__arm={arm}__prior-credit_fraction={share}__s0"
+            rows.append({"dataset": "german", "model": "crediticl" if arm == "tabicl" else "tabpfn3",
+                         "seed": 0, "info_run_name": name,
+                         "roc_auc": 0.70 + (0.02 if share == "0p5" else 0) + (0.03 if arm == "tabpfn3" else 0)})
     pd.DataFrame(rows).to_csv(out / "results_exp2bench_pd_a0.csv", index=False)
 
     fig = rp.lever_effect("pd", "exp2")
-    # At least the learning-rate and strategy panels should have bars.
+    # The mix and the released model: two panels with bars (optimizer and rate vary only in the search).
     drawn = [ax for ax in fig.axes if ax.patches]
-    assert len(drawn) >= 2, "lever_effect drew no grouped bars"
+    assert len(drawn) == 2, "lever_effect must draw the mix and the model panels"
 
 
 def test_lever_effect_degrades_before_the_benchmark_runs(isolated_output):

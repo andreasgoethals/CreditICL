@@ -1,37 +1,29 @@
 """Wipe what the previous run produced, so the next one starts clean.
 
-    python -m src.utils.clean_run                        list what is there, delete nothing
-    python -m src.utils.clean_run --clean                 delete it
-    python -m src.utils.clean_run --clean --processed      ...and the data/processed cache too
-    python -m src.utils.clean_run --clean --prior-cache    ...and the synthetic prior pools
+    python -m src.utils.clean_run                          list what is there, delete nothing
+    python -m src.utils.clean_run --clean                   delete it
+    python -m src.utils.clean_run --clean --checkpoints     ...and OUR trained checkpoints
+    python -m src.utils.clean_run --clean --prior-cache     ...and the synthetic prior pools
+    python -m src.utils.clean_run --clean --processed       ...and the data/processed cache
+    python -m src.utils.clean_run --experiment 0 --clean --checkpoints   only experiment_0
 
-PROJECT ADDITION: `--prior-cache`. This project's largest artefact is the pre-generated pools
-of synthetic datasets, which live outside `output/` (they are far too big for it), so the
-template's two roots would leave them behind. Opt-in and listed last, because a pool costs
-GPU-hours to regenerate — more than everything else here put together.
-
-Clears the **whole `output/` tree on both storage tiers** — `$VSC_DATA` and project storage — so
-one invocation is enough whether you are on a laptop or on the cluster. Off-cluster both tiers
-collapse into the repository and it is simply `output/`.
-
-`--processed` additionally clears `data/processed/`, the preprocessing cache. It is separate
-because rebuilding that cache can cost far more than re-running the notebooks, so "clean the last
-run" should not silently throw it away.
+Clears the `output_CreditICL/` tree (`src/utils/paths.py`) on BOTH storage tiers: the small
+half on `$VSC_DATA` (logs, run records, benchmark scores, figures) and, when asked, the big
+half on project storage (checkpoints, prior pools). Off-cluster both tiers are one folder.
+`--experiment N` limits all of it to `experiment_N/`.
 
 LISTS BY DEFAULT. The two mistakes are not symmetric: a listing you meant as a deletion costs one
 more command, and a deletion you meant as a listing costs the run.
 
-NEVER TOUCHES `data/raw/` or `tfm-library/`, nor the RELEASED `*.ckpt` weights at the top of
-`checkpoints/` — those are a HuggingFace download and what Exp2 warm-starts from.
+`--checkpoints` is opt-in, and **without it a rerun resumes from the old checkpoint and trains
+nothing** — it exits 0 in two seconds having scored the old weights, which is what happened to
+all four arms on 17-08-2026. Opt-in, because a checkpoint is also the only way to debug the model
+that produced it.
 
-`--checkpoints` clears OUR OWN `exp*/` run directories under `checkpoints/`. **Without it a
-rerun resumes from the last one and trains nothing** — it exits 0 in two seconds having scored
-the old weights, which is what happened to all four arms on 17-08-2026. Opt-in, because a
-checkpoint is also the only way to debug the model that produced it.
-
-NOR `prior_cache/ood/`, even under `--prior-cache`. It is the out-of-domain evaluation cache,
-not a prior pool, and **compute nodes have no outbound internet** — so it can only be rebuilt
-from a login node with `python -m src.utils.fetch_ood`. See `protected_paths`.
+NEVER TOUCHES, whatever the flags: `data/raw/`, `tfm-library/`, the RELEASED weights in
+`paths.pretrained_dir()` (a HuggingFace download, what Exp2 warm-starts from), and the
+out-of-domain cache `data/ood/` — **compute nodes have no outbound internet**, so it can only be
+rebuilt from a login node with `python -m src.utils.fetch_ood`.
 """
 
 from __future__ import annotations
@@ -39,94 +31,72 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from src.utils.paths import outputs_dir, prior_cache_root, processed_dir, results_dir
+from src.utils.paths import (
+    EXPERIMENTS,
+    experiment_dir,
+    ood_cache_dir,
+    outputs_dir,
+    pretrained_dir,
+    prior_cache_root,
+    processed_dir,
+)
 
-#: Tracked so an empty directory survives a clone. Not run output, so never counted or deleted —
-#: removing them would leave a fresh clone with nowhere to write.
-KEEP = frozenset({".gitkeep", ".gitignore"})
+#: Tracked so an empty directory survives a clone, or the tree's index. Not run output, so never
+#: counted or deleted.
+KEEP = frozenset({".gitkeep", ".gitignore", "README.md"})
 
 
-def protected_paths() -> list[Path]:
-    """Directories `--prior-cache` must step around.
+def checkpoint_roots(experiment: int | None = None) -> list[Path]:
+    """`experiment_<N>/checkpoints/` on the big tier, for one experiment or all of them."""
+    exps = EXPERIMENTS if experiment is None else (int(experiment),)
+    return [experiment_dir(n, big=True) / "checkpoints" for n in exps]
 
-    `prior_cache/ood/` is the out-of-domain evaluation cache — 50 downloaded datasets — and it
-    sits under the prior-cache root only because that is where big things live. It is not a
-    prior pool and clearing it is not part of "clean the last run".
 
-    It also cannot be rebuilt where the deletion usually happens: **compute nodes have no
-    outbound internet**, so `python -m src.utils.fetch_ood` only works from a login node. A
-    sweep that wiped it would find every out-of-domain column empty and would not say why.
+def protected_paths(*, checkpoints: bool = False, prior_cache: bool = False) -> list[Path]:
+    """What a wipe must step around. The last two only until their flag asks for them.
+
+    Locally the big tier IS the small one, so the checkpoints and pools sit inside the tree a
+    plain `--clean` walks; protecting them by path is what keeps them opt-in there too.
     """
-    return [prior_cache_root() / "ood"]
+    protected = [ood_cache_dir(), pretrained_dir()]
+    if not checkpoints:
+        protected.extend(checkpoint_roots())
+    if not prior_cache:
+        protected.append(prior_cache_root())
+    return protected
 
 
-def run_checkpoint_dirs() -> list[Path]:
-    """OUR trained checkpoints — the `exp*` run directories under `checkpoints/`.
+def run_checkpoint_dirs(experiment: int | None = None) -> list[Path]:
+    """OUR trained checkpoints: every run folder holding a `.ckpt` under `experiment_<N>/checkpoints/`.
 
-    Separated from the released TabICLv2 `*.ckpt` files, which sit at the top level of the same
-    directory and must never go: they are a HuggingFace download and what Exp2 warm-starts from.
-
-    This exists because of a chain of two fixes. Our checkpoints used to fall back to
-    `$VSC_DATA/output/<run>/checkpoints` (staging was mode 0500), where a normal clean removed
-    them. Fixing the permission sent them to `checkpoints/` for real — which `clean_run`
-    protects — so on 17-08-2026 all four arms found a step-1500 checkpoint from the previous
-    run, resumed at `max_steps`, trained nothing, and reported success.
+    By structure, not by name: a run name the code did not anticipate is exactly the one a
+    rerun would silently resume from.
     """
-    from src.utils.paths import checkpoints_dir
-
-    base = Path(checkpoints_dir())
-    if not base.is_dir():
-        return []
-    # BY STRUCTURE, NOT BY NAME. This used to match the prefixes `exp1_`, `exp2_`, `exp3_`,
-    # which silently skipped everything else the project has since started writing —
-    # `debug_exp1_*`, pilot and benchmark runs, and any experiment past Exp3. A missed run
-    # directory is not a tidy-up problem: a rerun RESUMES from whatever checkpoint it finds
-    # and trains nothing, which is exactly what happened to all four arms on 17-08-2026.
-    #
-    # So: any SUBDIRECTORY holding a checkpoint is one of ours. The released TabICLv2 weights
-    # are safe because they sit at the TOP level of `checkpoints/`, never in a subdirectory.
     return sorted(
-        d for d in base.iterdir()
-        if d.is_dir() and any(d.rglob("*.ckpt"))
+        d for root in checkpoint_roots(experiment) if root.is_dir()
+        for d in root.iterdir() if d.is_dir() and any(d.rglob("*.ckpt"))
     )
 
 
-def scratch_outputs_dir() -> Path | None:
-    """`$VSC_SCRATCH/CreditICL`, when it is a real third place.
-
-    Scratch is purged by the system eventually, but "eventually" is not "before your next run",
-    and a stale file there is as confusing as a stale file anywhere else. Returns None off the
-    cluster, where scratch collapses into the repository and `outputs_dir()` already covers it.
-    """
-    from src.utils.paths import PROJECT_NAME, REPO_ROOT, scratch_root
-
-    root = scratch_root()
-    if root == REPO_ROOT:
-        return None
-    return root / PROJECT_NAME
-
-
-def roots(*, processed: bool = False, prior_cache: bool = False,
+def roots(*, experiment: int | None = None, processed: bool = False, prior_cache: bool = False,
           checkpoints: bool = False) -> list[Path]:
-    """Every tree to clear. Two `output/` roots on the cluster, one locally, plus the caches.
+    """Every tree to clear: the small output tree, plus what the flags add from the big one.
 
-    `results_dir()` is listed separately because on the cluster it is the one part of `output/`
-    on project storage — clearing only `outputs_dir()` there would leave the largest files behind.
+    A root nested inside one already listed is dropped (locally every tier collapses into the
+    repo, and listing a tree twice double-counts the report); `protected_paths` decides what
+    inside it survives.
     """
-    found = [outputs_dir()]
-    for extra in (results_dir(), scratch_outputs_dir()):
-        # `is_relative_to` in BOTH directions: on a laptop every root collapses into the repo,
-        # and listing the same tree twice double-counts the deletion report.
-        if extra is not None and not any(
-            extra == f or extra.is_relative_to(f) or f.is_relative_to(extra) for f in found
-        ):
-            found.append(extra)
-    if processed:
-        found.append(processed_dir())
-    if prior_cache:
-        found.append(prior_cache_root())
+    found = [outputs_dir() if experiment is None else experiment_dir(experiment)]
+    extras: list[Path] = []
     if checkpoints:
-        found.extend(run_checkpoint_dirs())
+        extras.extend(checkpoint_roots(experiment))
+    if prior_cache and experiment is None:
+        extras.append(prior_cache_root())
+    if processed:
+        extras.append(processed_dir())
+    for extra in extras:
+        if not any(extra == f or extra.is_relative_to(f) or f.is_relative_to(extra) for f in found):
+            found.append(extra)
     return found
 
 
@@ -134,11 +104,11 @@ def _is_protected(path: Path, protected: list[Path]) -> bool:
     return any(path == p or p in path.parents for p in protected)
 
 
-def measure(root: Path) -> tuple[int, int]:
+def measure(root: Path, protected: list[Path] | None = None) -> tuple[int, int]:
     """(files, bytes) under a root, ignoring the structure markers and protected trees."""
     if not root.is_dir():
         return 0, 0
-    prot = protected_paths()
+    prot = protected_paths() if protected is None else protected
     files = [
         p for p in root.rglob("*")
         if p.is_file() and p.name not in KEEP and not _is_protected(p, prot)
@@ -146,17 +116,15 @@ def measure(root: Path) -> tuple[int, int]:
     return len(files), sum(p.stat().st_size for p in files)
 
 
-def wipe(root: Path) -> int:
+def wipe(root: Path, protected: list[Path] | None = None) -> int:
     """Delete everything under a root except the structure markers. Returns files removed.
 
     Two passes, and the order matters: files first, then empty directories bottom-up. That leaves
-    exactly the directories holding a tracked `.gitkeep` and removes the per-run ones
-    (`figures/<notebook>/`) that do not. An `rmtree` of the subtree would take
-    `output/figures/.gitkeep` with it, and the next clone would have nowhere to write.
+    exactly the directories holding a tracked marker and removes the per-run ones that do not.
     """
     if not root.is_dir():
         return 0
-    prot = protected_paths()
+    prot = protected_paths() if protected is None else protected
     removed = 0
     for path in root.rglob("*"):
         if path.is_file() and path.name not in KEEP and not _is_protected(path, prot):
@@ -176,29 +144,36 @@ def main(argv: list[str] | None = None) -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--clean", action="store_true", help="actually delete; default lists only")
+    parser.add_argument("--experiment", type=int, choices=EXPERIMENTS, default=None,
+                        help="only experiment_<N>/ (both tiers); default the whole tree")
     parser.add_argument("--processed", action="store_true",
                         help="also clear data/processed/, the preprocessing cache")
     parser.add_argument("--prior-cache", action="store_true",
                         help="also clear the pre-generated synthetic prior pools (GPU-hours each)")
     parser.add_argument("--checkpoints", action="store_true",
-                        help="also clear OUR trained exp*/ checkpoints. Without this a rerun "
-                             "RESUMES from them and trains nothing. Never touches the released "
-                             "TabICLv2 weights.")
+                        help="also clear OUR trained checkpoints. Without this a rerun RESUMES "
+                             "from them and trains nothing. Never touches the released weights.")
     args = parser.parse_args(argv)
 
-    targets = roots(processed=args.processed, prior_cache=args.prior_cache,
-                    checkpoints=args.checkpoints)
+    targets = roots(experiment=args.experiment, processed=args.processed,
+                    prior_cache=args.prior_cache, checkpoints=args.checkpoints)
+    prot = protected_paths(checkpoints=args.checkpoints, prior_cache=args.prior_cache)
     total_files = total_bytes = 0
     print("Output from the previous run:\n")
     for root in targets:
-        files, size = measure(root)
+        files, size = measure(root, prot)
         total_files += files
         total_bytes += size
         state = f"{files:>6} files  {size / 1e6:>9.1f} MB" if files else "         empty"
         print(f"  {state}  {root}")
 
     print(f"\nTOTAL: {total_files} files, {total_bytes / 1e9:.2f} GB")
-    print("Never touched: data/raw/, checkpoints/, tfm-library/.")
+    kept = ["data/raw/", "data/ood/", "the released weights", "tfm-library/"]
+    if not args.checkpoints:
+        kept.append("our checkpoints (--checkpoints)")
+    if not args.prior_cache:
+        kept.append("prior pools (--prior-cache)")
+    print("Never touched: " + ", ".join(kept) + ".")
 
     if not args.clean:
         if total_files:
@@ -207,7 +182,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print("\nDeleting:")
     for root in targets:
-        print(f"  removed {wipe(root):>6} files from {root}")
+        print(f"  removed {wipe(root, prot):>6} files from {root}")
     print("\nClean.")
     return 0
 

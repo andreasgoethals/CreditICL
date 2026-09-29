@@ -2,24 +2,24 @@
 
     Source : tfm-library/repositories/TabICL.txt, src/tabicl/train/_muon.py
     Pin    : see `git submodule status`
-    Regenerate: python -m src.utils.vendor_muon
+    Code below this docstring is upstream's, character for character (one `not in` aside).
 
 WHY VENDORED RATHER THAN DEPENDED ON
 
-`torch.optim.Muon` exists only from torch 2.9; the VSC environment is on 2.8, and the
-published `tabicl` wheel does not ship the training package. So on the cluster there was no
-Muon at all and every run died at optimizer construction.
+It is the EXACT optimizer that produced the released TabICLv2 checkpoints, so "same optimizer
+as TabICLv2" is a fact rather than an assumption about two implementations agreeing. The
+published `tabicl` wheel does not ship the training package, so there is nothing to import.
 
-The alternative was another pip dependency. This is better: it is the EXACT optimizer that
-produced the released TabICLv2 checkpoints, so "same optimizer as TabICLv2" becomes a fact
-rather than an assumption about two implementations agreeing. Muon's correctness turns on
-details that are easy to get subtly wrong — the Newton-Schulz iteration count, the
-`0.2*sqrt(max(n,m))` Moonlight scaling, cautious weight decay — and a subtly wrong optimizer
-would degrade every arm equally and invisibly, which is the worst failure mode for a
-controlled comparison.
+`src/train/optim.py` ALWAYS uses this class, configured the way upstream's
+`Trainer.configure_optimizer` configures it: ONE group holding every parameter with
+`use_muon=True`, `matched_adamw_rms=0.2`, `momentum=beta1`, Nesterov, 5 Newton-Schulz steps.
 
-`src/train/optim.py` still prefers `torch.optim.Muon` when the installed torch has it; this is
-the fallback that makes the cluster work.
+Until 28-09-2026 `optim.py` preferred `torch.optim.Muon` and handed it the weight matrices only,
+with its defaults: Keller's `sqrt(max(1, A/B))` step scaling instead of the Moonlight
+`0.2*sqrt(max(A, B))` below (weight-matrix steps 4.8x smaller, parameter-weighted), momentum
+0.95 instead of 0.9, and biases/norms on a separate AdamW at 3e-4. That is what Experiment 1
+ran with. Note also the trap in this class: a group WITHOUT `use_muon=True` is silently sent
+to the internal AdamW branch below, so passing a plain list of tensors runs AdamW, not Muon.
 """
 
 # taken from https://github.com/fabian-sp/sda/blob/e2f95648ffdaf937adb6d68340b5e2dc9cf7e8a6/sda/optim/muon.py

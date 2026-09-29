@@ -100,6 +100,10 @@ def save_checkpoint(
         "step": step,                    # ours, kept so older readers still work
         "crediticl_config": config,      # OUR resolved YAML — task, prior, sweep, everything
         "optimizer_state": optimizer.state_dict(),
+        # Recorded so a resume can refuse a changed optimizer instead of loading one
+        # optimizer's state into another (torch would raise something unhelpful, or worse,
+        # accept a structurally compatible state that means something else).
+        "optimizer_class": type(optimizer).__name__,
         "scheduler_state": scheduler.state_dict(),
         "scaler_state": scaler.state_dict() if scaler is not None else None,
         "extra": extra or {},
@@ -127,7 +131,17 @@ def load_checkpoint(
     payload = torch.load(path, map_location=map_location, weights_only=False)
     model.load_state_dict(payload["state_dict"])
     if optimizer is not None and payload.get("optimizer_state"):
-        optimizer.load_state_dict(payload["optimizer_state"])
+        state = payload["optimizer_state"]
+        written_by = payload.get("optimizer_class")
+        if isinstance(state, dict) and "kind" in state:
+            written_by = "_MuonWithAux"   # the two-optimizer facade used until 28-09-2026
+        if written_by is not None and written_by != type(optimizer).__name__:
+            raise ValueError(
+                f"checkpoint was written by a different optimizer ({written_by}, this run "
+                f"builds {type(optimizer).__name__}). Resuming would silently reset or "
+                f"misread the optimizer state; start a new run instead."
+            )
+        optimizer.load_state_dict(state)
     if scheduler is not None and payload.get("scheduler_state"):
         scheduler.load_state_dict(payload["scheduler_state"])
     if scaler is not None and payload.get("scaler_state"):

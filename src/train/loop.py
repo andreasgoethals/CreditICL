@@ -36,13 +36,14 @@ import torch.nn.functional as F
 
 from ..models.backends import sdpa_context, sdpa_report
 from ..prior.dataset import build_loader
+from ..prior.stream import max_classes_of
 from ..utils.logging_setup import close_logging, log_environment, log_section, setup_logging
 from . import distributed as dist
 from .adapt import STRATEGIES, apply_freezing, load_pretrained, set_training_mode
 from .checkpoint import latest_checkpoint, load_checkpoint, prune_checkpoints, save_checkpoint
 from .optim import build_optimizer, build_scheduler
 from .progress import ProgressConfig, ProgressTracker
-from .telemetry import Telemetry
+from .telemetry import Telemetry, WeightTracker
 
 
 def _slurm_seconds_left() -> float:
@@ -196,6 +197,12 @@ class Trainer:
         group_size = int(
             ((cfg.get("prior") or {}).get("grouping") or {}).get("group_size", 1)
         )
+        if group_size > 1 and self.micro_batch_size <= group_size and group_size % self.micro_batch_size:
+            raise ValueError(
+                f"micro_batch_size={self.micro_batch_size} does not divide "
+                f"prior.grouping.group_size={group_size}: a micro-batch would straddle two groups "
+                f"with different split points. Upstream keeps the two equal."
+            )
         if group_size > 1 and self.micro_batch_size > group_size:
             raise ValueError(
                 f"micro_batch_size={self.micro_batch_size} exceeds "
@@ -213,6 +220,8 @@ class Trainer:
         _lcfg = cfg.get("logging", {})
         self.log_hardware_every = int(_lcfg.get("log_hardware_every", 0) or 0)
         self.log_grad_every = int(_lcfg.get("log_grad_every", 0) or 0)
+        # Drift from the initial weights; defaults to the gradient cadence.
+        self.log_weights_every = int(_lcfg.get("log_weights_every", self.log_grad_every) or 0)
         self.save_temp_every = int(tcfg.get("save_temp_every", 500))
         self.save_perm_every = int(tcfg.get("save_perm_every", 5_000))
         self.max_temp_checkpoints = int(tcfg.get("max_temp_checkpoints", 2))
@@ -288,7 +297,14 @@ class Trainer:
             ckpt = icfg.get("pretrained_path")
             if not ckpt:
                 raise ValueError(f"init.strategy={self.strategy!r} needs init.pretrained_path")
-            self.load_report = load_pretrained(self.model, ckpt)
+            from ..utils.paths import find_pretrained
+
+            # Repo-relative in the config; on the cluster the file lives on project storage.
+            ckpt = find_pretrained(ckpt)
+            self.log.info("released weights -> %s", ckpt)
+            # `strict_load: true` (Exp2): every tensor must load. The released TabICLv2 files load
+            # exactly (391/391 classifier, 347/347 regressor), so anything less is a wrong file.
+            self.load_report = load_pretrained(self.model, ckpt, strict=bool(icfg.get("strict_load", False)))
             self.log.info("loaded pretrained weights: %s", json.dumps(self.load_report))
         else:
             self.load_report = {"strategy": "scratch"}
@@ -341,13 +357,25 @@ class Trainer:
         self.scheduler = build_scheduler(self.optimizer, tcfg, self.max_steps)
 
         self.amp = bool(tcfg.get("amp", True)) and self.device.startswith("cuda")
-        self.scaler = torch.amp.GradScaler("cuda", enabled=self.amp)
+        # Upstream's trainer enables TF32 for every float32 matmul and convolution
+        # (`torch.backends.cuda.matmul.allow_tf32 = True`, `cudnn.allow_tf32 = True`).
+        if self.device.startswith("cuda"):
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+        # bf16 autocast, which upstream supports (`--dtype bfloat16 --amp True`). Upstream
+        # enables the loss scaler only for a float16 path: bfloat16 has float32's range and
+        # needs none, so the scaler stays OFF here (it was on, harmlessly, until 28-09-2026).
+        self.scaler = torch.amp.GradScaler("cuda", enabled=False)
         self.amp_ctx = (
             torch.autocast(device_type="cuda", dtype=torch.bfloat16) if self.amp else nullcontext()
         )
 
         self.step = 0
         self.datasets_seen = 0
+        # Wall-clock training time of earlier segments (a requeued arm is several processes), so
+        # the summary reports the arm's whole cost, not only the last segment's.
+        self._train_seconds_before = 0.0
+        self._segment_started: float | None = None
         # Initialised here as well as in `train`, so `train_step` can be called on its own
         # from a test or a benchmark without the loop having set it up.
         self._phase: dict[str, float] = defaultdict(float)
@@ -356,19 +384,10 @@ class Trainer:
         # Learning curve on REAL data. Only rank 0 measures and writes, so a multi-GPU
         # run produces one curve rather than N interleaved ones.
         pcfg = cfg.get("progress", {}) or {}
-        from ..utils.paths import manifests_dir, on_vsc
-
-        # Same tier rule as the logs: on the cluster the manifest joins the other small
-        # durable output under $VSC_DATA/output/; locally it stays inside the run's own
-        # directory, so a test with an explicit out_dir is self-contained.
-        # `manifest_dir` OVERRIDES the shared location. The preflight smoke test runs with a
-        # temp `out_dir` but was still writing its telemetry and progress CSVs into the real
-        # `$VSC_DATA/.../manifests/` under the REAL arm's run name — a two-step toy run
-        # depositing rows in a 12,500-step arm's results file. It never actually wrote one
-        # (its 4 datasets never reach `every_datasets`), but nothing stopped it.
-        manifest_dir = self.manifest_dir or (
-            manifests_dir() if on_vsc() else Path(self.out_dir) / "manifests"
-        )
+        # The curves go into the run's own folder (`paths.run_dir`), beside its config and
+        # summary. `manifest_dir` overrides that for the preflight smoke test, which trains two
+        # steps in a temp folder and must never write into the real arm's files.
+        manifest_dir = self.manifest_dir or self.out_dir
 
         self.progress = ProgressTracker(
             ProgressConfig(
@@ -403,6 +422,8 @@ class Trainer:
         # this on?" decides whether two runs are comparable at all, and it cannot be
         # reconstructed from the numbers afterwards.
         self.log.info("hardware: %s", json.dumps(self.telemetry.environment))
+        self.weights = WeightTracker(
+            manifest_dir, every=self.log_weights_every if self.dist.is_main else 0)
         if self.progress is not None and self.progress.enabled:
             self.log.info(
                 "progress curve -> %s  (every %s datasets)",
@@ -454,8 +475,9 @@ class Trainer:
             f"  micro_batch_size       : {self.micro_batch_size}   (datasets per FORWARD PASS)",
             f"  -> micro-passes/update : {math.ceil(self.batch_size / self.micro_batch_size)}"
             f"   <- this, not the micro-batch, is what keeps a big GPU busy",
-            f"  optimizer / lr         : {tcfg.get('optimizer')} / lr={tcfg.get('lr')} "
-            f"muon_lr={tcfg.get('muon_lr')}",
+            f"  optimizer / lr         : {tcfg.get('optimizer')} / lr={tcfg.get('lr')}"
+            + ("  (upstream Muon: one group, every parameter, momentum=beta1, Moonlight scaling)"
+               if str(tcfg.get('optimizer', '')).lower() == 'muon' else ""),
             f"  grad clip / amp        : {self.grad_clip} / {self.amp}",
             f"  max_steps              : {self.max_steps:,}"
             f"  -> {self.max_steps * self.batch_size:,} datasets",
@@ -534,9 +556,15 @@ class Trainer:
         return build_model(self.task, architecture=architecture, **mcfg)
 
     def maybe_resume(self) -> None:
+        # The starting weights BEFORE any checkpoint is loaded: built from the seed (so a resumed
+        # run rebuilds the same ones) plus any pretrained weights. Drift is measured from these.
+        self.weights.start(dist.unwrap(self.model))
         path = latest_checkpoint(self.ckpt_dir)
         if path is None:
             self.log.info("no checkpoint in %s — starting at step 0", self.ckpt_dir)
+            # A fresh start drops rows a previous, since-deleted run left in the run folder.
+            self.telemetry.resume(0)
+            self.weights.resume(0)
             return
         payload = load_checkpoint(
             path,
@@ -548,7 +576,11 @@ class Trainer:
         )
         self.step = int(payload.get("step", 0))
         self.datasets_seen = int(payload.get("extra", {}).get("datasets_seen", 0))
+        self._train_seconds_before = float(payload.get("extra", {}).get("train_seconds", 0.0) or 0.0)
         self.resumed_at = self.step
+        # Earlier segments' rows up to the checkpoint survive; the rows after it are recomputed.
+        self.telemetry.resume(self.step)
+        self.weights.resume(self.step)
 
         # A STALE CHECKPOINT LOOKS EXACTLY LIKE A FINISHED RUN. If the checkpoint is already
         # at (or past) `max_steps`, the training loop's condition is false immediately: it
@@ -569,10 +601,9 @@ class Trainer:
                 self.ckpt_dir, self.step, self.max_steps,
             )
         self.log.warning(
-            "RESUMED from %s at step %d. DataLoader worker RNGs are re-seeded on resume, so "
-            "the dataset stream differs from an uninterrupted run; step and dataset counts "
-            "are preserved exactly.",
-            path.name, self.step,
+            "RESUMED from %s at step %d. The task stream restarts at batch %d, so the run "
+            "sees exactly the batches an uninterrupted one would (src/prior/stream.py).",
+            path.name, self.step, self.step,
         )
 
         # Guard against silently changing the experiment on resume. `LambdaLR`
@@ -613,23 +644,34 @@ class Trainer:
                 loss = pinball_loss(pred, y_test, self.num_quantiles)
                 extra = {}
             else:
-                # Upstream's `_compute_batch_loss` does exactly this:
-                #     n_classes = int(batch.y_train.max().item()) + 1
-                #     logits_used = logits[..., :n_classes].reshape(-1, n_classes)
-                #
-                # MEASURED, so nobody has to guess: with `tabicl` this slice is a NO-OP.
-                # `TabICL.forward` already returns `n_classes` columns, taken from `y_train`
-                # — a 10-wide head with binary y returns (B, test, 2), and with 5 classes it
-                # returns (B, test, 5). The slice is kept because upstream keeps it and it
-                # costs nothing: it is the only thing standing between us and a silent
-                # mis-shaped loss if that convention ever changes.
-                n_classes = max(2, int(y_train.max().item()) + 1)
-                flat = pred[..., :n_classes].flatten(end_dim=-2)
+                # UPSTREAM'S PRETRAINING LOSS, exactly (`Trainer.run_micro_batch`):
+                #     pred = self.model(micro_X, y_train, model_d)   # (B, test, max_classes)
+                #     loss = F.cross_entropy(pred.flatten(end_dim=-2), y_test.long().flatten())
+                # In TRAINING mode `ICLearning.forward` returns all `max_classes` (10) logits, so
+                # the softmax runs over 10 and the unused classes are pushed down; only inference
+                # slices to the classes present. Until 28-09-2026 we sliced to
+                # `max(y_train) + 1` here — the fine-tuning module's convention
+                # (`_finetune._compute_batch_loss`), not pretraining's — so Exp1 optimised a
+                # 2-way softmax where TabICLv2 optimises a 10-way one. The equivalence check
+                # (`scripts/check_equivalence.py`) found it: identical weights, different loss.
+                flat = pred.flatten(end_dim=-2)
                 true = y_test.long().flatten()
                 loss = F.cross_entropy(flat, true)
                 with torch.no_grad():
                     extra = {"accuracy": float((flat.argmax(dim=1) == true).float().mean())}
         return loss, extra
+
+    @staticmethod
+    def _unpack(batch) -> tuple[torch.Tensor, ...]:
+        """`(X, y, d, seq_lens, train_sizes)` — upstream's batch format, which the prior yields.
+        A legacy `(X, y, train_size)` triple (tests, old pools) is read as one group of
+        full-width, full-length tables sharing that split."""
+        if len(batch) == 5:
+            return tuple(batch)
+        X, y, train_size = batch
+        B, T, F = X.shape
+        full = torch.ones(B, dtype=torch.long)
+        return X, y, full * F, full * T, full * int(train_size)
 
     def train_step(self, batch) -> dict[str, float]:
         # WHERE DOES THE TIME GO? Three explanations for the B200 running training 16x
@@ -642,14 +684,14 @@ class Trainer:
         # work lands in `fwd_bwd` rather than leaking into the next phase. `data` is the one
         # to read first — if it dominates, the GPU is waiting for the prior.
         t_step = time.perf_counter()
-        X, y, train_size = batch
+        X, y, d, seq_lens, train_sizes = self._unpack(batch)
         # Validate before moving to CUDA: a negative class in one_hot aborts the
         # CUDA context and destroys the useful error. This also guards cached priors.
         if not torch.isfinite(X).all() or not torch.isfinite(y).all():
             raise ValueError("Non-finite synthetic training batch; regenerate the prior cache")
         if not self.regression:
-            n_classes = int(self.cfg.get("prior", {}).get("n_classes", 2))
-            if not ((y >= 0) & (y < n_classes) & (y == y.round())).all():
+            max_classes = max_classes_of(self.cfg.get("prior", {}))
+            if not ((y >= 0) & (y < max_classes) & (y == y.round())).all():
                 raise ValueError("Invalid synthetic class labels; regenerate the prior cache")
         # Not model.train(): that is recursive and would switch dropout back on
         # inside frozen blocks. Mirrors TabICL's `_set_training_mode`.
@@ -662,17 +704,27 @@ class Trainer:
 
         for i in range(n_micro):
             sl = slice(i * self.micro_batch_size, (i + 1) * self.micro_batch_size)
-            Xi = X[sl].to(self.device, non_blocking=True)
-            yi = y[sl].to(self.device, non_blocking=True)
-            if Xi.shape[0] == 0:
+            if X[sl].shape[0] == 0:
                 continue
+            # UPSTREAM'S `validate_micro_batch` + `align_micro_batch`: one split and one row
+            # count per micro-batch (one group), trimmed to the widest REAL table in it.
+            ts, n_rows = torch.unique(train_sizes[sl]), torch.unique(seq_lens[sl])
+            if ts.numel() != 1 or n_rows.numel() != 1:
+                raise ValueError(
+                    "all datasets in a micro-batch must share their row count and split "
+                    f"(got train sizes {ts.tolist()}, rows {n_rows.tolist()}); check that "
+                    "micro_batch_size divides prior.grouping.group_size"
+                )
+            width = max(1, int(d[sl].max()))
+            Xi = X[sl, : int(n_rows), :width].to(self.device, non_blocking=True)
+            yi = y[sl, : int(n_rows)].to(self.device, non_blocking=True)
             try:
                 # PIN THE ATTENTION KERNEL. PyTorch picks an SDPA backend per call from the
                 # shapes and dtype, and on 20-08-2026 the cuDNN fused-MHA graph raised on a
                 # B200 at batch 64 under AMP. Wrapping the forward pass makes the choice a
                 # property of the run rather than of the batch that happened to come along.
                 with sdpa_context():
-                    loss, extra = self._loss_for(Xi, yi, train_size)
+                    loss, extra = self._loss_for(Xi, yi, int(ts))
                 self.scaler.scale(loss / n_micro).backward()
                 # detach() before float(): torch warns that converting a tensor
                 # still attached to the graph can behave unexpectedly, and we only
@@ -835,9 +887,29 @@ class Trainer:
             batch_size=self.local_batch_size,
             seed=self.prior_seed,
             num_workers=self.num_workers,
+            # Batch b of the stream depends on b alone (src/prior/stream.py), so starting at the
+            # current step makes a resumed run see exactly the batches an uninterrupted one would.
+            start_batch=self.step,
         )
         it = iter(loader)
         started = time.time()
+        self._segment_started = started
+        # THE MONITOR'S FIRST POINT IS THE UNTRAINED MODEL, so every arm's curve starts from the
+        # same place (arms with one seed share their initial weights). After a resume it picks
+        # up at the next multiple of its interval instead of measuring at once.
+        prog_loss_sum, prog_loss_n = 0.0, 0
+        if self.progress is not None and self.progress.enabled:
+            if self.step == 0:
+                self.progress.record(dist.unwrap(self.model), step=0, datasets_seen=0,
+                                     train_loss=float("nan"), elapsed_s=0.0)
+            else:
+                self.progress.resume_from(self.datasets_seen)
+        # The drift curve starts at zero, from the weights training starts from. A caller that
+        # skipped `maybe_resume` (a test, a benchmark) gets its snapshot here.
+        if not self.weights.started and self.step == 0:
+            self.weights.start(dist.unwrap(self.model))
+        if self.step == 0:
+            self.weights.sample(dist.unwrap(self.model), step=0, datasets_seen=0)
         window: dict[str, float] = {}
         window_n = 0
         # Wall-clock per phase, accumulated since the last log line and reported as a share
@@ -861,6 +933,11 @@ class Trainer:
             # progress hook fires on a dataset count, not a step count, so the two are
             # not in phase and it would often read an empty window.
             last_loss = float(stats.get("loss", float("nan")))
+            if math.isfinite(last_loss):
+                prog_loss_sum, prog_loss_n = prog_loss_sum + last_loss, prog_loss_n + 1
+            if self.weights.due(self.step):
+                self.weights.sample(dist.unwrap(self.model), step=self.step,
+                                    datasets_seen=self.datasets_seen)
 
             if self.step % self.log_every == 0:
                 avg = {k: v / max(window_n, 1) for k, v in window.items()}
@@ -885,6 +962,10 @@ class Trainer:
                 # own line so the step line stays readable, and only when there is a window to
                 # divide by.
                 span = time.perf_counter() - phase_since
+                # The same shares go into telemetry.csv, so "where did the time go" survives the
+                # log and can be plotted per run.
+                phase_pct = ({f"phase_{name}_pct": round(100.0 * secs / span, 2)
+                              for name, secs in self._phase.items()} if span > 0 else {})
                 if span > 0 and self._phase:
                     parts = "  ".join(
                         f"{name}={100.0 * secs / span:4.1f}%"
@@ -929,6 +1010,9 @@ class Trainer:
                     )
                     hw["kind"] = "hardware"
                     hw["train_loss"] = last_loss
+                    hw["train_loss_window"] = avg.get("loss", float("nan"))
+                    hw["lr"] = record["lr"]
+                    hw.update(phase_pct)
                     self.telemetry.record(hw)
                     # Utilisation and peak memory in the log line too, not only the CSV: the
                     # CSV has to be fetched from the cluster, and "was the GPU busy?" should be
@@ -969,9 +1053,11 @@ class Trainer:
                     dist.unwrap(self.model),
                     step=self.step,
                     datasets_seen=self.datasets_seen,
-                    train_loss=last_loss,
+                    # The mean over the interval since the last row, not one step's noisy loss.
+                    train_loss=prog_loss_sum / prog_loss_n if prog_loss_n else last_loss,
                     elapsed_s=time.time() - started,
                 )
+                prog_loss_sum, prog_loss_n = 0.0, 0
 
             is_temp = self.save_temp_every > 0 and self.step % self.save_temp_every == 0
             is_perm = self.save_perm_every > 0 and self.step % self.save_perm_every == 0
@@ -992,6 +1078,7 @@ class Trainer:
             "stopped_by_signal": self._stop_requested,
             "datasets_seen": self.datasets_seen,
             "elapsed_s": round(time.time() - started, 1),
+            "train_seconds_total": round(self._train_seconds(), 1),
             "resumed_at": self.resumed_at,
             "freeze": self.freeze_report,
             "pretrained_load": self.load_report,
@@ -1002,6 +1089,9 @@ class Trainer:
         if self.telemetry.enabled:
             self.log.info("%s", self.telemetry.summary())
             summary["telemetry_csv"] = str(self.telemetry.path)
+        if self.weights.enabled:
+            self.log.info("%s", self.weights.summary())
+            summary["weights_csv"] = str(self.weights.path)
         self.close()
         return summary
 
@@ -1060,6 +1150,11 @@ class Trainer:
         except Exception as exc:  # never let a diagnostic kill a training run
             self.log.warning("prior report failed (continuing): %s", exc)
 
+    def _train_seconds(self) -> float:
+        """Training wall-clock of this arm so far, over every segment."""
+        here = time.time() - self._segment_started if self._segment_started else 0.0
+        return self._train_seconds_before + here
+
     def _save(self) -> None:
         # Only rank 0 writes, and it saves the UNWRAPPED model: a DDP state_dict has
         # every key prefixed with `module.` and would not load into a plain model at
@@ -1074,7 +1169,8 @@ class Trainer:
             scheduler=self.scheduler,
             scaler=self.scaler,
             config=self.cfg,
-            extra={"datasets_seen": self.datasets_seen, "resumed_at": self.resumed_at},
+            extra={"datasets_seen": self.datasets_seen, "resumed_at": self.resumed_at,
+                   "train_seconds": self._train_seconds()},
         )
         removed = prune_checkpoints(
             self.ckpt_dir,

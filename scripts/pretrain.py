@@ -26,6 +26,23 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+#: The hash seed every training process runs with. Upstream's `RandomDataset.sample` orders its
+#: feature groups with `list(set(...))` of strings, and Python randomises string hashing per
+#: process. Without a fixed seed, the SAME slot seed yields a DIFFERENT table in each arm's
+#: process — and the common-random-numbers design (src/prior/stream.py), under which arms see
+#: identical base tasks, silently fails. The seed must be set before the interpreter starts, so
+#: the script re-executes itself once with it.
+HASH_SEED = "0"
+
+
+def _ensure_hash_seed() -> None:
+    if os.environ.get("PYTHONHASHSEED") == HASH_SEED:
+        return
+    os.environ["PYTHONHASHSEED"] = HASH_SEED
+    print(f"re-executing with PYTHONHASHSEED={HASH_SEED} (identical tasks across arms)", flush=True)
+    os.execv(sys.executable, [sys.executable, *sys.argv])
+
+
 from src.utils.config import expand_with_seeds, load  # noqa: E402
 
 
@@ -33,7 +50,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", required=True, help="path to a prior config YAML")
     ap.add_argument("--index", type=int, default=None, help="grid index; defaults to $SLURM_ARRAY_TASK_ID")
-    ap.add_argument("--out-root", default=None, help="output root; defaults to config.out_root or ./res")
+    ap.add_argument("--out-root", default=None,
+                    help="write this run under <out-root>/<run name>/ instead of output_CreditICL (tests, ad hoc runs)")
     ap.add_argument("--list", action="store_true", help="print the expanded grid and exit")
     ap.add_argument("--dry-run", action="store_true", help="resolve the config and exit without training")
     ap.add_argument("--max-steps", type=int, default=None, help="override train.max_steps (for smoke tests)")
@@ -67,7 +85,8 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    cfg = load(args.config)
+    # `--list` may show a template (placeholders still unfilled); anything that trains may not.
+    cfg = load(args.config, allow_placeholders=args.list)
     runs = expand_with_seeds(cfg)
 
     if args.list:
@@ -103,35 +122,27 @@ def main() -> int:
     if args.prior_source is not None:
         run.setdefault("prior", {}).setdefault("pool", {})["source"] = args.prior_source
 
-    # Two storage tiers, same split CreditPFN uses (see src/utils/paths.py):
-    #   metrics / logs / resolved config -> $VSC_DATA  (small, backed up)
-    #   checkpoints                      -> project staging (big, ~1 TB)
+    # Two storage tiers, one layout (see src/utils/paths.py):
+    #   output_CreditICL/experiment_<N>/runs/<run>/         config, summary, curves, logs -> $VSC_DATA
+    #   output_CreditICL/experiment_<N>/checkpoints/<run>/  the weights -> project storage
     from src.utils import paths
 
+    name = run["_run_name"]
     if args.out_root:
-        out_dir = Path(args.out_root) / run["_run_name"]
+        out_dir = Path(args.out_root) / name
         ckpt_dir = out_dir / "checkpoints"
-        log_dir = Path(args.out_root) / "logs"
-    elif paths.on_vsc():
-        # SMALL per-arm files (resolved config, summary) go FLAT into manifests/, never a
-        # per-arm folder — 150 near-empty `output/<run>/` folders is what made the tree
-        # unbrowsable. So out_dir IS the shared manifests dir here; nothing per-arm is created.
-        out_dir = paths.manifests_dir()
-        log_dir = paths.logs_dir()
-        ckpt_dir = paths.resolve_writable(
-            paths.checkpoints_dir() / run["_run_name"],
-            fallback=paths.outputs_dir() / run["_run_name"] / "checkpoints",
-        )
+        cfg_path, summary_path = out_dir / "config.json", out_dir / "summary.json"
     else:
-        out_dir = paths.outputs_dir() / run["_run_name"]
-        ckpt_dir = out_dir / "checkpoints"
-        log_dir = ROOT / "logs"
+        out_dir = paths.run_dir(name)
+        cfg_path, summary_path = paths.run_config_path(name), paths.run_summary_path(name)
+        ckpt_dir = paths.run_checkpoints_dir(name)
+        if paths.on_vsc():
+            # A staging directory left at mode 0500 once cost a run its checkpoints. Probe with
+            # a real write and fall back into the run folder, loudly, rather than crash.
+            ckpt_dir = paths.resolve_writable(ckpt_dir, fallback=out_dir / "checkpoints")
+    log_dir = out_dir / "logs"
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    # Resolved config (and the summary, below) are small and go FLAT into manifests/, one file
-    # per arm, not a per-arm folder — so the output tree stays browsable at 45+ arms.
-    cfg_path = paths.run_config_path(run["_run_name"])
-    cfg_path.parent.mkdir(parents=True, exist_ok=True)
     cfg_path.write_text(json.dumps(run, indent=2, default=str), encoding="utf-8")
 
     print(f"=== {run['_run_name']} ===", flush=True)
@@ -146,13 +157,20 @@ def main() -> int:
         print("dry run: config resolved, nothing trained.", flush=True)
         return 0
 
-    from src.train.loop import Trainer  # imported late so --list/--dry-run need no torch
+    _ensure_hash_seed()  # before anything generates a task; re-executes once if needed
+
+    # Imported late so --list/--dry-run need no torch. TabPFN-3 (Experiment 2) has its own
+    # trainer, built on TabPFN's fine-tuning path; everything else is TabICL's.
+    if str(run.get("architecture", "tabicl")) == "tabpfn3":
+        from src.train.tabpfn_trainer import TabPFNTrainer as Trainer
+    else:
+        from src.train.loop import Trainer
 
     trainer = Trainer(run, out_dir, device=args.device, ckpt_dir=ckpt_dir, log_dir=log_dir)
     trainer.maybe_resume()
     summary = trainer.train()
 
-    paths.run_summary_path(run["_run_name"]).write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps({"done": run["_run_name"], **summary}), flush=True)
 
     # EXIT 64 = "saved and stopped early, resume me". A walltime kill or an unannounced

@@ -17,7 +17,7 @@ def test_one_failing_dataset_does_not_discard_the_others(monkeypatch, tmp_path):
 
     tracker = P.ProgressTracker.__new__(P.ProgressTracker)
 
-    def fake_score(model, X, y, rng):
+    def fake_score(model, key, X, y, **kwargs):
         calls.append(len(X))
         if len(calls) == 2:
             raise ValueError("Input contains NaN.")

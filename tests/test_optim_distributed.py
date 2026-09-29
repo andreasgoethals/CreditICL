@@ -35,92 +35,105 @@ def small_model():
 # -- Muon --------------------------------------------------------------------
 
 
-def test_torch_ships_muon():
-    """We depend on the built-in rather than reimplementing. If a torch upgrade ever
-    removed it, the fallback path in `_resolve_muon` should be exercised knowingly,
-    not discovered mid-run."""
-    assert hasattr(torch.optim, "Muon"), "torch.optim.Muon absent — install .[muon]"
+def _muon(model, **cfg):
+    return build_optimizer(model, {"optimizer": "muon", "lr": 8e-4, **cfg})
 
 
-def test_muon_only_takes_matrices():
-    """The reason `_MuonWithAux` exists at all. Documented here so nobody 'simplifies'
-    the pairing away."""
-    m = torch.nn.LayerNorm(8)
-    with pytest.raises(ValueError, match="2D"):
-        torch.optim.Muon(list(m.parameters()), lr=1e-3)
+def test_muon_is_built_exactly_as_upstream_builds_it(small_model):
+    """Upstream's `Trainer.configure_optimizer`: ONE group, EVERY parameter, `use_muon=True`,
+    momentum = beta1, Moonlight RMS matching 0.2, Nesterov, 5 Newton-Schulz steps. Until
+    28-09-2026 we used torch's Muon on the matrices only (Keller scaling, momentum 0.95) and an
+    AdamW at 3e-4 on the rest - steps 4.8x smaller on the weights than TabICLv2's."""
+    from src.train._muon_vendored import Muon
+
+    opt = _muon(small_model, beta1=0.9, beta2=0.95, weight_decay=0.01)
+    assert isinstance(opt, Muon)
+    assert len(opt.param_groups) == 1
+    g = opt.param_groups[0]
+    assert g["use_muon"] is True, "without the flag the vendored class silently runs AdamW"
+    assert len(g["params"]) == len(list(small_model.parameters())), "biases and norms too"
+    assert g["lr"] == pytest.approx(8e-4)
+    assert g["momentum"] == pytest.approx(0.9)
+    assert g["matched_adamw_rms"] == pytest.approx(0.2)
+    assert g["nesterov"] is True and g["ns_steps"] == 5
+    assert g["adamw_betas"] == (0.9, 0.95)
+    assert g["use_cautious_wd"] is False, "the released checkpoints ran without it"
 
 
-def test_muon_splits_matrices_from_the_rest(small_model):
-    from src.train.optim import _split_muon_params
+def test_a_muon_step_is_the_orthogonalised_update_with_moonlight_scaling():
+    """Recompute one step by hand with upstream's own functions and compare: the change in a
+    2-D weight AND in a 1-D bias must be `-lr * 0.2 * sqrt(max(A, B)) * NS5(g + m*g)` after
+    decoupled weight decay. This is the test that would have caught the 4.8x."""
+    import math
 
-    matrices, others = _split_muon_params(small_model)
-    assert all(p.ndim == 2 for p in matrices), "Muon group must be matrices only"
-    assert others, "biases and LayerNorm weights must go to the auxiliary optimizer"
-    assert all(p.ndim == 1 for p in others)
-    total = sum(p.numel() for p in small_model.parameters())
-    assert sum(p.numel() for p in matrices + others) == total, "no parameter dropped"
+    from src.train._muon_vendored import zeropower_via_newtonschulz5
+
+    torch.manual_seed(0)
+    model = torch.nn.Linear(16, 8)
+    lr, wd, m = 8e-4, 0.01, 0.9
+    opt = _muon(model, lr=lr, weight_decay=wd, beta1=m)
+    model(torch.randn(32, 16)).pow(2).sum().backward()
+    before = {n: p.detach().clone() for n, p in model.named_parameters()}
+    grads = {n: p.grad.detach().clone() for n, p in model.named_parameters()}
+    opt.step()
+    for name, p in model.named_parameters():
+        g = grads[name]
+        ns_in = (g + m * g).reshape(len(g), -1)          # first step: buffer == g, Nesterov
+        update = zeropower_via_newtonschulz5(ns_in, steps=5).view(g.shape)
+        scale = 0.2 * math.sqrt(max(ns_in.shape))
+        expected = before[name] * (1 - lr * wd) - lr * scale * update
+        assert torch.allclose(p.detach(), expected, atol=1e-7), name
 
 
-def test_embeddings_are_not_given_to_muon():
-    """An Embedding weight is 2-D but is a lookup table, not a linear map, so
-    orthogonalising it is meaningless."""
-    from src.train.optim import _split_muon_params
-
-    model = torch.nn.Sequential(torch.nn.Embedding(10, 8), torch.nn.Linear(8, 8))
-    matrices, others = _split_muon_params(model)
-    emb = model[0].weight
-    assert not any(p is emb for p in matrices)
-    assert any(p is emb for p in others)
+def test_the_old_second_rate_is_refused(small_model):
+    with pytest.raises(ValueError, match="muon_lr no longer exists"):
+        build_optimizer(small_model, {"optimizer": "muon", "lr": 8e-4, "muon_lr": 8e-4})
 
 
 def test_muon_and_adamw_both_build_and_step(small_model):
     for name in ("adamw", "muon"):
         model = copy.deepcopy(small_model)
-        opt = build_optimizer(model, {"optimizer": name, "lr": 1e-3, "muon_lr": 8e-4})
+        opt = build_optimizer(model, {"optimizer": name, "lr": 1e-3})
         before = model[0].weight.detach().clone()
         model(torch.randn(8, 16)).sum().backward()
         opt.step()
         assert not torch.equal(before, model[0].weight), f"{name} did not update weights"
 
 
-def test_muon_keeps_a_higher_lr_than_its_aux_half(small_model):
-    """TabICLv2 uses 8e-4 for Muon vs 1e-4 for AdamW. Collapsing them to one rate
-    would waste the run, so the two groups must keep different rates."""
-    opt = build_optimizer(small_model, {"optimizer": "muon", "lr": 3e-4, "muon_lr": 8e-4})
-    rates = sorted(g["lr"] for g in opt.param_groups)
-    assert rates == [pytest.approx(3e-4), pytest.approx(8e-4)]
-
-
-def test_scheduler_reaches_both_muon_groups(small_model):
-    """`LambdaLR` walks `param_groups`. If the facade did not expose both optimizers'
-    groups, the cosine schedule would decay Muon and leave AdamW at its initial rate.
-    """
+def test_the_scheduler_decays_the_single_muon_rate(small_model):
     from src.train.optim import build_scheduler
 
-    opt = build_optimizer(small_model, {"optimizer": "muon", "lr": 3e-4, "muon_lr": 8e-4})
-    sched = build_scheduler(opt, {"scheduler": "cosine_with_restarts", "warmup_proportion": 0.0}, 10)
-    start = [g["lr"] for g in opt.param_groups]
+    opt = _muon(small_model)
+    sched = build_scheduler(opt, {"scheduler": "cosine_with_restarts", "warmup_proportion": 0.0,
+                                  "lr": 8e-4}, 10)
+    start = opt.param_groups[0]["lr"]
     for _ in range(9):
         sched.step()
-    end = [g["lr"] for g in opt.param_groups]
-    assert len(start) == len(end) == 2
-    assert all(e < s for s, e in zip(start, end)), "both groups must decay"
+    assert opt.param_groups[0]["lr"] < start
 
 
 def test_muon_state_dict_round_trips(small_model):
-    opt = build_optimizer(small_model, {"optimizer": "muon"})
+    opt = _muon(small_model)
     small_model(torch.randn(4, 16)).sum().backward()
     opt.step()
     state = opt.state_dict()
-    fresh = build_optimizer(copy.deepcopy(small_model), {"optimizer": "muon"})
+    fresh = _muon(copy.deepcopy(small_model))
     fresh.load_state_dict(state)  # must not raise
 
 
-def test_resuming_across_a_changed_optimizer_is_refused(small_model):
-    """Silently resetting optimizer state mid-run would corrupt a comparison."""
-    muon = build_optimizer(small_model, {"optimizer": "muon"})
+def test_resuming_across_a_changed_optimizer_is_refused(tmp_path, small_model):
+    """Silently resetting optimizer state mid-run would corrupt a comparison. Checked at the
+    checkpoint layer, which records the optimizer's class."""
+    from torch.optim.lr_scheduler import LambdaLR
+
+    from src.train.checkpoint import load_checkpoint, save_checkpoint
+
+    adamw = build_optimizer(small_model, {"optimizer": "adamw", "lr": 1e-3})
+    path = save_checkpoint(tmp_path, step=1, model=small_model, optimizer=adamw,
+                           scheduler=LambdaLR(adamw, lambda s: 1.0), scaler=None, config={})
+    muon = _muon(small_model)
     with pytest.raises(ValueError, match="different optimizer"):
-        muon.load_state_dict({"kind": "adamw", "state": {}})
+        load_checkpoint(path, model=small_model, optimizer=muon)
 
 
 def test_unknown_optimizer_is_rejected(small_model):
@@ -268,25 +281,7 @@ def test_hms_formats_readably():
     assert _hms(-5) == "0s", "a negative ETA must not print nonsense"
 
 
-# -- Muon must resolve on the cluster, not only on a new torch -----------------
-
-
-def test_muon_resolves_without_torch_or_any_pip_package(monkeypatch):
-    """REGRESSION, from the first cluster smoke test. VSC runs torch 2.8 — no
-    `torch.optim.Muon` — and the published `tabicl` wheel does not ship the training package,
-    so every run died at optimizer construction with ImportError. Upstream's own Muon is now
-    vendored from the pinned dump as the last resort."""
-    import sys
-
-    import torch
-
-    from src.train import optim
-
-    monkeypatch.delattr(torch.optim, "Muon", raising=False)
-    monkeypatch.setitem(sys.modules, "muon", None)
-    monkeypatch.setitem(sys.modules, "pytorch_optimizer", None)
-    cls = optim._resolve_muon()
-    assert cls.__module__.endswith("_muon_vendored"), cls.__module__
+# -- the vendored optimizer --------------------------------------------------
 
 
 def test_the_vendored_muon_is_upstreams_and_says_so():
@@ -305,13 +300,15 @@ def test_the_vendored_muon_is_upstreams_and_says_so():
     assert "adjust_lr_wd_for_muon" in text
 
 
-def test_torch_muon_still_wins_when_it_exists():
-    """The vendored copy is a FALLBACK. A maintained implementation should be preferred where
-    one is available, so a newer torch on the cluster silently upgrades us."""
-    import torch
+def test_torch_muon_is_never_used_even_when_it_exists():
+    """REVERSED 28-09-2026. The old rule - "prefer torch's maintained Muon" - is how Exp1 ended
+    up with torch's defaults (Keller step scaling, momentum 0.95) instead of upstream's
+    (Moonlight scaling, momentum 0.9): 4.8x smaller weight updates. The vendored class, built as
+    upstream builds it, is the only Muon."""
+    from src.train._muon_vendored import Muon
 
-    from src.train import optim
-
-    if not hasattr(torch.optim, "Muon"):
-        pytest.skip("this torch has no built-in Muon")
-    assert optim._resolve_muon() is torch.optim.Muon
+    model = torch.nn.Linear(4, 4)
+    opt = build_optimizer(model, {"optimizer": "muon", "lr": 8e-4})
+    assert type(opt) is Muon
+    if hasattr(torch.optim, "Muon"):
+        assert not isinstance(opt, torch.optim.Muon)

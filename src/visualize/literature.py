@@ -7,7 +7,9 @@ a notebook's references cell prints the sources (`literature.references_md(...)`
 from memory: if a fact is not in the library, it is tagged `external` and says so, so a reader never
 mistakes domain knowledge for a library-grounded result.
 
-Library pin: `e5ce016` (`git submodule status`); every citation re-verified at this pin. Tags:
+Library pin: `81c749b` (`git submodule status`); every citation re-verified at this pin (from
+`e5ce016` the library only added papers and re-dumped five repositories this module does not cite;
+the two `SYNTHESIS.md` passages it does cite still say the same). Tags:
   paper-evaluated — the paper *measured* it        code-supported — the code does it, unevaluated
   editorial       — the library's own synthesis    external — NOT in the library (domain knowledge)
 """
@@ -19,7 +21,7 @@ from typing import Any
 
 #: The tfm-library commit these citations were read against. Record it beside any result that uses
 #: them; bump with `python -m src.utils.update_tfm_library`.
-PIN = "e5ce016"
+PIN = "81c749b"
 
 
 @dataclass(frozen=True)
@@ -47,7 +49,7 @@ REFS: dict[str, Ref] = {
                         "code-supported", 200, "NanoTabICL uses 100"),
     "outlier_clamp": Ref("outlier clamp at 4σ", "TabICL.txt outlier_removing(threshold=4)",
                          "code-supported", None, "clamping is what manufactures the original prior's accidental atoms"),
-    # At pin e5ce016 the TabICL dump holds these as classes (KumaraswamyWarping, CategoricalConverter);
+    # At pin 81c749b the TabICL dump holds these as classes (KumaraswamyWarping, CategoricalConverter);
     # NanoTabICL — the implementation this project runs — keeps the original functions. Both checked.
     "kumaraswamy": Ref("Kumaraswamy warp a,b∈LogNum(0.2,5)",
                        "NanoTabICL.txt rand_kumaraswamy_act; TabICL.txt KumaraswamyWarping; §E.6",
