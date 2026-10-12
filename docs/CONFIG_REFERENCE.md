@@ -74,18 +74,19 @@ stops noise/missingness columns pushing past it. It does **not** limit inference
 takes no feature-count parameter — `col_embedder` is a permutation-equivariant induced-set transformer
 with learned inducing points and no per-feature weights, so a trained checkpoint accepts any width.
 
-What limits inference is *our* eval code, at a different number: `TFM_MAX_FEATURES = 500` (keep the 500
-highest-variance columns; `src/eval/ood.py` skips above it). Both limits live on the **shared** base
-class, so `crediticl` and `tabiclv2` get identical treatment. (The 1,024-row context cap of evaluation
-protocol 2 is gone: every model now gets the whole training pool — `src/eval/protocol.py`.)
+What limits inference is the evaluation protocol, and it is the same number: `protocol.MAX_FEATURES =
+100` (protocol 4, 30-09-2026) keeps a wider table's 100 columns with the strongest rank association with
+the target, scored on each fit's own rows — for every model alike, ours, the released ones and the
+baselines (`protocol.rank_columns`; docs/EXPERIMENTAL_DESIGN.md §5 for the literature behind the rule).
+It binds on five datasets. Every model gets the whole training pool as context (the 1,024-row cap of
+protocol 2 is gone); Exp0 and Exp1 are also scored with contexts capped at 1,024 rows
+(`eval.context_caps`).
 
 **Keep 100.** It is the control variable (a wider training distribution is a second difference from
-TabICLv2); training wider and then reporting a win on a 256-column table would measure feature width,
-not the prior; and nothing in the architecture wants it changed. The honest exposure: `base_modelisation`
-has 256 columns (2.6× the training width), so the model does extrapolate — but the exposure is
-**matched** (both sides get the same 256 columns), and much milder than the row count's (`heloc`'s
-training pool is 46× the training tables). Record feature width per dataset; if a wide-table effect
-ever shows, the answer is an Exp3 stage that trains wider, not a silent bump here.
+TabICLv2); training wider and then reporting a win on a wide table would measure feature width, not the
+prior; and nothing in the architecture wants it changed. Since the evaluation cap is the same 100, no
+model meets a table wider than it trained on; the row count remains the exposure (`heloc`'s training
+pool is 46× the training tables), matched across arms, and measured by the capped-context scores.
 
 ## 4. Why one stage
 
@@ -95,7 +96,7 @@ enter the cost quadratically** through the 12-block ICL predictor, so a stage-3 
 stage-1 step: keep upstream's 90.9/7.3/1.8 step split on our budget and stage 3 becomes ~227 steps —
 1.8% of the steps but ~61% of the cost — and at 1/40th the LR those 227 steps would move the weights
 almost not at all. Upstream's stages 2–3 are low-rate adaptation to long context, not more prior
-learning. **So: stage 1 only.** Evaluation gives every model the whole training pool (protocol 3), so
+learning. **So: stage 1 only.** Evaluation gives every model the whole training pool (protocol 4), so
 our checkpoints meet contexts far longer than they trained on — the same for every arm, which keeps the
 arm-vs-control contrast matched, but not for the released model, which trained to 60,000 rows. Long
 context belongs in Exp3 on the winning prior — `init.strategy: full` + `pretrained_path`
@@ -106,8 +107,9 @@ is upstream's `--checkpoint_path … --only_load_model True`, no new code.
 **`max_steps`** is the compute lever, and the limit is credits: at batch 64, 12,500 steps ≈ 800k
 datasets/arm (2.5% of upstream's stage 1); a B200 costs 437.5 credits/GPU-minute, so Exp1's 9 arms
 run tens of millions of credits and doubling `max_steps` doubles that. The three experiments spend
-deliberately differently — **Exp1 12,500** (a ranking), **Exp2 10,000** (a fine-tune, matching Kolberg's
-plateau), **Exp3 100,000** (the converged number on the winner). If the budget will not stretch, **cut
+deliberately differently — **Exp1 12,500** (a ranking), **Exp2 10,000** (continued pretraining, the
+length of both published recipes), **Exp3 200,000** (Exp1's mix at length, 2 seeds; TabICLv2's log-loss
+settles only after ~200,000 steps, EXPERIMENTAL_DESIGN §3). If the budget will not stretch, **cut
 `max_steps`, never the prior shape** — a shorter run is just shorter; a cheaper prior is a confound.
 
 **`micro_batch_size`** is a correctness constraint, not a memory setting: `Trainer.validate_micro_batch`
@@ -122,22 +124,24 @@ under AMP, so it is excluded; flash, mem-efficient and math remain, and the run 
 
 ## 6. `optimizer`
 
-**Muon from scratch (Exp1/Exp3), AdamW to fine-tune (Exp2)** — and neither is a free choice.
+**Muon for TabICL (Exp1, Exp3, and Exp2's TabICLv2 arms), AdamW for TabPFN-3 (Exp2)** — each model
+trains with the optimizer its own recipe uses; neither is a free choice.
 
-- **Muon** is what TabICLv2 uses (`lr 8e-4`). Its Newton–Schulz orthogonalisation is a *fixed* ~18 ms
-  per weight matrix per step, so it is 1.40× overhead at batch 1 but **1.01× at batch 64** — free at the
-  size we train. (It took three runs to see this, because every earlier measurement was at batch 1.)
-- **AdamW for Exp2**, for a mechanical reason: under `optimizer: muon`, `train.lr` is only the rate of
-  Muon's *auxiliary* AdamW half, so sweeping it would move almost nothing and the LR sweep would falsely
-  read as "learning rate doesn't matter". Both continued-pretraining papers use AdamW anyway ([§8](#8-experiment-2-the-continued-pretraining-knobs)).
+- **Muon** is what TabICLv2 uses, built exactly as upstream builds it (`src/train/optim.py`: one group,
+  every parameter, Moonlight scaling; `train.lr` is the one rate — stage 1 `8e-4`, stage 3 `2e-5`). Its
+  Newton–Schulz orthogonalisation is a *fixed* ~18 ms per weight matrix per step, so it is 1.40×
+  overhead at batch 1 but **1.01× at batch 64** — free at the size we train.
+- **AdamW for TabPFN-3**: TabPFN-Wide's continued pretraining and TabPFN's own fine-tuner both use it,
+  and `TabPFNTrainer` accepts nothing else ([§8](#8-experiment-2-the-continued-pretraining-knobs)).
 
-The optimizer is held fixed *within* each experiment, so it is never the variable being measured.
+Within an experiment every mix of a model trains with the same optimizer, so it is never the variable
+being measured.
 
 ## 7. The prior knobs
 
 **`prior.credit_fraction`** — the main switch: the probability a synthetic dataset comes from our
-credit path rather than the unmodified TabICL prior. `0.0` is the control. Exp1 and Exp2 (stage B)
-sweep `{0, .5, 1}`; Exp2's search runs at `0.0` so its recipe is not tuned in favour of our prior.
+credit path rather than the unmodified TabICL prior. `0.0` is the control. Exp1 and Exp2 sweep
+`{0, .5, 1}`; Exp3 runs `0.0` and Exp1's chosen mix.
 Mixing rather than replacing is also the defence against the collapse Tanna 2026 reports for TabICL
 under aggressive adaptation — a model that keeps seeing the original prior keeps the distribution it
 was built for.
@@ -199,26 +203,25 @@ incomparable across filter settings.
 
 Exp2 continues the pretraining of the **released TabICLv2 and TabPFN-3 weights** on a mixture of the
 original prior and ours. The recipe is a nuisance parameter that must be good enough not to confound
-"does our prior help" — so it is chosen by a search (stage A, `config/Exp2_<TRACK>_search.yaml`) on the
-development datasets with the control mix, then fixed for the comparison (stage B,
-`config/Exp2_<TRACK>.yaml`, `FILL_FROM_SEARCH` until then). The published recipes the search brackets,
-all in the library or the installed package:
+"does our prior help", so each model uses **the recipe its own literature uses for continued
+pretraining, unchanged** (30-09-2026; the stage-A search that used to choose among candidates around
+these values was dropped): TabICLv2 its authors' stage 3, TabPFN-3 TabPFN-Wide's. The published
+recipes, all in the library or the installed package (bold: the one each model uses):
 
-| | TabPFN's own fine-tuner (tabpfn 9.0.0) | TabPFN-Wide (Kolberg 2026) | Real-TabPFN (Garg 2025) | TabICLv2 stages 2 / 3 |
+| | TabPFN's own fine-tuner (tabpfn 9.0.0) | **TabPFN-Wide (Kolberg 2026) → TabPFN-3** | Real-TabPFN (Garg 2025) | TabICLv2 stage 2 / **stage 3 → TabICLv2** |
 |---|---|---|---|---|
-| optimiser | AdamW (torch betas) | AdamW | AdamW | Muon |
-| learning rate | **1e-5** | **1e-5** | 3e-7 | **1e-4 / 2e-5** |
-| schedule | 10 % warm-up → cosine | warm-up → cosine | warm-up → cosine | 1 % warm-up → cosine |
-| weight decay | 0.01 | 1e-4 | — | 0.01 |
-| grad clip | 1.0 | 1.0 | — | 10 / 1.0 |
-| batch | 1 dataset | 16 datasets | — | 64 datasets |
-| length | early stopping | plateau by 10,000 steps | — | 40,000 / 10,000 |
+| optimiser | AdamW (torch betas) | **AdamW** | AdamW | Muon / **Muon** |
+| learning rate | 1e-5 | **1e-5** | 3e-7 | 1e-4 / **2e-5** |
+| schedule | 10 % warm-up → cosine | **warm-up → cosine** | warm-up → cosine | 1 % warm-up → cosine to 1e-7 |
+| weight decay | 0.01 | **1e-4** | — | 0.01 / **0.01** |
+| grad clip | 1.0 | **1.0** | — | 10 / **1.0** |
+| batch | 1 dataset | **16 datasets** | — | 64 / **64 datasets** |
+| length | early stopping | **plateau by 10,000 steps** | — | 40,000 / **10,000** |
 
-**The search:** TabICLv2 — AdamW 3e-6, 1e-5, 3e-5; Muon 2e-5, 1e-4. TabPFN-3 — AdamW 3e-6, 1e-5, 3e-5.
-10,000 steps each, checkpoints every 2,500 scored on the development datasets, so the length is chosen
-from them. `python -m src.eval.exp2_search` ranks the candidates (equal weight per dataset; a candidate
-must keep its out-of-domain score within 0.01 ROC-AUC / 0.02 R² of the released weights) and prints the
-values to fill in.
+Kolberg's paper states "linear warm-up and cosine decay" without the warm-up's length; we use 10 %, the
+TabPFN fine-tuner's. Every 2,500-step checkpoint is scored (a learning curve on real data); the final one
+is the result, since both recipes fix the length. `eval.headline_step` can name another checkpoint as the
+result, and `results_plots.load_results` honours it; no config sets it.
 
 **`architecture`** — set per arm: `tabicl` (our `Trainer`, `src/train/loop.py`) or `tabpfn3`
 (`TabPFNTrainer`, `src/train/tabpfn_trainer.py`, built on TabPFN's own fine-tuning path);
@@ -236,19 +239,21 @@ construction. **`init.strategy: full`** — every layer trains.
 as the fine-tuner). AdamW only.
 
 **`train.l2sp_alpha: 0`** — L2-SP (`Ω(w) = (α/2)‖w − w₀‖²` toward the released weights, Real-TabPFN's
-α = 0.003) is implemented and tested but not in the design: the search's forgetting guard does the
-job of choosing a gentle enough recipe, and a second axis would confound the first. A later ablation.
+α = 0.003) is implemented and tested but not in the design: neither recipe Exp2 follows uses it, and a
+second axis would confound the first. A later ablation; forgetting is measured instead, on the
+out-of-domain suites, in every progress curve and benchmark.
 The drift L2-SP penalises is *measured* in every run instead (`weights.csv`: distance from the
 released weights per block).
 
 **Why no partial freezing or LoRA:** Rubachev 2025 found full fine-tuning matches every
 parameter-efficient variant on TabPFNv2 while converging fastest; searching the whole TabICL dump for
 "lora" returns zero matches; and fine-tuning TabICL is documented as fragile (Tanna 2026: full
-per-dataset SFT drops TabZilla accuracy 0.873 → 0.567, while TabPFN survives) — which is why the
-search includes rates three times below the fine-tuners' default and guards the out-of-domain score.
+per-dataset SFT drops TabZilla accuracy 0.873 → 0.567, while TabPFN survives) — which is why TabICLv2
+continues at its authors' own stage-3 rate, the lowest upstream ever trained it at, and why the
+out-of-domain suites are scored for every arm.
 
-**Budget (agreed 29-09-2026: ~400 GPU-h):** stage A 8 arms/track, stage B 18 arms/track, plus their
-benchmarks. Experiment 0 measures the per-arm and per-slot hours before either stage is submitted.
+**Budget (agreed 29-09-2026: ~400 GPU-h):** 18 arms per track plus their benchmarks. Experiment 0
+measures the per-arm and per-slot hours before Experiment 2 is submitted.
 
 ## 9. A note on the LGD R² band
 

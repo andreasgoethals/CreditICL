@@ -71,7 +71,7 @@ def main() -> int:
     stamp = args.tag or datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # The tag names the owner: `exp<N>bench_...` -> experiment_<N>/, `reference_...` -> reference/,
-    # anything else (an ad hoc run) -> general/. See `paths.owner_of`.
+    # anything else (an ad hoc run) -> adhoc/. See `paths.owner_of`.
     log, _, log_path = setup_logging(f"evaluate_{stamp}", logs_dir(owner_of(stamp)), level="INFO",
                                      console=True)
     log_section(log, "CreditICL — EVAL PIPELINE")

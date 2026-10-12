@@ -1,7 +1,7 @@
 #!/bin/bash -l
 # =============================================================================
 #  CreditICL — PIPELINE 2: build a pool of synthetic datasets (CPU array job)
-#  TARGET: Genius / wICE CPU nodes. NO GPU, on purpose.
+#  TARGET: wICE CPU nodes. NO GPU, on purpose.
 #
 #  Prior generation is CPU-bound: random DAGs, eight function families, and an
 #  ExtraTrees predictability filter per candidate dataset. A GPU would sit idle
@@ -21,10 +21,10 @@
 
 # SINGLE CLUSTER, ON PURPOSE. Slurm job dependencies do not work ACROSS clusters,
 # and the pipeline is chained with --dependency=afterok. An earlier version put
-# preprocess on wice, the prior arrays on genius and training on mindwell; the chain
+# preprocessing and prior generation on one cluster and training on another; the chain
 # could never have run. Everything in Phase 1 therefore stays on wice, which has both
-# `batch` (CPU) and `gpu_a100` (GPU). Mindwell's B200s are for the Phase 2
-# multi-GPU confirmation runs, which Exp3 will need and which do not exist yet.
+# `batch` (CPU) and `gpu_a100` (GPU). The production experiment
+# launcher independently targets Mindwell B200s; dependencies stay within wICE here.
 #SBATCH --job-name=crediticl-prior
 #SBATCH --clusters=wice
 #SBATCH --partition=batch

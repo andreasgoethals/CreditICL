@@ -21,7 +21,7 @@
 #    5  evaluate      1 GPU node         baselines + our checkpoints on real data
 #
 #  EVERYTHING RUNS ON wICE. Slurm dependencies do not cross clusters, so a chain that
-#  hopped wice -> genius -> mindwell could never have run.
+#  hopped between independent Slurm clusters could never have run.
 #
 #  The two variants go in as separate array jobs so 200 tasks are eligible at once;
 #  stage 3 waits on BOTH via `afterok:jobA:jobB`.

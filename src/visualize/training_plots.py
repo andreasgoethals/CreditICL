@@ -1,6 +1,6 @@
 """Level-1 TRAINING visualisation: what every arm of a sweep did while it trained.
 
-Reads what each arm writes to its run folder, `output_CreditICL/experiment_<N>/runs/<run>/` —
+Reads what each arm writes to its run folder, `output CreditICL/experiment_<N>/runs/<run>/` —
 `progress.csv` (train loss and the development-split monitoring metrics, real-credit and
 out-of-domain, sampled every `progress.every_datasets`), `telemetry.csv` (throughput, GPU,
 per-block gradients), `weights.csv` (drift from the initial weights) and `summary.json` — and turns
@@ -609,7 +609,7 @@ def monitoring_coverage(track: str, exp: str = "exp1", metric: str | None = None
     runs = load_progress(track, exp)
     style.apply()
     if not runs:
-        return _placeholder("no progress logs in output_CreditICL/experiment_<N>/runs/ yet")
+        return _placeholder("no progress logs in output CreditICL/experiment_<N>/runs/ yet")
     roles = dataset_roles(track, exp)
     kept, _ = comparable_datasets(runs, metric)
     names = sorted(runs, key=lambda n: (_config_sort_key(n, exp), _seed_of(n) or 0))
@@ -733,7 +733,7 @@ def training_loss(track: str, exp: str = "exp1"):
     # across restarts; otherwise the progress CSVs' every-625-steps points.
     curves = load_loss_logs(track, exp) or {n: df.dropna(subset=["train_loss"]) for n, df in runs.items()}
     if not curves:
-        return _placeholder("no loss logs in output_CreditICL/experiment_<N>/runs/ yet")
+        return _placeholder("no loss logs in output CreditICL/experiment_<N>/runs/ yet")
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.46))
     steps = [int(d["step"].min()) for d in curves.values() if len(d)] + [100]
     grid = np.geomspace(max(1, min(steps)), max(int(d["step"].max()) for d in curves.values()), 80)
@@ -776,7 +776,7 @@ def metric_over_training(track: str, exp: str = "exp1", metric: str | None = Non
     runs, agg, kept, _ = _view(track, exp, metric)
     style.apply()
     if not runs:
-        return _placeholder("no progress logs in output_CreditICL/experiment_<N>/runs/ yet")
+        return _placeholder("no progress logs in output CreditICL/experiment_<N>/runs/ yet")
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.48))
     grid = _common_step_grid(agg)
     by_cf: dict[float, list] = {}
@@ -814,7 +814,7 @@ def credit_vs_control_over_training(track: str, exp: str = "exp1", metric: str |
     runs, agg, kept, _ = _view(track, exp, metric)
     style.apply()
     if not runs:
-        return _placeholder("no progress logs in output_CreditICL/experiment_<N>/runs/ yet")
+        return _placeholder("no progress logs in output CreditICL/experiment_<N>/runs/ yet")
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.46))
     grid = _common_step_grid(agg)
     groups: dict[str, list] = {"credit prior": [], "control": []}
@@ -880,7 +880,7 @@ def metric_by_lever(track: str, lever: str, exp: str = "exp1", metric: str | Non
     runs, agg, kept, _ = _view(track, exp, metric)
     style.apply()
     if not runs:
-        return _placeholder("no progress logs in output_CreditICL/experiment_<N>/runs/ yet")
+        return _placeholder("no progress logs in output CreditICL/experiment_<N>/runs/ yet")
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.46))
     grid = _common_step_grid(agg)
     by_val = _lever_curves(agg, lever, metric, kept, grid)
@@ -909,7 +909,7 @@ def metric_by_levers(track: str, exp: str = "exp1", metric: str | None = None):
     style.apply()
     levers = LEVERS.get(exp, LEVERS["exp1"])
     if not runs:
-        return _placeholder("no progress logs in output_CreditICL/experiment_<N>/runs/ yet")
+        return _placeholder("no progress logs in output CreditICL/experiment_<N>/runs/ yet")
     ncols = len(levers) if len(levers) <= 3 else 2
     nrows = int(np.ceil(len(levers) / ncols))
     fig, axes = plt.subplots(nrows, ncols, figsize=style.grid_figsize(
@@ -1198,7 +1198,7 @@ def real_vs_ood(track: str, exp: str = "exp1", metric: str | None = None):
     agg = _aggregate(runs)
     style.apply()
     if not runs:
-        return _placeholder("no progress logs in output_CreditICL/experiment_<N>/runs/ yet")
+        return _placeholder("no progress logs in output CreditICL/experiment_<N>/runs/ yet")
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.46))
     grid = _common_step_grid(agg)
     for domain, label, ls in (("real", "real credit", "-"), ("ood", "out-of-domain", "--")):
@@ -1595,7 +1595,7 @@ def training_summary(track: str, exp: str = "exp1") -> str:
     tel = load_telemetry(track, exp)
     title = f"{exp.upper()} {track.upper()} TRAINING — development-split monitoring"
     if not runs:
-        return f"{title}\n  no progress logs in output_CreditICL/experiment_<N>/runs/ yet."
+        return f"{title}\n  no progress logs in output CreditICL/experiment_<N>/runs/ yet."
     metric = HEADLINE[track]
     label = style.metric_label(metric)
     kept, dropped = comparable_datasets(runs, metric)

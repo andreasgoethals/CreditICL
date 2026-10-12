@@ -1,7 +1,7 @@
 """Level-1 RESULTS visualisation: how the trained arms score on the real datasets.
 
-Reads the benchmark output — `output_CreditICL/experiment_<N>/benchmark/<task>/results_<tag>.csv`
-and the shared `output_CreditICL/reference/benchmark/<task>/`, one row per (dataset, model, seed,
+Reads the benchmark output — `output CreditICL/experiment_<N>/benchmark/<task>/results_<tag>.csv`
+and the shared `output CreditICL/reference/benchmark/<task>/`, one row per (dataset, model, seed,
 fold) written by `scripts/evaluate.py` — and turns it into the final-scores
 figures for `1.3_pd_results` / `1.4_lgd_results` (Exp1, `exp="exp1"`) and
 `2.3_pd_results` / `2.4_lgd_results` (Exp2, `exp="exp2"`).
@@ -12,7 +12,9 @@ Each phase-2 array task writes its own `results_<tag>.csv` (an arm's FINAL check
 the reference. `exp` selects which arm files to read; the reference is shared across experiments
 and always included. Rows of ONE evaluation protocol are read (`src/eval/protocol.py`) — the newest
 present, unless one is asked for: a table mixing a 1,024-row-context score (protocol 2) with a
-full-context 5-fold one (protocol 3) would compare two different measurements.
+full-context 5-fold one (protocol 3) would compare two different measurements. For the same reason
+the capped-context evaluation (`eval.context_caps`, files tagged `_ctx<cap>`, rows carrying
+`context_cap`) is read only when asked for (`context=`), never mixed into the full-context table.
 
 The benchmark only runs once every arm of a track has trained, so until then these degrade to a
 single "not scored yet" panel rather than an error: the notebook is meant to be safe to run at
@@ -45,7 +47,11 @@ BASELINES = ("catboost", "xgboost", "lightgbm", "tabpfn", "tabpfn3", "tabiclv2",
 _LEVER_TOKENS = ("credit_fraction=", "arm=", "strategy=", "l2sp_alpha=", "-lr=", "exp1_", "exp2_")
 
 
-def _read_frames(files: list[Any], protocol: int | None) -> pd.DataFrame | None:
+#: A capped-context result file: `results_<tag>_ctx<cap>.csv`.
+_CTX_FILE = re.compile(r"_ctx\d+\.csv$")
+
+
+def _read_frames(files: list[Any], protocol: int | None, context: int | None = None) -> pd.DataFrame | None:
     frames = []
     for path in files:
         try:
@@ -57,6 +63,10 @@ def _read_frames(files: list[Any], protocol: int | None) -> pd.DataFrame | None:
     df = pd.concat(frames, ignore_index=True)
     if "status" in df:
         df = df[df["status"].eq("ok")]
+    # Full-context rows carry no cap; capped ones only when asked for, and only that cap.
+    cap = pd.to_numeric(df["context_cap"], errors="coerce") if "context_cap" in df \
+        else pd.Series(np.nan, index=df.index)
+    df = df[cap.isna()] if context is None else df[cap.eq(int(context))]
     # Rows written before the protocol column existed are protocol 2 (one split per seed,
     # context capped at 1,024 rows).
     version = pd.to_numeric(df["protocol"], errors="coerce").fillna(2) if "protocol" in df \
@@ -66,25 +76,67 @@ def _read_frames(files: list[Any], protocol: int | None) -> pd.DataFrame | None:
     return df if len(df) else None
 
 
-def load_results(track: str, exp: str = "exp1", protocol: int | None = None) -> pd.DataFrame | None:
-    """Per-(dataset, model, seed, fold) results of the FINAL checkpoints for `exp` on `track`, or
-    `None` if none exist.
+def _raw_config(track: str, exp: str) -> dict:
+    """The experiment's config as written — the raw file, not `config.load`, which refuses a
+    template whose placeholders are not filled yet (Exp3 before Exp1 has chosen its mix)."""
+    import yaml
 
-    Concatenates the experiment's arm files (`results_<exp>bench_<track>_a<i>.csv`) with the shared
-    reference (`results_reference_<track>_<model>.csv`). Other experiments and earlier checkpoints are
-    excluded, and so is every protocol but one: the newest present when `protocol` is None (the
-    `protocol` column says which), else the one asked for.
+    path = paths.config_path(f"{exp.capitalize()}_{track.upper()}")
+    if not path.is_file():
+        return {}
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+
+def context_caps(track: str, exp: str = "exp1") -> list[int]:
+    """The capped-context evaluations the experiment's config asks for (`eval.context_caps`)."""
+    return [int(c) for c in ((_raw_config(track, exp).get("eval") or {}).get("context_caps") or [])]
+
+
+def headline_step(track: str, exp: str = "exp1") -> int | None:
+    """The checkpoint an experiment REPORTS: its config's `eval.headline_step`, or None for the
+    final one (no such key, a `FILL_FROM_*` placeholder not filled yet, or the last step).
+
+    No config sets one today (both Exp2 recipes fix 10,000 steps); every saved checkpoint is
+    scored, so a reported earlier one would be a choice of file, not a new run.
+    """
+    cfg = _raw_config(track, exp)
+    step = (cfg.get("eval") or {}).get("headline_step")
+    if step is None or (isinstance(step, str) and not step.strip().isdigit()):
+        return None
+    step = int(step)
+    return None if step >= int((cfg.get("train") or {}).get("max_steps", 0) or 0) else step
+
+
+def load_results(track: str, exp: str = "exp1", protocol: int | None = None,
+                 context: int | None = None) -> pd.DataFrame | None:
+    """Per-(dataset, model, seed, fold) results of the REPORTED checkpoints for `exp` on `track`,
+    or `None` if none exist: the final checkpoint, or the one `headline_step` names.
+
+    Concatenates the experiment's arm files (`results_<exp>bench_<track>_a<i>[_s<step>].csv`) with
+    the shared reference (`results_reference_<track>_<model>.csv`). Other experiments and other
+    checkpoints are excluded, and so is every protocol but one: the newest present when `protocol`
+    is None (the `protocol` column says which), else the one asked for. `context` reads the
+    capped-context evaluation instead (`..._ctx<cap>.csv`): every arm's FINAL checkpoint and the
+    reference models that take a context, each with its context capped at `context` rows.
     """
     out = paths.benchmark_dir(paths.experiment_of(f"{exp}_"), track)
     ref = paths.benchmark_dir(paths.REFERENCE, track)
     if not out.exists() and not ref.exists():
         return None
-    # Every FINAL-checkpoint arm file (no `_s<step>` suffix), whatever grid wrote it: the protocol
-    # filter below keeps one benchmark.
-    final = re.compile(rf"results_{re.escape(exp)}bench_{re.escape(track)}_a\d+\.csv$")
-    files = sorted(p for p in out.glob(f"results_{exp}bench_{track}_a*.csv") if final.match(p.name))
-    files += sorted(ref.glob(f"results_reference_{track}_*.csv"))
-    return _read_frames(files, protocol)
+    # The reported checkpoint's arm files, whatever grid wrote them: the protocol filter below
+    # keeps one benchmark. The final checkpoint has no `_s<step>` suffix; the capped slots score
+    # the final checkpoint only.
+    if context is None:
+        step = headline_step(track, exp)
+        tail = f"_s{step}" if step is not None else ""
+    else:
+        tail = f"_ctx{int(context)}"
+    wanted = re.compile(rf"results_{re.escape(exp)}bench_{re.escape(track)}_a\d+{tail}\.csv$")
+    files = sorted(p for p in out.glob(f"results_{exp}bench_{track}_a*.csv") if wanted.match(p.name))
+    files += sorted(p for p in ref.glob(f"results_reference_{track}_*.csv")
+                    if (p.name.endswith(f"{tail}.csv") if context is not None
+                        else not _CTX_FILE.search(p.name)))
+    return _read_frames(files, protocol, context)
 
 
 def load_checkpoint_results(track: str, exp: str = "exp1", protocol: int | None = None) -> pd.DataFrame | None:
@@ -94,7 +146,7 @@ def load_checkpoint_results(track: str, exp: str = "exp1", protocol: int | None 
     out = paths.benchmark_dir(paths.experiment_of(f"{exp}_"), track)
     if not out.exists():
         return None
-    files = sorted(out.glob(f"results_{exp}bench_{track}_a*.csv"))
+    files = sorted(p for p in out.glob(f"results_{exp}bench_{track}_a*.csv") if not _CTX_FILE.search(p.name))
     df = _read_frames(files, protocol)
     if df is None or "info_checkpoint_step" not in df:
         return None
@@ -257,7 +309,7 @@ def overall_ranking(track: str, exp: str = "exp1", metric: str | None = None):
     metric = metric or HEADLINE[track]
     style.apply()
     if df is None or metric not in df.columns:
-        return _placeholder(f"no benchmark results in output_CreditICL/experiment_<N>/benchmark/{track}/ yet")
+        return _placeholder(f"no benchmark results in output CreditICL/experiment_<N>/benchmark/{track}/ yet")
 
     from src.eval.selection import development_ranking
     agg = development_ranking(df, track, exp, metric)
@@ -340,17 +392,19 @@ def _best_per_group(df: pd.DataFrame, metric: str) -> tuple[pd.DataFrame, list[f
 
 
 def credit_vs_control(track: str, exp: str = "exp1", metric: str | None = None,
-                      role: str | None = None):
+                      role: str | None = None, context: int | None = None):
     """The headline score of every model, one column per share of our credit prior (0 % is the
     control) and one for the reference models, on the datasets of one side of the split
-    (`role="holdout"` is what the experiment reports)."""
-    df = load_results(track, exp)
+    (`role="holdout"` is what the experiment reports). `context` shows the capped-context
+    evaluation instead (`eval.context_caps`)."""
+    df = load_results(track, exp, context=context)
     metric = metric or HEADLINE[track]
     style.apply()
     if df is not None:
         df = _restrict(df, track, exp, role)
     if df is None or metric not in df.columns or not len(df):
-        return _placeholder("no benchmark results yet")
+        return _placeholder("no benchmark results yet" if context is None
+                            else f"no results with {context:,}-row contexts yet")
 
     df, mc = _with_identity(df)
     per_model = df.groupby(mc)[metric].mean()
@@ -430,8 +484,8 @@ def checkpoint_curve(track: str, exp: str = "exp1", metric: str | None = None,
 # ---------------------------------------------------------------------------
 
 #: The Exp2 sweep levers, and how each reads in a benchmark tag / run name.
-#: Experiment 2's levers, read off the run name: the released model continued, the share of our
-#: prior (stage B), and the optimizer and rate (the stage-A search).
+#: Experiment 2's levers, read off the run name: the released model continued and the share of our
+#: prior. Optimizer and rate read too, for run names of the retired search (until 30-09-2026).
 _LEVERS = (("credit_fraction", r"credit_fraction=([0-9p.]+)", "prior mix"),
            ("model", r"arm=(tabicl|tabpfn3)", "released model continued"),
            ("optimizer", r"arm=(?:tabicl|tabpfn3)_(adamw|muon)", "optimizer"),
@@ -455,7 +509,7 @@ def lever_effect(track: str, exp: str = "exp2", metric: str | None = None):
 
     Reads the arm's swept levers out of its run name and averages the headline metric over every
     arm that shares a value, so each panel isolates one knob — the credit fraction, the released
-    model continued, and (in the search) the optimizer and the rate. A lever with one value draws
+    model continued (and the optimizer and rate of the retired search). A lever with one value draws
     no panel. Degrades to a placeholder before the benchmark runs.
     """
     df = load_results(track, exp)
@@ -506,7 +560,7 @@ def metric_grid(track: str, exp: str = "exp1", role: str | None = None):
         df = df if len(df) else None
     metrics = available_metrics(df) if df is not None else []
     if df is None or not metrics:
-        return _placeholder("no benchmark results in output_CreditICL/ yet")
+        return _placeholder("no benchmark results in output CreditICL/ yet")
     ncols = 3
     nrows = max(1, int(np.ceil(len(metrics) / ncols)))
     fig, axes = plt.subplots(nrows, ncols, figsize=style.grid_figsize(ncols, nrows, panel_ratio=0.7))
@@ -614,7 +668,7 @@ def results_summary(track: str, exp: str = "exp1") -> str:
                   + ("5-fold CV, whole training pool as context, validation-tuned F1)"
                      if int(df["protocol"].iloc[0]) >= 3 else "one split per seed, context capped at 1,024 rows)"))
     if df is None:
-        return (f"{title}\n  no benchmark output in output_CreditICL/experiment_<N>/benchmark/{track}/ yet.\n"
+        return (f"{title}\n  no benchmark output in output CreditICL/experiment_<N>/benchmark/{track}/ yet.\n"
                 f"  The benchmark (phase 2) runs once every arm of the track has trained;\n"
                 f"  re-run this notebook after the phase-2 array finishes scoring.")
     metric = HEADLINE[track]
@@ -637,6 +691,7 @@ def results_summary(track: str, exp: str = "exp1") -> str:
             lines.append(f"  {row['mean']:.4f}  {name}")
     else:
         lines.append("  no complete development configuration scores yet")
+    full_means = pd.Series(dtype=float)
     for role, heading in (("holdout", "B. HOW IT DOES ON THE HOLDOUT"),):
         part = _restrict(df, track, exp, role) if roles else df
         lines += ["", f"{heading} ({label}, {ROLE_LABEL[role if roles else None]}, "
@@ -644,15 +699,9 @@ def results_summary(track: str, exp: str = "exp1") -> str:
         if not len(part):
             lines.append("  no holdout rows scored yet")
             continue
-        groups = part[mc].map(lambda m: _share_group(m, track))
-        means = part.groupby(groups)[metric].mean()
-
-        def order(g: str) -> tuple:  # our shares in increasing order, then the references
-            share = re.match(r"([0-9.]+) % credit", g)
-            return (0, float(share.group(1)), g) if share else (1, 0.0, g)
-
-        for g in sorted(means.index, key=order):
-            lines.append(f"  {means[g]:.4f}  {g}")
+        full_means = _group_means(part, mc, metric, track)
+        for g in full_means.index:
+            lines.append(f"  {full_means[g]:.4f}  {g}")
     curve = _checkpoint_means(track, exp, metric, "holdout" if roles else None)
     lines += ["", f"B4. EVERY SAVED CHECKPOINT ({label}, holdout datasets, mean over training seeds)"]
     if curve is None:
@@ -661,6 +710,20 @@ def results_summary(track: str, exp: str = "exp1") -> str:
         for share, part in curve.groupby("share"):
             steps = ", ".join(f"{int(r.checkpoint_step):,}: {r.mean:.4f}" for r in part.itertuples())
             lines.append(f"  {style.prior_mix_label(share)} — {steps}")
+    for cap in context_caps(track, exp):
+        lines += ["", f"B5. CONTEXTS CAPPED AT {cap:,} ROWS ({label}, {ROLE_LABEL['holdout' if roles else None]}, "
+                  f"mean over every model of each group; the whole training pool in brackets)"]
+        capped = load_results(track, exp, context=cap)
+        if capped is not None:
+            capped, cmc = _with_identity(capped)
+            capped = _restrict(capped, track, exp, "holdout") if roles else capped
+        if capped is None or metric not in capped.columns or not len(capped):
+            lines.append("  not scored yet")
+            continue
+        means = _group_means(capped, cmc, metric, track)
+        for g in means.index:
+            full = f" (whole pool {full_means[g]:.4f})" if g in full_means.index else ""
+            lines.append(f"  {means[g]:.4f}{full}  {g}")
     lines += ["", "C. OUR CREDIT PRIOR AGAINST THE CONTROL — matched arms that differ only in "
               "the credit share", "  (same filter and training seed; a positive difference "
               "means the credit prior helped)"]
@@ -669,6 +732,18 @@ def results_summary(track: str, exp: str = "exp1") -> str:
             lines.append(f"  {role:<11} {style.prior_mix_label(share)} minus 0 % credit: "
                          f"{mean:+.4f} {label}, better in {better} of {n} pairs")
     return "\n".join(lines)
+
+
+def _group_means(df: pd.DataFrame, mc: str, metric: str, track: str) -> pd.Series:
+    """`metric`'s mean per group — each share of our prior, then each reference model — in that
+    order: our shares increasing, then the references by name."""
+    means = df.groupby(df[mc].map(lambda m: _share_group(m, track)))[metric].mean()
+
+    def order(g: str) -> tuple:
+        share = re.match(r"([0-9.]+) % credit", g)
+        return (0, float(share.group(1)), g) if share else (1, 0.0, g)
+
+    return means.reindex(sorted(means.index, key=order))
 
 
 def _share_group(model: str, track: str) -> str:

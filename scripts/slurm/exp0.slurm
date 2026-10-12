@@ -9,13 +9,13 @@
 #     weights found and loaded (and the file we fine-tune from = the file the reference scores),
 #     tasks from every prior path valid and timed, every config against the SLURM array sizes, a
 #     few training steps of both trainers on this GPU (speed, memory), one benchmark fold per
-#     reference wrapper. Report: output_CreditICL/experiment_0/report/checks.{md,json}.
+#     reference wrapper. Report: output CreditICL/experiment_0/report/checks.{md,json}.
 #  2. scripts/check_equivalence.py — our TabICL trainer against upstream's on the SAME batches
 #     from the SAME weights, both tracks, 20 steps on this GPU (bf16: they agree to rounding).
 #
 #  The rest of Experiment 0 — three tiny arms per track through pretrain_{pd,lgd}.slurm, one of
 #  them stopped by SIGUSR1 and resumed, then the benchmark — is submitted separately (docs/VSC.md).
-#  EXP stays 0 throughout, so everything lands in output_CreditICL/experiment_0/.
+#  EXP stays 0 throughout, so everything lands in output CreditICL/experiment_0/.
 # =============================================================================
 #SBATCH --job-name=crediticl-exp0-checks
 #SBATCH --clusters=mindwell
@@ -38,7 +38,7 @@ export PYTHONHASHSEED=0
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 EXP=0
 
-OUTPUT_ROOT="${VSC_DATA}/CreditICL/output_CreditICL"   # = src.utils.paths.outputs_dir()
+OUTPUT_ROOT="${VSC_DATA}/CreditICL/output CreditICL"   # = src.utils.paths.outputs_dir()
 LOGDIR="${OUTPUT_ROOT}/experiment_${EXP}/logs"
 mkdir -p "${LOGDIR}"
 TS=$(date +%Y%m%d_%H%M%S)
@@ -72,15 +72,21 @@ echo "=========================================="
 set +e
 python -u scripts/exp0_checks.py
 CHECKS_RC=$?
+EXP0_RC=$CHECKS_RC
 
 for TRACK in PD LGD; do
     echo
     echo "=== trainer equivalence, ${TRACK}: ours vs upstream, same batches, same weights, 20 steps ==="
     python -u scripts/check_equivalence.py --config "config/Exp1_${TRACK}.yaml" --index 0 --steps 20 --device cuda
-    echo "equivalence ${TRACK} exit code: $?"
+    EQUIV_RC=$?
+    echo "equivalence ${TRACK} exit code: ${EQUIV_RC}"
+    if [[ "$EQUIV_RC" -ne 0 && "$EXP0_RC" -eq 0 ]]; then
+        EXP0_RC=$EQUIV_RC
+    fi
 done
 set -e
 
 echo
 echo "checks exit code: ${CHECKS_RC} (1 = at least one FAIL; read experiment_0/report/checks.md)"
-exit "${CHECKS_RC}"
+echo "experiment 0 exit code: ${EXP0_RC} (includes both trainer equivalence checks)"
+exit "${EXP0_RC}"

@@ -281,3 +281,15 @@ def test_end_to_end_a_notebook_saves_its_own_figure(isolated_output, monkeypatch
     rn.write_all_results(("smoke",))
     assert "A line from (0,0) to (1,1)." in captions_path().read_text(encoding="utf-8")
     assert "SMOKE SUMMARY: 1 figure" in all_results_path().read_text(encoding="utf-8")
+
+
+def test_the_runner_starts_every_kernel_with_the_training_hash_seed():
+    """Upstream orders its feature groups by Python's string hash; training fixes the seed, and so
+    must the notebooks, or their numbers move from one run to the next (30-09-2026)."""
+    from src.utils import run_notebooks
+
+    from pathlib import Path
+
+    source = Path(run_notebooks.__file__).read_text(encoding="utf-8")
+    assert run_notebooks.HASH_SEED == "0"
+    assert source.index('os.environ["PYTHONHASHSEED"] = HASH_SEED') < source.index("start_new_kernel(")

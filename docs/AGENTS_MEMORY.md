@@ -37,6 +37,7 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 12-10-2026 | Audit of downloaded September Exp1 archive, SHA-256 `537f8272f6530e9cc890bddcc839b3ebe64a70ee23a9d8ca99135e017a01b928` | **90/90 training complete; 92/92 benchmark jobs OK; latest event 24-09 22:00 CEST** | 3,087 credit and 7,350 OOD cells reported successful; no benchmark NaN/error lines. CSVs and checkpoint binaries absent. This is the old 45-arm grid, not the revised 9-arm grid; preserve it, download project-storage results, then validate the revised pipeline through Exp0. No jobs submitted |
 | 24-09-2026 | Exp1 phase 2 benchmark: 11614376 (LGD), 11614377 (PD), Mindwell, arrays 0-45%8 | **COMPLETE 92/92, all OK; credit prior ≈ control on dev, cf 1 worse on both tracks** | PD dev ROC-AUC: best control 0.7326, best credit (cf 0.5 banded aggr) 0.7325, cf 1 0.70–0.72, released TabICLv2 0.7322. LGD dev R²: control 0.520, cf 0.5 ≤ 0.518, cf 1 ≈ 0 (collapse, also OOD). All cf 0/0.5 configs within 1–2 seed SDs. Commit `2034cc2` |
 | 24-09-2026 | Exp1 final download, 19:41; last jobs PD 11604659 / 11613401 / 11613402, LGD 11591463_43 | **COMPLETE: 90/90 arms, all `END status=OK`; phase 2 not run** | ≈1,354 GPU-h (PD 587, LGD 767; banded arms 5–7× the rest). PD monitor (german+myhom, final step): control 0.672, cf 0.5 0.669, cf 1 0.646; OOD 0.997/0.992/0.975. LGD monitor unusable (base_model NaN in 30/45). Monitoring protocols differ — do not rank on them; phase 2 decides |
 | 24-09-2026 | Exp1 snapshot at 09:31 CEST; PD 11598087 → 11604654–61, LGD 11591463_43 | **86/90 complete: PD 42/45, LGD 44/45; four advancing, no new training crashes** | Six PD retries completed; all eight overnight walltime continuations resumed at the exact saved step. Remaining PD a19=11000, a25=12250, a40=7700; LGD a43=12200 of 12500. Conditional finish today ~17:30–18:30 plus queue delay. New PD monitor: 160 finite rows; old LGD monitor still has NaNs in 30 arms. Final benchmark results were not in this download |
@@ -68,6 +69,25 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 [`RUNS.md`](RUNS.md).
 
 ## Dead ends
+
+
+### 12-10-2026 — Exp0 could report success after a trainer equivalence failure
+- **Tried:** use the Exp0 job's exit status as the readiness gate for the revised experiments.
+- **Result:** final launcher review found that a PD or LGD equivalence failure could still end in `END status=OK`.
+- **Why:** both equivalence exit codes were printed but discarded; the launcher returned only the environment-check status.
+- **Instead:** return the first failed check's status while still checking both trainers; Bash execution tests cover each failure and the all-success case.
+
+### 12-10-2026 — Concurrent notebook validation exhausted available memory
+- **Tried:** the full pytest suite and `run_notebooks --workers 2` while other project notebook runners were active.
+- **Result:** prior generation slowed for several minutes; only about 1.7 GiB of 64 GiB physical memory remained free.
+- **Why:** each notebook starts its own draw pool (up to eight Python workers); imports and retained synthetic tables multiplied memory use. Stopping only this task's notebook process tree released about 26 GiB.
+- **Instead:** run one notebook at a time with `CREDITICL_DRAW_WORKERS=2` and BLAS/OpenMP thread counts set to 1. Leave other projects' processes alone.
+
+### 29-09-2026 — A finished notebook run looked hung for an hour
+- **Tried:** `python -m src.utils.run_notebooks | tail`; each kernel stopped with `shutdown_kernel(now=True)`.
+- **Result:** all 11 notebooks done in 4 minutes, but the job never ended; 32 orphaned draw workers were still alive after it was killed.
+- **Why:** on Windows, killing a kernel does not kill the spawned workers of its `draw` pool; they kept the output pipe open.
+- **Instead:** `draw.shutdown_pool()` at exit and before each kernel stops, workers exit with `mp.parent_process()`; send long runs' output to a file, not a pipe. A full run takes ~5 minutes — if it runs much longer, look for orphans.
 
 ### 29-09-2026 — The prior-probability shift emptied the query of a low-default book
 - **Tried:** `prior_prob_range: [0.15, 0.45]` as the context's share of above-median rows ("0.5 = no shift"), unchanged since 24-09, when 0.2 already showed PD queries with < 1 % defaults.

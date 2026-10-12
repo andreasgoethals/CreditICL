@@ -51,7 +51,7 @@ def main() -> int:
     ap.add_argument("--config", required=True, help="path to a prior config YAML")
     ap.add_argument("--index", type=int, default=None, help="grid index; defaults to $SLURM_ARRAY_TASK_ID")
     ap.add_argument("--out-root", default=None,
-                    help="write this run under <out-root>/<run name>/ instead of output_CreditICL (tests, ad hoc runs)")
+                    help="write this run under <out-root>/<run name>/ instead of output CreditICL (tests, ad hoc runs)")
     ap.add_argument("--list", action="store_true", help="print the expanded grid and exit")
     ap.add_argument("--dry-run", action="store_true", help="resolve the config and exit without training")
     ap.add_argument("--max-steps", type=int, default=None, help="override train.max_steps (for smoke tests)")
@@ -123,8 +123,8 @@ def main() -> int:
         run.setdefault("prior", {}).setdefault("pool", {})["source"] = args.prior_source
 
     # Two storage tiers, one layout (see src/utils/paths.py):
-    #   output_CreditICL/experiment_<N>/runs/<run>/         config, summary, curves, logs -> $VSC_DATA
-    #   output_CreditICL/experiment_<N>/checkpoints/<run>/  the weights -> project storage
+    #   output CreditICL/experiment_<N>/runs/<run>/         config, summary, curves, logs -> $VSC_DATA
+    #   output CreditICL/experiment_<N>/checkpoints/<run>/  the weights -> project storage
     from src.utils import paths
 
     name = run["_run_name"]

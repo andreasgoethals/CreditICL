@@ -111,7 +111,7 @@ def queued_job_names() -> set[str]:
 
 
 def _config(exp: int, track: str, variant: str | None) -> Path:
-    """`config/Exp<N>_<TRACK>[_<variant>].yaml` — `variant="search"` is Experiment 2's stage A."""
+    """`config/Exp<N>_<TRACK>[_<variant>].yaml` — a variant is an extra config beside the main one."""
     return ROOT / "config" / f"Exp{exp}_{track.upper()}{'_' + variant if variant else ''}.yaml"
 
 
@@ -231,8 +231,7 @@ def render(stages: list[Stage], exp: int, blocked_tracks: list[str] | None = Non
     if blocked_tracks:
         lines += [
             f"  EXPERIMENT {exp} IS NOT CONFIGURED YET: {', '.join(blocked_tracks)} still hold a",
-            "  placeholder (FILL_FROM_EXP1 / FILL_FROM_SEARCH). Run what decides it (Exp1, or",
-            "  Exp2's search: python -m src.eval.exp2_search), fill the values into",
+            "  placeholder (FILL_FROM_EXP1). Run what decides it (Experiment 1), fill the value into",
             f"  config/Exp{exp}_*.yaml, then run this again. Nothing will be submitted.",
             "=" * 78,
         ]
@@ -274,11 +273,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--phase", choices=("all", "train", "benchmark"), default="all")
     ap.add_argument("--single-cluster", action="store_true",
                     help="keep everything on Mindwell instead of splitting LGD across two")
-    ap.add_argument("--variant", default=None, choices=("search",),
-                    help="`search`: Experiment 2's stage A (config/Exp2_<TRACK>_search.yaml)")
+    ap.add_argument("--variant", default=None,
+                    help="an extra config beside the main one: config/Exp<N>_<TRACK>_<variant>.yaml (none today)")
     args = ap.parse_args(argv)
-    if args.variant and args.exp != 2:
-        ap.error("--variant search exists for Experiment 2 only")
+    if args.variant:
+        missing = [t for t in args.track if not _config(args.exp, t, args.variant).is_file()]
+        if missing:
+            ap.error(f"no config for variant {args.variant!r}: "
+                     + ", ".join(str(_config(args.exp, t, args.variant)) for t in missing))
 
     blocked = unconfigured_tracks(args.exp, args.track, args.variant)
     if blocked:

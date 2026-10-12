@@ -69,17 +69,18 @@ def test_everything_generated_lives_under_output():
 
 def test_no_superseded_output_directories_at_the_repo_root():
     """`res/`, `results/`, `figures/` and `logs/` were all output roots at some point.
-    Any of them reappearing means something is writing outside `output_CreditICL/`."""
+    Any of them reappearing means something is writing outside `output CreditICL/`."""
     for stale in ("res", "results", "figures", "logs"):
         assert not (ROOT / stale).exists(), (
             f"{stale}/ is back at the repo root — everything generated belongs under "
-            f"output_CreditICL/. Check src/utils/paths.py."
+            f"output CreditICL/. Check src/utils/paths.py."
         )
 
 
-def test_only_checkpoints_and_pools_go_to_project_storage():
-    """The benchmark CSVs are small (5.6 MB for 553 files) and belong with the logs on the
-    backed-up tier; checkpoints and prior pools are the files `$VSC_DATA` cannot hold."""
+def test_benchmarks_checkpoints_and_pools_go_to_project_storage():
+    """30-09-2026: `$VSC_DATA` is 75 GiB for every project together, so the benchmark CSVs join the
+    checkpoints and prior pools on project storage; job logs and run records — what a job appends
+    to while it runs — stay on the small tier."""
     import importlib
 
     import src.utils.paths as p
@@ -88,11 +89,12 @@ def test_only_checkpoints_and_pools_go_to_project_storage():
     try:
         __import__("os").environ["CREDITICL_STAGING_ROOT"] = str(ROOT / "_probe_staging")
         importlib.reload(p)
-        assert "_probe_staging" in p.run_checkpoints_dir("exp1_pd__a__s0").as_posix()
-        assert "_probe_staging" in p.prior_cache_root().as_posix()
-        for small in (p.logs_dir(1), p.benchmark_dir(1, "pd"), p.run_dir("exp1_pd__a__s0")):
+        for big in (p.run_checkpoints_dir("exp1_pd__a__s0"), p.prior_cache_root(), p.benchmark_dir(1, "pd"),
+                    p.benchmark_dir("reference", "receipts")):
+            assert "_probe_staging" in big.as_posix(), big
+        for small in (p.logs_dir(1), p.logs_dir(), p.run_dir("exp1_pd__a__s0"), p.figures_root()):
             assert "_probe_staging" not in small.as_posix(), (
-                f"{small} is small and must stay on the browsable, backed-up tier"
+                f"{small} is appended to while a job runs and stays on the small tier"
             )
     finally:
         __import__("os").environ.clear()
@@ -104,7 +106,7 @@ def test_captions_and_summary_are_committed_but_pdfs_are_not():
     """A `figures/` rule without a leading slash previously matched `output/figures/` too
     and ignored everything under it."""
     gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
-    assert "output_CreditICL/**/*.pdf" in gitignore
+    assert "output CreditICL/**/*.pdf" in gitignore
     for anchored in ("/figures/", "/results/", "/logs/", "/res/"):
         assert anchored in gitignore, (
             f"{anchored} must be anchored with a leading slash, or it also matches "
@@ -127,7 +129,7 @@ def test_figures_are_pdf_only():
 
 def test_no_png_is_produced_under_output():
     assert not list(paths.outputs_dir().rglob("*.png")), (
-        "a PNG appeared under output_CreditICL/ — figures are PDF only"
+        "a PNG appeared under output CreditICL/ — figures are PDF only"
     )
 
 
@@ -568,7 +570,7 @@ def test_changelog_is_one_chapter_per_date():
 
 
 def test_tracked_output_files_still_exist():
-    """`output_CreditICL/` is mostly generated and gitignored, but a few files in it are
+    """`output CreditICL/` is mostly generated and gitignored, but a few files in it are
     TRACKED — written by hand or by a notebook and meant to survive.
 
     On 17-08-2026 they were deleted by something run locally and then swept into a commit by a
@@ -577,13 +579,13 @@ def test_tracked_output_files_still_exist():
     write. Nothing noticed until the deletion appeared in someone else's `git pull`.
     """
     required = [
-        ROOT / "output_CreditICL" / "README.md",
-        ROOT / "output_CreditICL" / "CAPTIONS.md",
-        ROOT / "output_CreditICL" / "All_Results.md",
+        ROOT / "output CreditICL" / "README.md",
+        ROOT / "output CreditICL" / "CAPTIONS.md",
+        ROOT / "output CreditICL" / "All_Results.md",
     ]
     missing = [p.relative_to(ROOT).as_posix() for p in required if not p.exists()]
     assert not missing, (
-        f"tracked files under output_CreditICL/ are gone: {missing}. Restore them with "
-        f"`git checkout HEAD -- output_CreditICL/` BEFORE committing — a `git add -A` would "
+        f"tracked files under output CreditICL/ are gone: {missing}. Restore them with "
+        f"`git checkout HEAD -- output CreditICL/` BEFORE committing — a `git add -A` would "
         f"otherwise record the deletion."
     )

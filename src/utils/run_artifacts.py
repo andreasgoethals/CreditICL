@@ -8,13 +8,13 @@ Doing it by hand is how someone eventually deletes `data/raw`.
 THE TWO TIERS, one layout (`src/utils/paths.py`):
 
     project staging ($CREDITICL_STAGING_ROOT / /lustre1/...)   BIG, no backup
-        output_CreditICL/experiment_<N>/checkpoints/   our trained weights
-        output_CreditICL/prior_cache/                  generated prior pools (optional)
+        output CreditICL/experiment_<N>/checkpoints/   our trained weights
+        output CreditICL/prior_cache/                  generated prior pools (optional)
 
     personal data ($VSC_DATA)                                   SMALL, backed up
-        output_CreditICL/<owner>/logs/                 one file per job
-        output_CreditICL/experiment_<N>/runs/          each arm's config, summary, curves
-        output_CreditICL/<owner>/benchmark/            scores and receipts
+        output CreditICL/<owner>/logs/                 one file per job
+        output CreditICL/experiment_<N>/runs/          each arm's config, summary, curves
+        output CreditICL/<owner>/benchmark/            scores and receipts
 
 NEVER TOUCHED, at any protection level: `data/raw` (irreplaceable — the datasets
 themselves), the out-of-domain cache, and the RELEASED weights in `pretrained_dir()` (a
@@ -31,8 +31,8 @@ from pathlib import Path
 from typing import Any
 
 from src.utils.paths import (
+    ADHOC,
     EXPERIMENTS,
-    GENERAL,
     REFERENCE,
     REPO_ROOT,
     benchmark_dir,
@@ -132,8 +132,10 @@ def find_artifacts(tasks: tuple[str, ...] = ("lgd", "pd")) -> list[Artifact]:
     """
     del tasks
     candidates: list[tuple[str, Path]] = []
-    for owner in (GENERAL, REFERENCE, *EXPERIMENTS):
+    candidates.append(("logs", logs_dir()))
+    for owner in (REFERENCE, *EXPERIMENTS):
         candidates.append(("logs", logs_dir(owner)))
+    for owner in (ADHOC, REFERENCE, *EXPERIMENTS):
         candidates.append(("results", benchmark_dir(owner)))
     for exp in EXPERIMENTS:
         candidates.append(("runs", runs_dir(exp)))

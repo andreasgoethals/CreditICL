@@ -106,7 +106,7 @@ def test_checkpoints_are_opt_in_even_where_both_tiers_are_one_folder(tmp_path, m
     for var in ("VSC_DATA", *paths.STAGING_ENV_VARS):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(paths, "REPO_ROOT", tmp_path)   # read at call time by every resolver
-    assert paths.big_outputs_dir() == paths.outputs_dir() == tmp_path / "output_CreditICL"
+    assert paths.big_outputs_dir() == paths.outputs_dir() == tmp_path / "output CreditICL"
 
     run = paths.run_checkpoints_dir("exp1_lgd__a__s0")
     run.mkdir(parents=True)

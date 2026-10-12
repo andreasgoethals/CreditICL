@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 import torch
 
+from src.eval.protocol import PROTOCOL
 from src.prior.generator import TaskGenerator
 from src.prior.rng import PriorRNG
 
@@ -134,7 +135,7 @@ def test_ood_target_scaling_does_not_use_query_extremes(tmp_path, monkeypatch):
 
 def _cells(n_folds=5, **extra):
     return pd.DataFrame([{"dataset": "a", "model": "m", "seed": 0, "fold": f, "status": "ok",
-                          "protocol": 3, "context_cap": np.nan, "r2": 0.3, **extra} for f in range(n_folds)])
+                          "protocol": PROTOCOL, "context_cap": np.nan, "r2": 0.3, **extra} for f in range(n_folds)])
 
 
 def test_benchmark_requires_every_fold_finite_uncapped_and_current():
@@ -160,7 +161,7 @@ def test_benchmark_receipt_requires_both_domains_and_invalidates_changed_inputs(
     monkeypatch.setattr(B, "receipt_path", lambda tag: tmp_path / "receipt.json")
     for domain, file in files.items():
         pd.DataFrame([{"dataset": wanted[domain][0], "model": "linear", "seed": 0, "fold": f,
-                       "status": "ok", "r2": 0.5, "protocol": 3} for f in range(5)]).to_csv(file, index=False)
+                       "status": "ok", "r2": 0.5, "protocol": PROTOCOL} for f in range(5)]).to_csv(file, index=False)
     assert not B.complete(1, "lgd", 45)
     assert B.check(1, "lgd", 45, write=True)
     assert B.complete(1, "lgd", 45)
@@ -231,13 +232,13 @@ def test_results_loader_excludes_obsolete_grid_indices(tmp_path, monkeypatch):
     assert sorted(old["model"]) == ["arm-45", "arm-74"] and set(old["protocol"]) == {2}
     # Once the current benchmark writes, it alone is read — never a mixture of the two.
     pd.DataFrame([{"dataset": "example", "model": "arm-0", "roc_auc": 0.5, "status": "ok", "fold": 0,
-                   "protocol": 3}]).to_csv(tmp_path / "results_exp1bench_pd_a0.csv", index=False)
+                   "protocol": PROTOCOL}]).to_csv(tmp_path / "results_exp1bench_pd_a0.csv", index=False)
     pd.DataFrame([{"dataset": "example", "model": "arm-0", "roc_auc": 0.4, "status": "ok", "fold": 0,
-                   "protocol": 3, "info_checkpoint_step": 2500}]).to_csv(
+                   "protocol": PROTOCOL, "info_checkpoint_step": 2500}]).to_csv(
         tmp_path / "results_exp1bench_pd_a0_s2500.csv", index=False)
     result = results_plots.load_results("pd")
     assert result["model"].tolist() == ["arm-0"], "an earlier checkpoint is not a final result"
-    assert set(result["protocol"]) == {3}
+    assert set(result["protocol"]) == {PROTOCOL}
 
 
 def test_ood_imputation_and_target_scaling_use_the_training_fold_only():
@@ -289,7 +290,7 @@ def test_prior_ranking_reads_protocol_three_fold_rows():
         for ds in cfg["eval"]["dev_datasets"]:
             for fold in range(N_FOLDS):
                 rows.append({"dataset": ds, "model": "crediticl", "info_run_name": run_name(run),
-                             "seed": 0, "fold": fold, "status": "ok", "protocol": 3,
+                             "seed": 0, "fold": fold, "status": "ok", "protocol": PROTOCOL,
                              "roc_auc": 0.8 if credit else 0.7})
     ranking = development_ranking(pd.DataFrame(rows), "pd")
     assert len(ranking) == 3 and set(ranking.training_seeds) == {3}
@@ -310,13 +311,13 @@ def test_the_learning_curve_draws_every_saved_checkpoint(tmp_path, monkeypatch):
     for arm, share in enumerate(("0", "0p5")):
         for step, suffix in ((12500, ""), (2500, "_s2500")):
             rows = [{"dataset": d, "model": "crediticl", "fold": f, "seed": 0, "status": "ok",
-                     "protocol": 3, "roc_auc": 0.6 + step / 1e5 + 0.01 * arm,
+                     "protocol": PROTOCOL, "roc_auc": 0.6 + step / 1e5 + 0.01 * arm,
                      "info_checkpoint_step": step,
                      "info_run_name": f"exp1_pd__prior-credit_fraction={share}__s0"}
                     for d in ("a", "b") for f in range(5)]
             pd.DataFrame(rows).to_csv(tmp_path / f"results_exp1bench_pd_a{arm}{suffix}.csv", index=False)
     pd.DataFrame([{"dataset": d, "model": "catboost", "fold": f, "seed": 0, "status": "ok",
-                   "protocol": 3, "roc_auc": 0.8} for d in ("a", "b") for f in range(5)]).to_csv(
+                   "protocol": PROTOCOL, "roc_auc": 0.8} for d in ("a", "b") for f in range(5)]).to_csv(
         tmp_path / "results_reference_pd_catboost.csv", index=False)
     fig = results_plots.checkpoint_curve("pd", role=None)
     ax = fig.axes[0]
@@ -324,7 +325,7 @@ def test_the_learning_curve_draws_every_saved_checkpoint(tmp_path, monkeypatch):
     assert len(curves) == 2, "one line per credit share over the two saved checkpoints"
     assert any(abs(ln.get_ydata()[0] - 0.8) < 1e-9 for ln in ax.get_lines()), "the reference line"
     text = results_plots.results_summary("pd")
-    assert "protocol 3" in text and "2,500:" in text
+    assert f"protocol {PROTOCOL}" in text and "2,500:" in text
     plt.close(fig)
 
 

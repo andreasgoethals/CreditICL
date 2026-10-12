@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# Data and weights — never committed.
+# Data and weights â€” never committed.
 #
 # data/       credit-risk datasets under varying and sometimes restrictive
 #             licences; several are not ours to redistribute.
@@ -23,7 +23,7 @@ checkpoints/*
 
 # Generated synthetic datasets. Huge (4.0 GB per LGD variant, 5.4 GB per PD variant)
 # and always reproducible from a seed, so never committed. The glob also catches
-# `prior_cache_bak/` and friends — a bare `prior_cache/` did not, and a set of stray
+# `prior_cache_bak/` and friends â€” a bare `prior_cache/` did not, and a set of stray
 # backup manifests ended up in commit 82919b1 as a result.
 prior_cache*/
 *.npz
@@ -40,14 +40,14 @@ data/processed/**/*.json
 # Results.
 #
 # results/<task>/<pipeline>/ holds the OFFICIAL outputs and small summaries ARE
-# committed — they are the record of what was run, and a few hundred KB of CSV is
+# committed â€” they are the record of what was run, and a few hundred KB of CSV is
 # worth having in git history. Large arrays go to project storage instead.
 #
 # logs/ is purely informational and never holds results, so it is fully ignored.
 # res/ is the old scratch output dir, kept ignored for local runs.
 # ---------------------------------------------------------------------------
 
-# res/ — local scratch output (checkpoints, figures from the notebooks). The comment
+# res/ â€” local scratch output (checkpoints, figures from the notebooks). The comment
 # above claimed this was ignored but no pattern actually matched it, so notebook
 # figures showed up as untracked files. Regenerate rather than commit.
 
@@ -86,7 +86,7 @@ htmlcov/
 
 # Local scratch output. Real results are produced on the cluster and live in
 # `results/`; anything a laptop writes is a smoke test. The old top-level `res/`
-# directory is gone — kept here so it cannot come back.
+# directory is gone â€” kept here so it cannot come back.
 .ipynb_checkpoints/
 
 # ---------------------------------------------------------------------------
@@ -98,7 +98,7 @@ core.log
 wandb/
 slurm-*.out
 slurm-*.err
-# Job logs live in the output tree (output_CreditICL/<experiment>/logs/), so everything a run
+# Job logs live in the output tree (output CreditICL/<experiment>/logs/), so everything a run
 # writes is in one place. The old top-level logs/ stays ignored so a stray write cannot be
 # committed.
 
@@ -119,36 +119,43 @@ desktop.ini
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# output_CreditICL/ — THE single root for everything the code generates (src/utils/paths.py).
+# output CreditICL/ â€” THE single root for everything the code generates (src/utils/paths.py).
 #
 # Committed:  README.md (what lives where), CAPTIONS.md, All_Results.md and each notebook's
-#             _figures.json — the readable record of a run, worth having in git history.
+#             _figures.json â€” the readable record of a run, worth having in git history.
 # Ignored:    PDF figures (regenerated), job logs, run folders, benchmark scores (downloaded
 #             from the cluster), checkpoints, prior pools, and any large array.
 # ---------------------------------------------------------------------------
-output_CreditICL/**/*.pdf
-output_CreditICL/*/logs/
-output_CreditICL/*/runs/
-output_CreditICL/*/benchmark/
-output_CreditICL/*/checkpoints/
-output_CreditICL/*/report/
-output_CreditICL/prior_cache/
-output_CreditICL/general/data/
-output_CreditICL/general/prior/
-output_CreditICL/**/*.ckpt
-output_CreditICL/**/*.npy
-output_CreditICL/**/*.npz
-output_CreditICL/**/*.parquet
-output_CreditICL/**/*.pkl
-output_CreditICL/**/*.jsonl
-output_CreditICL/**/_stdout.txt
+output CreditICL/**/*.pdf
+output CreditICL/*/logs/
+output CreditICL/*/runs/
+output CreditICL/*/benchmark/
+output CreditICL/*/checkpoints/
+output CreditICL/*/report/
+output CreditICL/prior_cache/
+output CreditICL/logs/
+output CreditICL/adhoc/
+output CreditICL/**/*.ckpt
+output CreditICL/**/*.npy
+output CreditICL/**/*.npz
+output CreditICL/**/*.parquet
+output CreditICL/**/*.pkl
+output CreditICL/**/*.jsonl
+output CreditICL/**/_stdout.txt
 
 # Superseded top-level output locations, kept ignored so a stray write cannot be
 # committed. LEADING SLASH matters: a bare `figures/` matches at any depth and would
-# also swallow the figure folders inside output_CreditICL/. `/output/` is the layout before
-# 29-09-2026 (one flat tree for every experiment).
+# also swallow the figure folders inside output CreditICL/. `/output/` is the layout before
+# 29-09-2026 (one flat tree for every experiment); `/output_CreditICL/` the name until 30-09-2026.
 /output/
+/output_CreditICL/
 /logs/
 /res/
 /results/
 /figures/
+
+# Preserved September output after the root rename; never commit run artifacts.
+/output CreditICL/manifests/
+/output CreditICL/results/
+/output CreditICL/legacy-output/
+/outputCreditICL/

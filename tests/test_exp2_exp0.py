@@ -71,10 +71,10 @@ def test_a_broken_preset_is_refused(tmp_path, bad, match):
         expand_with_seeds(load(_cfg(tmp_path, bad)))
 
 
-def test_a_search_placeholder_keeps_a_config_a_template(tmp_path):
+def test_a_placeholder_keeps_a_config_a_template(tmp_path):
     from src.utils.config import find_placeholders, load
 
-    text = BASE.replace("train.lr: 1.0e-5", "train.lr: FILL_FROM_SEARCH")
+    text = BASE.replace("train.lr: 1.0e-5", "train.lr: FILL_FROM_EXP1")
     with pytest.raises(ValueError, match="still a template"):
         load(_cfg(tmp_path, text))
     assert find_placeholders(load(_cfg(tmp_path, text), allow_placeholders=True)) == ["arms.a.train.lr"]
@@ -86,22 +86,27 @@ def test_a_search_placeholder_keeps_a_config_a_template(tmp_path):
 def test_each_arm_is_scored_by_the_wrapper_of_its_architecture():
     from src.eval.benchmark_status import slot_for
 
-    models = {slot_for(2, "pd", i, variant="search").model for i in range(8)}
+    models = {slot_for(2, "pd", i).model for i in range(18)}
     assert models == {"crediticl", "tabpfn3"}
 
 
-def test_the_search_benchmark_has_no_reference_slots_and_its_own_tags():
-    """Development-only reference results would overwrite the shared reference column."""
-    from src.eval.benchmark_status import n_slots, slot_for
+def test_experiment_1_is_scored_again_with_contexts_capped_at_1024_rows():
+    """Accepted 30-09-2026: after every checkpoint and the reference column, each arm's FINAL
+    checkpoint and each in-context reference model are scored with at most 1,024 context rows."""
+    from src.eval.benchmark_status import CONTEXT_MODELS, n_slots, slot_for
     from src.utils.paths import owner_of
 
-    total = n_slots(2, "pd", variant="search")
-    assert total == 8 * 4, "8 arms x 4 saved checkpoints (2,500 ... 10,000), nothing else"
-    kinds = {slot_for(2, "pd", i, variant="search").kind for i in range(total)}
-    assert kinds == {"arm"}
-    tag = slot_for(2, "pd", 0, variant="search").tag
-    assert tag == "exp2searchbench_pd_a0" and owner_of(tag) == 2
-    assert slot_for(2, "pd", total, variant="search").kind == "none"
+    full = 9 * 5 + 4  # 9 arms x 5 kept checkpoints (12,500 and every 2,500), then 4 reference models
+    total = n_slots(1, "pd")
+    assert total == full + 9 + 2, "then 9 capped arms and the 2 capped in-context reference models"
+    capped = [slot_for(1, "pd", i) for i in range(full, total)]
+    assert all(s.context == 1024 and s.tag.endswith("_ctx1024") for s in capped)
+    assert [s.arm for s in capped if s.kind == "arm"] == list(range(9))
+    assert all(s.final for s in capped if s.kind == "arm")
+    assert {s.model for s in capped if s.kind == "reference"} == {"tabiclv2", "tabpfn3"} <= set(CONTEXT_MODELS)
+    assert owner_of(capped[0].tag) == 1 and owner_of(capped[-1].tag) == "reference"
+    assert all(slot_for(1, "pd", i).context is None for i in range(full))
+    assert slot_for(1, "pd", total).kind == "none"
 
 
 def test_the_main_benchmark_scores_both_models_and_the_reference_column():
@@ -112,94 +117,78 @@ def test_the_main_benchmark_scores_both_models_and_the_reference_column():
     assert slot_for(2, "lgd", total - 1).tag == "reference_lgd_linear"
 
 
-# -- the stage-A choice -----------------------------------------------------------------------------
-
-
-def _table(rows):
-    base = {"complete": True, "released_dev": 0.70, "released_ood": 0.80, "warmup_proportion": 0.1,
-            "optimizer": "adamw"}
-    df = pd.DataFrame([{**base, **r} for r in rows])
-    df["dev_gain"] = df["dev"] - df["released_dev"]
-    df["ood_change"] = df["ood"] - df["released_ood"]
-    return df
-
-
-def test_the_best_development_score_wins_among_those_that_did_not_forget():
-    from src.eval.exp2_search import choose
-
-    t = _table([
-        {"model": "tabicl", "arm": "x", "lr": 3e-5, "step": 10000, "dev": 0.75, "ood": 0.70},  # forgot
-        {"model": "tabicl", "arm": "y", "lr": 1e-5, "step": 7500, "dev": 0.74, "ood": 0.795},
-        {"model": "tabicl", "arm": "z", "lr": 3e-6, "step": 10000, "dev": 0.72, "ood": 0.80},
-    ])
-    pick = choose(t, "pd")["tabicl"]
-    assert pick["arm"] == "y" and pick["step"] == 7500 and not pick["flag"]
-
-
-def test_when_every_candidate_forgot_the_least_forgetting_is_flagged():
-    from src.eval.exp2_search import choose
-
-    t = _table([
-        {"model": "tabpfn3", "arm": "x", "lr": 3e-5, "step": 10000, "dev": 0.75, "ood": 0.60},
-        {"model": "tabpfn3", "arm": "y", "lr": 1e-5, "step": 10000, "dev": 0.74, "ood": 0.70},
-    ])
-    pick = choose(t, "pd")["tabpfn3"]
-    assert pick["arm"] == "y" and "Decide by hand" in pick["flag"]
-
-
-def test_an_incomplete_candidate_cannot_win():
-    from src.eval.exp2_search import choose
-
-    t = _table([
-        {"model": "tabicl", "arm": "x", "lr": 3e-5, "step": 10000, "dev": 0.99, "ood": 0.80, "complete": False},
-        {"model": "tabicl", "arm": "y", "lr": 1e-5, "step": 10000, "dev": 0.71, "ood": 0.80},
-    ])
-    assert choose(t, "pd")["tabicl"]["arm"] == "y"
-
-
 # -- the same columns for every model ----------------------------------------------------------------
 
 
-def test_wide_tables_keep_their_highest_variance_training_columns():
-    from src.eval.protocol import MAX_FEATURES, apply_columns, select_columns
+def test_wide_tables_keep_the_columns_most_associated_with_the_target():
+    """The cap keeps the columns with the strongest rank association with the target — whatever
+    their unit: raw variance would keep the huge-unit noise first."""
+    from src.eval.protocol import MAX_FEATURES, rank_columns
 
     rng = np.random.default_rng(0)
-    base = rng.normal(size=40)
-    X = np.outer((base - base.mean()) / base.std(), np.linspace(0.1, 6.0, 600))  # spread rises with the index
-    keep = select_columns(X)
-    assert len(keep) == MAX_FEATURES and list(keep) == sorted(keep)
-    assert set(keep) == set(range(100, 600)), "the 500 widest-spread columns"
-    Xa, Xb, cats = apply_columns(keep, [0, 150, 599], X, X[:5])
-    assert Xa.shape == (40, 500) and Xb.shape == (5, 500)
-    assert cats == [50, 499], "categorical indices follow their columns; dropped ones go"
-    assert select_columns(X[:, :500]) is None
+    n, d = 2000, 300
+    y = (rng.random(n) < 0.3).astype(float)
+    signal = np.linspace(0.0, 1.0, d)  # association rises with the index ...
+    scale = np.logspace(6, -3, d)  # ... while the unit shrinks
+    X = (y[:, None] * signal + rng.normal(size=(n, d))) * scale
+    keep = np.sort(rank_columns(X, y, [])[:MAX_FEATURES])
+    assert (keep >= d - MAX_FEATURES - 20).mean() > 0.9, "mostly the most associated columns"
+    by_variance = np.sort(rank_columns(X, y, [], method="variance")[:MAX_FEATURES])
+    assert (by_variance < MAX_FEATURES).all(), "variance keeps the biggest units instead"
 
 
-def test_the_choice_never_looks_at_the_target():
-    from inspect import signature
-
-    from src.eval.protocol import select_columns
-
-    assert list(signature(select_columns).parameters) == ["X_train", "max_features"]
-
-
-def test_every_model_gets_the_same_columns_in_a_fold(monkeypatch):
-    from src.eval import runner
-
-    seen: dict[str, tuple[int, ...]] = {}
-
-    def fake_score(task, model_name, X_tr, y_tr, X_te, y_te, cats, **kw):
-        seen[model_name] = (X_tr.shape[1], X_te.shape[1])
-        return {"roc_auc": 0.5, "_headline": "x"}
+def test_the_column_score_ignores_units_and_monotone_transforms():
+    from src.eval.protocol import rank_columns
 
     rng = np.random.default_rng(1)
-    X = rng.normal(size=(60, 700))
-    y = (rng.random(60) > 0.5).astype(float)
-    monkeypatch.setattr(runner, "load_arrays", lambda *a, **k: (X, y, [], {"n_rows": 60, "n_features": 700}))
+    X = rng.normal(size=(500, 5))
+    y = (X[:, 2] + rng.normal(size=500) > 0).astype(float)
+    order = rank_columns(X, y, [])
+    Z = X.copy()
+    Z[:, 2] = np.exp(Z[:, 2]) * 1e6  # monotone, and a huge unit
+    assert list(rank_columns(Z, y, [])) == list(order)
+    assert order[0] == 2
+
+
+def test_the_fold_preprocessing_learns_from_the_fitted_rows_only():
+    """Changing the rows being predicted changes nothing that was learned: the columns kept, the
+    rows removed and the clipping bounds all come from the fitted rows."""
+    from src.eval.protocol import fit_fold_preprocessing
+
+    rng = np.random.default_rng(2)
+    X = rng.normal(size=(400, 150))
+    X[:, 7] = 1.0  # near-constant: goes
+    y = (X[:, 0] + rng.normal(size=400) > 0).astype(float)
+    prep, Xf, yf = fit_fold_preprocessing(X, y, [])
+    again, _, _ = fit_fold_preprocessing(X, y, [])
+    assert 7 not in prep.keep and len(prep.keep) == 100 and Xf.shape == (len(yf), 100)
+    assert np.array_equal(prep.keep, again.keep)
+    test = rng.normal(size=(50, 150)) * 100  # wild prediction rows
+    out = prep.transform(test)
+    assert out.shape == (50, 100)
+    kept = np.isfinite(prep.lower)
+    assert (out[:, kept] <= prep.upper[kept] + 1e-6).all() and (out[:, kept] >= prep.lower[kept] - 1e-6).all()
+
+
+def test_every_model_gets_the_same_data_in_a_fold(monkeypatch):
+    """One preprocessing per fold, shared by every model: the same columns, the same rows."""
+    from src.eval import runner
+
+    seen: dict[str, tuple] = {}
+
+    def fake_score(task, model_name, X_tr, y_tr, X_te, y_te, cats, **kw):
+        final = kw["stages"]["final"]
+        seen[model_name] = (final.X_fit.shape, final.X_pred.shape, id(final))
+        return {"roc_auc": 0.5, "_headline": "x", **{f"prep_{k}": v for k, v in final.report.items()}}
+
+    rng = np.random.default_rng(1)
+    X = rng.normal(size=(200, 700))
+    y = (rng.random(200) > 0.5).astype(float)
+    monkeypatch.setattr(runner, "load_arrays", lambda *a, **k: (X, y, [], {"n_rows": 200, "n_features": 700}))
     monkeypatch.setattr(runner, "score_fold", fake_score)
     rows = runner.evaluate_dataset("pd", "fake", ["catboost", "tabpfn3", "linear"], seed=0, n_folds=2)
-    assert set(seen.values()) == {(500, 500)}, seen
-    assert all(r["features_selected_from"] == 700 and r["features_used"] == 500 for r in rows)
+    assert len({v for v in seen.values()}) == 1, seen
+    assert all(r["prep_features_in"] == 700 and r["prep_features_used"] == 100 for r in rows)
 
 
 # -- the released weights, wherever they live ---------------------------------------------------------
@@ -241,7 +230,7 @@ def test_tabpfn_continued_pretraining_trains_saves_resumes_and_is_scored(tmp_pat
     from src.train.tabpfn_trainer import TabPFNTrainer
     from src.utils.config import expand_with_seeds, load
 
-    run = copy.deepcopy(next(r for r in expand_with_seeds(load(ROOT / "config" / "Exp2_PD_search.yaml"))
+    run = copy.deepcopy(next(r for r in expand_with_seeds(load(ROOT / "config" / "Exp2_PD.yaml"))
                              if r["architecture"] == "tabpfn3"))
     run["prior"].update(n_rows_range=[96, 96], n_features_range=[3, 5], max_features=8,
                         n_nodes_range=[2, 4], max_filter_attempts=3, credit_fraction=0.5)
@@ -278,16 +267,19 @@ def test_tabpfn_continued_pretraining_trains_saves_resumes_and_is_scored(tmp_pat
     assert m.report.extra["run_name"] == run["_run_name"] and m.report.extra["checkpoint_step"] == 2
 
 
-def test_a_tabpfn_arm_refuses_tabicls_encoding():
+def test_a_tabpfn_arm_refuses_tabicls_encoding(tmp_path):
     from src.train.tabpfn_trainer import TabPFNTrainer
     from src.utils.config import expand_with_seeds, load
 
-    run = copy.deepcopy(next(r for r in expand_with_seeds(load(ROOT / "config" / "Exp2_PD_search.yaml"))
+    run = copy.deepcopy(next(r for r in expand_with_seeds(load(ROOT / "config" / "Exp2_PD.yaml"))
                              if r["architecture"] == "tabpfn3"))
     run["prior"]["encoding"] = "tabicl"
     run["logging"] = {"console": False, "to_file": False}
+    # A temporary folder: until 30-09-2026 this pointed at the real output tree and left an empty
+    # `_never_written` folder behind in it.
     with pytest.raises(ValueError, match="encoding: raw"):
-        TabPFNTrainer(run, ROOT / "output_CreditICL" / "_never_written", device="cpu")
+        TabPFNTrainer(run, tmp_path / "never_written", device="cpu")
+    assert not (tmp_path / "never_written").exists()
 
 
 def test_the_preparer_skips_a_task_whose_query_holds_an_unseen_class():
@@ -318,7 +310,7 @@ def test_the_checks_script_writes_its_report(tmp_path):
     assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
     report = json.loads((out / "checks.json").read_text(encoding="utf-8"))
     names = {row["name"] for row in report["rows"]}
-    assert {"Exp0_PD", "Exp1_LGD", "Exp2_PD_search", "Exp2_LGD"} <= names
+    assert {"Exp0_PD", "Exp1_LGD", "Exp2_PD", "Exp2_LGD", "Exp3_PD"} <= names
     assert (out / "checks.md").read_text(encoding="utf-8").startswith("# Experiment 0")
 
 
@@ -326,7 +318,7 @@ def _fake_exp0_tree(root: Path, *, resumed: bool = True) -> None:
     from src.eval.benchmark_status import n_slots, slot_for
     from src.utils.config import expand_with_seeds, load
 
-    out = root / "output_CreditICL"
+    out = root / "output CreditICL"
     exp0 = out / "experiment_0"
     (exp0 / "report").mkdir(parents=True)
     (exp0 / "report" / "checks.json").write_text(json.dumps({"rows": [
@@ -342,7 +334,7 @@ def _fake_exp0_tree(root: Path, *, resumed: bool = True) -> None:
             (d / "summary.json").write_text(json.dumps({
                 "completed": True, "steps": run["train"]["max_steps"], "train_seconds_total": 600,
                 "resumed_at": 240 if run["arm"] == "scratch_tabicl" and resumed else None}), encoding="utf-8")
-            pd.DataFrame({"step": [20, 40, 50], "kind": ["hardware", "hardware", "grad"],
+            pd.DataFrame({"step": [300, 600, 600], "kind": ["hardware", "hardware", "grad"],
                           "gpu0_utilization_gpu": [90, 92, None], "steps_per_s": [0.8, 0.9, None]}
                          ).to_csv(d / "telemetry.csv", index=False)
             pd.DataFrame({"step": [0, 50], "drift_all": [0.0, 0.1], "drift_rel_all": [0.0, 0.001]}
@@ -363,7 +355,7 @@ def test_the_verifier_passes_a_complete_experiment_0(tmp_path, capsys):
     from src.utils.exp0_verify import FAIL, verify
 
     _fake_exp0_tree(tmp_path)
-    v = verify(tmp_path / "output_CreditICL")
+    v = verify(tmp_path / "output CreditICL")
     fails = [item for item in v.items if item[0] == FAIL]
     assert not fails, fails
     assert "h per arm" in capsys.readouterr().out, "the cost extrapolation is printed"
@@ -373,7 +365,7 @@ def test_the_verifier_fails_when_the_forced_stop_never_happened(tmp_path):
     from src.utils.exp0_verify import FAIL, verify
 
     _fake_exp0_tree(tmp_path, resumed=False)
-    v = verify(tmp_path / "output_CreditICL")
+    v = verify(tmp_path / "output CreditICL")
     failed = {what for status, what, _ in v.items if status == FAIL}
     assert any("forced stop" in w for w in failed)
     assert any("resumed from a checkpoint" in w for w in failed)

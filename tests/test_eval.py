@@ -19,7 +19,7 @@ from src.eval.metrics import (
     pinball_loss,
     recall_at_top_k,
 )
-from src.eval.protocol import checkpoint_steps, cv_folds, f1_optimal_threshold, validation_split
+from src.eval.protocol import PROTOCOL, checkpoint_steps, cv_folds, f1_optimal_threshold, validation_split
 from src.eval.runner import check_split
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -216,7 +216,7 @@ def test_a_dataset_is_scored_fold_by_fold_with_every_row_once(monkeypatch):
     monkeypatch.setattr(runner, "load_processed", lambda task, name: ds)
     rows = runner.evaluate_dataset("lgd", "toy", ["linear"], 0)
     assert [r["fold"] for r in rows] == [0, 1, 2, 3, 4]
-    assert all(r["status"] == "ok" and r["protocol"] == 3 for r in rows)
+    assert all(r["status"] == "ok" and r["protocol"] == PROTOCOL for r in rows)
     assert sum(r["n_test"] for r in rows) == 250
 
 

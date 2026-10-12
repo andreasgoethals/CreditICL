@@ -41,10 +41,11 @@ from src.utils.logging_setup import get_logger
 # Row cap for the in-context models: `None` = the whole training pool, which is the protocol.
 # Kept as a hook for debug runs only; a cap is recorded in every row it touches.
 TFM_MAX_TRAIN_ROWS: int | None = None
-# Column cap for the foundation models (top variance, training rows only). Since 29-09-2026 the
-# benchmark runners select `protocol.MAX_FEATURES` columns for EVERY model before any fit, so on
-# that path this is a no-op; it remains the guard for a caller that hands a wider table directly.
-TFM_MAX_FEATURES = 500
+# Column cap for the foundation models: the protocol's own (`protocol.MAX_FEATURES`, chosen by
+# `protocol.rank_columns` on the training rows). The benchmark runners apply it to EVERY model
+# before any fit (`protocol.fit_fold_preprocessing`), so on that path this is a no-op; it remains
+# the guard for a caller that hands a wider table directly.
+from src.eval.protocol import MAX_FEATURES as TFM_MAX_FEATURES  # noqa: E402
 
 #: The released TabICLv2 files: the ones Exp2 fine-tunes from and the reference column scores.
 TABICL_RELEASED = {"pd": "tabicl-classifier-v2-20260212.ckpt", "lgd": "tabicl-regressor-v2-20260212.ckpt"}
@@ -209,26 +210,27 @@ class _TFMBaseline(Baseline):
     * FEATURES — `0014.algorithmwatch` has **2,986** features and
       `0011.loan_default` has 759, well past what these models accept.
 
-    Feature selection is by variance on the training split only. That is a crude
-    criterion, and deliberately so: anything target-aware (mutual information,
-    model-based importance) would leak the target into feature choice and inflate
-    the score. A weak-but-honest filter beats a strong-but-leaky one.
+    A table wider than the cap keeps the columns the protocol's filter ranks highest
+    (`protocol.rank_columns`), scored on the TRAINING rows only — target-aware, and leak-free for
+    that reason: the rows it is predicted on never enter the choice.
     """
 
-    def _select_features(self, X: np.ndarray) -> np.ndarray | None:
+    def _select_features(self, X: np.ndarray, y: np.ndarray,
+                         cat_indices: list[int] | None = None) -> np.ndarray | None:
         """Column indices to keep, or None to keep all."""
+        from src.eval.protocol import FEATURE_SELECTION, rank_columns
+
         n_features = X.shape[1]
         if n_features <= TFM_MAX_FEATURES:
             return None
-        var = np.nanvar(X, axis=0)
-        var = np.where(np.isfinite(var), var, -np.inf)
-        keep = np.sort(np.argsort(-var)[:TFM_MAX_FEATURES])
+        order = rank_columns(X, y, list(cat_indices or []))
+        keep = np.sort(order[:TFM_MAX_FEATURES])
         self.report.extra["features_capped_from"] = n_features
-        self.report.extra["feature_selection"] = "top-variance (train only)"
+        self.report.extra["feature_selection"] = f"{FEATURE_SELECTION} (train only)"
         return keep
 
     def fit(self, X: np.ndarray, y: np.ndarray, cat_indices: list[int] | None = None) -> FitReport:
-        self._keep = self._select_features(X)
+        self._keep = self._select_features(X, y, cat_indices)
         if self._keep is not None:
             keep_set = set(self._keep.tolist())
             remap = {old: new for new, old in enumerate(self._keep.tolist())}

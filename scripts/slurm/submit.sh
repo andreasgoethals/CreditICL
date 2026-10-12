@@ -120,7 +120,8 @@ case "${TARGET}" in
     h100)
         # Charge rate, credits per MINUTE, from the VSC table. Used below to check
         # `sam-quote` still agrees with the published price.
-        GPU_RATE=569.444; CORE_RATE=2.54630; CORES=16
+        # H100 hosts are Zen4 Genoa (VSC credits.rst), not A100 Ice Lake.
+        GPU_RATE=569.444; CORE_RATE=3.47222; CORES=16
         OPTS=(--clusters=wice --partition=gpu_h100
               --gpus-per-node=1 --cpus-per-task=16 --mem=180G --time=${WALLTIME:-01:00:00})
         ;;

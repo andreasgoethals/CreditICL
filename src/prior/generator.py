@@ -555,7 +555,14 @@ class TaskGenerator:
 
     def sample(self, shape: tuple[int, int] | None = None, *, num_classes: int | None = None) -> SyntheticTask:
         """A stand-alone task through the training code path. `num_classes` pins the class
-        count of a base classification table (plots of the control's binary tables)."""
+        count of a base classification table (plots of the control's binary tables). On one
+        thread, as the training stream (`rng.one_thread`)."""
+        from .rng import one_thread
+
+        with one_thread():
+            return self._sample(shape, num_classes=num_classes)
+
+    def _sample(self, shape: tuple[int, int] | None = None, *, num_classes: int | None = None) -> SyntheticTask:
         n_rows, n_features = shape if shape is not None else self.sample_shape()
         use_credit = self.rng.boolean(self.credit_fraction)
         if self.regression:

@@ -59,7 +59,7 @@ def test_intensity_reads_mild_from_the_narrow_range():
 
 
 def _run(arm):
-    """The arm's own folder, `output_CreditICL/experiment_<N>/runs/<arm>/`."""
+    """The arm's own folder, `output CreditICL/experiment_<N>/runs/<arm>/`."""
     from src.utils import paths
 
     folder = paths.run_dir(arm)
@@ -202,7 +202,7 @@ def test_identity_classifies_the_reference_row_correctly():
 
 def test_new_results_views_build_with_a_reference(monkeypatch):
     df = _results_df()
-    monkeypatch.setattr(rp, "load_results", lambda track, exp="exp1": df)
+    monkeypatch.setattr(rp, "load_results", lambda track, exp="exp1", context=None: df)
     for fn in (rp.metric_grid, rp.per_dataset_heatmap, rp.beats_reference,
                rp.credit_vs_control):
         assert _drew(fn("pd", "exp2")), fn.__name__
@@ -214,7 +214,7 @@ def test_results_views_keep_each_credit_share_apart(monkeypatch):
     """50 % and 100 % credit arms were pooled into one group whose mean fell between two clusters
     (on LGD 0.16 R², between arms at 0.45 and at -0.1). Each share is its own group now."""
     df = _results_df()
-    monkeypatch.setattr(rp, "load_results", lambda track, exp="exp1": df)
+    monkeypatch.setattr(rp, "load_results", lambda track, exp="exp1", context=None: df)
     ticks = [t.get_text() for t in rp.credit_vs_control("pd", "exp2").axes[0].get_xticklabels()]
     assert ticks == ["0 % credit\n(TabICL prior only)", "50 % credit", "100 % credit",
                      "reference models\n(not trained by us)"]
@@ -243,7 +243,7 @@ def test_results_restrict_to_one_side_of_the_split(monkeypatch):
     roles = rp._roles("pd", "exp1")
     assert rp._role_tag("0008.german", roles) == "german · dev"
     assert rp._role_tag("hmeq", roles) == "hmeq · holdout"
-    monkeypatch.setattr(rp, "load_results", lambda track, exp="exp1": df)
+    monkeypatch.setattr(rp, "load_results", lambda track, exp="exp1", context=None: df)
     for fn in (rp.credit_vs_control, rp.beats_reference):
         assert _drew(fn("pd", "exp2", role="holdout")), fn.__name__
     assert _drew(rp.metric_grid("pd", "exp2", role="holdout"))
@@ -251,7 +251,7 @@ def test_results_restrict_to_one_side_of_the_split(monkeypatch):
 
 
 def test_new_results_views_degrade_before_the_benchmark(monkeypatch):
-    monkeypatch.setattr(rp, "load_results", lambda track, exp="exp1": None)
+    monkeypatch.setattr(rp, "load_results", lambda track, exp="exp1", context=None: None)
     for fn in (rp.metric_grid, rp.per_dataset_heatmap, rp.beats_reference):
         fig = fn("pd", "exp2")
         assert fig is not None and len(fig.axes) >= 1

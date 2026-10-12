@@ -24,7 +24,7 @@ architecture: tabicl # the upstream TabICL class; see src/models/architecture.py
 # ----------------------------------------------------------------------------
 sweep:
   prior.credit_fraction: [0.0, FILL_FROM_EXP1] # the control, and the mix Exp1 selects on the development datasets
-  seeds: [0, 1, 2, 3, 4] # five seeds: these are the numbers that get reported
+  seeds: [0, 1] # two paired seeds (same base tasks and initial weights per seed; 30-09-2026)
 
 # ----------------------------------------------------------------------------
 # THE PRIOR — Experiment 1's, unchanged (literature-grounded; docs/PRIORS.md)
@@ -115,7 +115,7 @@ init:
 # TRAINING
 # ----------------------------------------------------------------------------
 train:
-  max_steps: 100000 # gradient updates
+  max_steps: 200000 # TabICLv2 matches RealTabPFN-2.5 in log-loss only after ~200k steps (papers/2026/02_Qu, §7)
   batch_size: 64 # datasets per UPDATE; upstream's --batch_size 64
   micro_batch_size: 4 # datasets per FORWARD PASS; must be <= grouping.group_size
 
@@ -165,8 +165,10 @@ logging:
 # ----------------------------------------------------------------------------
 eval:
   data_dir: data/raw/pd # where the real datasets live
-  dev_datasets: [0001.gmsc, 0004.lendingclub, 0002.taiwan_creditcard, 0008.german, 0005.myhom] # used to choose the prior
-  holdout_datasets: [0003.vehicle_loan, 0006.hackerearth, 0007.cobranded, 0009.bank_status,
+  # hackerearth shares 5,696 loans with lendingclub, base_modelisation defaults with base_model
+  # (audit 30-09-2026): each pair sits on ONE side, so the holdout stays independent
+  dev_datasets: [0001.gmsc, 0004.lendingclub, 0006.hackerearth, 0002.taiwan_creditcard, 0008.german, 0005.myhom] # used to choose the prior
+  holdout_datasets: [0003.vehicle_loan, 0007.cobranded, 0009.bank_status,
                      0010.thomas, 0011.loan_default, 0012.home_credit, 0013.hmeq,
                      0014.algorithmwatch] # untouched until the end
   metrics: [auc, ap, brier, logloss, ks, calibration_slope] # all computed in one run

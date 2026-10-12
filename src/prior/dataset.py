@@ -34,7 +34,7 @@ import torch
 from torch.utils.data import DataLoader, IterableDataset, get_worker_info
 
 from .generator import TaskGenerator
-from .rng import PriorRNG
+from .rng import PriorRNG, one_thread
 from .stream import plan_batch
 
 Batch = tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
@@ -80,10 +80,11 @@ class PriorBatchDataset(IterableDataset):
             b += n_workers
 
     def batch(self, gen: TaskGenerator, b: int) -> Batch:
-        """Batch number `b` of the stream."""
+        """Batch number `b` of the stream — the same with any number of workers (`one_thread`)."""
         plan = plan_batch(self.seed, b, self.prior_cfg, self.batch_size,
                           regression=self.regression, credit_fraction=self.credit_fraction)
-        tasks = [gen.sample_slot(slot) for slot in plan.slots]
+        with one_thread():
+            tasks = [gen.sample_slot(slot) for slot in plan.slots]
         T = max(plan.seq_lens)
         F = max(int(t.X.shape[1]) for t in tasks)
         X = torch.zeros(len(tasks), T, F)

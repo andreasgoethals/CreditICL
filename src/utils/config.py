@@ -55,6 +55,7 @@ NO_EXPAND_EXACT: frozenset[str] = frozenset(
         "holdout_datasets",  # the frozen holdout split
         "metrics",  # a list of metrics to compute, all of them, in one run
         "betas",  # optimizer (beta1, beta2)
+        "context_caps",  # the capped-context evaluations, all of them, beside the full one
     }
 )
 
@@ -111,9 +112,9 @@ def load_yaml(path: str | Path) -> dict[str, Any]:
 #: would be worse than a hole: it would submit, run for hours, and quietly measure the
 #: wrong arm.
 PLACEHOLDER = "FILL_FROM_EXP1"
-#: Every placeholder a template may hold: Exp1's winner, and Experiment 2's hyperparameter search
-#: (`config/Exp2_*_search.yaml`), whose chosen recipe fills the main Exp2 configs.
-PLACEHOLDERS = (PLACEHOLDER, "FILL_FROM_SEARCH")
+#: Every placeholder a template may hold: Exp1's winner (Exp3's mix). Experiment 2 has none since
+#: 30-09-2026 — it runs at each model's published continued-pretraining recipe.
+PLACEHOLDERS = (PLACEHOLDER,)
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:

@@ -33,8 +33,8 @@
 set -euo pipefail
 export PYTHONUNBUFFERED=1
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
-OUTPUT_ROOT="${VSC_DATA}/CreditICL/output_CreditICL"   # = src.utils.paths.outputs_dir()
-LOGDIR="${OUTPUT_ROOT}/general/logs"
+OUTPUT_ROOT="${VSC_DATA}/CreditICL/output CreditICL"   # = src.utils.paths.outputs_dir()
+LOGDIR="${OUTPUT_ROOT}/logs"
 mkdir -p "${LOGDIR}"
 LOG="${LOGDIR}/slurm_evaluate_$(date +%Y%m%d_%H%M%S)_j${SLURM_JOB_ID}.log"
 exec > "$LOG" 2>&1

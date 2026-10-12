@@ -208,6 +208,17 @@ class TabPFNTrainer:
     def __init__(self, cfg: dict[str, Any], out_dir: str | Path, device: str | None = None,
                  ckpt_dir: str | Path | None = None, log_dir: str | Path | None = None,
                  manifest_dir: str | Path | None = None):
+        # REFUSE A WRONG CONFIG BEFORE TOUCHING THE DISK: an arm that cannot run must not leave an
+        # empty run folder behind (it did, 29-09-2026: `output CreditICL/_never_written`).
+        tcfg = cfg.get("train", {}) or {}
+        if (cfg.get("prior") or {}).get("encoding", "raw") != "raw":
+            raise ValueError("TabPFN arms need prior.encoding: raw — TabPFN preprocesses the table "
+                             "itself, so a table in TabICL's prediction encoding would be "
+                             "preprocessed twice")
+        if str(tcfg.get("optimizer", "adamw")).lower() != "adamw":
+            raise ValueError("TabPFN-3 is fine-tuned with AdamW (its own fine-tuner); "
+                             f"train.optimizer={tcfg.get('optimizer')!r} is not supported for it")
+
         self.cfg = cfg
         self.task = cfg["task"]
         self.regression = self.task == "lgd"
@@ -235,14 +246,6 @@ class TabPFNTrainer:
         self.seed = int(cfg.get("seed", 0))
         self.loss_weights = {**REGRESSION_LOSS_WEIGHTS, **(tcfg.get("regression_loss_weights") or {})}
         torch.manual_seed(self.seed)
-
-        if (cfg.get("prior") or {}).get("encoding", "raw") != "raw":
-            raise ValueError("TabPFN arms need prior.encoding: raw — TabPFN preprocesses the table "
-                             "itself, so a table in TabICL's prediction encoding would be "
-                             "preprocessed twice")
-        if str(tcfg.get("optimizer", "adamw")).lower() != "adamw":
-            raise ValueError("TabPFN-3 is fine-tuned with AdamW (its own fine-tuner); "
-                             f"train.optimizer={tcfg.get('optimizer')!r} is not supported for it")
 
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.amp = bool(tcfg.get("amp", True)) and self.device.startswith("cuda")

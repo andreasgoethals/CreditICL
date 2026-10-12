@@ -18,7 +18,7 @@ worse than no diagnostic, so every probe is wrapped and a failure degrades to a 
 `nvidia-smi` in particular is absent on a login node and on the Windows dev machine.
 
 Output goes to the run's `.log` (human-readable) and into the run folder
-(`output_CreditICL/experiment_<N>/runs/<run>/`): `telemetry.csv` (hardware, throughput, time
+(`output CreditICL/experiment_<N>/runs/<run>/`): `telemetry.csv` (hardware, throughput, time
 per phase, gradients — one row per sample) and `weights.csv` (how far each block has moved
 from its initial weights, and how fast it is moving).
 """

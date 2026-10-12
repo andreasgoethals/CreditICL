@@ -4,17 +4,18 @@ Same split CreditPFN uses, for the same reasons:
 
 | tier | path | what goes here | backed up | quota |
 |---|---|---|---|---|
-| **project staging** | `/lustre1/project/stg_00211` (`$VSC_PROJECT_LUSTRE1/stg_00211`) | the **big files**: datasets, released weights, and the big half of `output_CreditICL/` (our checkpoints, prior pools) | no | large (>=1 TB), low inode budget |
-| **personal data** | `$VSC_DATA` | the repo, plus the small half of `output_CreditICL/`: logs, run records, benchmark CSVs, figures | **yes** | 75 GiB, tight |
+| **project staging** | `/lustre1/project/stg_00211` (`$VSC_PROJECT_LUSTRE1/stg_00211`) | the **big files**: datasets, released weights, and the big half of `output CreditICL/` (benchmark CSVs, our checkpoints, prior pools) | no | large (>=1 TB), low inode budget |
+| **personal data** | `$VSC_DATA` | the repo, plus the small half of `output CreditICL/`: job logs and run records | **yes** | 75 GiB, shared by every project - kept low |
 | scratch | `$VSC_SCRATCH` | working scratch only | no | 500 GiB, **purged after 30 days of no access** |
 
 Rules of thumb:
 
-* Datasets and checkpoints are the largest artefacts, so they go to staging.
-  `$VSC_DATA` at 75 GiB cannot hold them, and scratch is purged.
-* Staging has a **low inode budget** — few big files, not thousands of small
-  ones. So per-step metrics go to `$VSC_DATA`, not staging.
-* Staging is on **Lustre**, so it is reachable from Genius and wICE but Mindwell
+* Datasets, checkpoints and benchmark results go to staging. `$VSC_DATA` has 75 GiB
+  for every project together (30-09-2026: keep it low), and scratch is purged.
+* What stays on `$VSC_DATA` is what a job APPENDS to while it runs — its log, and a run's
+  progress/telemetry CSVs. Staging is Lustre, and Mindwell jobs keep frequent small I/O
+  off it (docs/VSC.md §5); a benchmark writes its CSV once, at the end.
+* Staging is on **Lustre**, so it is reachable from wICE but Mindwell
   jobs must use their own GPFS scratch for heavy I/O. Read a checkpoint from
   staging once at job start; do not stream from it.
 
@@ -123,32 +124,35 @@ def _under(root: Path, *parts: str) -> Path:
 
 # -- the output tree -----------------------------------------------------------
 #
-#   output_CreditICL/                      SMALL tier: the repo locally, $VSC_DATA/CreditICL on VSC
+#   output CreditICL/                       SMALL tier: the repo locally, $VSC_DATA/CreditICL on VSC
 #       README.md                          what lives where (committed)
 #       All_Results.md, CAPTIONS.md        every notebook's text summary / figure captions
-#       general/                           chapter 0 figures; logs of jobs that belong to no
-#                                          experiment (preprocess, OOD fetch, prior pools)
-#       reference/                         the models whose numbers do not depend on our prior
-#           benchmark/{pd,lgd,ood,receipts}  (released TabICLv2 / TabPFN-3, CatBoost, linear):
-#           logs/                            scored ONCE, read by every experiment
+#       figures/<notebook>/                every notebook's PDFs, one folder per notebook
+#       logs/                              jobs that belong to no experiment (preprocessing, the
+#                                          OOD fetch, prior pools, GPU benchmarks) and their summaries
+#       reference/logs/                    the reference column's benchmark jobs
 #       experiment_<N>/                    N = 0 (the cluster debug suite), 1, 2, 3
 #           logs/                          one file per SLURM job (training, benchmark, checks)
 #           runs/<run name>/               one folder per trained arm: config.json, summary.json,
 #                                          progress.csv, telemetry.csv, weights.csv, logs/
-#           benchmark/{pd,lgd,ood,receipts}  one CSV per scored checkpoint, one receipt each
-#           figures/<notebook>/            the PDFs of that experiment's notebooks
+#           report/                        experiment_0 only: the checks job's report
 #
-#   output_CreditICL/                      BIG tier: <staging>/CreditICL on VSC, the SAME tree
+#   output CreditICL/                       BIG tier: <staging>/CreditICL on VSC, the SAME tree
+#       reference/benchmark/{pd,lgd,ood,receipts}   the models whose numbers do not depend on our
+#                                          prior (released TabICLv2 / TabPFN-3, CatBoost, linear),
+#                                          scored ONCE and read by every experiment
+#       experiment_<N>/benchmark/{pd,lgd,ood,receipts}   one CSV per scored checkpoint
 #       experiment_<N>/checkpoints/<run name>/step-*.ckpt
 #       prior_cache/                       pre-generated prior pools (optional)
 #
 # Locally both tiers are the same folder. The released weights (TabICLv2, TabPFN-3) are not
 # output — they are a download — and stay in `pretrained_dir()`.
 
-OUTPUT_NAME = "output_CreditICL"
+OUTPUT_NAME = "output CreditICL"
 EXPERIMENTS = (0, 1, 2, 3)
-GENERAL = "general"
 REFERENCE = "reference"
+#: The owner of a benchmark tag that names no experiment (an ad hoc evaluation).
+ADHOC = "adhoc"
 #: The four places a benchmark writes, per owner. `ood` never mixes with the credit results:
 #: a mean across both answers no question.
 BENCHMARK_PARTS = ("pd", "lgd", "ood", "receipts")
@@ -194,9 +198,9 @@ def find_pretrained(path: str | Path) -> Path:
 
 
 def outputs_dir() -> Path:
-    """THE root of everything the code produces that is small. `$VSC_DATA` on VSC.
+    """THE root of what the code produces that is small. `$VSC_DATA` on VSC.
 
-    Named `output_CreditICL` so a downloaded copy says which project it came from. Locally it
+    Named `output CreditICL` so a downloaded copy says which project it came from. Locally it
     sits in the repo; on the cluster under `$VSC_DATA/CreditICL/`, the backed-up tier.
     """
     if on_vsc():
@@ -205,10 +209,9 @@ def outputs_dir() -> Path:
 
 
 def big_outputs_dir() -> Path:
-    """The same tree on project storage, for the files too big for `$VSC_DATA`.
+    """The same tree on project storage: benchmark CSVs, our checkpoints, prior pools.
 
-    Only checkpoints and prior pools live here. Off-VSC, without a staging override, it IS
-    `outputs_dir()`: one folder, same layout.
+    Off-VSC, without a staging override, it IS `outputs_dir()`: one folder, same layout.
     """
     if _use_staging():
         return _under(staging_root(), OUTPUT_NAME)
@@ -223,28 +226,23 @@ def _check_experiment(exp: int | str) -> int:
 
 
 def experiment_dir(exp: int | str, *, big: bool = False) -> Path:
-    """`output_CreditICL/experiment_<N>/` on the small tier, or its mirror on the big one."""
+    """`output CreditICL/experiment_<N>/` on the small tier, or its mirror on the big one."""
     root = big_outputs_dir() if big else outputs_dir()
     return root / f"experiment_{_check_experiment(exp)}"
 
 
-def general_dir() -> Path:
-    """Chapter 0 and the jobs that belong to no experiment."""
-    return outputs_dir() / GENERAL
-
-
-def reference_dir() -> Path:
+def reference_dir(*, big: bool = False) -> Path:
     """The reference column: models whose numbers do not depend on our prior."""
-    return outputs_dir() / REFERENCE
+    return (big_outputs_dir() if big else outputs_dir()) / REFERENCE
 
 
-_EXPERIMENT_NAME = re.compile(r"^exp(\d+)[a-z]*_")  # exp1_, exp1bench_, exp2searchbench_
+_EXPERIMENT_NAME = re.compile(r"^exp(\d+)[a-z]*_")  # exp1_, exp1bench_, exp2<variant>bench_
 
 
 def experiment_of(name: str) -> int:
     """The experiment a run name or benchmark tag belongs to.
 
-    `exp1_pd__...__s0` and `exp1bench_pd_a3` are Exp1, `exp2searchbench_pd_a0` Exp2 (its search);
+    `exp1_pd__...__s0` and `exp1bench_pd_a3` are Exp1, `exp2<variant>bench_pd_a0` Exp2 (a variant);
     `debug_...` and `exp0_...` are the
     debug suite, Exp0. Anything else RAISES: a checkpoint filed under the wrong experiment
     is scored against the wrong grid, and a guess would hide that.
@@ -258,24 +256,28 @@ def experiment_of(name: str) -> int:
 
 
 def owner_of(tag: str) -> int | str:
-    """Who owns a benchmark tag: an experiment number, `reference`, or `general` (ad hoc)."""
+    """Who owns a benchmark tag: an experiment number, `reference`, or `adhoc`."""
     if tag.startswith(f"{REFERENCE}_"):
         return REFERENCE
     try:
         return experiment_of(tag)
     except ValueError:
-        return GENERAL
+        return ADHOC
 
 
-def owner_dir(owner: int | str) -> Path:
-    """The folder of an experiment number, or of `general` / `reference`."""
-    if owner in (GENERAL, REFERENCE):
-        return outputs_dir() / str(owner)
-    return experiment_dir(owner)
+def owner_dir(owner: int | str, *, big: bool = False) -> Path:
+    """The folder of an experiment number, of `reference` or of `adhoc`, on either tier."""
+    root = big_outputs_dir() if big else outputs_dir()
+    if owner in (REFERENCE, ADHOC):
+        return root / str(owner)
+    return root / f"experiment_{_check_experiment(owner)}"
 
 
-def logs_dir(owner: int | str = GENERAL) -> Path:
-    """Job logs of one experiment (or of `reference` / `general`). SMALL."""
+def logs_dir(owner: int | str | None = None) -> Path:
+    """Job logs of one experiment (or of `reference`); `logs/` at the root for every job that
+    belongs to no experiment. SMALL."""
+    if owner is None or owner == ADHOC:
+        return outputs_dir() / "logs"
     return owner_dir(owner) / "logs"
 
 
@@ -312,12 +314,12 @@ def run_checkpoints_dir(run_name: str) -> Path:
 
 
 def benchmark_dir(owner: int | str, part: str | None = None) -> Path:
-    """`<owner>/benchmark/` or one of its parts: `pd`, `lgd`, `ood`, `receipts`.
+    """`<owner>/benchmark/` or one of its parts: `pd`, `lgd`, `ood`, `receipts`. BIG tier.
 
     The part is checked: a typo would silently create a new folder and the scores would go
     missing instead of raising.
     """
-    root = owner_dir(owner) / "benchmark"
+    root = owner_dir(owner, big=True) / "benchmark"
     if part is None:
         return root
     if part not in BENCHMARK_PARTS:
@@ -336,23 +338,22 @@ def chapter_of(notebook: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def figures_dir(notebook: str) -> Path:
-    """One notebook's figures, inside the chapter it belongs to.
+def figures_root() -> Path:
+    """Every notebook's figures, one folder per notebook. SMALL (drawn on a laptop)."""
+    return outputs_dir() / "figures"
 
-    Chapter 0 (and a name without a chapter) goes to `general/figures/`; chapter N to
-    `experiment_N/figures/`.
-    """
-    chapter = chapter_of(notebook)
-    owner = GENERAL if not chapter else chapter
-    return owner_dir(owner) / "figures" / notebook
+
+def figures_dir(notebook: str) -> Path:
+    """One notebook's figures: `figures/<notebook>/`, whatever its chapter."""
+    return figures_root() / notebook
 
 
 def all_figure_dirs() -> list[Path]:
     """Every per-notebook figure folder that exists, in notebook order."""
-    roots = [general_dir()] + [experiment_dir(n) for n in EXPERIMENTS]
-    found = [d for r in roots if (r / "figures").is_dir()
-             for d in (r / "figures").iterdir() if d.is_dir()]
-    return sorted(found, key=lambda d: d.name)
+    root = figures_root()
+    if not root.is_dir():
+        return []
+    return sorted((d for d in root.iterdir() if d.is_dir()), key=lambda d: d.name)
 
 
 def all_results_path() -> Path:

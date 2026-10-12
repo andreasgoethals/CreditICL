@@ -4,12 +4,16 @@ from a SLURM array index to what that index scores.
 A CSV's existence is not completion. A receipt is written only after every requested
 dataset/model/seed/fold cell succeeds in both domains; changed inputs or results invalidate it.
 
-THE ARRAY (evaluation protocol 3, `src/eval/protocol.py`)
+THE ARRAY (evaluation protocol 4, `src/eval/protocol.py`)
 
     index = position x n_arms + arm     for every saved checkpoint of every arm, where
                                         position 0 is the FINAL step, then 2,500, 5,000, ...
     index = n_arms x n_steps + k        the reference models, one per slot (k-th of
                                         `REFERENCE_MODELS`)
+    then, per cap in `eval.context_caps`  every arm's FINAL checkpoint and every reference model
+                                        that has a context (`CONTEXT_MODELS`), scored again with the
+                                        context capped at that many rows — the prior's effect inside
+                                        the training distribution (30-09-2026; tag suffix `_ctx<cap>`)
 
 Final checkpoints come first, so the headline table exists before the learning curves. A
 final checkpoint writes `experiment_<N>/benchmark/<track>/results_exp<N>bench_<track>_a<arm>.csv`
@@ -35,10 +39,13 @@ from src.utils.config import expand_with_seeds, load, run_name
 
 ROOT = Path(__file__).resolve().parents[2]
 REFERENCE_MODELS = "tabiclv2,tabpfn3,catboost,linear"
+#: The models whose context can be capped: in-context learners. CatBoost and the linear model have
+#: no context — their "context" is the training set, and capping it is a different experiment.
+CONTEXT_MODELS = ("crediticl", "tabiclv2", "tabpfn3")
 
 
 def config_path(exp: int, track: str, variant: str | None = None) -> Path:
-    """`config/Exp<N>_<TRACK>[_<variant>].yaml` — `variant="search"` is Experiment 2's stage A."""
+    """`config/Exp<N>_<TRACK>[_<variant>].yaml` — a variant is an extra config beside the main one."""
     return ROOT / "config" / f"Exp{exp}_{track.upper()}{'_' + variant if variant else ''}.yaml"
 
 
@@ -48,10 +55,15 @@ def arm_model(run: dict) -> str:
     return "tabpfn3" if str(run.get("architecture", "tabicl")) == "tabpfn3" else "crediticl"
 
 
+def context_caps(cfg: dict) -> list[int]:
+    """The capped-context evaluations a config asks for, besides the full one (`eval.context_caps`)."""
+    return [int(c) for c in ((cfg.get("eval") or {}).get("context_caps") or [])]
+
+
 def reference_models_for(cfg: dict, reference_models: str) -> list[str]:
     """The reference slots of a config. NONE for a configuration that scores only the development
-    datasets (Experiment 2's search): its reference results would overwrite the shared
-    `reference/` files, which hold every dataset, with a development-only subset."""
+    datasets (no holdout list): its reference results would overwrite the shared `reference/`
+    files, which hold every dataset, with a development-only subset."""
     if not (cfg.get("eval") or {}).get("holdout_datasets"):
         return []
     return [m for m in reference_models.split(",") if m]
@@ -67,6 +79,7 @@ class Slot:
     step: int | None = None
     final: bool = False
     model: str | None = None
+    context: int | None = None  # rows of context, when capped; None = the whole training pool
 
 
 def digest(path: Path) -> str:
@@ -90,12 +103,23 @@ def slot_for(exp: int, track: str, index: int, reference_models: str = REFERENCE
     if index < n_arms * n_steps:
         position, arm = divmod(index, n_arms)
         step, final = steps[position], position == 0
-        # A variant is its own benchmark: `exp2searchbench_...` cannot collide with `exp2bench_...`.
+        # A variant is its own benchmark: `exp2<variant>bench_...` cannot collide with `exp2bench_...`.
         tag = (f"exp{exp}{variant or ''}bench_{track}_a{arm}" + ("" if final else f"_s{step}"))
         return Slot("arm", tag, arm=arm, step=step, final=final, model=arm_model(runs[arm]))
     k = index - n_arms * n_steps
     if k < len(refs):
         return Slot("reference", f"reference_{track}_{refs[k]}", model=refs[k])
+    k -= len(refs)
+    capped_refs = [m for m in refs if m in CONTEXT_MODELS]
+    for cap in context_caps(cfg):
+        if k < n_arms:
+            tag = f"exp{exp}{variant or ''}bench_{track}_a{k}_ctx{cap}"
+            return Slot("arm", tag, arm=k, step=steps[0], final=True, model=arm_model(runs[k]), context=cap)
+        k -= n_arms
+        if k < len(capped_refs):
+            return Slot("reference", f"reference_{track}_{capped_refs[k]}_ctx{cap}", model=capped_refs[k],
+                        context=cap)
+        k -= len(capped_refs)
     return Slot("none")
 
 
@@ -103,7 +127,9 @@ def n_slots(exp: int, track: str, reference_models: str = REFERENCE_MODELS,
             variant: str | None = None) -> int:
     cfg = load(config_path(exp, track, variant), allow_placeholders=True)
     runs = expand_with_seeds(cfg)
-    return len(runs) * len(checkpoint_steps(runs[0])) + len(reference_models_for(cfg, reference_models))
+    refs = reference_models_for(cfg, reference_models)
+    capped = len(context_caps(cfg)) * (len(runs) + len([m for m in refs if m in CONTEXT_MODELS]))
+    return len(runs) * len(checkpoint_steps(runs[0])) + len(refs) + capped
 
 
 def receipt_path(tag: str) -> Path:
@@ -137,7 +163,7 @@ def request(exp: int, track: str, index: int, seeds: tuple[int, ...] = (0,), n_f
     code = {p.relative_to(ROOT).as_posix(): digest(p) for p in sorted(sources)}
     data = {"protocol": PROTOCOL, "track": track, "kind": kind, "models": models,
             "seeds": list(seeds), "n_folds": n_folds, "credit": credit, "ood": ood,
-            "ood_manifest": digest(manifest_path()), "code": code}
+            "ood_manifest": digest(manifest_path()), "code": code, "context_cap": slot.context}
     if slot.kind == "arm":
         run = runs[slot.arm]
         name = run_name(run)
@@ -155,7 +181,7 @@ def request(exp: int, track: str, index: int, seeds: tuple[int, ...] = (0,), n_f
 
 
 def validate_cells(df: pd.DataFrame, datasets: list[str], models: list[str], seeds: list[int],
-                   n_folds: int, metric: str) -> None:
+                   n_folds: int, metric: str, context: int | None = None) -> None:
     required = {"dataset", "model", "seed", "fold", "status", "protocol", metric}
     if not required.issubset(df.columns):
         raise ValueError(f"Missing result columns: {sorted(required - set(df.columns))}")
@@ -167,8 +193,11 @@ def validate_cells(df: pd.DataFrame, datasets: list[str], models: list[str], see
         raise ValueError("Failed cells or non-finite headline metrics")
     if not df["protocol"].eq(PROTOCOL).all():
         raise ValueError(f"Rows from another evaluation protocol (want {PROTOCOL})")
-    if "context_cap" in df and df["context_cap"].notna().any():
-        raise ValueError("A context cap was applied; the protocol gives every model the whole pool")
+    if context is None:
+        if "context_cap" in df and df["context_cap"].notna().any():
+            raise ValueError("A context cap was applied; the protocol gives every model the whole pool")
+    elif "context_cap" not in df or not pd.to_numeric(df["context_cap"], errors="coerce").eq(context).all():
+        raise ValueError(f"This slot scores contexts capped at {context} rows; the file was not")
 
 
 def check(exp: int, track: str, index: int, *, write: bool = False, **kwargs) -> bool:
@@ -187,7 +216,8 @@ def check(exp: int, track: str, index: int, *, write: bool = False, **kwargs) ->
             # An LGD checkpoint declines classification suites and vice versa; only its own kind counts.
             df = df[df["status"] != "skipped"]
         metric = ("roc_auc" if track == "pd" else "r2")
-        validate_cells(df, wanted[domain], wanted["models"], wanted["seeds"], wanted["n_folds"], metric)
+        validate_cells(df, wanted[domain], wanted["models"], wanted["seeds"], wanted["n_folds"], metric,
+                       context=wanted.get("context_cap"))
         if (domain == "credit" and "run_name" in wanted
                 and ("info_run_name" not in df or not df["info_run_name"].eq(wanted["run_name"]).all())):
             raise ValueError("Credit result belongs to a different training arm")
@@ -218,10 +248,10 @@ def main(argv=None) -> int:
     ap.add_argument("--seeds", default="0")
     ap.add_argument("--folds", type=int, default=N_FOLDS)
     ap.add_argument("--reference-models", default=REFERENCE_MODELS)
-    ap.add_argument("--variant", default=None, help="config variant, e.g. `search` (Exp2 stage A)")
+    ap.add_argument("--variant", default=None, help="config variant: config/Exp<N>_<TRACK>_<variant>.yaml")
     ap.add_argument("--write", action="store_true")
     ap.add_argument("--describe", action="store_true",
-                    help="print what the index scores (kind tag arm step model) and exit")
+                    help="print what the index scores (kind tag arm step model context) and exit")
     ap.add_argument("--count", action="store_true", help="print the number of array slots and exit")
     args = ap.parse_args(argv)
     variant = args.variant or None
@@ -231,7 +261,7 @@ def main(argv=None) -> int:
     if args.describe:
         s = slot_for(args.exp, args.track, int(args.index), args.reference_models, variant)
         print(s.kind, s.tag or "-", "-" if s.arm is None else s.arm, "-" if s.step is None else s.step,
-              s.model or "-")
+              s.model or "-", "-" if s.context is None else s.context)
         return 0
     try:
         ok = check(args.exp, args.track, int(args.index), write=args.write,

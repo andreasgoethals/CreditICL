@@ -42,7 +42,7 @@ case "$CONFIG" in
     *)         TASK=lgd ;;
 esac
 
-LOGDIR="${VSC_DATA}/CreditICL/output_CreditICL/general/logs"   # = paths.logs_dir()
+LOGDIR="${VSC_DATA}/CreditICL/output CreditICL/logs"   # = paths.logs_dir()
 mkdir -p "$LOGDIR"
 # The PARTITION is in the filename: the two runs differ only by hardware, so a name that
 # does not say which card it was is useless the moment the second one lands.

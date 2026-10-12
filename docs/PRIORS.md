@@ -227,8 +227,8 @@ L2-SP, freeze strategy) are in [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md).
 |---|---|---|---|
 | **Exp0** | Exp1's prior, `credit_fraction` 0 / 0.5 / 1 and the Exp2 paths — a debug suite, no result | scratch and released | 600 |
 | **Exp1** | `credit_fraction` 0 / 0.5 / 1 of the literature-grounded credit prior × 3 seeds = 9 arms per track (45 until 28-09-2026) | scratch | 12,500 |
-| **Exp2** | Exp1's prior. Stage A: 8 recipe arms (model × optimizer × rate) on the control mix; stage B: TabICLv2 and TabPFN-3 × `credit_fraction` 0 / 0.5 / 1 × 3 seeds = 18 arms per track | released TabICLv2 and TabPFN-3 | 10,000 |
-| **Exp3** | Exp1's prior: the control and the mix Exp1 selects × 5 seeds | scratch | 100,000 |
+| **Exp2** | Exp1's prior. TabICLv2 and TabPFN-3 × `credit_fraction` 0 / 0.5 / 1 × 3 seeds = 18 arms per track, each model at its published continued-pretraining recipe | released TabICLv2 and TabPFN-3 | 10,000 |
+| **Exp3** | Exp1's prior: the control and the mix Exp1 selects × 2 paired seeds | scratch | 200,000 |
 
 **Exp2 is continued pre-training with a published precedent** — TabPFN-Wide (Kolberg et al. 2026)
 extends a model through continued pretraining on a customised synthetic prior and reports it matches
@@ -238,7 +238,7 @@ Mitra (Zhang et al. 2025) finds mixtures beat single priors — expect an interi
 included to measure what forgetting the original prior costs.
 
 **For scale:** TabICLv2's own budget is `500k + 40k + 10k` steps at batch 64 ≈ 35M datasets, ~24.5
-GPU-days per model; Exp3 is ~1% of that. **Every result here is a statement about priors at a fixed,
+GPU-days per model; Exp1 is 2.3 % of that, Exp3 36 %. **Every result here is a statement about priors at a fixed,
 small budget, and must be written that way.**
 
 ## 7. Open items
@@ -246,8 +246,11 @@ small budget, and must be written that way.**
 **LGD predictability is below the literature's range.** The check of 5.2 — tree ensembles reach an
 out-of-sample R² of 0.20 – 0.43 on real LGD (Loterman et al. 2012, via Marin 2025) — fails: the credit
 prior's tasks have a median ExtraTrees pseudo-R² of about 0.05 (notebook 0.3, C1), because the published
-ZOIB effects leave most of a loss to chance. Whether to raise the signal (wider loadings or signal
-share, from the literature) is to be decided before Experiment 1; it does not affect Experiment 0.
+ZOIB effects leave most of a loss to chance. The real books look more predictable (median 0.42), but
+part of that is outcome information in their columns (`EXPERIMENTAL_DESIGN.md` §7 item 5), so the
+anchor is the literature, not them. Proposed fix: draw each table's signal-to-noise so the implied
+R² spans the literature's range, validated with the ExtraTrees yardstick — to be decided before
+Experiment 1; it does not affect Experiment 0.
 
 **Exp2 needs the upstream `tabicl` package installed** (`pip install "tabicl>=2.0"`) — a required
 dependency, because the released checkpoint only loads into the code that saved it (see

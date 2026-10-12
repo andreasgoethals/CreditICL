@@ -50,12 +50,12 @@ export PYTHONIOENCODING=utf-8
 # identical tasks across arms (src/prior/stream.py) need the same hash seed in every process.
 export PYTHONHASHSEED=0
 export EXP="${EXP:-1}"
-# VARIANT=search runs Experiment 2's stage A (config/Exp2_PD_search.yaml).
+# VARIANT=<name> runs an extra config, config/Exp<N>_PD_<name>.yaml (none today).
 export VARIANT="${VARIANT:-}"
 CONFIG="config/Exp${EXP}_PD${VARIANT:+_${VARIANT}}.yaml"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
-OUTPUT_ROOT="${VSC_DATA}/CreditICL/output_CreditICL"   # = src.utils.paths.outputs_dir()
+OUTPUT_ROOT="${VSC_DATA}/CreditICL/output CreditICL"   # = src.utils.paths.outputs_dir()
 LOGDIR="${OUTPUT_ROOT}/experiment_${EXP}/logs"
 mkdir -p "${LOGDIR}"
 

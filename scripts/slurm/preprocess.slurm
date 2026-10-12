@@ -27,8 +27,8 @@
 
 set -euo pipefail
 export PYTHONUNBUFFERED=1
-OUTPUT_ROOT="${VSC_DATA}/CreditICL/output_CreditICL"   # = src.utils.paths.outputs_dir()
-LOGDIR="${OUTPUT_ROOT}/general/logs"
+OUTPUT_ROOT="${VSC_DATA}/CreditICL/output CreditICL"   # = src.utils.paths.outputs_dir()
+LOGDIR="${OUTPUT_ROOT}/logs"
 mkdir -p "${LOGDIR}"
 LOG="${LOGDIR}/slurm_preprocess_$(date +%Y%m%d_%H%M%S)_j${SLURM_JOB_ID}.log"
 exec > "$LOG" 2>&1

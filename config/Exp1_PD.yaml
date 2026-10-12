@@ -168,10 +168,13 @@ logging:
 # ----------------------------------------------------------------------------
 eval:
   data_dir: data/raw/pd # where the real datasets live
-  dev_datasets: [0001.gmsc, 0004.lendingclub, 0002.taiwan_creditcard, 0008.german, 0005.myhom] # used to choose the prior
-  holdout_datasets: [0003.vehicle_loan, 0006.hackerearth, 0007.cobranded, 0009.bank_status,
+  # hackerearth shares 5,696 loans with lendingclub, base_modelisation defaults with base_model
+  # (audit 30-09-2026): each pair sits on ONE side, so the holdout stays independent
+  dev_datasets: [0001.gmsc, 0004.lendingclub, 0006.hackerearth, 0002.taiwan_creditcard, 0008.german, 0005.myhom] # used to choose the prior
+  holdout_datasets: [0003.vehicle_loan, 0007.cobranded, 0009.bank_status,
                      0010.thomas, 0011.loan_default, 0012.home_credit, 0013.hmeq,
                      0014.algorithmwatch] # untouched until the end
   metrics: [auc, ap, brier, logloss, ks, calibration_slope] # all computed in one run
+  context_caps: [1024] # also scored with at most 1,024 context rows — the size every training table has
   select_on: dev # dev | holdout — anything but `dev` here invalidates the experiment
   ood_suites: all # which out-of-domain suites to score; see src/eval/ood.py SUITES

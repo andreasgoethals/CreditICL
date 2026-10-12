@@ -27,12 +27,11 @@ Muon's Newton-Schulz iteration is a chain of small matmuls per matrix per step, 
 more per step than AdamW on a big card (measured 16-08-2026; `scripts/benchmark_gpu.py`).
 
 AdamW remains available (`optimizer: adamw`), and upstream supports it too (`--muon False`).
-Pretraining from scratch (Exp1, Exp3) uses MUON, because that is how the released weights
-were made. Continued pretraining (Exp2) currently uses ADAMW, following the continued-
-pretraining recipes it takes its learning rates and L2-SP from (Real-TabPFN, TabPFN-Wide,
-and upstream's own `_finetune` module) — a design choice, open for revisiting now that Muon's
-`lr` is a single, sweepable rate. Whichever is chosen is held FIXED across the arms of an
-experiment, so it changes absolute performance, never the contrast.
+Every TabICL run uses MUON, because that is how the released weights were made: pretraining
+from scratch (Exp1, Exp3) at stage 1's rate, and Exp2's continued pretraining of TabICLv2 at
+upstream's stage-3 recipe (lr 2e-5). TabPFN-3's Exp2 arms use AdamW, through their own trainer
+(`tabpfn_trainer.py`). The optimizer is held FIXED across the mixes of a model, so it changes
+absolute performance, never the contrast.
 
 Upstream's own caveat: the released checkpoints were trained *without* cautious weight decay
 even though the paper reports using it (the flag was left unwired), so it defaults to off.

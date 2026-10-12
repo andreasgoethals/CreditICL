@@ -385,8 +385,8 @@ def arm_name(identifier: str, track: str | None = None, *, seed: bool = True,
              mix: bool = True) -> str:
     """One trained model's plain-language name, from its run name — or a reference model's.
 
-    Exp1: `50 % credit · seed 2`. Exp2: `TabPFN-3 · 50 % credit · seed 0`, and its search
-    `TabICLv2 · Muon · lr 2e-05`. Exp0: `TabPFN-3 fine-tuned`. `seed=False` names a configuration
+    Exp1: `50 % credit · seed 2`. Exp2: `TabPFN-3 · 50 % credit · seed 0` (its retired search read
+    `TabICLv2 · Muon · lr 2e-05`). Exp0: `TabPFN-3 fine-tuned`. `seed=False` names a configuration
     (its seeds averaged); `mix=False` drops the credit share, for a figure already grouped by it.
     Run names of the retired Exp1/Exp2 grids (filter, intensity, freeze strategy, L2-SP) still read.
     """

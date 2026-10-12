@@ -42,8 +42,8 @@ REPO="${VSC_DATA}/CreditICL"
 VENV="${REPO}/.venv-${VSC_ARCH_LOCAL:-generic}"
 
 # Preferred Python modules, best first. DISCOVERED rather than hard-coded: the
-# first attempt at this pinned `Python/3.12.3-GCCcore-13.3.0`, which exists on
-# skylake but not on every login node's tree, and Lmod then reports
+# first attempt at this pinned `Python/3.12.3-GCCcore-13.3.0`, which existed on
+# the retired Genius Skylake tree but not on every current architecture, and Lmod then reports
 # "exist but cannot be loaded as requested" — which reads like a broken module
 # rather than the wrong architecture. The project needs >=3.11,<3.13.
 PYTHON_MODULE_PREFS=(

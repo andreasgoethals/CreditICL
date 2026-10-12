@@ -4,7 +4,7 @@ The structure and rules every one of my research repositories starts from.
 
     Author   Andreas Goethals <andreas.goethals@kuleuven.be>
     Context  PhD research, KU Leuven — machine learning on tabular data
-    Cluster  KU Leuven VSC (Genius login, wICE and Mindwell compute)
+    Cluster  KU Leuven VSC (wICE login, wICE and Mindwell compute)
     Source   https://github.com/andreasgoethals/0.-Template
 
 **A starting point, not a contract.** A project that grows past it is fine, and deviating where

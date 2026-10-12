@@ -146,6 +146,40 @@ def test_every_job_script_is_valid_bash():
         assert result.returncode == 0, f"{job.name} does not parse:\n{result.stderr}"
 
 
+@pytest.mark.parametrize(
+    "checks_rc,pd_rc,lgd_rc,expected",
+    [(0, 0, 0, 0), (1, 0, 0, 1), (0, 3, 0, 3), (0, 0, 4, 4), (5, 3, 4, 5)],
+)
+def test_exp0_reports_failure_from_any_check(checks_rc, pd_rc, lgd_rc, expected):
+    """Execute the launcher's checks with fake trainers: neither track may fail silently."""
+    import shutil
+    import subprocess
+
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("no bash on this machine")
+    launcher = (SLURM / "exp0.slurm").read_text(encoding="utf-8")
+    checks = launcher[launcher.index("\nset +e\n"):]
+    fake_python = f"""
+python() {{
+    case "$*" in
+        *exp0_checks.py*) return {checks_rc} ;;
+        *Exp1_PD.yaml*) return {pd_rc} ;;
+        *Exp1_LGD.yaml*) return {lgd_rc} ;;
+        *) return 99 ;;
+    esac
+}}
+"""
+    result = subprocess.run(
+        [bash, "-s"], input=fake_python + checks,
+        capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == expected, result.stdout + result.stderr
+    # All checks still run, so one failure does not hide another track's diagnostics.
+    assert f"equivalence PD exit code: {pd_rc}" in result.stdout
+    assert f"equivalence LGD exit code: {lgd_rc}" in result.stdout
+
+
 def test_no_two_sweep_arms_do_the_same_thing():
     """At `credit_fraction: 0.0` no dataset comes from our prior, so every credit lever is
     dead — and the grid was scheduling EIGHT identical control runs per seed. 24 arms of 96
@@ -299,8 +333,8 @@ def test_phase_one_only_trains(name):
 
 def test_phase_two_covers_every_checkpoint_plus_the_reference_models():
     """One slot per (arm, saved checkpoint) — final checkpoints first — then one per reference
-    model (released TabICLv2, TabPFN-3, CatBoost, linear). The `--array` default must cover
-    exactly Exp1's slots; every index past them must exit rather than race."""
+    model (released TabICLv2, TabPFN-3, CatBoost, linear), then the capped-context slots. The
+    `--array` default must cover exactly Exp1's slots; every index past them must exit."""
     from src.eval.benchmark_status import n_slots, slot_for
 
     text = (ROOT / "scripts" / "slurm" / BENCH).read_text(encoding="utf-8")
@@ -340,15 +374,23 @@ def test_the_reference_column_is_scored_once_and_reused():
     assert "src.eval.benchmark_status" in text and "FORCE_REFERENCE" in text
     assert "tabiclv2,tabpfn3,catboost,linear" in text
     total = n_slots(1, "pd")
-    refs = [slot_for(1, "pd", i) for i in range(total - 4, total)]
+    slots = [slot_for(1, "pd", i) for i in range(total)]
+    refs = [r for r in slots if r.kind == "reference" and r.context is None]
     assert [r.tag for r in refs] == [f"reference_pd_{m}" for m in ("tabiclv2", "tabpfn3", "catboost", "linear")]
-    assert all("exp" not in r.tag for r in refs), "the tag must not mention the experiment"
+    capped = [r for r in slots if r.kind == "reference" and r.context is not None]
+    assert [r.tag for r in capped] == ["reference_pd_tabiclv2_ctx1024", "reference_pd_tabpfn3_ctx1024"]
+    assert all("exp" not in r.tag for r in refs + capped), "the tag must not mention the experiment"
 
 
 def test_phase_two_gives_every_model_the_whole_training_pool():
-    """Protocol 3: no context cap anywhere, the same fold seed in all four scoring calls."""
+    """The whole training pool is the context, except in a `_ctx<cap>` slot (Exp1's evaluation
+    inside the training distribution): the cap comes from the slot map alone, never from the
+    environment, and the same fold seed goes into all four scoring calls."""
     text = (ROOT / "scripts" / "slurm" / BENCH).read_text(encoding="utf-8")
-    assert "--max-context-rows" not in text and "CONTEXT_CAP" not in text
+    assert "read -r SLOT_KIND TAG ARM STEP MODEL CONTEXT <<<" in text
+    assert 'CTX_ARGS=(--max-context-rows "${CONTEXT}")' in text and 'if [[ "${CONTEXT:--}" != "-" ]]' in text
+    assert text.count('${CTX_ARGS[@]+"${CTX_ARGS[@]}"}') == 4, "every scoring call, and set -u safe"
+    assert "CONTEXT_CAP" not in text
     assert text.count('--seeds "${SEEDS}"') == 4
 
 
@@ -393,7 +435,6 @@ def test_exp0_runs_every_check_and_the_equivalence_on_the_production_gpu():
     # a failing check must not skip the equivalence runs, and the job still reports the failure
     run = text.index("python -u scripts/exp0_checks.py")
     assert text.index("\nset +e\n") < run < text.index("\nset -e\n", run)
-    assert 'exit "${CHECKS_RC}"' in text
     assert "EXP=0" in text
 
 

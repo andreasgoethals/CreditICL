@@ -26,8 +26,10 @@ thread each — they are many, and tables are small.
 
 from __future__ import annotations
 
+import atexit
 import multiprocessing as mp
 import os
+import threading
 from collections.abc import Callable, Iterable
 from concurrent.futures import ProcessPoolExecutor
 from typing import Any
@@ -60,12 +62,34 @@ def _pool(workers: int) -> ProcessPoolExecutor:
     return _POOL
 
 
+def shutdown_pool() -> None:
+    """End the worker processes. Registered at exit, and called by `run_notebooks` before it stops
+    a kernel: a kernel killed outright leaves its workers running on Windows (29-09-2026 — 16 of
+    them held the runner's output pipe open, so a 4-minute run looked hung for an hour)."""
+    global _POOL, _POOL_WORKERS
+    if _POOL is not None:
+        _POOL.shutdown(wait=True, cancel_futures=True)
+    _POOL, _POOL_WORKERS = None, 0
+
+
+atexit.register(shutdown_pool)
+
+
 def _one_thread() -> None:
     """Each worker on one torch thread: there are many of them, and the tables are small. Set in
-    the WORKER only — an in-process draw leaves the caller's thread count alone."""
+    the WORKER only — an in-process draw leaves the caller's thread count alone. The worker also
+    ends itself when the process that started it is gone, however that process ended."""
     import torch
 
     torch.set_num_threads(1)
+    threading.Thread(target=_exit_with_parent, daemon=True).start()
+
+
+def _exit_with_parent() -> None:
+    parent = mp.parent_process()
+    if parent is not None:
+        parent.join()  # returns once the process that started this worker has ended
+        os._exit(0)
 
 
 def minority_share(y: Any) -> float:

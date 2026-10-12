@@ -25,7 +25,7 @@ def tree(tmp_path, monkeypatch):
 
     `VSC_DATA` has to be set, not deleted. Without it `paths.on_vsc()` is false, so
     `outputs_dir()` — and therefore `logs_dir()` and `runs_dir()` — resolves to the REAL
-    repository `output_CreditICL/`. These tests then write files there and the cleanup tests below
+    repository `output CreditICL/`. These tests then write files there and the cleanup tests below
     delete from it: the earlier version of this fixture destroyed a notebook's committed
     figures and `CAPTIONS.md` on every run, silently, three test files away from the cause.
     """

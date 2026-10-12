@@ -40,8 +40,8 @@ from src.data.discovery import list_datasets
 from src.data.pipeline import ensure_processed, load_processed
 from src.eval.baselines import DEFAULT_BASELINES, availability_report, build
 from src.eval.metrics import lgd_metrics, pd_metrics, threshold_metrics
-from src.eval.protocol import (N_FOLDS, PROTOCOL, VALIDATION_FRACTION, apply_columns, cv_folds,
-                               f1_optimal_threshold, select_columns, validation_split)
+from src.eval.protocol import (N_FOLDS, PROTOCOL, VALIDATION_FRACTION, cv_folds, f1_optimal_threshold,
+                               fit_fold_preprocessing, validation_split)
 from src.utils.logging_setup import get_logger, log_section
 
 #: Distribution metrics that describe a BOUNDED loss target. Dropped for out-of-domain
@@ -119,25 +119,64 @@ def _fit_predict(model_name: str, task: str, seed: int, X_fit: np.ndarray, y_fit
     return pred, q, report
 
 
+@dataclass
+class Stage:
+    """One fit of a fold, preprocessed: the fitted rows (outliers removed, columns kept) and the
+    rows it predicts (columns kept, clipped), with what the preprocessing did."""
+
+    X_fit: np.ndarray
+    y_fit: np.ndarray
+    X_pred: np.ndarray
+    cat_indices: list[int]
+    report: dict[str, Any]
+
+
+def _stage(X_fit: np.ndarray, y_fit: np.ndarray, X_pred: np.ndarray, cat_indices: list[int]) -> Stage:
+    prep, Xf, yf = fit_fold_preprocessing(X_fit, y_fit, cat_indices)
+    return Stage(Xf, yf, prep.transform(X_pred), prep.cat_indices, prep.report)
+
+
+def prepare_fold(task: str, X_tr: np.ndarray, y_tr: np.ndarray, X_te: np.ndarray, cat_indices: list[int],
+                 *, seed: int = 0, fold: int = 0, val_fraction: float = VALIDATION_FRACTION) -> dict[str, Any]:
+    """Every fit one fold needs, preprocessed ONCE for all models (`protocol.fit_fold_preprocessing`).
+
+    `final`: fitted on the whole training pool, predicting the test fold. PD adds `threshold`:
+    fitted on 80 % of the pool, predicting the other 20 % (`y_val`), where the F1 threshold is
+    chosen. Each fit learns its own preprocessing from its own fitted rows."""
+    stages: dict[str, Any] = {"final": _stage(X_tr, y_tr, X_te, cat_indices)}
+    if task == "pd":
+        fit_idx, val_idx = validation_split(y_tr, "pd", fraction=val_fraction, seed=1000 * seed + fold)
+        stages["threshold"] = _stage(X_tr[fit_idx], y_tr[fit_idx], X_tr[val_idx], cat_indices)
+        stages["y_val"] = np.asarray(y_tr)[val_idx]
+    return stages
+
+
 def score_fold(task: str, model_name: str, X_tr: np.ndarray, y_tr: np.ndarray, X_te: np.ndarray,
                y_te: np.ndarray, cat_indices: list[int], *, seed: int = 0, fold: int = 0,
                val_fraction: float = VALIDATION_FRACTION, model_kwargs: dict[str, Any] | None = None,
-               max_context_rows: int | None = None, bounded_target: bool = True) -> dict[str, Any]:
+               max_context_rows: int | None = None, bounded_target: bool = True,
+               stages: dict[str, Any] | None = None) -> dict[str, Any]:
     """One model on one fold: every metric, as a dict. Raises on failure (the caller records it).
 
     PD: choose the threshold that maximises F1 on a validation split of the training pool
     (model fitted on the rest), then refit on the WHOLE pool and score the test fold at it.
     LGD: fit on the whole pool, score the point prediction and, where the model gives one, the
-    predictive distribution."""
-    out: dict[str, Any] = {"n_train": int(len(y_tr)), "n_test": int(len(y_te))}
+    predictive distribution. Both through the fold preprocessing (`prepare_fold`), passed in as
+    `stages` when several models share a fold."""
+    stages = stages or prepare_fold(task, X_tr, y_tr, X_te, cat_indices, seed=seed, fold=fold,
+                                    val_fraction=val_fraction)
+    final = stages["final"]
+    out: dict[str, Any] = {"n_train": int(len(y_tr)), "n_test": int(len(y_te)),
+                           **{f"prep_{k}": v for k, v in final.report.items()}}
     if task == "pd":
-        fit_idx, val_idx = validation_split(y_tr, "pd", fraction=val_fraction, seed=1000 * seed + fold)
-        p_val, _, _ = _fit_predict(model_name, task, seed, X_tr[fit_idx], y_tr[fit_idx], X_tr[val_idx],
-                                   cat_indices, model_kwargs, max_context_rows)
-        threshold, val_f1 = f1_optimal_threshold(y_tr[val_idx], p_val)
+        t = stages["threshold"]
+        p_val, _, _ = _fit_predict(model_name, task, seed, t.X_fit, t.y_fit, t.X_pred,
+                                   t.cat_indices, model_kwargs, max_context_rows)
+        threshold, val_f1 = f1_optimal_threshold(stages["y_val"], p_val)
+        val_idx = stages["y_val"]
         _release_memory()
-        p, _, report = _fit_predict(model_name, task, seed, X_tr, y_tr, X_te, cat_indices,
-                                    model_kwargs, max_context_rows)
+        p, _, report = _fit_predict(model_name, task, seed, final.X_fit, final.y_fit, final.X_pred,
+                                    final.cat_indices, model_kwargs, max_context_rows)
         out.update(pd_metrics(y_te, p))
         for key, value in threshold_metrics(y_te, p, threshold).items():
             out[f"{key}_tuned"] = value
@@ -145,8 +184,8 @@ def score_fold(task: str, model_name: str, X_tr: np.ndarray, y_tr: np.ndarray, X
         headline = (f"auc={out.get('roc_auc', float('nan')):.4f} f1={out['f1_tuned']:.4f} "
                     f"(thr {threshold:.3f}) brier={out['brier']:.4f}")
     else:
-        pred, q, report = _fit_predict(model_name, task, seed, X_tr, y_tr, X_te, cat_indices,
-                                       model_kwargs, max_context_rows, quantiles=True)
+        pred, q, report = _fit_predict(model_name, task, seed, final.X_fit, final.y_fit, final.X_pred,
+                                       final.cat_indices, model_kwargs, max_context_rows, quantiles=True)
         if q is not None:
             m = lgd_metrics(y_te, pred, quantiles=q[0], levels=q[1], decoding="mean")
         else:
@@ -206,21 +245,25 @@ def evaluate_dataset(task: str, dataset: str, models: list[str], seed: int, *, n
                 for m in models for f in range(n_folds)]
     rows: list[dict[str, Any]] = []
     for fold, (train_idx, test_idx) in enumerate(folds):
-        # THE SAME COLUMNS FOR EVERY MODEL: a table wider than `MAX_FEATURES` keeps its
-        # highest-variance columns of this training fold, for all models alike.
-        keep = select_columns(X[train_idx])
-        X_tr, X_te, cats = apply_columns(keep, cat_indices, X[train_idx], X[test_idx])
-        fold_info = ({} if keep is None else
-                     {"features_selected_from": int(X.shape[1]), "features_used": int(len(keep)),
-                      "feature_selection": "top-variance, training fold"})
+        # THE SAME DATA FOR EVERY MODEL: the fold preprocessing (near-constant columns, outlier
+        # rows, the column cap, winsorising) is learned once per fit, on its fitted rows.
+        X_tr, y_tr, X_te = X[train_idx], y[train_idx], X[test_idx]
+        try:
+            stages = prepare_fold(task, X_tr, y_tr, X_te, cat_indices, seed=seed, fold=fold,
+                                  val_fraction=val_fraction)
+            prep_error = ""
+        except Exception as exc:  # noqa: BLE001 — recorded per model below, like a model failure
+            stages, prep_error = None, f"{type(exc).__name__}: {exc}"
         for model_name in models:
-            row = {**base, **info, **fold_info, "model": model_name, "fold": fold, "status": "failed"}
+            row = {**base, **info, "model": model_name, "fold": fold, "status": "failed"}
             started = time.time()
             try:
-                result = score_fold(task, model_name, X_tr, y[train_idx], X_te, y[test_idx],
-                                    cats, seed=seed, fold=fold, val_fraction=val_fraction,
+                if stages is None:
+                    raise RuntimeError(f"fold preprocessing failed: {prep_error}")
+                result = score_fold(task, model_name, X_tr, y_tr, X_te, y[test_idx],
+                                    cat_indices, seed=seed, fold=fold, val_fraction=val_fraction,
                                     model_kwargs=(model_kwargs or {}).get(model_name, {}),
-                                    max_context_rows=max_context_rows)
+                                    max_context_rows=max_context_rows, stages=stages)
                 headline = result.pop("_headline")
                 row.update(result)
                 row["status"] = "ok"

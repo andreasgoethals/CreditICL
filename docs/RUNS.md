@@ -175,6 +175,55 @@ The one thing to do differently.
 
 ## Runs
 
+
+## 12-10-2026 — downloaded September campaign re-audited; no new run
+
+**Source:** `Downloads/output.zip`, 7,710,929 bytes; SHA-256
+`537f8272f6530e9cc890bddcc839b3ebe64a70ee23a9d8ca99135e017a01b928`.
+All ZIP CRCs pass. Extracted 1,156 files to `Downloads/output CreditICL`; renamed the archive
+to `Downloads/output CreditICL.zip` without changing its hash.
+Archive timestamps are copy times: actual logs end on **24-09-2026 at 22:00:27 CEST**.
+
+### Configuration and evidence
+
+- The saved resolved configs describe September's 45 arms per track, three seeds,
+  credit fraction × filter × intensity, 12,500 steps and 800,000 datasets per arm.
+  They differ from the current YAML files. See the original entries below for the full recipe.
+- All 90 summaries report completed=true and the full budget; all 90 final training wrappers
+  end OK. There are 58 normal incomplete/resubmitted wrappers, not unresolved failed runs.
+- Benchmark arrays **11614376 (LGD)** and **11614377 (PD)** cover indices 0–45 without gaps.
+  All 92 wrappers end OK: **3,087/3,087 credit cells**, **7,350/7,350 OOD cells** reported successful.
+  Each of the 90 final checkpoint paths was loaded for both credit and OOD evaluation.
+  Benchmark environment records identify commit `2034cc2`, `git_dirty=true`, and library pin
+  `21d555a6a24e`; the exact uncommitted diff is not contained in this archive.
+- No traceback, error-level line, failed wrapper, or non-finite logged training loss found in
+  the supplied logs. No NaN/Inf tokens in the benchmark wrappers. The old LGD progress files
+  still contain 605 non-finite base_model measurements in 30 arms; these are monitoring records,
+  not the final benchmark. All benchmark wrappers warn that an old Python module did not load,
+  then successfully run through the environment; recheck the environment after the VSC update.
+
+### Results and limits
+
+Reconstructed from rounded per-cell log scores using each saved config's development list:
+PD best control ROC-AUC **0.73264**, best mixed-credit **0.73245**; LGD best control R²
+**0.51974**, best mixed-credit **0.51825**. Pure-credit LGD configuration means range
+**−0.08049 to 0.00882**. These reproduce the September interpretation, not a new ranking.
+The archive lacks benchmark CSVs, receipts, and checkpoint binaries, so a complete metric-cell
+and current checkpoint-integrity audit remains outstanding. Historical context-budget mismatch
+between reference models and prior/data-partition problems documented below still apply.
+Do not treat successful process exits as validation of the revised scientific protocol.
+
+### Next
+
+Preserve the old campaign; rename only its output roots to `output CreditICL`, retaining the
+historical internal layout and checkpoint locations. Fetch the project-storage result CSVs.
+The revised design needs its Exp0 gate, then Exp1 (9 arms/track), Exp2 (18/track), and Exp3
+(4/track, its mix chosen on revised Exp1 development results). This audit submitted no jobs.
+VSC guidance was checked against library pin `1ac6e6783f24b2d5cd058af7ad8cad7c1bfaf7ae`:
+Genius retired, wICE hosts login access, current production GPU targets remain supported.
+
+---
+
 ## 24-09-2026 — Exp1 phase 2 benchmark — **COMPLETE 92/92; no credit prior beats the control on development, credit-only is worse on both tracks**
 
 **Submitted** 24-09-2026 20:45 | **jobs** 11614376 (LGD), 11614377 (PD), each `--array=0-45%8`

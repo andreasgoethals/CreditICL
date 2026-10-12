@@ -165,8 +165,11 @@ logging:
 # ----------------------------------------------------------------------------
 eval:
   data_dir: data/raw/lgd # where the real datasets live
-  dev_datasets: [0007.lgd_lendingclub, 0004.base_model, 0001.heloc] # used to choose the prior
-  holdout_datasets: [0002.loss2, 0003.axa, 0005.base_modelisation, 0006.lgd_freddie] # untouched until the end
+  # hackerearth shares 5,696 loans with lendingclub, base_modelisation defaults with base_model
+  # (audit 30-09-2026): each pair sits on ONE side, so the holdout stays independent
+  dev_datasets: [0007.lgd_lendingclub, 0004.base_model, 0005.base_modelisation, 0001.heloc] # used to choose the prior
+  holdout_datasets: [0002.loss2, 0003.axa, 0006.lgd_freddie] # untouched until the end
   metrics: [pinball, crps, coverage, boundary_mass, r2, rmse] # all computed in one run
+  context_caps: [1024] # also scored with at most 1,024 context rows — the size every training table has
   select_on: dev # dev | holdout — anything but `dev` here invalidates the experiment
   ood_suites: all # which out-of-domain suites to score; see src/eval/ood.py SUITES

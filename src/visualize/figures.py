@@ -154,7 +154,7 @@ def _slug(name: str) -> str:
 
 def _guard(path: Path, folder: Path) -> None:
     """Refuse to write outside this notebook's own folder — a `..` in a figure name would put a
-    generated file outside `output_CreditICL/`, the one rule the layout rests on."""
+    generated file outside `output CreditICL/`, the one rule the layout rests on."""
     if folder.resolve() != path.resolve().parent:
         raise ValueError(
             f"figure would be written to {path.resolve()}, outside {folder.resolve()}. "

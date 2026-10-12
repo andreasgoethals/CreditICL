@@ -80,7 +80,8 @@ class ProgressConfig:
     seed: int = 0
 
 #: Bumped when the measurement changes; a CSV of an older protocol is set aside, never appended to.
-PROGRESS_PROTOCOL = 3
+#: 4 (30-09-2026): the benchmark's fold preprocessing on the context rows.
+PROGRESS_PROTOCOL = 4
 
 
 class ProgressTracker:
@@ -235,7 +236,8 @@ class ProgressTracker:
             return {"prob": prob[:, list(est.classes_).index(1)]}
 
     def _score(self, model, key: str, X: np.ndarray, y: np.ndarray, *, regression: bool,
-               scale_target: bool = False, bounded_target: bool = True) -> dict[str, float]:
+               scale_target: bool = False, bounded_target: bool = True,
+               cat_indices: list[int] | None = None) -> dict[str, float]:
         """Score one table with the CURRENT weights, in context. Pure numpy in, floats out."""
         # A NON-FINITE TARGET CANNOT BE SCORED, AND IS NOT THE SAME AS A BROKEN MODEL.
         # sklearn raises the same "Input contains NaN." for a NaN label and a NaN prediction,
@@ -259,6 +261,13 @@ class ProgressTracker:
 
         if not regression and len(np.unique(yt)) < 2:
             return {}
+        # THE BENCHMARK'S FOLD PREPROCESSING, learned on the context rows (`protocol.
+        # fit_fold_preprocessing`: near-constant columns, outlier rows, the column cap, winsorising),
+        # so a monitor curve and a benchmark number describe the same table.
+        from src.eval.protocol import fit_fold_preprocessing
+
+        prep, Xc, yc = fit_fold_preprocessing(Xc, yc, list(cat_indices or []))
+        Xt = prep.transform(Xt)
         pred = self._fit_predict(model, Xc, yc, Xt, regression=regression)
         if regression:
             from src.eval.metrics import lgd_metrics
@@ -317,7 +326,8 @@ class ProgressTracker:
                 try:
                     for k, v in self._score(model, f"real/{slug}", np.asarray(ds.X, np.float32),
                                             np.asarray(ds.y, np.float32),
-                                            regression=self.task == "lgd").items():
+                                            regression=self.task == "lgd",
+                                            cat_indices=list(getattr(ds, "cat_indices", []))).items():
                         row[f"real__{short}__{k}"] = round(v, 6)
                 except Exception as exc:  # noqa: BLE001 — one dataset, one failure
                     errors.append(f"real/{short}: {type(exc).__name__}: {exc}")

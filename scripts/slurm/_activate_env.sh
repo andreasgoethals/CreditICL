@@ -113,7 +113,7 @@ else
     _try_source_conda "${HOME}/mambaforge/etc/profile.d/conda.sh"        || \
     _try_source_conda "/apps/leuven/rocky9/sapphirerapids/2024a/software/Miniforge3/25.3.0-3/etc/profile.d/conda.sh" || {
         echo "ERROR: could not locate a conda/mamba installation." >&2
-        echo "       Create the env once from a Genius login node:" >&2
+        echo "       Create the env once from a wICE login node (login.hpc.kuleuven.be):" >&2
         echo "         conda create -y -n ${CONDA_ENV} python=3.12" >&2
         echo "         conda activate ${CONDA_ENV}" >&2
         echo "         cd \$VSC_DATA/CreditICL && pip install -e \".[dev]\"" >&2

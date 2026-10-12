@@ -69,28 +69,29 @@ block and a `sweep:` block that lists exactly the knobs it crosses. Full rationa
 
 | # | question | how | arms/track |
 |---|---|---|---|
-| **1** | **Which prior?** | train from scratch, sweeping `credit_fraction × filter.mode × intensity × 3 seeds` | 45 |
-| **2** | **Does fine-tuning the released weights help — and at what out-of-domain cost?** | warm-start TabICLv2, sweep `credit_fraction × init.strategy × l2sp_alpha × lr` | 60 |
-| **3** | **The winning prior, run long** | Exp1's winner at `100k` steps, control vs credit | small |
+| **0** | **Does the revised pipeline run correctly?** | checks, three short training paths and their benchmarks | 3 |
+| **1** | **Does the prior help at matched compute?** | scratch TabICL, `credit_fraction {0, .5, 1} × 3 seeds`, 12,500 steps | 9 |
+| **2** | **Does continued pretraining help released models?** | TabICLv2 and TabPFN-3, three mixes × three seeds at their published recipes, 10,000 steps | 18 |
+| **3** | **Does the effect persist with longer training?** | scratch TabICL, Exp1's chosen mix vs control, two seeds, 200,000 steps | 4 |
 
 `credit_fraction` is the master switch: the share of each batch drawn from our credit-targeted path,
 the rest from the unmodified TabICL prior. `0.0` is the control every arm is measured against.
 
-Each experiment is **two phases**: phase 1 trains (one checkpoint per arm), phase 2 benchmarks every
+Each experiment is **two phases**: phase 1 trains (permanent checkpoints along each arm), phase 2 benchmarks every
 checkpoint plus a shared reference column (released TabICLv2, TabPFN-3, CatBoost, linear) through the
 *same* code — the ordering is a fact about the data, not a convention.
 
 ## The four code pipelines
 
-Each lives in `src/`, is driven by a thin runnable in `scripts/`, and writes under `output_CreditICL/`
+Each lives in `src/`, is driven by a thin runnable in `scripts/`, and writes under `output CreditICL/`
 (one folder per experiment; small files on the backed-up tier, checkpoints on project storage under
-the same layout) — the code picks the tier automatically (`output_CreditICL/README.md`).
+the same layout) — the code picks the tier automatically (`output CreditICL/README.md`).
 
 | # | pipeline | code | run it with | produces |
 |---|---|---|---|---|
 | 1 | data | `src/data/` | `scripts/preprocess.py` | the processed-dataset cache |
 | 2 | prior | `src/prior/` | `scripts/generate_prior.py` / `measure_prior.py` | the synthetic task stream + reports |
-| 3 | training | `src/train/` | `scripts/pretrain.py` | one checkpoint per arm |
+| 3 | training | `src/train/` | `scripts/pretrain.py` | permanent and resumable checkpoints per arm |
 | 4 | eval | `src/eval/` | `scripts/evaluate.py` | scores on the 21 real datasets + out-of-domain suites |
 
 Pipeline 2 is the research contribution; pipeline 1 exists only to feed pipeline 4. A few facts worth
@@ -125,7 +126,7 @@ are documented once, in [docs/TEMPLATE.md](docs/TEMPLATE.md).
 CreditICL/
 ├── config/            flat YAML, one per experiment: Exp{1,2,3}_{PD,LGD}.yaml
 ├── data/              raw/pd (14) · raw/lgd (7) · processed cache          [gitignored]
-├── checkpoints/       released TabICLv2 weights + our per-arm checkpoints  [gitignored]
+├── checkpoints/       released weights; September checkpoints remain here  [gitignored]
 ├── docs/              the eight files below, each with inbound links
 │   ├── EXPERIMENTAL_DESIGN.md   what the three experiments ask, and how they can fail
 │   ├── PRIORS.md                how the credit prior is built
@@ -136,7 +137,7 @@ CreditICL/
 │   ├── CHANGELOG.md             one chapter per date
 │   └── TEMPLATE.md              the layout this project started from
 ├── notebooks/         0. General · 1. Experiment 1 · 2. Experiment 2 — one story (see its README)
-├── output_CreditICL/  everything generated: general/ reference/ experiment_0..3/  [mostly gitignored]
+├── output CreditICL/  everything generated: figures/ reference/ experiment_0..3/  [mostly gitignored]
 ├── scripts/           every runnable; calls into src/ · slurm/ holds the SLURM jobs
 ├── src/               data/ prior/ train/ eval/ models/ visualize/ utils/
 └── tfm-library/       PINNED SUBMODULE — READ-ONLY (one exception)
@@ -217,7 +218,7 @@ all in **[docs/VSC.md](docs/VSC.md)**.
 - **Cite code dumps by symbol name, never line number** — the dumps are refreshed and lines drift.
 - **Distinguish evaluated from supported.** A mechanism existing in a paper's code is not that paper
   having measured it; several of this project's premises turned on exactly this.
-- **`output_CreditICL/` is generated; a handful of tracked files in it are the exception**
+- **`output CreditICL/` is generated; a handful of tracked files in it are the exception**
   (`README.md`, `All_Results.md`, `CAPTIONS.md`, each figure folder's `_figures.json`) — never sweep them
   into a deletion.
 - **Never write project content into `tfm-library/`** (the one permitted file is

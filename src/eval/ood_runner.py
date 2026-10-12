@@ -22,8 +22,8 @@ import numpy as np
 import pandas as pd
 
 from src.eval.ood import OODDataset, list_ood_datasets, load_ood_dataset, ood_status
-from src.eval.protocol import N_FOLDS, PROTOCOL, VALIDATION_FRACTION, apply_columns, cv_folds, select_columns
-from src.eval.runner import score_fold
+from src.eval.protocol import N_FOLDS, PROTOCOL, VALIDATION_FRACTION, cv_folds
+from src.eval.runner import prepare_fold, score_fold
 from src.utils.logging_setup import get_logger, log_section
 
 
@@ -127,6 +127,14 @@ def evaluate_ood_dataset(entry: OODDataset, models: list[str], seed: int, cfg: O
     base.update(info, n_features=int(X.shape[1]))
     rows: list[dict[str, Any]] = []
     for fold, (train_idx, test_idx) in enumerate(folds):
+        # The same fold preprocessing as the credit benchmark, once per fold for every model.
+        try:
+            Xtr, Xte, ytr, yte, fold_info = _fold_arrays(X, y, train_idx, test_idx, regression=not is_clf)
+            stages = prepare_fold(task, Xtr, ytr, Xte, cat_indices, seed=seed, fold=fold,
+                                  val_fraction=cfg.val_fraction)
+            prep_error = ""
+        except Exception as exc:  # noqa: BLE001 — recorded per model below
+            stages, prep_error = None, f"{type(exc).__name__}: {exc}"
         for model_name in models:
             row = {**base, "model": model_name, "fold": fold, "status": "failed"}
             # OUR checkpoint cannot cross task types; skip rather than crash.
@@ -136,17 +144,14 @@ def evaluate_ood_dataset(entry: OODDataset, models: list[str], seed: int, cfg: O
                 rows.append(row)
                 continue
             try:
-                Xtr, Xte, ytr, yte, fold_info = _fold_arrays(X, y, train_idx, test_idx, regression=not is_clf)
-                # The same column cap as the credit benchmark, the same columns for every model.
-                keep = select_columns(Xtr)
-                Xtr, Xte, cats = apply_columns(keep, cat_indices, Xtr, Xte)
-                if keep is not None:
-                    fold_info.update(features_selected_from=int(X.shape[1]), features_used=int(len(keep)))
+                if stages is None:
+                    raise RuntimeError(f"fold preparation failed: {prep_error}")
                 row.update(fold_info)
-                result = score_fold(task, model_name, Xtr, ytr, Xte, yte, cats, seed=seed, fold=fold,
+                result = score_fold(task, model_name, Xtr, ytr, Xte, yte, cat_indices, seed=seed, fold=fold,
                                     val_fraction=cfg.val_fraction,
                                     model_kwargs=cfg.model_kwargs.get(model_name, {}),
-                                    max_context_rows=cfg.max_context_rows, bounded_target=False)
+                                    max_context_rows=cfg.max_context_rows, bounded_target=False,
+                                    stages=stages)
                 result.pop("_headline", None)
                 row.update(result)
                 row["status"] = "ok"

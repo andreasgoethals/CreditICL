@@ -18,7 +18,8 @@ hidden global state leaks between arms.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import contextlib
+from collections.abc import Iterator, Sequence
 from typing import Any, TypeVar
 
 import numpy as np
@@ -29,6 +30,30 @@ T = TypeVar("T")
 # Large odd multiplier to decorrelate the numpy and torch streams from the same
 # base seed without them ever coinciding.
 _TORCH_SEED_OFFSET = 0x9E3779B97F4A7C15
+
+
+@contextlib.contextmanager
+def one_thread() -> Iterator[None]:
+    """Generate tasks on ONE thread — torch's and the BLAS/OpenMP pools behind numpy, scipy and
+    scikit-learn alike — and restore the counts afterwards.
+
+    Seeds alone do not fix a task. A multi-threaded reduction sums in another order, the last
+    bits differ, and a later threshold (a class boundary, the predictability filter's p-value)
+    can then flip — so a different TABLE comes out. Measured 30-09-2026: the same seed gave other
+    tasks with 16 threads than with 1, and DataLoader workers always run on 1, so the stream
+    depended on `num_workers` (a requeued arm on a node with another CPU count would have trained
+    on another stream). On one thread everywhere, batch `b` is batch `b`."""
+    from threadpoolctl import threadpool_limits
+
+    threads = torch.get_num_threads()
+    try:
+        if threads != 1:
+            torch.set_num_threads(1)
+        with threadpool_limits(limits=1):
+            yield
+    finally:
+        if torch.get_num_threads() != threads:
+            torch.set_num_threads(threads)
 
 
 class PriorRNG:

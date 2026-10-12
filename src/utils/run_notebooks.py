@@ -7,11 +7,9 @@
 It prints a line as each notebook finishes, and every 30 s names the ones not finished yet.
 A partial run (`--only`) keeps every other notebook's block in `All_Results.md`.
 
-    output_CreditICL/<chapter>/figures/<notebook>/*.pdf   written by the notebooks themselves;
-                                                           <chapter> is general/ for 0.x,
-                                                           experiment_N/ for N.x
-    output_CreditICL/CAPTIONS.md                           ONE file, all notebooks, notebook order
-    output_CreditICL/All_Results.md                        every notebook's printed summary
+    output CreditICL/figures/<notebook>/*.pdf             written by the notebooks themselves
+    output CreditICL/CAPTIONS.md                           ONE file, all notebooks, notebook order
+    output CreditICL/All_Results.md                        every notebook's printed summary
 
 SEPARATE PROCESSES, NOT THREADS: matplotlib's figure registry is global, so two notebooks in
 one interpreter would capture each other's figures — silently, giving plausible figures
@@ -41,6 +39,7 @@ the template's flat `notebooks/`; the recursion itself is generic and worth upst
 from __future__ import annotations
 
 import json
+import os
 import queue
 import re
 import time
@@ -133,6 +132,17 @@ def chapter_of(name: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+#: The string-hash seed training uses (`scripts/pretrain.py`, the job scripts).
+HASH_SEED = "0"
+
+#: Run in every kernel before it is stopped: ends the draw pool of `src.visualize.draw` if used.
+_END_POOL = """
+import sys
+_draw = sys.modules.get("src.visualize.draw")
+if _draw is not None:
+    _draw.shutdown_pool()
+"""
+
 #: Terminal colour codes in kernel tracebacks — kept in the notebook, stripped from the report.
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
@@ -193,6 +203,10 @@ def _execute(nb_path: Path, timeout: int) -> tuple[dict, str, str]:
     # encryption — printed once per kernel and harmless here: the ports are bound to localhost and
     # every message is signed with a per-kernel key, as in any Jupyter on Windows. Kernel errors
     # still print; a cell's own warnings go into the notebook, not the terminal.
+    # Python's per-process string hash orders upstream's feature groups, so without a fixed seed
+    # the prior's tables change from one run to the next (docs/AGENTS_MEMORY.md, 24-09-2026).
+    # Training fixes it; so does this — the kernel and every draw worker it spawns inherit it.
+    os.environ["PYTHONHASHSEED"] = HASH_SEED
     km, kc = start_new_kernel(kernel_name="python3", cwd=str(REPO_ROOT), startup_timeout=120,
                               extra_arguments=["--log-level=ERROR"])
     printed: list[str] = []
@@ -213,6 +227,9 @@ def _execute(nb_path: Path, timeout: int) -> tuple[dict, str, str]:
             printed += [o["text"] for o in cell["outputs"]
                         if o["output_type"] == "stream" and o["name"] == "stdout"]
     finally:
+        # The prior notebooks' draw pool lives in the kernel; end it first, since killing the
+        # kernel leaves its workers running on Windows (`draw.shutdown_pool`).
+        _run_cell(km, kc, _END_POOL, time.time() + 120, 120)
         kc.stop_channels()
         km.shutdown_kernel(now=True)
     return nb, "".join(printed), error
@@ -430,7 +447,7 @@ def summarise(results: list[NotebookResult]) -> str:
     lines += [
         "",
         f"{ok}/{len(results)} notebooks OK, {sum(r.n_figures for r in results)} figures",
-        f"  figures   -> {outputs_dir()}/<general|experiment_N>/figures/",
+        f"  figures   -> {outputs_dir()}/figures/<notebook>/",
         f"  captions  -> {captions_path()}",
         f"  summaries -> {all_results_path()}",
     ]

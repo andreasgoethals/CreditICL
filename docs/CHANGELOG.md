@@ -8,6 +8,14 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 12-10-2026
+
+- Use `output CreditICL` on both storage tiers; preserve existing files when renaming after `git pull`, update wICE login guidance after Genius retirement, and re-audit the completed September campaign.
+- Correct the H100 CPU cost estimate to the published Genoa rate and remove unsupported queue/cost claims.
+- Update plotting test doubles for the existing capped-context argument so the result-view tests exercise the current API.
+- Make the Exp0 job fail when either trainer equivalence check fails; still run both tracks for diagnostics.
+- Validation: 1,139 tests passed, one skipped; all 11 notebooks ran (119 figures); output rename preserved all 1,156 downloaded files byte for byte.
+
 ## 29-09-2026
 
 - **Output per experiment**: everything under `output_CreditICL/` (was `output/`) — `general/`,
@@ -42,6 +50,12 @@ a flat dated list, so the dates below are its table of contents.
   context, 1.25–4 either way (`prior_prob_ratio_range`, from the Vasicek model; `docs/PRIORS.md` §5.3).
 - 0.2/0.3 read under the new prior; the missingness figure shows coupling 1, the configs' maximum (was 2);
   `literature.PIN` and the notebooks re-pinned to `81c749b` (the bump added papers only).
+- Fixed: a finished notebook run never exited — a killed kernel left its draw workers running (Windows),
+  holding the output open; the pool now ends at exit and before a kernel stops, and a worker exits with
+  its parent (`tests/test_draw_pool.py`).
+- Leakage audit of the evaluation data: outcome columns in four LGD sets and one PD set, and the same
+  loans/defaults in dev and holdout in both tracks — recorded in `EXPERIMENTAL_DESIGN.md` §7 item 5,
+  not yet fixed.
 
 ## 28-09-2026
 

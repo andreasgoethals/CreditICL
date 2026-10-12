@@ -2,7 +2,7 @@
 # =============================================================================
 #  Copy the big, irreplaceable files to PROJECT STORAGE.
 #
-#  Run from a Genius LOGIN node (never a compute node — those cannot see all the
+#  Run from a wICE LOGIN node (never a compute node — those cannot see all the
 #  filesystems), from inside $VSC_DATA/CreditICL:
 #
 #      bash scripts/transfer/stage_to_project.sh            # show what would happen

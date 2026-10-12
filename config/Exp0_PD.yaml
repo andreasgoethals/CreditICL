@@ -28,8 +28,8 @@ sweep:
 
 arms: # one set of overrides per arm (src/utils/config.py)
   scratch_tabicl: { architecture: tabicl, init.strategy: scratch, init.pretrained_path: null, train.optimizer: muon, train.lr: 8.0e-4, train.gradient_clipping: 10.0, train.warmup_proportion: 0.01, train.beta2: 0.95 } # Experiment 1's path
-  finetune_tabicl: { architecture: tabicl, train.optimizer: adamw, train.lr: 1.0e-5 } # Experiment 2's TabICLv2 path
-  finetune_tabpfn3: { architecture: tabpfn3, prior.encoding: raw, init.pretrained_path: checkpoints/tabpfn-v3-classifier-v3_default.ckpt, train.batch_size: 16, train.lr: 1.0e-5, progress.every_datasets: 3200 } # Experiment 2's TabPFN-3 path
+  finetune_tabicl: { architecture: tabicl, train.optimizer: muon, train.lr: 2.0e-5, train.weight_decay: 0.01, train.warmup_proportion: 0.01, train.gradient_clipping: 1.0 } # Experiment 2's TabICLv2 path (upstream stage 3)
+  finetune_tabpfn3: { architecture: tabpfn3, prior.encoding: raw, init.pretrained_path: checkpoints/tabpfn-v3-classifier-v3_default.ckpt, train.batch_size: 16, train.optimizer: adamw, train.lr: 1.0e-5, train.weight_decay: 1.0e-4, train.gradient_clipping: 1.0, progress.every_datasets: 3200 } # Experiment 2's TabPFN-3 path
 
 # ----------------------------------------------------------------------------
 # THE PRIOR — Experiment 1's, unchanged (literature-grounded; docs/PRIORS.md)
@@ -177,10 +177,13 @@ logging:
 # ----------------------------------------------------------------------------
 eval:
   data_dir: data/raw/pd # where the real datasets live
-  dev_datasets: [0001.gmsc, 0004.lendingclub, 0002.taiwan_creditcard, 0008.german, 0005.myhom] # used to choose the prior
-  holdout_datasets: [0003.vehicle_loan, 0006.hackerearth, 0007.cobranded, 0009.bank_status,
+  # hackerearth shares 5,696 loans with lendingclub, base_modelisation defaults with base_model
+  # (audit 30-09-2026): each pair sits on ONE side, so the holdout stays independent
+  dev_datasets: [0001.gmsc, 0004.lendingclub, 0006.hackerearth, 0002.taiwan_creditcard, 0008.german, 0005.myhom] # used to choose the prior
+  holdout_datasets: [0003.vehicle_loan, 0007.cobranded, 0009.bank_status,
                      0010.thomas, 0011.loan_default, 0012.home_credit, 0013.hmeq,
                      0014.algorithmwatch] # every dataset: the benchmark check measures a real slot's cost
   metrics: [auc, ap, brier, logloss, ks, calibration_slope] # all computed in one run
+  context_caps: [1024] # also scored with at most 1,024 context rows — the size every training table has
   select_on: dev # dev | holdout — anything but `dev` here invalidates the experiment
   ood_suites: all # which out-of-domain suites to score; see src/eval/ood.py SUITES

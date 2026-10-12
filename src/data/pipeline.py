@@ -56,7 +56,11 @@ from src.data.discovery import list_datasets
 from src.utils.logging_setup import get_logger
 from src.utils.paths import find_processed_dir, find_raw_file, processed_write_dir
 
-CACHE_VERSION = 3  # bump to invalidate every cache; recorded in meta.json
+CACHE_VERSION = 5  # bump to invalidate every cache; recorded in meta.json (5: TabPFNCredit's column set and codes)
+
+#: The categorical copy of a column a recipe lists as numeric AND categorical (TabPFNCredit feeds
+#: both: `N = X[num_cols]`, `C = X[cat_cols]`). The parquet needs unique names.
+CATEGORICAL_COPY = "__cat"
 
 
 @dataclass
@@ -91,6 +95,23 @@ class DatasetMeta:
 #: The target is stored as a COLUMN, not a separate file, so one read gets
 #: everything and features and target can never drift out of alignment.
 TARGET_COLUMN = "__target__"
+
+
+def stored_category(series: pd.Series) -> pd.Categorical:
+    """A categorical column as it is stored: TabPFNCredit's codes (`astype("category").cat.codes`,
+    -1 for missing), under string labels in the same category order.
+
+    String labels because parquet does not bring an INTEGER-labelled category back as a category:
+    `vehicle_loan`'s `manufacturer_id` returned as a number, and was scored as one (30-09-2026)."""
+    cat = series.astype("category")
+    labels, seen = [], set()
+    for i, value in enumerate(cat.cat.categories):
+        label = str(value)
+        if label in seen:  # two values that print alike (1 and "1"): keep both, distinctly
+            label = f"{label}#{i}"
+        seen.add(label)
+        labels.append(label)
+    return pd.Categorical.from_codes(cat.cat.codes.to_numpy(), categories=labels)
 
 
 def _atomic_write_parquet(path: Path, frame: pd.DataFrame) -> None:
@@ -146,21 +167,18 @@ def preprocess_one(task: str, dataset: str, *, force: bool = False) -> Path:
     cat_cols = [c for c in cat_cols if c in df.columns and c != target_col]
     num_cols = [c for c in num_cols if c in df.columns and c != target_col]
 
-    # Any column the recipe did not classify: treat as numeric if it converts,
-    # categorical otherwise. Never silently dropped — an unclassified column is a
-    # recipe gap worth seeing in the log.
+    # EXACTLY TabPFNCredit's column set (`src/data/preprocessing.py` there: `N = X[num_cols]`,
+    # `C = X[cat_cols]`), where the recipes were validated:
+    # * a column the recipe lists in neither list is NOT a feature (`hackerearth`'s `term` and
+    #   `verification_status_joint`) — logged, not added;
+    # * a column in both lists is fed twice, as a number and as a category code
+    #   (`vehicle_loan`'s `manufacturer_id` and `State_ID`).
     classified = set(cat_cols) | set(num_cols) | {target_col}
-    for col in df.columns:
-        if col in classified:
-            continue
-        if pd.api.types.is_numeric_dtype(df[col]):
-            num_cols.append(col)
-        else:
-            cat_cols.append(col)
-        get_logger().warning(
-            "[data] %-28s column %r was not classified by the recipe; treating as %s",
-            f"{task}/{dataset}", col, "numeric" if col in num_cols else "categorical",
-        )
+    unlisted = [c for c in df.columns if c not in classified]
+    if unlisted:
+        log.info("[data] %-28s not in the recipe's column lists, not features (as TabPFNCredit): %s",
+                 f"{task}/{dataset}", ", ".join(map(str, unlisted)))
+    doubled = [c for c in cat_cols if c in set(num_cols)]
 
     feature_cols = num_cols + cat_cols
     cat_indices = list(range(len(num_cols), len(feature_cols)))
@@ -185,6 +203,7 @@ def preprocess_one(task: str, dataset: str, *, force: bool = False) -> Path:
         cat_cols=[str(c) for c in cat_cols],
         num_cols=[str(c) for c in num_cols],
         cat_indices=cat_indices,
+        dropped_cols=[str(c) for c in unlisted],
         n_missing_cells=int(np.isnan(X).sum()),
         raw_path=str(raw_path),
     )
@@ -194,11 +213,12 @@ def preprocess_one(task: str, dataset: str, *, force: bool = False) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Build the tidy table: features keeping their real dtypes, plus the target.
-    tidy = pd.DataFrame({c: df[c] for c in num_cols})
+    tidy = pd.DataFrame({c: pd.to_numeric(df[c], errors="coerce") for c in num_cols})
     for c in cat_cols:
         # A pandas category, so the DTYPE itself records "this is categorical" and
-        # there is no parallel index list to keep in sync.
-        tidy[c] = df[c].astype("category")
+        # there is no parallel index list to keep in sync. A column also listed as numeric keeps
+        # its numeric copy under its own name and gets this one beside it.
+        tidy[f"{c}{CATEGORICAL_COPY}" if c in doubled else c] = stored_category(df[c])
     tidy[TARGET_COLUMN] = y
 
     # Atomic write, because on the cluster several array tasks can call

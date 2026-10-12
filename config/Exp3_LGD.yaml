@@ -24,7 +24,7 @@ architecture: tabicl # the upstream TabICL class; see src/models/architecture.py
 # ----------------------------------------------------------------------------
 sweep:
   prior.credit_fraction: [0.0, FILL_FROM_EXP1] # the control, and the mix Exp1 selects on the development datasets
-  seeds: [0, 1, 2, 3, 4] # five seeds: these are the numbers that get reported
+  seeds: [0, 1] # two paired seeds (same base tasks and initial weights per seed; 30-09-2026)
 
 # ----------------------------------------------------------------------------
 # THE PRIOR — Experiment 1's, unchanged (literature-grounded; docs/PRIORS.md)
@@ -111,7 +111,7 @@ init:
 # TRAINING
 # ----------------------------------------------------------------------------
 train:
-  max_steps: 100000 # gradient updates
+  max_steps: 200000 # TabICLv2 matches RealTabPFN-2.5 in log-loss only after ~200k steps (papers/2026/02_Qu, §7)
   batch_size: 64 # datasets per UPDATE; upstream's --batch_size 64
   micro_batch_size: 4 # datasets per FORWARD PASS; must be <= grouping.group_size
   num_quantiles: 999 # size of the predicted quantile grid
@@ -162,8 +162,10 @@ logging:
 # ----------------------------------------------------------------------------
 eval:
   data_dir: data/raw/lgd # where the real datasets live
-  dev_datasets: [0007.lgd_lendingclub, 0004.base_model, 0001.heloc] # used to choose the prior
-  holdout_datasets: [0002.loss2, 0003.axa, 0005.base_modelisation, 0006.lgd_freddie] # untouched until the end
+  # hackerearth shares 5,696 loans with lendingclub, base_modelisation defaults with base_model
+  # (audit 30-09-2026): each pair sits on ONE side, so the holdout stays independent
+  dev_datasets: [0007.lgd_lendingclub, 0004.base_model, 0005.base_modelisation, 0001.heloc] # used to choose the prior
+  holdout_datasets: [0002.loss2, 0003.axa, 0006.lgd_freddie] # untouched until the end
   metrics: [pinball, crps, coverage, boundary_mass, r2, rmse] # all computed in one run
   select_on: dev # dev | holdout — anything but `dev` here invalidates the experiment
   ood_suites: all # which out-of-domain suites to score; see src/eval/ood.py SUITES

@@ -5,23 +5,30 @@
     python scripts/exp0_checks.py --quick          # skip the slow ones (training steps, benchmark fold)
 
 Each check is isolated — one failing never stops the others — and reports PASS, WARN or FAIL
-with the numbers behind it. The report goes to `output_CreditICL/experiment_0/report/`
+with the numbers behind it. The report goes to `output CreditICL/experiment_0/report/`
 (`checks.json`, `checks.md`); the exit code is 1 if anything FAILED. Nothing here trains an arm,
 writes a checkpoint an experiment reads, or touches a benchmark receipt.
 
 THE CHECKS, in order:
 
-    env        interpreter, torch/CUDA/GPU, library versions (tabicl, tabpfn, catboost, ...), git
-    paths      every resolved location; the output tiers WRITABLE, the inputs READABLE
-    data       every configured credit dataset processed and loadable (rows, columns, gaps, target)
-    ood        the out-of-domain cache: manifest and enough datasets of each kind
-    weights    the released TabICLv2 / TabPFN-3 files: found, loaded into the architectures we
-               train, the TabICL wrapper loads offline, and the file we fine-tune FROM is the
-               file the reference column scores
-    prior      tasks from every prior path (control, credit, both encodings): valid, and how fast
-    configs    every config expands; grid sizes and benchmark slots against the SLURM headers
-    train      a few real training steps of both trainers on the GPU: speed and memory
-    benchmark  one fold of one dataset through every reference wrapper, on the GPU
+    env           interpreter, torch/CUDA/GPU, library versions (tabicl, tabpfn, catboost, ...), git
+    paths         every resolved location; the output tiers WRITABLE, the inputs READABLE
+    storage       free space on both tiers, what each tree already holds, the VSC quota (`myquota`)
+    data          every configured credit dataset processed and loadable (rows, columns, gaps, target)
+    ood           the out-of-domain cache: manifest and enough datasets of each kind
+    weights       the released TabICLv2 / TabPFN-3 files: found, loaded into the architectures we
+                  train, the TabICL wrapper loads offline, and the file we fine-tune FROM is the
+                  file the reference column scores
+    prior         tasks from every prior path (control, credit, both encodings): valid, and how fast
+    determinism   the task stream is the same with 0 or 2 workers, in a FRESH process (the hash seed
+                  reaches every job), and arms with one seed share their base tasks — what makes
+                  the arms comparable
+    configs       every config expands; grid sizes and benchmark slots against the SLURM headers
+    orchestration the SLURM tools the jobs call; `run_experiment` plans each experiment (dry run)
+    train         a few real training steps of every training path on the GPU (speed, memory), then
+                  the saved checkpoint through the BENCHMARK'S wrapper: loaded weights = trained ones
+    benchmark     one fold of one dataset through every reference wrapper on the GPU, and the
+                  capped-context path (1,024 rows) of the two in-context ones
 """
 from __future__ import annotations
 
@@ -123,6 +130,48 @@ def check_paths(rep: Report) -> None:
         rep.add("paths", f"{label} readable", PASS if ok else FAIL, str(root))
 
 
+def _tree(root: Path) -> tuple[int, int]:
+    """(bytes, files) under `root`."""
+    total = files = 0
+    for f in root.rglob("*"):
+        if f.is_file():
+            try:
+                total += f.stat().st_size
+                files += 1
+            except OSError:
+                pass
+    return total, files
+
+
+def check_storage(rep: Report) -> None:
+    """`$VSC_DATA` is 75 GiB for every project together; project storage has a low inode budget.
+    What each output tier already holds, and how much room is left, before the big runs add to it
+    (`exp0_verify` projects what Experiments 1-3 will need from the measured checkpoint size)."""
+    import shutil
+
+    from src.utils import paths
+
+    for label, root in (("small tier (logs, run records)", paths.outputs_dir()),
+                        ("big tier (benchmarks, checkpoints)", paths.big_outputs_dir())):
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+            usage = shutil.disk_usage(root)
+            size, files = _tree(root)
+            rep.add("storage", label, PASS, {"root": str(root), "tree_gb": round(size / 1e9, 3), "tree_files": files,
+                                              "filesystem_free_gb": round(usage.free / 1e9, 1)})
+        except OSError as exc:
+            rep.add("storage", label, FAIL, f"{root}: {exc}")
+    tool = shutil.which("myquota")
+    if tool:
+        try:
+            out = subprocess.run([tool], capture_output=True, text=True, timeout=120).stdout
+            rep.add("storage", "myquota", PASS, out.strip()[-1500:])
+        except Exception as exc:  # noqa: BLE001
+            rep.add("storage", "myquota", WARN, f"{type(exc).__name__}: {exc}")
+    else:
+        rep.add("storage", "myquota", WARN, "not on PATH — quota not read (not a VSC node?)")
+
+
 def check_data(rep: Report) -> None:
     from src.data.pipeline import load_processed
     from src.utils.config import load
@@ -146,8 +195,11 @@ def check_data(rep: Report) -> None:
                 else:
                     info["target_range"] = [round(float(np.nanmin(y)), 4), round(float(np.nanmax(y)), 4)]
                 status = PASS
-                if X.shape[1] > 500:
-                    info["note"] = "wider than 500: the benchmark keeps the 500 top-variance columns"
+                from src.eval.protocol import MAX_FEATURES
+
+                if X.shape[1] > MAX_FEATURES:
+                    info["note"] = (f"wider than {MAX_FEATURES}: every fit keeps the {MAX_FEATURES} columns "
+                                    "the univariate filter ranks highest on its fitted rows")
                 if not np.isfinite(y).all():
                     status, info["note"] = WARN, f"{int((~np.isfinite(y)).sum())} non-finite targets"
                 rep.add("data", f"{track}/{name}", status, info)
@@ -277,6 +329,96 @@ def check_prior(rep: Report, n_tasks: int = 24) -> None:
                     rep.add("prior", label, FAIL, f"{type(exc).__name__}: {exc}")
 
 
+def _batch_digest(prior: dict, track: str, *, workers: int, n_batches: int = 2, batch_size: int = 8) -> str:
+    import hashlib
+
+    from src.prior.dataset import build_loader
+
+    loader = build_loader(prior, track, batch_size, seed=0, num_workers=workers)
+    h = hashlib.sha256()
+    batches = iter(loader)
+    for _ in range(n_batches):
+        for tensor in next(batches):
+            h.update(tensor.numpy().tobytes())
+    return h.hexdigest()[:16]
+
+
+_FRESH_PROCESS = """
+import copy, sys
+sys.path.insert(0, {root!r})
+from scripts.exp0_checks import _batch_digest
+from src.utils.config import expand_with_seeds, load
+prior = copy.deepcopy(expand_with_seeds(load({config!r}))[0]["prior"])
+prior["credit_fraction"] = 0.5
+print(_batch_digest(prior, {track!r}, workers=0))
+"""
+
+
+def check_determinism(rep: Report) -> None:
+    """Arms are compared on COMMON RANDOM NUMBERS: the same seed, the same base tasks, in every job.
+    That holds only if the stream ignores the worker count, repeats in a fresh interpreter (upstream
+    orders feature groups by Python's string hash: `PYTHONHASHSEED` must reach every job and every
+    worker) and gives the control's tasks to a mixed arm's control slots."""
+    import copy
+
+    from src.prior.generator import TaskGenerator
+    from src.prior.rng import PriorRNG
+    from src.prior.stream import plan_batch
+    from src.utils.config import expand_with_seeds, load
+
+    rep.add("determinism", "PYTHONHASHSEED", PASS if os.environ.get("PYTHONHASHSEED") == "0" else WARN,
+            os.environ.get("PYTHONHASHSEED", "unset — the job scripts export 0"))
+    for track in ("pd", "lgd"):
+        config = str(ROOT / "config" / f"Exp1_{track.upper()}.yaml")
+        prior = copy.deepcopy(expand_with_seeds(load(config))[0]["prior"])
+        prior["credit_fraction"] = 0.5
+        try:
+            one, two = _batch_digest(prior, track, workers=0), _batch_digest(prior, track, workers=2)
+            rep.add("determinism", f"{track}: 0 workers = 2 workers", PASS if one == two else FAIL,
+                    {"0": one, "2": two})
+            code = _FRESH_PROCESS.format(root=str(ROOT), config=config, track=track)
+            r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=900, cwd=ROOT)
+            fresh = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else f"failed: {r.stderr[-300:]}"
+            rep.add("determinism", f"{track}: this process = a fresh one", PASS if fresh == one else FAIL,
+                    {"here": one, "fresh": fresh})
+            control = copy.deepcopy(prior)
+            control["credit_fraction"] = 0.0
+            g0 = TaskGenerator(control, track, PriorRNG(0), stream_seed=0)
+            g5 = TaskGenerator(prior, track, PriorRNG(0), stream_seed=0)
+            same = compared = 0
+            for b in range(2):
+                p0 = plan_batch(0, b, control, 8, regression=track == "lgd", credit_fraction=0.0)
+                p5 = plan_batch(0, b, prior, 8, regression=track == "lgd", credit_fraction=0.5)
+                for s0, s5 in zip(p0.slots, p5.slots):
+                    if s5.use_credit:
+                        continue
+                    t0, t5 = g0.sample_slot(s0), g5.sample_slot(s5)
+                    compared += 1
+                    same += int(t0.X.shape == t5.X.shape and bool((t0.X == t5.X).all()) and bool((t0.y == t5.y).all()))
+            rep.add("determinism", f"{track}: a 50 % arm's control slots hold the control's tasks",
+                    PASS if compared and same == compared else FAIL, {"control_slots": compared, "identical": same})
+        except Exception as exc:  # noqa: BLE001
+            rep.add("determinism", track, FAIL, f"{type(exc).__name__}: {exc}\n{traceback.format_exc()[-1200:]}")
+
+
+def check_orchestration(rep: Report) -> None:
+    """The jobs resubmit themselves and `run_experiment` reads the queue: the SLURM tools must be
+    there, and the planner must plan every experiment — Exp3 refusing until Exp1 chose its mix."""
+    import shutil
+
+    tools = {t: bool(shutil.which(t)) for t in ("sbatch", "squeue", "sacct", "scontrol")}
+    rep.add("orchestration", "SLURM tools on PATH", PASS if all(tools.values()) else WARN, tools)
+    for exp, want in ((1, 0), (2, 0), (3, 1)):
+        try:
+            r = subprocess.run([sys.executable, "-m", "src.utils.run_experiment", str(exp)], cwd=ROOT,
+                               capture_output=True, text=True, timeout=900)
+            ok = r.returncode == want and (exp != 3 or "NOT CONFIGURED YET" in r.stdout)
+            rep.add("orchestration", f"run_experiment {exp} (plan only)", PASS if ok else FAIL,
+                    {"exit": r.returncode, "expected": want, "tail": r.stdout.strip()[-700:]})
+        except Exception as exc:  # noqa: BLE001
+            rep.add("orchestration", f"run_experiment {exp} (plan only)", FAIL, f"{type(exc).__name__}: {exc}")
+
+
 def check_configs(rep: Report) -> None:
     import re
 
@@ -288,7 +430,7 @@ def check_configs(rep: Report) -> None:
         text = (ROOT / "scripts" / "slurm" / f"{script}.slurm").read_text(encoding="utf-8")
         m = re.search(r"#SBATCH --array=0-(\d+)", text)
         header[script] = int(m.group(1)) + 1 if m else None
-    for exp, variant in ((0, None), (1, None), (2, "search"), (2, None), (3, None)):
+    for exp, variant in ((0, None), (1, None), (2, None), (3, None)):
         for track in ("pd", "lgd"):
             name = f"Exp{exp}_{track.upper()}{'_' + variant if variant else ''}"
             path = ROOT / "config" / f"{name}.yaml"
@@ -324,7 +466,7 @@ def check_train(rep: Report, steps: int = 10) -> None:
         for run in runs:
             label = f"{track} {run['arm']}"
             cfg = copy.deepcopy(run)
-            cfg["train"].update(max_steps=steps, num_workers=workers, save_temp_every=0, save_perm_every=0,
+            cfg["train"].update(max_steps=steps, num_workers=workers, save_temp_every=0, save_perm_every=steps,
                                 log_every=max(1, steps // 2))
             cfg["progress"]["every_datasets"] = 0
             cfg["logging"].update(to_file=False, console=False, log_hardware_every=max(1, steps // 2))
@@ -342,16 +484,62 @@ def check_train(rep: Report, steps: int = 10) -> None:
                 summary = trainer.train()
                 seconds = time.time() - started
                 peak = torch.cuda.max_memory_allocated() / 1024 ** 3 if torch.cuda.is_available() else 0.0
+                ckpt = tmp / "ckpt" / f"step-{steps}.ckpt"
                 rep.add("train", label, PASS if summary.get("completed") else FAIL,
                         {"steps": summary.get("steps"), "seconds": round(seconds, 1),
                          "steps_per_s_incl_startup": round(steps / seconds, 3), "peak_gpu_gb": round(peak, 2),
-                         "batch_size": cfg["train"]["batch_size"], "workers": workers})
+                         "batch_size": cfg["train"]["batch_size"], "workers": workers,
+                         "checkpoint_mb": round(ckpt.stat().st_size / 1e6, 1) if ckpt.is_file() else None})
+                _checkpoint_round_trip(rep, track, run, trainer, ckpt)
             except Exception as exc:  # noqa: BLE001
                 rep.add("train", label, FAIL, f"{type(exc).__name__}: {exc}\n{traceback.format_exc()[-1500:]}")
             finally:
                 import shutil
 
                 shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _checkpoint_round_trip(rep: Report, track: str, run: dict, trainer: Any, ckpt: Path) -> None:
+    """The file a run writes, scored the way the benchmark scores it: through the arm's own wrapper
+    (`benchmark_status.arm_model`), and the weights that wrapper loaded must BE the trained ones."""
+    import torch
+
+    from src.eval.baselines import build
+    from src.eval.benchmark_status import arm_model
+    from src.eval.runner import load_arrays
+
+    label = f"{track} {run['arm']}: checkpoint -> benchmark wrapper"
+    if not ckpt.is_file():
+        rep.add("train", label, FAIL, f"no {ckpt.name} written")
+        return
+    try:
+        model_name = arm_model(run)
+        if model_name == "crediticl":
+            from src.eval.crediticl_baseline import register
+
+            register()
+            m = build("crediticl", track, seed=0, checkpoint=str(ckpt))
+        else:
+            m = build("tabpfn3", track, seed=0, model_path=str(ckpt), n_estimators=1)
+        X, y, cats, _ = load_arrays(track, "0008.german" if track == "pd" else "0004.base_model", max_rows=400)
+        m.fit(X[:300], y[:300], cats)
+        pred = np.asarray(m.predict(X[300:]), dtype=float)
+        est = m._model
+        net = est.model_ if model_name == "crediticl" else est.models_[0]
+        live, loaded = trainer.model.state_dict(), net.state_dict()
+        shared = [k for k in live if k in loaded and live[k].shape == loaded[k].shape]
+        diff = max((float((live[k].detach().float().cpu() - loaded[k].detach().float().cpu()).abs().max())
+                    for k in shared), default=float("nan"))
+        ok = bool(np.isfinite(pred).all()) and len(shared) == len(live) and diff == 0.0
+        rep.add("train", label, PASS if ok else FAIL,
+                {"wrapper": model_name, "tensors_compared": len(shared), "of": len(live), "max_abs_diff": diff,
+                 "predictions_finite": bool(np.isfinite(pred).all())})
+    except Exception as exc:  # noqa: BLE001
+        rep.add("train", label, FAIL, f"{type(exc).__name__}: {exc}\n{traceback.format_exc()[-1200:]}")
+    finally:
+        del trainer
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
 
 def check_benchmark(rep: Report) -> None:
@@ -375,14 +563,36 @@ def check_benchmark(rep: Report) -> None:
                         {key: round(float(out[key]), 4), "seconds": round(time.time() - started, 1)})
             except Exception as exc:  # noqa: BLE001
                 rep.add("benchmark", f"{track}/{dataset} {model}", FAIL, f"{type(exc).__name__}: {exc}")
+    # THE CAPPED-CONTEXT PATH (Exp1's second evaluation): a table larger than the cap, so it binds.
+    for track, dataset in (("pd", "0001.gmsc"), ("lgd", "0001.heloc")):
+        try:
+            X, y, cats, _ = load_arrays(track, dataset, max_rows=5000)
+            tr, te = cv_folds(y, track)[0]
+        except Exception as exc:  # noqa: BLE001
+            rep.add("benchmark", f"{track}/{dataset} capped", FAIL, f"cannot load: {exc}")
+            continue
+        for model in ("tabiclv2", "tabpfn3"):
+            try:
+                started = time.time()
+                out = score_fold(track, model, X[tr], y[tr], X[te], y[te], cats, seed=0, fold=0,
+                                 max_context_rows=1024)
+                key = "roc_auc" if track == "pd" else "r2"
+                used = out.get("info_n_context_full"), out.get("info_context_cap")
+                ok = out.get("info_context_cap") == 1024
+                rep.add("benchmark", f"{track}/{dataset} {model} context capped at 1,024", PASS if ok else FAIL,
+                        {key: round(float(out[key]), 4), "context_full_and_cap": used,
+                         "seconds": round(time.time() - started, 1)})
+            except Exception as exc:  # noqa: BLE001
+                rep.add("benchmark", f"{track}/{dataset} {model} capped", FAIL, f"{type(exc).__name__}: {exc}")
 
 
 CHECKS: dict[str, Callable[[Report], None]] = {
-    "env": check_env, "paths": check_paths, "data": check_data, "ood": check_ood,
-    "weights": check_weights, "prior": check_prior, "configs": check_configs,
+    "env": check_env, "paths": check_paths, "storage": check_storage, "data": check_data, "ood": check_ood,
+    "weights": check_weights, "prior": check_prior, "determinism": check_determinism,
+    "configs": check_configs, "orchestration": check_orchestration,
     "train": check_train, "benchmark": check_benchmark,
 }
-SLOW = ("train", "benchmark")
+SLOW = ("determinism", "train", "benchmark")
 
 
 def write(rep: Report, out_dir: Path) -> tuple[Path, Path]:

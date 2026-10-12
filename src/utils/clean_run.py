@@ -7,7 +7,7 @@
     python -m src.utils.clean_run --clean --processed       ...and the data/processed cache
     python -m src.utils.clean_run --experiment 0 --clean --checkpoints   only experiment_0
 
-Clears the `output_CreditICL/` tree (`src/utils/paths.py`) on BOTH storage tiers: the small
+Clears the `output CreditICL/` tree (`src/utils/paths.py`) on BOTH storage tiers: the small
 half on `$VSC_DATA` (logs, run records, benchmark scores, figures) and, when asked, the big
 half on project storage (checkpoints, prior pools). Off-cluster both tiers are one folder.
 `--experiment N` limits all of it to `experiment_N/`.
