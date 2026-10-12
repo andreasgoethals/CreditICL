@@ -1,7 +1,7 @@
 """Continued pretraining of the released TabPFN-3 weights on the synthetic prior (Experiment 2).
 
 TabPFN-3's pretraining code is not public, so this does NOT imitate it. It runs every synthetic
-task through TabPFN's OWN fine-tuning path (`tabpfn.finetuning`, pinned 9.0.0): the batched fit
+task through TabPFN's OWN fine-tuning path (`tabpfn.finetuning`, pinned 9.1.0): the batched fit
 mode, `get_preprocessed_dataset_chunks` + `meta_dataset_collator` for the per-member
 preprocessing, `fit_from_preprocessed`, and the training forward with the loss its own
 `FinetunedTabPFNClassifier` / `FinetunedTabPFNRegressor` compute. A task therefore reaches the
@@ -60,7 +60,7 @@ from .telemetry import Telemetry, WeightTracker
 #: training loop hands the model numbers, never text or dates, and preprocessing stays on the CPU.
 TABPFN_INFERENCE_CONFIG = {"ENABLE_GPU_PREPROCESSING": False, "TRANSFORM_TEXT": False,
                            "TRANSFORM_DATES": False}
-#: `FinetunedTabPFNRegressor`'s default loss weights (tabpfn 9.0.0).
+#: `FinetunedTabPFNRegressor`'s default loss weights (tabpfn 9.1.0).
 REGRESSION_LOSS_WEIGHTS = {"ce": 0.0, "crps": 1.0, "crls": 0.0, "mse": 1.0, "mae": 0.0}
 
 
@@ -84,6 +84,9 @@ def resolve_tabpfn_weights(task: str, path: str | Path | None = None) -> Path:
 def build_estimator(task: str, model_path: str | Path, *, n_estimators: int, device: str, seed: int):
     """A TabPFN-3 estimator in the batched fine-tuning mode, exactly as the official fine-tuner
     builds its training estimator (`_create_estimator` + `_build_estimator_config`)."""
+    from src.utils.preflight import require_tabpfn_version
+
+    require_tabpfn_version()
     from tabpfn import TabPFNClassifier, TabPFNRegressor
     from tabpfn.constants import ModelVersion
 
@@ -184,7 +187,7 @@ def classification_loss(est, batch, n_estimators: int) -> torch.Tensor:
 
 def regression_loss(est, batch, n_estimators: int, weights: dict[str, float]) -> torch.Tensor:
     """`FinetunedTabPFNRegressor._forward_with_loss`, through TabPFN's own loss function."""
-    from tabpfn.finetuning.finetuned_regressor import _compute_regression_loss
+    from tabpfn.finetuning.finetuned_regressor import _compute_regression_loss, _targets_in_estimator_space
 
     _, per_estimator, _ = est.forward(batch.X_query)
     logits = torch.stack(per_estimator, dim=2)  # Q, B, E, L
@@ -193,7 +196,11 @@ def regression_loss(est, batch, n_estimators: int, weights: dict[str, float]) ->
     if b != 1 or e != n_estimators or n_logits != bardist.num_bars:
         raise RuntimeError(f"unexpected logits shape {tuple(logits.shape)}")
     logits_bql = logits.permute(1, 2, 0, 3).reshape(b * e, q, n_logits)
-    targets = batch.y_query.repeat(b * e, 1).to(logits.device)
+    # Each ensemble member can transform its regression target (e.g. safepower).
+    # Its logits live in that member's target space, not the common z-score space.
+    # Matches the upstream 9.1.0 correction to _forward_with_loss (#1290).
+    targets = torch.stack([_targets_in_estimator_space(batch.y_query[0], c[0])
+                           for c in batch.configs]).to(logits.device)
     return _compute_regression_loss(
         logits_BQL=logits_bql, targets_BQ=targets, bardist_loss_fn=bardist,
         ce_loss_weight=weights["ce"], crps_loss_weight=weights["crps"],
@@ -310,10 +317,12 @@ class TabPFNTrainer:
         """The weights in TabPFN's own checkpoint format (`save_tabpfn_model`), which
         `TabPFNClassifier(model_path=...)` loads — how the benchmark scores it. Atomic."""
         from tabpfn.model_loading import save_tabpfn_model
+        from src.utils.preflight import training_fingerprint
 
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
         save_tabpfn_model(self.est, tmp, additional_fields={
+            "training_fingerprint": training_fingerprint(),
             "crediticl_run_name": self.run_name, "crediticl_step": self.step,
             "crediticl_config": self.cfg, **(extra or {})})
         os.replace(tmp, path)
@@ -341,6 +350,15 @@ class TabPFNTrainer:
             self.weights.resume(0)
             return
         payload = torch.load(path, map_location="cpu", weights_only=False)
+        from src.train.checkpoint import validate_resume_config, validate_training_fingerprint
+
+        validate_training_fingerprint(payload)
+        old_cfg = payload.get("crediticl_config") or {}
+        validate_resume_config(old_cfg, self.cfg)
+        old_steps = old_cfg.get("train", {}).get("max_steps")
+        if old_steps is not None and int(old_steps) != self.max_steps:
+            self.log.warning("max_steps CHANGED on resume: %s -> %s; the schedule is rebuilt",
+                             old_steps, self.max_steps)
         state = {k: v for k, v in payload["state_dict"].items() if not k.startswith("criterion.")}
         missing, unexpected = self.model.load_state_dict(state, strict=False)
         if unexpected or missing:
@@ -392,16 +410,16 @@ class TabPFNTrainer:
             return classification_loss(self.est, batch, self.n_estimators)
 
     def train_step(self, prepared: list[dict[str, Any] | None]) -> dict[str, float]:
+        errors = [p["error"] for p in prepared if p is not None and "error" in p]
+        if errors:
+            raise RuntimeError(f"TabPFN task preparation failed at step {self.step}: {errors[0]}")
+        usable = [p for p in prepared if p is not None and "item" in p]
+        if not usable:
+            raise RuntimeError(f"No usable TabPFN training tasks at step {self.step}; refusing an empty update")
         from tabpfn.finetuning._torch_compat import sdpa_kernel_context
 
-        usable = [p for p in prepared if p is not None and "item" in p]
         self.skipped_tasks += len(prepared) - len(usable)
-        for p in prepared:
-            if p is not None and "error" in p:
-                self.log.warning("task skipped at step %d: %s", self.step, p["error"])
         self.datasets_seen += len(prepared)
-        if not usable:
-            return {}
         total = 0.0
         for p in usable:
             loss = self._task_loss(p)
@@ -417,9 +435,9 @@ class TabPFNTrainer:
             row = self.telemetry.sample_grads(self.model)
             row.update({"step": self.step + 1, "datasets_seen": self.datasets_seen, "kind": "grad"})
             self.telemetry.record(row)
-        if self.grad_clip > 0:
-            torch.nn.utils.clip_grad_norm_([p for p in self.model.parameters() if p.requires_grad],
-                                           self.grad_clip)
+        torch.nn.utils.clip_grad_norm_([p for p in self.model.parameters() if p.requires_grad],
+                                       self.grad_clip if self.grad_clip > 0 else float("inf"),
+                                       error_if_nonfinite=True)
         if self.scaler is not None:
             self.scaler.step(self.optimizer)
             self.scaler.update()
@@ -517,7 +535,10 @@ class TabPFNTrainer:
                 self.log.warning("STOPPING EARLY on %s at step %d/%d; resubmit to resume.",
                                  self._stop_requested, self.step, self.max_steps)
                 break
+        from src.utils.preflight import training_fingerprint
+
         summary = {
+            "training_fingerprint": training_fingerprint(),
             "steps": self.step, "completed": self.step >= self.max_steps,
             "stopped_by_signal": self._stop_requested, "datasets_seen": self.datasets_seen,
             "skipped_tasks": self.skipped_tasks, "elapsed_s": round(time.time() - started, 1),

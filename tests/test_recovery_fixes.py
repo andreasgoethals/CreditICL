@@ -34,7 +34,7 @@ def test_invalid_upstream_sentinel_never_escapes_filter_fallback(monkeypatch, tr
         gen.sample_slot(_plan(track == "lgd"))
 
 
-def test_fallback_keeps_last_valid_task_not_last_invalid_task(monkeypatch):
+def test_rejected_valid_table_cannot_escape_when_the_retry_budget_is_exhausted(monkeypatch):
     gen = TaskGenerator({"base": {"implementation": "transcribed"}, "max_filter_attempts": 2,
                          "max_invalid_attempts": 2}, "pd", PriorRNG(0))
     valid = _task(torch.randn(16, 3), torch.arange(16) % 2)
@@ -42,9 +42,8 @@ def test_fallback_keeps_last_valid_task_not_last_invalid_task(monkeypatch):
     candidates = iter([valid, invalid, invalid])
     monkeypatch.setattr(gen, "_candidate", lambda *a, **kw: next(candidates))
     monkeypatch.setattr(gen.filter, "accept", lambda *a, **kw: False)
-    result = gen.sample_slot(_plan(False))
-    assert result is valid and result.meta["filter_fallback"]
-    assert result.meta["invalid_attempts"] == 2
+    with pytest.raises(RuntimeError, match="Refusing to train on a rejected table"):
+        gen.sample_slot(_plan(False))
 
 
 def test_negative_regression_targets_remain_valid_and_nan_targets_are_not_repaired():

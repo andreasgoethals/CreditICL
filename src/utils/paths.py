@@ -514,7 +514,11 @@ def find_processed_dir(task: str, dataset: str) -> Path | None:
     directory that is correctly treated as absent rather than silently reused.
     """
     task = _check_task(task)
-    for d in processed_task_dirs(task):
+    # Prefer the write destination: a stale repo copy must not shadow a freshly
+    # rebuilt cache on project storage. Raw-file lookup keeps its existing order.
+    candidates = list(dict.fromkeys([processed_write_dir(task, dataset).parent,
+                                     *processed_task_dirs(task)]))
+    for d in candidates:
         candidate = d / dataset
         if (candidate / "meta.json").is_file():
             return candidate
@@ -558,7 +562,15 @@ def ood_cache_dir() -> Path:
     Never cleaned: compute nodes have no outbound internet, so it can only be rebuilt from a
     login node with `python -m src.utils.fetch_ood`.
     """
-    return datasets_dir() / "ood"
+    preferred = datasets_dir() / "ood"
+    # September stored these downloaded inputs under prior_cache/ood. Reuse
+    # that exact manifest; an output rename must not change the benchmark set.
+    candidates = [preferred, _under(staging_root(), "prior_cache", "ood"),
+                  REPO_ROOT / "prior_cache" / "ood"]
+    for candidate in candidates:
+        if (candidate / "ood_manifest.json").is_file():
+            return candidate
+    return preferred
 
 
 def resolve_writable(preferred: Path, fallback: Path | None = None) -> Path:

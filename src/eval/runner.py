@@ -110,18 +110,23 @@ def _fit_predict(model_name: str, task: str, seed: int, X_fit: np.ndarray, y_fit
         model.max_context_rows = int(max_context_rows)
     report = model.fit(X_fit, y_fit, cat_indices)
     pred = np.asarray(model.predict(X_pred), dtype=float)
+    if pred.shape != (len(X_pred),):
+        raise ValueError(f"Expected one prediction per test row: {pred.shape} for {len(X_pred)} rows")
     if not np.isfinite(pred).all():
         raise ValueError("Non-finite predictions")
     q = model.predict_quantiles(X_pred) if quantiles else None
-    if q is not None and not np.isfinite(q[0]).all():
-        raise ValueError("Non-finite predicted quantiles")
+    if q is not None:
+        if np.asarray(q[0]).shape != (len(X_pred), len(q[1])):
+            raise ValueError("Predicted quantiles must have one row per test row and one column per level")
+        if not np.isfinite(q[0]).all():
+            raise ValueError("Non-finite predicted quantiles")
     del model
     return pred, q, report
 
 
 @dataclass
 class Stage:
-    """One fit of a fold, preprocessed: the fitted rows (outliers removed, columns kept) and the
+    """One fit of a fold, preprocessed: all fitted rows with selected columns and the
     rows it predicts (columns kept, clipped), with what the preprocessing did."""
 
     X_fit: np.ndarray
@@ -184,8 +189,9 @@ def score_fold(task: str, model_name: str, X_tr: np.ndarray, y_tr: np.ndarray, X
         headline = (f"auc={out.get('roc_auc', float('nan')):.4f} f1={out['f1_tuned']:.4f} "
                     f"(thr {threshold:.3f}) brier={out['brier']:.4f}")
     else:
+        regression_kwargs = {**(model_kwargs or {}), "bounded_target": bounded_target}
         pred, q, report = _fit_predict(model_name, task, seed, final.X_fit, final.y_fit, final.X_pred,
-                                       final.cat_indices, model_kwargs, max_context_rows, quantiles=True)
+                                       final.cat_indices, regression_kwargs, max_context_rows, quantiles=True)
         if q is not None:
             m = lgd_metrics(y_te, pred, quantiles=q[0], levels=q[1], decoding="mean")
         else:
@@ -211,9 +217,15 @@ def load_arrays(task: str, dataset: str, *, max_rows: int | None = None, seed: i
     """`(X, y, cat_indices, info)` for one processed dataset, capped only if asked."""
     log = get_logger()
     ds = load_processed(task, dataset)
-    X, y = ds.X, ds.y
-    info: dict[str, Any] = {"n_rows": ds.n_rows, "n_features": ds.n_features,
-                            "n_categorical": len(ds.cat_indices)}
+    from src.eval.feature_policy import prediction_features
+
+    X, cats, policy = prediction_features(task, dataset, ds.X, ds.cat_indices,
+                                         getattr(ds, "feature_names", None))
+    y = ds.y
+    info: dict[str, Any] = {"n_rows": ds.n_rows, "n_features": int(X.shape[1]),
+                            "n_categorical": len(cats), **policy}
+    if policy["n_features_excluded"]:
+        log.info("[eval] %s prediction-time exclusions: %s", dataset, policy["excluded_features"])
     # CAP BEFORE SPLITTING, so no copy of the full array is ever made. Seeded and random,
     # never the head — see `EvalConfig.max_rows`. `row_cap` goes into the results so a
     # capped number is never mistaken for a full-data one.
@@ -223,7 +235,7 @@ def load_arrays(task: str, dataset: str, *, max_rows: int | None = None, seed: i
         info["row_cap"] = max_rows
         info["n_rows_full"] = int(ds.n_rows)
         log.info("[eval] %s capped %d -> %d rows (max_rows)", dataset, ds.n_rows, max_rows)
-    return X, y, list(ds.cat_indices), info
+    return X, y, cats, info
 
 
 def evaluate_dataset(task: str, dataset: str, models: list[str], seed: int, *, n_folds: int = N_FOLDS,

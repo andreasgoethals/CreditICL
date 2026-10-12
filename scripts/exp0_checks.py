@@ -92,6 +92,10 @@ def check_env(rep: Report) -> None:
                                          "tabpfn", "catboost", "psutil", "yaml")}
     missing = [m for m, v in versions.items() if v.startswith("MISSING") and m not in ("psutil",)]
     rep.add("env", "libraries", FAIL if missing else PASS, versions)
+    from src.utils.preflight import dependency_checks
+
+    for result in dependency_checks():
+        rep.add("env", result.name + " required version", PASS if result.ok else FAIL, result.detail)
     dirty = bool(_git("status", "--porcelain"))
     rep.add("env", "git", WARN if dirty else PASS,
             {"commit": _git("rev-parse", "--short", "HEAD"), "dirty": dirty})
@@ -596,10 +600,13 @@ SLOW = ("determinism", "train", "benchmark")
 
 
 def write(rep: Report, out_dir: Path) -> tuple[Path, Path]:
+    from src.utils.preflight import source_fingerprint
+
     out_dir.mkdir(parents=True, exist_ok=True)
     js = out_dir / "checks.json"
     js.write_text(json.dumps({"written": time.strftime("%Y-%m-%d %H:%M:%S"), "failed": rep.failed,
-                              "rows": rep.rows}, indent=2, default=str), encoding="utf-8")
+                              "rows": rep.rows, "source_fingerprint": source_fingerprint()},
+                             indent=2, default=str), encoding="utf-8")
     lines = ["# Experiment 0 — checks", "", f"Written {time.strftime('%d-%m-%Y %H:%M')}; "
              f"{sum(r['status'] == PASS for r in rep.rows)} PASS, {sum(r['status'] == WARN for r in rep.rows)} WARN, "
              f"{rep.failed} FAIL.", "", "| check | name | status | detail |", "|---|---|---|---|"]

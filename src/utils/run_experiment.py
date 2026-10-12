@@ -296,6 +296,12 @@ def main(argv: list[str] | None = None) -> int:
     if not args.submit:
         return 0
 
+    if any(stage.state == "ready" for stage in stages):
+        from src.utils.preflight import main as preflight
+
+        if preflight(["--require-exp0"]):
+            return 1
+
     rc = 0
     for stage in stages:
         if stage.state != "ready":

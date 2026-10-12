@@ -221,7 +221,8 @@ def _tabpfn_available() -> bool:
 
 
 @pytest.mark.skipif(not _tabpfn_available(), reason="tabpfn or its released weights not here")
-def test_tabpfn_continued_pretraining_trains_saves_resumes_and_is_scored(tmp_path):
+@pytest.mark.parametrize("track", ["pd", "lgd"])
+def test_tabpfn_continued_pretraining_trains_saves_resumes_and_is_scored(tmp_path, track):
     """Two steps of TabPFN-3 on the CPU, a resume to three, and the checkpoint scored by the
     benchmark's own TabPFN wrapper, which names the arm and step it came from."""
     import torch
@@ -230,10 +231,13 @@ def test_tabpfn_continued_pretraining_trains_saves_resumes_and_is_scored(tmp_pat
     from src.train.tabpfn_trainer import TabPFNTrainer
     from src.utils.config import expand_with_seeds, load
 
-    run = copy.deepcopy(next(r for r in expand_with_seeds(load(ROOT / "config" / "Exp2_PD.yaml"))
+    run = copy.deepcopy(next(r for r in expand_with_seeds(load(ROOT / "config" / f"Exp2_{track.upper()}.yaml"))
                              if r["architecture"] == "tabpfn3"))
     run["prior"].update(n_rows_range=[96, 96], n_features_range=[3, 5], max_features=8,
                         n_nodes_range=[2, 4], max_filter_attempts=3, credit_fraction=0.5)
+    # This integration test exercises training/checkpoint/inference, not statistical
+    # rejection sampling on tiny 96-row tables. Filter acceptance is tested separately.
+    run["prior"]["filter"]["mode"] = "off"
     run["train"].update(max_steps=2, batch_size=2, num_workers=0, log_every=1, save_temp_every=0,
                         save_perm_every=2, amp=False)
     run["logging"] = {"level": "WARNING", "console": False, "to_file": False, "log_prior_every": 0,
@@ -259,8 +263,8 @@ def test_tabpfn_continued_pretraining_trains_saves_resumes_and_is_scored(tmp_pat
     assert tabpfn_checkpoint_identity(ck) == {"run_name": run["_run_name"], "checkpoint_step": 2}
     rng = np.random.default_rng(0)
     X = rng.normal(size=(120, 4))
-    y = (X[:, 0] > 0).astype(float)
-    m = build("tabpfn3", "pd", seed=0, model_path=str(ck), n_estimators=1)
+    y = (X[:, 0] > 0).astype(float) if track == "pd" else 1.0 / (1.0 + np.exp(-X[:, 0]))
+    m = build("tabpfn3", track, seed=0, model_path=str(ck), n_estimators=1)
     m.fit(X[:90], y[:90], [])
     p = m.predict(X[90:])
     assert p.shape == (30,) and np.isfinite(p).all()
@@ -317,13 +321,18 @@ def test_the_checks_script_writes_its_report(tmp_path):
 def _fake_exp0_tree(root: Path, *, resumed: bool = True) -> None:
     from src.eval.benchmark_status import n_slots, slot_for
     from src.utils.config import expand_with_seeds, load
+    from src.utils.preflight import CHECK_SECTIONS, source_fingerprint, training_fingerprint
 
     out = root / "output CreditICL"
     exp0 = out / "experiment_0"
     (exp0 / "report").mkdir(parents=True)
-    (exp0 / "report" / "checks.json").write_text(json.dumps({"rows": [
-        {"check": "env", "name": "gpu", "status": "PASS", "detail": {}}]}), encoding="utf-8")
+    (exp0 / "report" / "checks.json").write_text(json.dumps({
+        "source_fingerprint": source_fingerprint(), "rows": [
+            {"check": name, "name": "fixture", "status": "PASS", "detail": {}}
+            for name in sorted(CHECK_SECTIONS)]}), encoding="utf-8")
     (exp0 / "logs").mkdir()
+    (exp0 / "logs" / "exp0_checks_2.log").write_text(
+        "equivalence PD exit code: 0\nequivalence LGD exit code: 0\nEND status=OK\n", encoding="utf-8")
     (exp0 / "logs" / "pretrain_pd_1.log").write_text(
         "...\nEND status=INCOMPLETE-RESUBMITTED - now\n" if resumed else "END status=OK\n", encoding="utf-8")
     (exp0 / "logs" / "pretrain_pd_2.log").write_text("END status=OK\n", encoding="utf-8")
@@ -331,7 +340,9 @@ def _fake_exp0_tree(root: Path, *, resumed: bool = True) -> None:
         for run in expand_with_seeds(load(ROOT / "config" / f"Exp0_{track.upper()}.yaml")):
             d = exp0 / "runs" / run["_run_name"]
             d.mkdir(parents=True)
+            (d / "config.json").write_text(json.dumps(run), encoding="utf-8")
             (d / "summary.json").write_text(json.dumps({
+                "training_fingerprint": training_fingerprint(),
                 "completed": True, "steps": run["train"]["max_steps"], "train_seconds_total": 600,
                 "resumed_at": 240 if run["arm"] == "scratch_tabicl" and resumed else None}), encoding="utf-8")
             pd.DataFrame({"step": [300, 600, 600], "kind": ["hardware", "hardware", "grad"],
@@ -346,9 +357,20 @@ def _fake_exp0_tree(root: Path, *, resumed: bool = True) -> None:
             owner = out / ("reference" if slot.kind == "reference" else "experiment_0") / "benchmark"
             (owner / "receipts").mkdir(parents=True, exist_ok=True)
             (owner / track).mkdir(parents=True, exist_ok=True)
-            (owner / "receipts" / f"{slot.tag}.json").write_text("{}", encoding="utf-8")
-            pd.DataFrame({"total_seconds": [3600.0, 1800.0]}).to_csv(owner / track / f"results_{slot.tag}.csv",
-                                                                     index=False)
+            from src.eval.benchmark_status import digest
+            from src.eval.protocol import PROTOCOL
+
+            (owner / "ood").mkdir(parents=True, exist_ok=True)
+            files = {"credit": owner / track / f"results_{slot.tag}.csv",
+                     "ood": owner / "ood" / f"ood_results_{slot.tag}.csv"}
+            for domain, path in files.items():
+                pd.DataFrame([dict(dataset=domain, model=slot.model, seed=0, fold=f, status="ok",
+                                   protocol=PROTOCOL, context_cap=slot.context, r2=.3, roc_auc=.7,
+                                   total_seconds=900) for f in range(5)]).to_csv(path, index=False)
+            request = dict(protocol=PROTOCOL, models=[slot.model], seeds=[0], n_folds=5,
+                           credit=["credit"], ood=["ood"], context_cap=slot.context, step=slot.step)
+            (owner / "receipts" / f"{slot.tag}.json").write_text(json.dumps({"request": request,
+                "files": {d: digest(p) for d, p in files.items()}}), encoding="utf-8")
 
 
 def test_the_verifier_passes_a_complete_experiment_0(tmp_path, capsys):
@@ -369,3 +391,26 @@ def test_the_verifier_fails_when_the_forced_stop_never_happened(tmp_path):
     failed = {what for status, what, _ in v.items if status == FAIL}
     assert any("forced stop" in w for w in failed)
     assert any("resumed from a checkpoint" in w for w in failed)
+
+
+def test_verifier_cannot_accept_a_receipt_with_a_missing_ood_result(tmp_path):
+    from src.utils.exp0_verify import FAIL, verify
+
+    _fake_exp0_tree(tmp_path)
+    root = tmp_path / "output CreditICL"
+    next((root / "experiment_0" / "benchmark" / "ood").glob("*.csv")).unlink()
+    v = verify(root)
+    assert any(s == FAIL and "benchmark slot" in what for s, what, _ in v.items)
+
+
+def test_verifier_rejects_completed_training_with_a_changed_recipe(tmp_path):
+    from src.utils.exp0_verify import FAIL, verify
+
+    _fake_exp0_tree(tmp_path)
+    root = tmp_path / "output CreditICL"
+    path = next((root / "experiment_0" / "runs").glob("*/config.json"))
+    cfg = json.loads(path.read_text(encoding="utf-8"))
+    cfg["prior"]["credit_fraction"] = .75
+    path.write_text(json.dumps(cfg), encoding="utf-8")
+    verdict = verify(root)
+    assert any(s == FAIL and "training recipe" in what for s, what, _ in verdict.items)

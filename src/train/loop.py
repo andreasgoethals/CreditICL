@@ -573,7 +573,12 @@ class Trainer:
             scheduler=self.scheduler,
             scaler=self.scaler,
             map_location=self.device,
+            current_config=self.cfg,
         )
+        from src.train.checkpoint import validate_resume_config
+
+        old_cfg = payload.get("crediticl_config") or payload.get("config") or {}
+        validate_resume_config(old_cfg, self.cfg)
         self.step = int(payload.get("step", 0))
         self.datasets_seen = int(payload.get("extra", {}).get("datasets_seen", 0))
         self._train_seconds_before = float(payload.get("extra", {}).get("train_seconds", 0.0) or 0.0)
@@ -615,7 +620,6 @@ class Trainer:
         # `config` now holds the TabICL ARCHITECTURE kwargs, per upstream's loader
         # contract; our resolved YAML moved to `crediticl_config`. The fallback reads
         # checkpoints written before 18-08-2026.
-        old_cfg = payload.get("crediticl_config") or payload.get("config") or {}
         old_steps = old_cfg.get("train", {}).get("max_steps")
         if old_steps is not None and int(old_steps) != self.max_steps:
             self.log.warning(
@@ -625,15 +629,6 @@ class Trainer:
                 "meant to continue the same one.",
                 old_steps, self.max_steps,
             )
-        old_prior = old_cfg.get("prior", {})
-        for key in ("credit_fraction",):
-            if key in old_prior and old_prior[key] != self.cfg["prior"].get(key):
-                self.log.error(
-                    "prior.%s CHANGED on resume: checkpoint was trained with %s, this run says "
-                    "%s. These weights and this data do not belong together — the arm is no "
-                    "longer the arm. Use a fresh checkpoint directory.",
-                    key, old_prior[key], self.cfg["prior"].get(key),
-                )
 
     # -- one optimisation step ----------------------------------------------
     def _loss_for(self, X: torch.Tensor, y: torch.Tensor, train_size: int) -> tuple[torch.Tensor, dict[str, float]]:
@@ -700,7 +695,6 @@ class Trainer:
 
         n_micro = math.ceil(X.shape[0] / self.micro_batch_size)
         totals: dict[str, float] = {"loss": 0.0}
-        oom = 0
 
         for i in range(n_micro):
             sl = slice(i * self.micro_batch_size, (i + 1) * self.micro_batch_size)
@@ -725,6 +719,8 @@ class Trainer:
                 # property of the run rather than of the batch that happened to come along.
                 with sdpa_context():
                     loss, extra = self._loss_for(Xi, yi, int(ts))
+                if not torch.isfinite(loss):
+                    raise FloatingPointError(f"Non-finite training loss at step {self.step}")
                 self.scaler.scale(loss / n_micro).backward()
                 # detach() before float(): torch warns that converting a tensor
                 # still attached to the graph can behave unexpectedly, and we only
@@ -732,35 +728,28 @@ class Trainer:
                 totals["loss"] += float(loss.detach()) / n_micro
                 for k, v in extra.items():
                     totals[k] = totals.get(k, 0.0) + v / n_micro
-            except torch.cuda.OutOfMemoryError:
-                self.log.warning("OOM in micro-batch %d/%d at step %d — skipping", i + 1, n_micro, self.step)
+            except torch.cuda.OutOfMemoryError as exc:
+                self.optimizer.zero_grad(set_to_none=True)
                 torch.cuda.empty_cache()
-                oom += 1
-                continue
+                raise RuntimeError(
+                    f"OOM in micro-batch {i + 1}/{n_micro} at step {self.step}; "
+                    "the incomplete update was discarded. Reduce micro_batch_size before resuming."
+                ) from exc
 
         self._phase["fwd_bwd"] += time.perf_counter() - t_step
         t_tail = time.perf_counter()
 
-        if n_micro and oom / n_micro > 0.1:
-            raise RuntimeError(
-                f"{oom}/{n_micro} micro-batches OOMed at step {self.step}. "
-                "Reduce micro_batch_size, n_rows_range or max_features."
-            )
-
         # Unscale before EITHER of the two things that read raw gradients. L2-SP's
         # contribution is unscaled by construction, so it must not land on scaled gradients.
-        if self.grad_clip > 0 or self.l2sp_alpha > 0:
-            self.scaler.unscale_(self.optimizer)
+        self.scaler.unscale_(self.optimizer)
         # BEFORE the clip, not after: L2-SP is part of the objective, so the norm that gets
         # clipped is the norm of the whole gradient.
         if self.l2sp_alpha > 0:
             totals["l2sp"] = self._apply_l2sp()
-        if self.grad_clip > 0:
-            # Trainable parameters only: frozen ones have no grad, and including
-            # them would change the computed norm and so the effective clip.
-            torch.nn.utils.clip_grad_norm_(
-                [p for p in self.model.parameters() if p.requires_grad], self.grad_clip
-            )
+        torch.nn.utils.clip_grad_norm_(
+            [p for p in self.model.parameters() if p.requires_grad],
+            self.grad_clip if self.grad_clip > 0 else float("inf"), error_if_nonfinite=True,
+        )
 
         # HERE and nowhere else: gradients exist, are unscaled (so the numbers are the real
         # ones rather than AMP's scaled copies), and have not been zeroed yet. One line later
@@ -1072,7 +1061,10 @@ class Trainer:
                 )
                 break
 
+        from src.utils.preflight import training_fingerprint
+
         summary = {
+            "training_fingerprint": training_fingerprint(),
             "steps": self.step,
             "completed": self.step >= self.max_steps,
             "stopped_by_signal": self._stop_requested,

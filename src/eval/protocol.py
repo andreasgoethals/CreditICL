@@ -2,18 +2,18 @@
 which checkpoints are scored. Every model — ours, released TabICLv2, TabPFN-3, CatBoost, the
 linear floor — goes through exactly this.
 
-THE PROTOCOL (version 3, 28-09-2026)
+THE PROTOCOL (version 5, 12-10-2026)
 
 * **5-fold cross-validation**, stratified on the default flag for PD, shuffled with a fixed
   seed, so every model sees the same folds. Each row is scored exactly once, by a model whose
   context (or training set) did not contain it.
 * **The whole training pool is the context.** No row cap, no context selection, no
   subsampling: the four training folds go to the model as they are.
-* **At most `MAX_FEATURES` = 500 columns, the SAME ones for every model** (29-09-2026): a table
-  wider than that (`0011.loan_default`, 759; `0014.algorithmwatch`, 2,986) keeps its 500
-  highest-variance columns, chosen on the training fold alone, for the foundation models, CatBoost
-  and the linear floor alike. The foundation models accept no more; giving the others more would
-  compare inputs, not models. Variance, not a target-aware score, so the choice cannot leak.
+* **At most `MAX_FEATURES` = 100 columns, the SAME ones for every model**: near-constant columns
+  are removed, then a univariate association filter fitted on training rows chooses columns.
+  This is a controlled feature budget, not a claim that the upstream models cannot take more.
+* **No training-row deletion.** Rare/extreme fitted rows are retained. Test rows are never
+  removed; numeric test values are winsorised using training-fold bounds.
 * **PD: the decision threshold maximises F1 on a validation split.** 20 % of the training pool
   (stratified) is held out, the model is fitted on the other 80 %, and the threshold with the
   highest validation F1 is kept. The model is then refitted on the WHOLE training pool and the
@@ -39,7 +39,7 @@ import numpy as np
 #: Bumped whenever the protocol changes, so a completion receipt written under an older one is
 #: never mistaken for a current result (`benchmark_status`). 4 (30-09-2026): TabPFNCredit's
 #: fold preprocessing (below) and the feature cap it replaces PCA with.
-PROTOCOL = 4
+PROTOCOL = 5  # all fitted rows retained; shared context caps; unbounded OOD regression decoding
 N_FOLDS = 5
 #: Share of the training pool held out to choose the PD threshold.
 VALIDATION_FRACTION = 0.2
@@ -222,13 +222,13 @@ def _outlier_rows(X: np.ndarray, numeric: list[int]) -> np.ndarray:
 
 def fit_fold_preprocessing(X_fit: np.ndarray, y_fit: np.ndarray, cat_indices: list[int], *,
                            max_features: int | None = MAX_FEATURES,
-                           selection: str | None = None) -> tuple[FoldPreprocessing, np.ndarray, np.ndarray]:
+                           selection: str | None = None,
+                           remove_outliers: bool = False) -> tuple[FoldPreprocessing, np.ndarray, np.ndarray]:
     """Learn the fold preprocessing on the fitted rows. Returns the preprocessing and the fitted
     rows ready for the model: `(prep, X_fit_clean, y_fit_clean)`.
 
-    1. drop near-constant columns; 2. drop outlier rows (fitted rows only); 3. cap the columns at
-    `max_features` (TabPFNCredit: PCA to 99 components instead); 4. record the winsorising bounds
-    the predicted rows get (the fitted rows are not clipped — their outliers are gone)."""
+    All fitted rows are retained by default. The legacy row filter is opt-in for an explicit
+    ablation. Column filtering and prediction winsorisation learn only from fitted rows."""
     X = np.asarray(X_fit, dtype=np.float32)
     y = np.asarray(y_fit)
     cats = {int(c) for c in cat_indices}
@@ -238,7 +238,7 @@ def fit_fold_preprocessing(X_fit: np.ndarray, y_fit: np.ndarray, cat_indices: li
     keep = np.flatnonzero(~constant)
     numeric = [int(j) for j in keep if j not in cats]
 
-    outliers = _outlier_rows(X, numeric)
+    outliers = _outlier_rows(X, numeric) if remove_outliers else np.zeros(len(X), dtype=bool)
     if outliers.any():
         X, y = X[~outliers], y[~outliers]
 

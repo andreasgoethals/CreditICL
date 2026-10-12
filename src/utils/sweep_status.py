@@ -20,7 +20,7 @@ afterwards would redo the finished ones — 75 arms of work to recover a handful
 
 So this reads the output tree and asks, per arm, *what actually happened*:
 
-    done      `summary.json` says `completed: true`
+    done      summary is complete and reached the currently requested step count
     partial   a checkpoint exists, but no completed summary -> RESUME, do not restart
     todo      nothing on disk
 
@@ -93,6 +93,11 @@ def arm_states(config: Path, out_root: Path | None = None) -> list[ArmState]:
         name = run_name(run)
         # `out_root` mirrors `pretrain.py --out-root`: everything of the arm in <root>/<name>/.
         out_dir = Path(out_root) / name if out_root else paths.run_dir(name)
+        saved_config = out_dir / "config.json"
+        if saved_config.is_file():
+            from src.train.checkpoint import validate_resume_config
+
+            validate_resume_config(json.loads(saved_config.read_text(encoding="utf-8")), run)
         summary = out_dir / "summary.json"
         ckpt = (_latest_checkpoint_name(out_dir / "checkpoints") if out_root else
                 _latest_checkpoint_name(paths.run_checkpoints_dir(name))
@@ -103,12 +108,20 @@ def arm_states(config: Path, out_root: Path | None = None) -> list[ArmState]:
                 data: dict[str, Any] = json.loads(summary.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 data = {}
+            # Legacy summaries remain inspectable without forcing completed work
+            # to rerun. A recorded but different implementation is incompatible.
+            if "training_fingerprint" in data:
+                from src.train.checkpoint import validate_training_fingerprint
+
+                validate_training_fingerprint(data)
             # `completed` was added on 24-08-2026. An older summary that reached max_steps is
             # still done; treating a missing key as "not done" would redo finished work.
             steps = data.get("steps")
             done = data.get("completed")
             if done is None:
                 done = bool(steps) and steps >= (run.get("train") or {}).get("max_steps", 0)
+            else:
+                done = done and steps is not None and steps >= run["train"]["max_steps"]
             states.append(
                 ArmState(
                     index, name, DONE if done else PARTIAL, steps,
@@ -209,11 +222,24 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if not spec:
         return 0
+    if args.out_root:
+        raise ValueError("--resubmit cannot use --out-root: cluster jobs use the configured output tiers.")
+    # The Slurm scripts choose the config from EXP/VARIANT. Never silently submit
+    # Exp1's default when inspecting a different experiment.
+    import re
+    match = re.fullmatch(r"Exp([0-3])_(PD|LGD)(?:_(.+))?\.yaml", Path(args.config).name)
+    if not match or Path(args.config).resolve().parent != ROOT / "config":
+        raise ValueError("--resubmit requires a config/Exp<N>_<PD|LGD>[_variant].yaml config")
+    experiment, track, variant = match.groups()
+    from src.utils.preflight import main as preflight
+    if preflight(["--require-exp0-checks" if experiment == "0" else "--require-exp0"]):
+        return 1
     script = args.script or (
-        "scripts/slurm/pretrain_lgd.slurm" if "LGD" in Path(args.config).name
+        "scripts/slurm/pretrain_lgd.slurm" if track == "LGD"
         else "scripts/slurm/pretrain_pd.slurm"
     )
-    cmd = ["sbatch", "--clusters=mindwell", f"--array={spec}%{args.throttle}", script]
+    cmd = ["sbatch", "--clusters=mindwell", f"--export=ALL,EXP={experiment},VARIANT={variant or ''}",
+           f"--array={spec}%{args.throttle}", script]
     print("\n$ " + " ".join(cmd))
     return subprocess.call(cmd)
 

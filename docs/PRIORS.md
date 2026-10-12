@@ -80,9 +80,10 @@ Three rules govern every addition:
 2. **A mechanism must come from credit risk, not curve-fitting.** The claim is that encoding *how
    losses arise* transfers — not that a parameter was tuned until a histogram matched.
 3. **Every number comes from the credit-risk literature, or is deliberately wide. None comes from the
-   evaluation datasets** (since 29-09-2026). Until then the ranges were calibrated to the 14 PD and 7 LGD
-   datasets the models are scored on — holdout included — which is test leakage: a prior fitted to the
-   test tables would win for a reason the paper could not claim. Where the literature gives a value the
+   evaluation datasets** (since 29-09-2026). A development change on 28-09 calibrated ranges to all
+   14 PD and 7 LGD evaluation datasets, holdout included, and was removed on 29-09. It postdates the
+   completed September campaign; it is not a reason to reject those checkpoints. Such calibration
+   would leak evaluation information into the prior. Where the literature gives a value the
    prior is centred on it; where it gives only a direction, the direction is used and the magnitude is
    left wide; where it is silent, the range is wide on purpose and says so. The real datasets are still
    compared with the prior in notebooks 0.2 and 0.3 (`src/prior/realism.py`) — as a *description* of
@@ -227,7 +228,7 @@ L2-SP, freeze strategy) are in [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md).
 |---|---|---|---|
 | **Exp0** | Exp1's prior, `credit_fraction` 0 / 0.5 / 1 and the Exp2 paths — a debug suite, no result | scratch and released | 600 |
 | **Exp1** | `credit_fraction` 0 / 0.5 / 1 of the literature-grounded credit prior × 3 seeds = 9 arms per track (45 until 28-09-2026) | scratch | 12,500 |
-| **Exp2** | Exp1's prior. TabICLv2 and TabPFN-3 × `credit_fraction` 0 / 0.5 / 1 × 3 seeds = 18 arms per track, each model at its published continued-pretraining recipe | released TabICLv2 and TabPFN-3 | 10,000 |
+| **Exp2** | Exp1's prior. TabICLv2 and TabPFN-3 × `credit_fraction` 0 / 0.5 / 1 × 3 seeds = 18 arms per track, with recipes adapted from published continued pretraining | released TabICLv2 and TabPFN-3 | 10,000 |
 | **Exp3** | Exp1's prior: the control and the mix Exp1 selects × 2 paired seeds | scratch | 200,000 |
 
 **Exp2 is continued pre-training with a published precedent** — TabPFN-Wide (Kolberg et al. 2026)
@@ -243,16 +244,16 @@ small budget, and must be written that way.**
 
 ## 7. Open items
 
-**LGD predictability is below the literature's range.** The check of 5.2 — tree ensembles reach an
-out-of-sample R² of 0.20 – 0.43 on real LGD (Loterman et al. 2012, via Marin 2025) — fails: the credit
-prior's tasks have a median ExtraTrees pseudo-R² of about 0.05 (notebook 0.3, C1), because the published
-ZOIB effects leave most of a loss to chance. The real books look more predictable (median 0.42), but
-part of that is outcome information in their columns (`EXPERIMENTAL_DESIGN.md` §7 item 5), so the
-anchor is the literature, not them. Proposed fix: draw each table's signal-to-noise so the implied
-R² spans the literature's range, validated with the ExtraTrees yardstick — to be decided before
-Experiment 1; it does not affect Experiment 0.
+**LGD signal strength needs a design decision before the full campaign.** The existing notebook
+reports median synthetic ExtraTrees pseudo-R² near 0.05; reported real-data R² of 0.20–0.43
+(Loterman et al. 2012, via Marin 2025) is a different statistic on different data. The difference
+is not by itself a code failure or a justified calibration target. The earlier real-book median
+0.42 also included outcome information (`EXPERIMENTAL_DESIGN.md` §7 item 5). Review the synthetic
+diagnostics and primary literature, then freeze the range and any signal-strength ablation without
+tuning to the evaluation tables. If the generator changes, repeat the affected Exp0 validation.
 
-**Exp2 needs the upstream `tabicl` package installed** (`pip install "tabicl>=2.0"`) — a required
-dependency, because the released checkpoint only loads into the code that saved it (see
-[AGENTS_MEMORY.md](AGENTS_MEMORY.md)). Its TabPFN-3 arms need `tabpfn==9.0.0` (pinned in
-`pyproject.toml`) in the cluster environment for the same reason.
+**Use the pinned upstream packages**: `python -m pip install -e '.[dev,eval]'`, then
+`python -m src.utils.preflight --dependencies-only`. The TabICL Git commit in `pyproject.toml`
+includes the graph prior missing from its same-version PyPI wheel. TabPFN-3 training uses
+`tabpfn==9.1.0`, including the upstream per-estimator regression-target loss correction.
+The package version does not change the explicitly selected TabPFN-3 model generation.

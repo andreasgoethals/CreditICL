@@ -176,6 +176,7 @@ def sample_base_latent(
     device: str = "cpu",
     config: Any | None = None,
     seed: int | None = None,
+    max_cat_size: int = UPSTREAM_MAX_CAT_SIZE,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """The credit arms' starting point: `(X, y_latent)`, UNPADDED and UNPERMUTED.
 
@@ -194,10 +195,10 @@ def sample_base_latent(
     """
     require()
     with seeded(seed) if seed is not None else contextlib.nullcontext():
-        return _sample_base_latent(seq_len, num_features, device, config)
+        return _sample_base_latent(seq_len, num_features, device, config, max_cat_size)
 
 
-def _sample_base_latent(seq_len, num_features, device, config):
+def _sample_base_latent(seq_len, num_features, device, config, max_cat_size):
     from tabicl.prior._reg2cls import outlier_removing, standard_scaling
     from tabicl.prior.graph_lib._base import Context, DatasetProperties
     from tabicl.prior.graph_lib._dataset import RandomDataset
@@ -209,7 +210,7 @@ def _sample_base_latent(seq_len, num_features, device, config):
         n_test=0,
         cat_sizes={
             "x": sample_categorical_sizes(
-                num_features, context, max_cat_size=UPSTREAM_MAX_CAT_SIZE
+                num_features, context, max_cat_size=int(max_cat_size)
             ),
             "y": [0],  # numerical target: we want the latent, not a class index
         },

@@ -37,6 +37,8 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 12-10-2026 | Exp0 checks, job 11680453, Mindwell `gpu_b200`, after `78f6b3f` | **FAILED 1:0, 00:17:27; both trainer-equivalence checks passed** | 21 stale v3 data caches, missing new OOD path while legacy cache exists, installed TabPFN 8.2.0 rejecting v9 inference flags. Repair environment/cache, preflight, then repeat checks. No six-arm Exp0 or benchmark completion yet; 0.291 GPU-h used |
+| 12-10-2026 | September benchmark CSV follow-up, `benchmark-results.zip` | **10,437/10,437 rows OK; no nonfinite headline metrics; 184/184 result hashes match receipts** | All 12 recorded evaluation source hashes match `2034cc2`. The 28-09 dataset-calibration development change postdates this campaign; do not attribute it to these checkpoints. Unequal contexts and AXA boundary diagnostics need re-evaluation only; the corrected optimizer/prior require a new 18-arm Exp1 |
 | 12-10-2026 | Audit of downloaded September Exp1 archive, SHA-256 `537f8272f6530e9cc890bddcc839b3ebe64a70ee23a9d8ca99135e017a01b928` | **90/90 training complete; 92/92 benchmark jobs OK; latest event 24-09 22:00 CEST** | 3,087 credit and 7,350 OOD cells reported successful; no benchmark NaN/error lines. CSVs and checkpoint binaries absent. This is the old 45-arm grid, not the revised 9-arm grid; preserve it, download project-storage results, then validate the revised pipeline through Exp0. No jobs submitted |
 | 24-09-2026 | Exp1 phase 2 benchmark: 11614376 (LGD), 11614377 (PD), Mindwell, arrays 0-45%8 | **COMPLETE 92/92, all OK; credit prior ≈ control on dev, cf 1 worse on both tracks** | PD dev ROC-AUC: best control 0.7326, best credit (cf 0.5 banded aggr) 0.7325, cf 1 0.70–0.72, released TabICLv2 0.7322. LGD dev R²: control 0.520, cf 0.5 ≤ 0.518, cf 1 ≈ 0 (collapse, also OOD). All cf 0/0.5 configs within 1–2 seed SDs. Commit `2034cc2` |
 | 24-09-2026 | Exp1 final download, 19:41; last jobs PD 11604659 / 11613401 / 11613402, LGD 11591463_43 | **COMPLETE: 90/90 arms, all `END status=OK`; phase 2 not run** | ≈1,354 GPU-h (PD 587, LGD 767; banded arms 5–7× the rest). PD monitor (german+myhom, final step): control 0.672, cf 0.5 0.669, cf 1 0.646; OOD 0.997/0.992/0.975. LGD monitor unusable (base_model NaN in 30/45). Monitoring protocols differ — do not rank on them; phase 2 decides |
@@ -70,6 +72,36 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 
 ## Dead ends
 
+### 12-10-2026 — A completed summary could hide changed training code
+- **Tried:** mark an arm complete with the requested step count but an older training fingerprint.
+- **Result:** sweep status incorrectly accepted it as done; regression reproduced before the fix.
+- **Why:** completion checked the saved configuration and steps but not the recorded implementation.
+- **Instead:** reject differing recorded fingerprints in sweep status and require current provenance for benchmark receipts; preserve legacy outputs for historical inspection. Final focused suite: 98 passed, two CatBoost skips tested separately.
+
+### 12-10-2026 — Git pull did not update packages or generated data
+- **Tried:** Exp0 job 11680453 after pulling the revised code.
+- **Result:** 35 FAIL items, exit 1 after 17m27s; PD/LGD trainer equivalence both passed.
+- **Why:** TabPFN 8.2.0 cannot accept `TRANSFORM_TEXT`/`TRANSFORM_DATES`; v3 caches and the old OOD location outlived the source update.
+- **Instead:** install the pinned project requirements, rebuild only stale caches on a CPU node, reuse the legacy OOD path, and pass read-only preflight before requesting a GPU.
+
+### 12-10-2026 — Tiny regression tests had depended on rejected prior tables
+- **Tried:** reject exhausted filtering budgets, then run the existing tiny trainer, pool and stream fixtures.
+- **Result:** the first complete 9.1.0 suite had 16 failures and 24 setup errors, all retry exhaustion in 64–128-row fixtures with 3–6 retries.
+- **Why:** mechanics tests relied on the old last-rejected-table fallback, which silently changed the advertised prior.
+- **Instead:** disable filtering in these tiny fixtures/CPU equivalence mode; keep dedicated upstream filter comparisons. All 256 production-size draws passed; control needed at most four attempts, no fallback.
+
+### 12-10-2026 — Regressor target transforms changed upstream
+- **Tried:** validation against the previously pinned TabPFN 9.0.0.
+- **Result:** source audit found upstream's 9.1.0 transformed-target loss correction; interrupted the first full suite rather than treating it as final validation.
+- **Why:** the ensemble's target transform must also be applied to each member's loss targets.
+- **Instead:** use the official 9.1.0 helper, pin 9.1.0, and update only this project's package with Andreas's permission; real PD/LGD save/resume/evaluation tests pass.
+
+
+### 12-10-2026 — TabPFN silently ignored the optional matched-context cap
+- **Tried:** run the benchmark's capped path with 5,000 available rows and a 200-row cap for each TFM, observing the inputs passed to stubbed external estimators.
+- **Result:** TabICL received 200 rows, TabPFN all 5,000; the requested cap appeared in the run metadata anyway. Full-context comparisons were unaffected.
+- **Why:** only TabICL defined `max_context_rows` and applied the sampler; `_fit_predict` skipped setting the cap on TabPFN. TabICL's fit report also counted rows before its inner cap.
+- **Instead:** cap in the shared TFM fit path before counting fitted rows; test PD/LGD, capped/full modes and identical sampled rows. This is an evaluation correction, not a training restart.
 
 ### 12-10-2026 — Exp0 could report success after a trainer equivalence failure
 - **Tried:** use the Exp0 job's exit status as the readiness gate for the revised experiments.

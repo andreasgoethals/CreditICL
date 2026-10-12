@@ -203,12 +203,14 @@ incomparable across filter settings.
 
 Exp2 continues the pretraining of the **released TabICLv2 and TabPFN-3 weights** on a mixture of the
 original prior and ours. The recipe is a nuisance parameter that must be good enough not to confound
-"does our prior help", so each model uses **the recipe its own literature uses for continued
-pretraining, unchanged** (30-09-2026; the stage-A search that used to choose among candidates around
-these values was dropped): TabICLv2 its authors' stage 3, TabPFN-3 TabPFN-Wide's. The published
-recipes, all in the library or the installed package (bold: the one each model uses):
+"does our prior help", so each model uses optimizer/budget settings **derived from a published
+continued-pretraining recipe** (30-09-2026; the stage-A search was dropped): TabICLv2's stage 3
+settings and TabPFN-Wide's settings applied to TabPFN-3. These are adaptations: our synthetic
+tables have 1,024 rows, not TabICLv2 stage 3's long contexts, and applying a paper's settings to
+a newer model does not establish that paper's results transfer. The recipes compared below are
+in the library or installed package (bold: the settings this project uses):
 
-| | TabPFN's own fine-tuner (tabpfn 9.0.0) | **TabPFN-Wide (Kolberg 2026) → TabPFN-3** | Real-TabPFN (Garg 2025) | TabICLv2 stage 2 / **stage 3 → TabICLv2** |
+| | TabPFN's own fine-tuner (tabpfn 9.1.0) | **TabPFN-Wide (Kolberg 2026) → TabPFN-3** | Real-TabPFN (Garg 2025) | TabICLv2 stage 2 / **stage 3 → TabICLv2** |
 |---|---|---|---|---|
 | optimiser | AdamW (torch betas) | **AdamW** | AdamW | Muon / **Muon** |
 | learning rate | 1e-5 | **1e-5** | 3e-7 | 1e-4 / **2e-5** |

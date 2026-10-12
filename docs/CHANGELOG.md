@@ -10,11 +10,19 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 12-10-2026
 
+- Pin TabPFN 9.1.0 and TabICL's source commit; match upstream regression target transforms, padded-table filtering and categorical limits.
+- Add read-only readiness checks and require current Exp0 evidence before production submissions; rebuild stale caches and reuse the existing OOD cache.
+- Apply application-time PD/default-time LGD feature exclusions; preserve all fit rows by default and allow unbounded OOD regression predictions (protocol 5).
+- Reject nonfinite/partial training updates, exhausted filter retries and incompatible resumes; fingerprint training code, input data and checkpoint bytes.
+- Verify both benchmark domains, preserve failed-log history, and keep sweep resubmission on the requested experiment and step budget.
+- Pass categorical columns to CatBoost natively and hash released reference weights in benchmark receipts.
+- Correct the publication design's claims about leaked features, untouched holdouts and unimplemented mechanism ablations.
+- Apply optional context caps to TabPFN as well as TabICL, using identical sampled rows and reporting the actual rows fitted; verify the September CSVs and correct the calibration timeline.
 - Use `output CreditICL` on both storage tiers; preserve existing files when renaming after `git pull`, update wICE login guidance after Genius retirement, and re-audit the completed September campaign.
 - Correct the H100 CPU cost estimate to the published Genoa rate and remove unsupported queue/cost claims.
 - Update plotting test doubles for the existing capped-context argument so the result-view tests exercise the current API.
 - Make the Exp0 job fail when either trainer equivalence check fails; still run both tracks for diagnostics.
-- Validation: 1,139 tests passed, one skipped; all 11 notebooks ran (119 figures); output rename preserved all 1,156 downloaded files byte for byte.
+- Validation: full suite 1,175 passed/3 skipped; final provenance changes 98 passed/2 skipped; both skipped CatBoost cases passed in an existing environment. Earlier notebook run: 11 notebooks/119 figures; output rename preserved 1,156 files byte for byte.
 
 ## 29-09-2026
 

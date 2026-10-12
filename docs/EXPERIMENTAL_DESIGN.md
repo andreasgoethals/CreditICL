@@ -44,9 +44,10 @@ Each is a publishable negative. The design is built to learn which is true, not 
 
 **One honest limitation.** A generic-realism control arm (O'Prior-style: realism *without* credit
 targeting) was designed but **not built** — see [§3](#3-the-experiments). Without it we cannot
-fully separate "credit-specific structure" from "any added realism". The **double dissociation across
-the two tracks** ([§5.2](#52-the-double-dissociation)) is the substitute control: it rules out
-"narrower/harder" using only our own experiment, with no external control domain.
+fully separate "credit-specific structure" from "any added realism". The proposed crossed
+mechanism ablation ([§5.2](#52-the-double-dissociation)) is also **not implemented** by the current
+three-mixture grid. Gains on PD and LGD alone do not establish a double dissociation or rule out
+generic realism, difficulty or architecture interactions.
 
 ## 2. Verified premises
 
@@ -99,9 +100,10 @@ All share the same real datasets and the same frozen evaluation ([§5](#5-evalua
 `credit_fraction` is the master switch throughout: the share of each batch drawn from our
 credit-targeted path, the rest from the unmodified TabICL prior; `0.0` is the control. **The credit
 prior is the same in every experiment and every number in it comes from the credit-risk literature or
-is deliberately wide — none from the evaluation datasets** ([PRIORS.md](PRIORS.md) §5; until
-29-09-2026 it was calibrated to the 21 datasets it is scored on, holdout included, which is test
-leakage and was removed).
+is deliberately wide — none from the evaluation datasets** ([PRIORS.md](PRIORS.md) §5). A
+development change on 28-09-2026 calibrated the prior to all 21 evaluation datasets, including
+holdout; it was removed on 29-09. That change postdates the completed September campaign and
+must not be attributed to its 90 checkpoints.
 
 | | **Exp0 — does it run?** | **Exp1 — does the prior help, all else equal?** | **Exp2 — is it useful for the real models?** | **Exp3 — run long** |
 |---|---|---|---|---|
@@ -201,13 +203,15 @@ the code looked like the hour it finished.
 
 ## 5. Evaluation
 
-Frozen before any prior tuning; the split lives in every config's `eval:` block. `select_on: dev` —
-choosing the prior on the holdout would invalidate the experiment.
+The designated split lives in every config's `eval:` block; selection uses `select_on: dev`.
+The September results across these datasets have already been inspected. The designated holdout
+is therefore not an untouched confirmatory set for subsequent design changes. Freeze this revised
+protocol, report that history, and obtain an independent source/time cohort for confirmatory claims.
 
 **5.1 What is compared, and on what.** Every checkpoint against the shared reference, on the real
 credit datasets and the out-of-domain suites. The split is fixed:
 
-| track | development (prior choice + all iteration) | holdout (untouched until the end) |
+| track | development (prior choice + iteration) | designated holdout (previously inspected) |
 |---|---|---|
 | **PD** (14) | gmsc, lendingclub, hackerearth, taiwan_creditcard, german, myhom | vehicle_loan, cobranded, bank_status, thomas, loan_default, home_credit, hmeq, algorithmwatch |
 | **LGD** (7) | lgd_lendingclub, base_model, base_modelisation, heloc | loss2, axa, lgd_freddie |
@@ -222,9 +226,10 @@ made on a set of datasets is fitted to them: the winning configuration's score t
 (the winner's curse), exactly as a hyperparameter chosen on test data is. Training on synthetic data
 removes the leak through the weights, not the leak through the choice. Since Experiment 2 dropped its
 search (30-09-2026), the one choice left is Exp3's mix, made on development; every Exp1 and Exp2 result
-is reported on all 21 datasets, the holdout shown separately as the unbiased view.
+is reported on all eligible datasets, with the designated holdout shown separately. This separation
+does not erase the effects of earlier inspection and must not be described as an unbiased fresh test.
 
-**The protocol** (`src/eval/protocol.py`, version 4 since 30-09-2026) is the same for every model —
+**The protocol** (`src/eval/protocol.py`, version 5 since 12-10-2026) is the same for every model —
 our checkpoints, released TabICLv2, TabPFN-3, CatBoost, the linear floor — and for the out-of-domain
 suites: **5-fold cross-validation** (stratified for PD, one fixed fold assignment); **the whole training
 pool is the context** — no row cap, no context selection (Exp1 is also scored with contexts capped at
@@ -232,13 +237,18 @@ pool is the context** — no row cap, no context selection (Exp1 is also scored 
 training pool), after which the model is refitted on the whole pool and the test fold is scored at that
 threshold. Every model runs at its library defaults.
 
-**The data every model receives** are TabPFNCredit's, where these 21 datasets were validated (the
-sibling project `1. TabPFN/TabPFNCredit`): the same per-dataset recipes and the same processed arrays
-(`tests/test_data_identity.py` compares every one), then its post-split steps, learned on the rows each
+**The base data caches** follow TabPFNCredit's per-dataset recipes (the sibling project
+`1. TabPFN/TabPFNCredit`; `tests/test_data_identity.py` compares the processed arrays).
+Since 12-10-2026, `src/eval/feature_policy.py` then excludes known outcome fields for the approved
+prediction times: **PD at application, LGD at default**. It records excluded names and remaps
+categorical columns identically for all models and monitoring. Raw/cache files remain unchanged.
+Remaining anonymised fields and cohort observation dates still need source-dictionary validation;
+behavioural card datasets cannot automatically be described as application underwriting tasks.
+After those exclusions, post-split steps are learned on the rows each
 fit is fitted on and applied to the rows it predicts (`protocol.fit_fold_preprocessing`, from
 TabPFNCredit's `DataFeeder._apply_post_split_preprocessing`): columns where one value covers more than
-99 % of the fitted rows go; fitted rows with a value both in the 0.1 % tails and more than 5 IQR from
-the median go (never a validation or test row); validation and test values are clipped to the fitted
+99 % of the fitted rows go; **all fitted rows are retained by default** (row-outlier removal is an
+explicit optional ablation); validation and test values are clipped to the fitted
 rows' 0.1st and 99.9th percentiles. Where TabPFNCredit reduced a table wider than 99 columns to 99 PCA
 components, we keep **the 100 columns with the strongest rank association with the target** — |AUC −
 0.5| for PD, |Spearman ρ| for LGD — scored on the fitted rows of each fit, the same columns for every
@@ -247,10 +257,10 @@ variance, which favours large units; variance after standardising is one for eve
 reductions the literature does use are the models' own (TabPFN-3's per-member subsets) or a univariate
 supervised filter refitted inside each training set (Mitra v2's F-test top-256, TabForestPFN's F-test,
 the TabPFN documentation's mutual information) — leak-free when refitted per fit, and in its rank form
-indifferent to units and monotone transforms. 100 is the width TabICLv2 and every model we pretrain was
-trained on (at most 100 features, all stages) and TabPFNCredit's 99. It binds on `home_credit` (102
-after the near-constant step), `base_model` (198), `base_modelisation` (250), `loan_default` (746) and
-`algorithmwatch` (2,766), and every result row records what the preprocessing did. Every
+indifferent to units and monotone transforms. The shared 100-column budget is an experimental
+choice matching our synthetic tables, not a claimed architectural limit of every reference model.
+It affects several wide datasets; the exact retained count is fit-dependent and recorded in every
+result row. An all-features reference comparison is a useful separate sensitivity analysis. Every
 saved checkpoint (every 2,500 steps and the final one) is scored, so each arm has a learning curve on
 real data as well as a final number. Our checkpoints train on 1,024-row tables and are scored on contexts
 of up to ~426,000 rows: that length gap is identical for every arm, so the arm-vs-control contrast is
@@ -266,16 +276,18 @@ tests the hypothesis, which no cited paper reports), with R²/RMSE alongside and
 stated (it changes the number materially). Success criteria are set to the LGD literature (published
 R² ≈ 0.04–0.15 linear, 0.10–0.25 beta, 0.20–0.43 tree ensembles), not classification expectations.
 
-**5.2 The double dissociation — the centrepiece.**
+**5.2 The double dissociation — proposed, not yet implemented.**
 
 | mechanism enabled | predicted effect on **LGD** | predicted effect on **PD** |
 |---|---|---|
 | bounded target + boundary mass | **improves** | ~neutral |
 | controlled base rate + Vasicek defaults | ~neutral | **improves** |
 
-A crossed dissociation is the strongest evidence the design can produce without an external control
-domain: it rules out "narrower" and "harder". *No* dissociation with credit still winning on average
-supports only the weaker "harder prior" reading — and must be reported as such.
+Testing this table requires separate mechanism toggles and a valid crossed-target construction.
+The current Exp1/Exp2 configs change only the mixture fraction within each track, so cannot test
+it. Add controlled target-only, feature-only and generic-realism comparisons before attributing
+gains specifically to individual credit mechanisms; measure difficulty as well. Until then, a
+positive result supports only the full prior package under the tested budget and architecture.
 
 **5.3 Out-of-domain retention is a first-class axis, not an appendix.** After training on a
 credit-targeted prior, score general/out-of-domain benchmarks to measure whether in-domain gains were
@@ -283,37 +295,38 @@ bought at out-of-domain cost — Kolberg's Spearman-ρ-vs-base-model instrument 
 and Hoo 2026 predicts exactly this trade. **If domain-targeting costs general performance, that is
 the finding** — Exp2's `2.1`/`2.2` notebooks plot the credit-vs-out-of-domain curve directly.
 
-**5.4 Temporal splits.** Purucker 2026 shows in-context TFMs lose to tuned GBDTs the moment splits
-become temporal or grouped; an i.i.d.-only credit result is not credible. Feasibility is
-dataset-dependent (Freddie has an origination date; Home Credit has none) — see [§7](#7-open-decisions).
+**5.4 Temporal splits.** Distribution-shift work motivates testing time and borrower/source groups,
+rather than generalising an i.i.d. result to deployment. These splits are **not implemented** in the
+current runner; requesting temporal splitting raises an error. Feasibility depends on identifying
+observation dates, label maturity and repeated borrowers in each source — see [§7](#7-open-decisions).
 
 ## 6. Risks
 
 | risk | why it is real | mitigation |
 |---|---|---|
 | our training loop is subtly wrong | it is ours; a bug invalidates all arms equally and invisibly | reproduce the control in the expected range; unit-test the pinball loss; verify a fixed seed reproduces exactly (all in `tests/`) |
-| no generic-realism arm | can't fully separate "credit-specific" from "any realism" | the two-track double dissociation ([§5.2](#52-the-double-dissociation)) as substitute control; state the limit |
+| no generic-realism or crossed-mechanism arms | can't separate credit mechanisms from generic realism/difficulty | implement controlled ablations before making mechanism-specific claims; current mixture grid is insufficient |
 | prior×architecture interaction | TabICLv2 ablations show divergence on the old prior | log all loss curves; report divergence as an outcome |
 | nano→frontier gap | untested at scale (O'Prior's own caveat) | state as a limitation; scope any frontier confirmation separately |
 | credit is not distinctive | if the default prior already covers credit's regime the premise is weak | the `0.2`/`0.3` notebooks measure this before credits are spent |
-| meta-overfitting | 21 datasets, many iterations | frozen dev/holdout split, `select_on: dev` |
+| meta-overfitting | 21 datasets, many iterations, historical holdout results already inspected | dev-only selection and frozen protocol now; independent source/time cohort for confirmatory claims |
 | i.i.d.-only result | Purucker 2026 | temporal splits where the data allows ([§7](#7-open-decisions)) |
-| outcome information in the features | the 29-09-2026 audit found columns recorded after default in four LGD sets and after origination in one PD set ([§7](#7-open-decisions) item 5) | kept (30-09-2026): the datasets are used exactly as TabPFNCredit validated them; every model sees the same columns, so levels may be inflated but the comparison between priors is not biased by it; stated as a limitation |
+| outcome information in the features | the 29-09-2026 audit found outcome-construction and workout fields ([§7](#7-open-decisions) item 5) | known fields excluded under protocol 5; dictionaries needed for remaining fields. Giving every model leaked inputs does not remove the bias |
 | the same loans in dev and holdout | 5,696 of `lendingclub`'s 9,578 loans are in `hackerearth`; `base_modelisation` shares defaults with `base_model` | fixed 30-09-2026: both pairs are on the development side ([§5](#5-evaluation)) |
 
 ## 7. Open decisions
 
 1. **Temporal-split protocol** — which datasets carry a usable date/group column; needs a per-dataset
    audit before the protocol is fixed ([§5.4](#54-temporal-splits)).
-2. **The generic-realism arm** — whether to reimplement O'Prior's engine (reading their public repo
-   first, to avoid a strawman) or accept the two-track dissociation as the control.
+2. **The generic-realism and mechanism ablations** — construct explicit controls at matched budgets
+   after source review; the existing two-track mixture comparison is not a substitute.
 3. **ZOIB/mixture LGD head** — held in reserve behind decoding + support constraints
    ([§2.4](#2-verified-premises)); revisit only if those are insufficient.
 4. **Which mix fills Exp3's `FILL_FROM_EXP1`** — the Exp1 winner on the development datasets; if Exp1
    gives no clean winner, run Exp3 across several mixes rather than betting on one. Exp2 needs no
    winner: it compares every mix itself, at each model's published recipe.
-5. **Outcome information in the evaluation data (audit of 29-09-2026; decided 30-09-2026: the
-   datasets are kept as TabPFNCredit validated them, the dev/holdout overlap is fixed).** A column
+5. **Outcome information in the evaluation data (audit of 29-09-2026; decision revised 12-10-2026).**
+   The following historical audit numbers describe that cache/split, not the corrected benchmark. A column
    scan (ExtraTrees out-of-bag R² with and without the suspects, processed data) found:
    - `base_modelisation` (LGD holdout): `numerateur / denominateur` reproduces `lgd_defaut` to 0.001
      on 57 % of rows — the target is in the features. Also `DT_DECHEANCE_TERME` (acceleration date),
@@ -333,10 +346,14 @@ dataset-dependent (Freddie has an origination date; Home Credit has none) — se
      (59.5 % of the dev set; exact on rate, DTI, revolving balance and utilisation, 99 % of those on
      income too); `base_model` (LGD dev) and `base_modelisation` (LGD holdout) share at least 16 % of
      the holdout's interior LGD values exactly, so likely the same defaults from two extracts.
-   No PD column predicts default suspiciously well alone (highest univariate AUC 0.78). Decision
-   (30-09-2026): no drop list — the recipes stay TabPFNCredit's, where the datasets were validated,
-   and every model sees the same columns; the overlapping pairs moved to development (§5). A result
-   that depends on these columns is to be read with this list at hand.
+   The 30-09 decision to keep all fields was unsound: equal access to leakage does not make the
+   comparison valid. On 12-10 Andreas chose application-time PD/default-time LGD. Known post-outcome
+   fields and target components are now excluded, including categorical copies. Some workout
+   amounts are conservatively excluded without a verified default-time snapshot. Acceleration date
+   (`DT_DECHEANCE_TERME`) is retained: it can be known at default and has not been proved future
+   information. The current `base_modelisation` cache reproduces the target from numerator/denominator
+   within 0.001 on 49.2% of 594 rows, not the historical 57%. Source dictionaries and LGD target
+   definitions remain necessary; weak univariate prediction does not certify absence of leakage.
 6. **Exp2's reported checkpoint** — resolved 30-09-2026: with no search there is no chosen checkpoint;
    the final one (10,000 steps, the recipes' own length) is the result, the others a learning curve.
    `eval.headline_step`, if a config sets it, is honoured by `results_plots.load_results`.

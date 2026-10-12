@@ -27,6 +27,7 @@ import argparse
 import hashlib
 import json
 from dataclasses import dataclass
+from functools import lru_cache
 from itertools import product
 from pathlib import Path
 
@@ -90,6 +91,17 @@ def digest(path: Path) -> str:
     return h.hexdigest()
 
 
+@lru_cache(maxsize=512)
+def _cached_digest(path: str, size: int, mtime_ns: int) -> str:
+    return digest(Path(path))
+
+
+def input_digest(path: Path) -> str:
+    """Hash each large immutable input once per process; a changed file invalidates it."""
+    stat = path.stat()
+    return _cached_digest(str(path.resolve()), stat.st_size, stat.st_mtime_ns)
+
+
 def slot_for(exp: int, track: str, index: int, reference_models: str = REFERENCE_MODELS,
              variant: str | None = None) -> Slot:
     # Placeholders allowed: only the grid size and the checkpoint steps are read here.
@@ -140,7 +152,7 @@ def request(exp: int, track: str, index: int, seeds: tuple[int, ...] = (0,), n_f
             reference_models: str = REFERENCE_MODELS, variant: str | None = None
             ) -> tuple[str, dict, dict[str, Path]]:
     from src.data.discovery import list_datasets
-    from src.eval.ood import N_PER_TASK, list_ood_datasets, manifest_path
+    from src.eval.ood import N_PER_TASK, list_ood_datasets, manifest_path, ood_root
 
     cfg = load(config_path(exp, track, variant))
     runs = expand_with_seeds(cfg)
@@ -159,22 +171,49 @@ def request(exp: int, track: str, index: int, seeds: tuple[int, ...] = (0,), n_f
     sources = list((ROOT / "src/eval").rglob("*.py")) + [
         ROOT / "scripts/evaluate.py", ROOT / "scripts/evaluate_ood.py",
         ROOT / "scripts/slurm/benchmark.slurm",
+        ROOT / "src/data/pipeline.py", ROOT / "src/data/dataset_preprocessing.py",
+        ROOT / "pyproject.toml",
     ]
     code = {p.relative_to(ROOT).as_posix(): digest(p) for p in sorted(sources)}
     data = {"protocol": PROTOCOL, "track": track, "kind": kind, "models": models,
             "seeds": list(seeds), "n_folds": n_folds, "credit": credit, "ood": ood,
             "ood_manifest": digest(manifest_path()), "code": code, "context_cap": slot.context}
+    credit_inputs = {}
+    for name in credit:
+        folder = paths.find_processed_dir(track, name)
+        if folder is None:
+            raise ValueError(f"Missing processed benchmark data: {track}/{name}")
+        credit_inputs[name] = {f: input_digest(folder / f) for f in ("meta.json", "data.parquet")}
+    data["credit_inputs"] = credit_inputs
+    data["ood_inputs"] = {e.slug: input_digest(ood_root() / f"{e.slug}.npz")
+                          for e in list_ood_datasets(kind)}
+    if slot.kind == "reference" and slot.model in ("tabiclv2", "tabpfn3"):
+        from src.eval.baselines import TABICL_RELEASED, find_local_tabpfn_checkpoint
+
+        weights = (paths.find_pretrained(TABICL_RELEASED[track]) if slot.model == "tabiclv2"
+                   else find_local_tabpfn_checkpoint("classifier" if track == "pd" else "regressor"))
+        if weights is None:
+            raise ValueError(f"Missing released weights for {slot.model}/{track}")
+        data["reference_weights"] = {"path": str(weights.resolve()), "sha256": input_digest(weights)}
     if slot.kind == "arm":
         run = runs[slot.arm]
         name = run_name(run)
+        from src.train.checkpoint import validate_resume_config, validate_training_fingerprint
+
+        saved_config = json.loads(paths.run_config_path(name).read_text(encoding="utf-8"))
+        if not {"task", "prior", "train"} <= saved_config.keys():
+            raise ValueError(f"Incomplete saved training configuration for {name}")
+        validate_resume_config(saved_config, run)
         summary = json.loads(paths.run_summary_path(name).read_text(encoding="utf-8"))
+        validate_training_fingerprint(summary)
         final = int(run["train"]["max_steps"])
         if not summary.get("completed") or summary.get("steps") != final:
             raise ValueError(f"Training is not complete for {name}")
         checkpoint = paths.run_checkpoints_dir(name) / f"step-{slot.step}.ckpt"
         stat = checkpoint.stat()
         data.update(run_name=name, config=run, step=slot.step, checkpoint=str(checkpoint.resolve()),
-                    checkpoint_size=stat.st_size, checkpoint_mtime_ns=stat.st_mtime_ns)
+                    checkpoint_size=stat.st_size, checkpoint_mtime_ns=stat.st_mtime_ns,
+                    checkpoint_sha256=input_digest(checkpoint))
     files = {"credit": paths.benchmark_dir_for(slot.tag, track) / f"results_{slot.tag}.csv",
              "ood": paths.benchmark_dir_for(slot.tag, "ood") / f"ood_results_{slot.tag}.csv"}
     return slot.tag, data, files
@@ -196,6 +235,8 @@ def validate_cells(df: pd.DataFrame, datasets: list[str], models: list[str], see
     if context is None:
         if "context_cap" in df and df["context_cap"].notna().any():
             raise ValueError("A context cap was applied; the protocol gives every model the whole pool")
+        if {"n_train", "n_train_used"}.issubset(df.columns) and not df.n_train.eq(df.n_train_used).all():
+            raise ValueError("The full-context benchmark did not fit every training row")
     elif "context_cap" not in df or not pd.to_numeric(df["context_cap"], errors="coerce").eq(context).all():
         raise ValueError(f"This slot scores contexts capped at {context} rows; the file was not")
 

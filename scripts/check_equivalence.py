@@ -53,6 +53,9 @@ def _tiny(cfg: dict) -> dict:
     cfg = copy.deepcopy(cfg)
     p = cfg["prior"]
     p.update(n_rows_range=[128, 128], n_features_range=[2, 8], max_features=16, max_filter_attempts=4)
+    # This CPU mode compares update rules on identical batches, not prior
+    # acceptance. Production-size rejection sampling is checked separately.
+    p["filter"] = {**p.get("filter", {}), "mode": "off"}
     cfg["train"].update(batch_size=8, micro_batch_size=4, max_steps=50)
     cfg.setdefault("model", {}).update(embed_dim=32, col_num_blocks=1, row_num_blocks=1, icl_num_blocks=2,
                                         col_nhead=2, row_nhead=2, icl_nhead=2, col_num_inds=8)

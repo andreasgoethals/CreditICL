@@ -11,14 +11,10 @@ familiar, and distinguishes *temporary* checkpoints (frequent, pruned) from
 *permanent* ones (kept), as upstream does via `save_temp_every` /
 `save_perm_every`.
 
-**What resume does and does not guarantee.** Model, optimizer, scheduler, step
-counter and the *main-process* prior RNG are restored exactly. DataLoader worker
-RNGs are not: workers are re-spawned on resume, so a resumed run draws a
-different — but still reproducible-from-seed — task stream than an uninterrupted
-one would have. That is a real limitation and is recorded in the checkpoint as
-`resumed_at`, so any run whose stream was interrupted is identifiable rather than
-silently assumed pristine. Matched-compute claims are made in *steps and datasets
-consumed*, which resume preserves exactly.
+Model, optimizer, scheduler and step counter are restored. The prior stream is
+indexed by batch/slot (src/prior/stream.py), so resuming at the saved step replays
+the same tasks independently of the worker count. A changed training implementation
+or recipe must use a new run name; historical checkpoints remain readable for scoring.
 """
 
 from __future__ import annotations
@@ -31,6 +27,35 @@ from typing import Any
 import torch
 
 STEP_RE = re.compile(r"^step-(\d+)\.ckpt$")
+
+
+def validate_training_fingerprint(payload: dict[str, Any]) -> None:
+    from src.utils.preflight import training_fingerprint
+
+    if payload.get("training_fingerprint") != training_fingerprint():
+        raise ValueError("Checkpoint training code differs or has no recorded fingerprint. "
+                         "Preserve it for evaluation; use a new run name for the current recipe.")
+
+
+def validate_resume_config(old: dict[str, Any], current: dict[str, Any]) -> None:
+    """Do not continue weights under a different prior, seed or optimiser recipe.
+
+    Worker/micro-batch counts, output/logging settings and the maximum step count
+    may change for recovery. Extending the schedule is warned about by the trainer.
+    """
+    changed = []
+    for key in ("task", "seed", "architecture", "model", "init", "prior"):
+        if key in old and old[key] != current.get(key):
+            changed.append(key)
+    old_train, new_train = old.get("train", {}), current.get("train", {})
+    for key in ("batch_size", "optimizer", "lr", "weight_decay", "beta1", "beta2", "momentum",
+                "scheduler", "warmup_proportion", "gradient_clipping", "l2sp_alpha", "loss_weights",
+                "cosine_num_cycles", "cosine_amplitude_decay", "cosine_lr_end", "n_estimators", "amp"):
+        if key in old_train and old_train[key] != new_train.get(key):
+            changed.append(f"train.{key}")
+    if changed:
+        raise ValueError("Resume configuration CHANGED: " + ", ".join(changed)
+                         + ". Preserve these checkpoints and use a new run name for a different recipe.")
 
 
 def latest_checkpoint(ckpt_dir: str | Path) -> Path | None:
@@ -93,7 +118,10 @@ def save_checkpoint(
             "loadable by TabICLRegressor(model_path=...) and `crediticl` cannot be scored from "
             "it. Build the model through src.models.architecture.build_model, which records it."
         )
+    from src.utils.preflight import training_fingerprint
+
     payload = {
+        "training_fingerprint": training_fingerprint(),
         "config": model_config,          # upstream's contract: kwargs to TabICL
         "state_dict": model.state_dict(),
         "curr_step": step,               # upstream's name for the step
@@ -125,10 +153,14 @@ def load_checkpoint(
     scheduler: Any = None,
     scaler: Any = None,
     map_location: str = "cpu",
+    current_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     # weights_only=False because the payload carries the config dict; the file is
     # one we wrote ourselves on our own filesystem.
     payload = torch.load(path, map_location=map_location, weights_only=False)
+    if current_config is not None:
+        validate_training_fingerprint(payload)
+        validate_resume_config(payload.get("crediticl_config") or {}, current_config)
     model.load_state_dict(payload["state_dict"])
     if optimizer is not None and payload.get("optimizer_state"):
         state = payload["optimizer_state"]

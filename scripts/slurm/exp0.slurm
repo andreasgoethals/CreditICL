@@ -56,6 +56,7 @@ trap _log_exit EXIT
 
 cd "${VSC_DATA}/CreditICL"
 source scripts/slurm/_activate_env.sh
+python -m src.utils.preflight
 
 echo "=========================================="
 echo "CreditICL — EXPERIMENT 0 — CHECKS"

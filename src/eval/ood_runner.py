@@ -88,21 +88,13 @@ def _fold_arrays(X: np.ndarray, y: np.ndarray, train_idx: np.ndarray, test_idx: 
         Xtr = np.where(np.isfinite(Xtr), Xtr, med)
         Xte = np.where(np.isfinite(Xte), Xte, med)
     if regression:
-        # THE REGRESSION BASELINES CLIP TO [0,1], because LGD is a loss fraction
-        # (see LinearBaseline._predict). Out-of-domain targets have arbitrary
-        # scales, so feeding them raw makes every model look terrible for a reason
-        # that has nothing to do with generality — a standard-normal target scored
-        # R^2 = 0.34 when the true relationship was perfectly linear.
-        #
-        # So min-max the target into [0,1]. R^2 is invariant to an affine transform
-        # of y applied consistently to train and test, so this changes nothing about
-        # what is being measured. Statistics come from TRAIN ONLY: using the test
-        # range would leak the test distribution into the fit.
+        # Retain training-fold affine normalisation for comparable error units.
+        # OOD wrappers receive bounded_target=False: a test value beyond the
+        # training range is allowed, and its prediction must not be clipped as LGD.
         lo, hi = float(np.min(ytr)), float(np.max(ytr))
         if hi - lo < 1e-12:
             raise ValueError("training target is constant after splitting")
-        # Test values outside the training range land outside [0,1] and take a small
-        # clipping penalty. That is honest — the model genuinely never saw that range.
+        # Test values outside the training range remain outside [0,1].
         ytr = ((ytr - lo) / (hi - lo)).astype(np.float32)
         yte = ((yte - lo) / (hi - lo)).astype(np.float32)
         info["target_scaled_from"] = [round(lo, 6), round(hi, 6)]

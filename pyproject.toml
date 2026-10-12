@@ -81,16 +81,16 @@ dependencies = [
   # stage-1 script selects. Only the default branch ships them, at the same version
   # string. `[pretrain]` pulls xgboost, which `tabicl.prior._tree_scm` imports at module
   # scope — without it the whole `tabicl.prior` package fails to import.
-  "tabicl[pretrain] @ git+https://github.com/soda-inria/tabicl.git",
+  "tabicl[pretrain] @ git+https://github.com/soda-inria/tabicl.git@8f1aa2098c894ab91dba15209cf2002ba4be6c6c",
 ]
 
 [project.optional-dependencies]
 # ---------------------------------------------------------------------------
 # Muon — the optimizer TabICLv2 uses, and credits part of its gain to.
 #
-# NOT NEEDED on torch >= 2.9, which ships `torch.optim.Muon` in core (verified
-# present on torch 2.13). `src/train/optim.py` prefers the built-in and only falls
-# back to these. Install with `pip install -e ".[muon]"` on an older torch.
+# Training uses upstream/vendored Muon, not torch.optim.Muon: its grouping and
+# scaling must match TabICLv2. This optional dependency is retained for older
+# development environments; it does not select the training optimizer.
 #
 # Deliberately not reimplemented by us: Muon's correctness turns on details
 # (Newton-Schulz iteration count, the 0.2*sqrt(max(n,m)) Moonlight scaling, cautious
@@ -120,7 +120,7 @@ muon = [
 #
 # Pin by commit, never by branch, so a prior ablation stays reproducible.
 tabicl = [
-    "tabicl @ git+https://github.com/soda-inria/tabicl.git@main",
+    "tabicl @ git+https://github.com/soda-inria/tabicl.git@8f1aa2098c894ab91dba15209cf2002ba4be6c6c",
 ]
 
 dev = [
@@ -144,7 +144,8 @@ dev = [
 # ---------------------------------------------------------------------------
 eval = [
     "catboost>=1.2",          # the GBDT baseline every credit paper reports
-    "tabpfn==9.0.0",          # TabPFN-3: inference, and Exp2's continued pretraining, which calls
+    "tabpfn==9.1.0",          # Includes upstream's transformed regression-target loss fix.
+                             # TabPFN-3 inference and Exp2 continued pretraining call
                               # tabpfn.finetuning internals of exactly this version (Exp0 checks it)
     "tabicl>=2.0",            # released TabICLv2 checkpoints, inference only
 

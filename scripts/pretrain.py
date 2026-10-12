@@ -143,7 +143,6 @@ def main() -> int:
     log_dir = out_dir / "logs"
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    cfg_path.write_text(json.dumps(run, indent=2, default=str), encoding="utf-8")
 
     print(f"=== {run['_run_name']} ===", flush=True)
     print(f"grid {index + 1}/{len(runs)}  levers: {json.dumps(run['_grid']['assignments'], default=str)}", flush=True)
@@ -168,6 +167,8 @@ def main() -> int:
 
     trainer = Trainer(run, out_dir, device=args.device, ckpt_dir=ckpt_dir, log_dir=log_dir)
     trainer.maybe_resume()
+    # Preserve the previous configuration when a resume is refused.
+    cfg_path.write_text(json.dumps(run, indent=2, default=str), encoding="utf-8")
     summary = trainer.train()
 
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")

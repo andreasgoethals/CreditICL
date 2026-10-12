@@ -284,17 +284,18 @@ class TaskGenerator:
                 continue
             attempts += 1
             last = task
-            d = int(task.meta["d"])
             judged = not (plan.use_credit and self.filter_scope == "base")
-            if not judged or self.filter.accept(task.X[:, :d], task.y, is_classif=not self.regression):
+            # Upstream GraphPrior filters the padded table. Removing its padding
+            # changes ExtraTrees' seeded feature permutations and can change acceptance.
+            if not judged or self.filter.accept(task.X, task.y, is_classif=not self.regression):
                 task.meta.update(filter_attempts=attempts, invalid_attempts=invalid)
                 return task
         if last is None:
             raise RuntimeError(f"prior produced {invalid} invalid tasks without a valid candidate "
                                f"(task={self.task}, source={kind})")
-        last.meta.update(filter_attempts=attempts, invalid_attempts=invalid, filter_fallback=True)
-        self.filter_fallbacks += 1
-        return last
+        raise RuntimeError(f"prior exhausted rejection budget ({attempts} filtered, {invalid} invalid; "
+                           f"task={self.task}, source={kind}). Refusing to train on a rejected table; "
+                           "inspect the prior/filter before raising max_filter_attempts.")
 
     def _valid(self, task: SyntheticTask, plan: SlotPlan) -> bool:
         """Hard validity, then upstream's class check (which may repair the split by permuting
@@ -390,7 +391,8 @@ class TaskGenerator:
         # The credit arms start from the SAME upstream graph sampler as the control, unpadded
         # and unpermuted so the credit columns have somewhere to go.
         if self.base_impl == "upstream":
-            X, y_latent = upstream.sample_base_latent(seq_len=n_gen, num_features=informative, seed=seed)
+            X, y_latent = upstream.sample_base_latent(seq_len=n_gen, num_features=informative, seed=seed,
+                                                    max_cat_size=self.credit_max_cat_size)
             meta["base_impl"] = "upstream.graph_lib"
         else:
             cols = rand_dataset_plain(rng, rand_cat_sizes(rng, informative, max_cat_size=self.credit_max_cat_size),

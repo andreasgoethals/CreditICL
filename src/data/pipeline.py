@@ -146,8 +146,16 @@ def preprocess_one(task: str, dataset: str, *, force: bool = False) -> Path:
 
     existing = find_processed_dir(task, dataset)
     if existing is not None and not force:
-        log.info("[data] %-28s cached, skipping  (%s)", f"{task}/{dataset}", existing)
-        return existing
+        try:
+            version = json.loads((existing / "meta.json").read_text(encoding="utf-8")).get("cache_version")
+        except (OSError, ValueError):
+            version = None
+        parquet = existing / "data.parquet"
+        if version == CACHE_VERSION and parquet.is_file() and parquet.stat().st_size > 0:
+            log.info("[data] %-28s cached, skipping  (%s)", f"{task}/{dataset}", existing)
+            return existing
+        log.info("[data] %-28s rebuilding stale/incomplete cache (version %s -> %s)",
+                 f"{task}/{dataset}", version, CACHE_VERSION)
 
     raw_path = find_raw_file(task, dataset)
     if raw_path is None:
@@ -232,6 +240,7 @@ def preprocess_one(task: str, dataset: str, *, force: bool = False) -> Path:
     # LAST, on purpose: this file is the completeness marker, so an interrupted
     # run leaves a directory that reads as absent rather than as complete.
     _atomic_write_text(out_dir / "meta.json", json.dumps(asdict(meta), indent=2))
+    _load_cached.cache_clear()
 
     extra = (
         f"base_rate={meta.base_rate:.4f}"
@@ -294,7 +303,7 @@ def load_frame(task: str, dataset: str) -> tuple[pd.DataFrame, DatasetMeta]:
         raise ValueError(
             f"{task}/{dataset} was processed with cache_version="
             f"{meta_raw.get('cache_version')} but this code expects {CACHE_VERSION}. "
-            "Re-run with: python scripts/preprocess.py --task both --force"
+            "Rebuild stale caches with: python scripts/preprocess.py --task both"
         )
     known = set(DatasetMeta.__dataclass_fields__)
     meta = DatasetMeta(**{k: v for k, v in meta_raw.items() if k in known})

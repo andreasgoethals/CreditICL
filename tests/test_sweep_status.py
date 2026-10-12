@@ -85,6 +85,63 @@ def test_an_old_summary_without_the_completed_key_still_counts_as_done(tmp_path,
     assert sweep_status.arm_states(ROOT / "config" / "Exp1_LGD.yaml", out_root=tmp_path)[0].state == DONE
 
 
+def test_finished_shorter_schedule_does_not_count_as_finished_extended_run(tmp_path):
+    from src.utils import sweep_status
+    from src.utils.config import expand_with_seeds, load
+
+    config = ROOT / "config" / "Exp1_LGD.yaml"
+    run = expand_with_seeds(load(config))[0]
+    directory = tmp_path / run["_run_name"]
+    directory.mkdir()
+    (directory / "summary.json").write_text(json.dumps({"steps": 100, "completed": True}))
+    assert sweep_status.arm_states(config, tmp_path)[0].state == PARTIAL
+
+
+def test_finished_summary_cannot_hide_a_changed_training_recipe(tmp_path):
+    from src.utils import sweep_status
+    from src.utils.config import expand_with_seeds, load
+
+    config = ROOT / "config" / "Exp1_LGD.yaml"
+    run = expand_with_seeds(load(config))[0]
+    directory = tmp_path / run["_run_name"]
+    directory.mkdir()
+    (directory / "summary.json").write_text(json.dumps({"steps": 12500, "completed": True}))
+    run["prior"]["credit_fraction"] = .75
+    (directory / "config.json").write_text(json.dumps(run))
+    with pytest.raises(ValueError, match="Resume configuration CHANGED: prior"):
+        sweep_status.arm_states(config, tmp_path)
+
+
+def test_finished_summary_cannot_hide_a_changed_training_implementation(tmp_path):
+    from src.utils import sweep_status
+    from src.utils.config import expand_with_seeds, load
+
+    config = ROOT / "config" / "Exp1_LGD.yaml"
+    run = expand_with_seeds(load(config))[0]
+    directory = tmp_path / run["_run_name"]
+    directory.mkdir()
+    (directory / "summary.json").write_text(json.dumps({
+        "steps": 12500, "completed": True, "training_fingerprint": "older implementation"}))
+    with pytest.raises(ValueError, match="training code differs"):
+        sweep_status.arm_states(config, tmp_path)
+
+
+def test_resubmit_uses_the_requested_experiment_and_checks_readiness(monkeypatch):
+    from src.utils import sweep_status, preflight
+
+    monkeypatch.setattr(sweep_status, "arm_states", lambda *a: [_arm(0, PARTIAL)])
+    calls = []
+    monkeypatch.setattr(preflight, "main", lambda args: calls.append(args) or 1)
+    monkeypatch.setattr(sweep_status.subprocess, "call", lambda cmd: pytest.fail("submitted despite failed gate"))
+    assert sweep_status.main(["--config", "config/Exp2_LGD.yaml", "--resubmit"]) == 1
+    monkeypatch.setattr(preflight, "main", lambda args: calls.append(args) or 0)
+    monkeypatch.setattr(sweep_status.subprocess, "call", lambda cmd: calls.append(cmd) or 0)
+    assert sweep_status.main(["--config", "config/Exp2_LGD.yaml", "--resubmit"]) == 0
+    assert "--export=ALL,EXP=2,VARIANT=" in calls[-1]
+    assert calls[-1][-1] == "scripts/slurm/pretrain_lgd.slurm"
+    assert calls[0] == ["--require-exp0"]
+
+
 @pytest.mark.parametrize("track", ["LGD", "PD"])
 def test_the_tool_covers_the_whole_grid(track):
     """One state per array index, or the spec cannot be trusted."""

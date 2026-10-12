@@ -176,6 +176,132 @@ The one thing to do differently.
 ## Runs
 
 
+## 12-10-2026 — Exp0 checks failed on stale environment/data; trainer equivalence passed
+
+**Submitted** 12-10-2026 14:03 CEST by Andreas | **job** `11680453` | **cluster** Mindwell `gpu_b200`
+**Checkout pulled** `78f6b3f` | **GPUs** 1 x B200 | **allocation** 24 CPUs, 180 GiB, 02:00:00 limit
+
+### Configuration
+
+`sbatch --clusters=mindwell scripts/slurm/exp0.slurm`: environment, storage, data, released
+weights, prior/trainer smoke checks and benchmark folds, followed by 20-step comparisons of
+our trainer with upstream on identical batches for each track using `Exp1_PD.yaml` and
+`Exp1_LGD.yaml`. No full training sweep is part of this job. The terminal confirms that both
+old output roots were renamed successfully and checkpoints outside them were not moved.
+The cluster's actual submodule checkout was not printed; the local pin is
+`1ac6e6783f24b2d5cd058af7ad8cad7c1bfaf7ae`.
+
+### Results, anomalies and next step
+
+The subsequent 14:47 terminal transcript reports **FAILED, exit 1:0, elapsed 00:17:27**,
+ending at 14:21 CEST. There are 35 FAIL items; principal causes:
+
+- All 21 processed datasets still use cache version 3, while the current loaders require 5.
+- The new `data/ood` directory is absent; the pre-existing `prior_cache/ood` was not consulted.
+- Installed TabPFN **8.2.0** rejects `TRANSFORM_TEXT` and `TRANSFORM_DATES` with two Pydantic
+  validation errors. Andreas's 15:01 output confirms TabICL 2.1.1 and Pydantic 2.13.4.
+
+Both PD and LGD trainer-equivalence subprocesses returned **0** on the B200. Determinism
+across worker counts, processes and shared control slots passed. These successes do not
+override the other failed sections. There is no supplied completion evidence for the six
+600-step arms, the forced-resume test, or the Exp0 benchmark.
+
+This job consumed **0.290833 GPU-hours** of allocation. The published GPU-only rate of
+437.5 credits/minute implies ~7,634 GPU credits; that excludes CPU charges and is not a
+SAM billing record. Exact credits require `sam-list-usagerecords`/account records. The old
+campaign's ~1,354 GPU-hour figure is a historical estimate, not this job's cost.
+
+Prepared fixes: dependency pins and read-only preflight, CPU rebuild of stale caches without
+`--force`, legacy OOD lookup, version-checked local model loading, current-code Exp0 launch
+gates and paired benchmark receipts. A current-code fingerprint prevents an old validation
+report or old training summary from unlocking the revised campaign. Successful historical
+outputs and checkpoints are preserved.
+
+The same-day primary-source review found TabPFN 9.1.0 (released 02-10-2026) fixes regressor
+loss targets after per-estimator transforms. The project now uses that helper and pins 9.1.0;
+Andreas authorized installing this version in `.CreditICL` only. Both real-weight PD and LGD
+save/resume/evaluation integration tests passed. A separate CPU probe drew 64 tables for each
+PD/LGD x control/pure-credit combination at the configured 1,024 rows (256 tables total):
+all passed, no fallback; control rejection rates were 28.1% PD and 20.0% LGD, at most four
+attempts for a table. Credit tables are unfiltered under the configured base-only filter scope.
+This is a small validation sample, not a guarantee for an 800,000-table arm.
+The TabPFN change is a future TabPFN/Exp2 path fix, not a
+cause of September's TabICL results. No cluster job was submitted by the agent.
+
+Andreas also selected **PD at application / LGD at default**. Protocol 5 excludes known
+post-outcome/target-construction fields, retains every eligible fitted row by default, and
+does not clip OOD regression to [0,1]. These changes invalidate old evaluation receipts,
+not the saved synthetic-training weights. Remaining anonymised feature timing and temporal/
+grouped splits still require source-dictionary work before confirmatory publication claims.
+The CatBoost wrapper now declares categorical columns and converts codes/missing values
+consistently for its native handling. Two real CatBoost 1.2.10 tests (PD/LGD, missing/unseen
+categories) passed using the already installed CreditPFN environment without modifying it;
+CatBoost is absent from `.CreditICL` and is now a preflight dependency check.
+
+Local validation with TabPFN 9.1.0: full pytest suite **1,175 passed, 3 skipped** (1,220 s).
+Two skips were the CatBoost integrations verified separately above; the third tests the
+upstream-absent path, inapplicable with TabICL installed. After the final provenance guards,
+the affected launcher, benchmark, recovery and trainer integration modules passed **98 tests**,
+with those same two CatBoost skips (199 s). `pip check` and `git diff --check` passed.
+These checks do not replace validation of the current code on the B200 or a full-size benchmark.
+
+Next: deploy fixes, repair packages and caches, pass preflight, repeat the checks job,
+then complete short training/resume/benchmark validation before the revised **18-arm Exp1**.
+
+## 12-10-2026 — September benchmark CSVs verified; rerun reasons clarified
+
+**Source:** `Downloads/benchmark-results.zip`, 1,544,116 bytes, 552 files; SHA-256
+`e7c472d994364c35f389d1ca6955fa5dee4ae3a6d8f5cb23168e1aa822e16898`.
+All archive CRCs pass. This supplies the missing result tier for jobs `11614376` and
+`11614377` of 24-09-2026, not a newly executed experiment.
+
+### Configuration and results
+
+All 92 receipts describe evaluation protocol 2. Each receipt's full dataset x model x seed
+set is present, without duplicate keys; all 184 credit/OOD CSV SHA-256 values match their
+receipts. Every one of the 12 recorded evaluation-source hashes matches commit `2034cc2`,
+resolving the evaluation-code uncertainty left by the log's dirty-checkout marker.
+Training-source provenance is not included in those hashes.
+
+| Track | Credit rows OK | OOD rows OK | Best control dev | Best 50% credit dev |
+|---|---:|---:|---:|---:|
+| PD (ROC-AUC) | 2,058 | 3,675 | 0.732639 | 0.732451 |
+| LGD (R2) | 1,029 | 3,675 | 0.519735 | 0.518260 |
+
+Every headline metric is present and finite. All 945 trained-checkpoint LGD rows report
+`pred_nonfinite_frac=0`, including all 135 rows on `0004.base_model`, the dataset affected by
+historical monitoring NaNs. Mixed-credit and control remain close; pure-credit LGD remains
+poor. Those old monitoring NaNs are not a reason to retrain or discard checkpoints.
+
+### Limitations and chronology correction
+
+- Context mismatch is confirmed: our and released TabICL used at most 1,024 rows, TabPFN up
+  to 10,000, and CatBoost/linear the full pool. The outer `n_train_used` and requested
+  `context_cap` columns alone do not describe the actual TabICL context; its inner cap is
+  recorded separately. A fair cross-model comparison requires re-evaluation, not retraining.
+- AXA's 147 rows have no boundary MAE because the old tolerance counted its near-zero/one
+  targets as interior. Headline R2/RMSE remain finite; boundary diagnostics need recomputing
+  with the current tolerance.
+- The specific calibration of priors against all evaluation datasets was introduced during
+  development on 28-09 and replaced by literature-based ranges on 29-09, after these runs.
+  The saved September configs contain the earlier recipe. It was incorrect to present that
+  later calibration change as an established flaw in these September checkpoints.
+- The genuine training changes documented on 28-09 do apply: the old Muon setup differed
+  from upstream, PD mechanism mode skipped configured selection/noise, and the task stream,
+  LGD target encoding and prior design were subsequently revised. Existing weights cannot
+  be relabelled as trained with the corrected recipe; the updated main Exp1 needs 9 arms per
+  track, 18 total. The old 90 remain exploratory evidence.
+
+The current optional capped benchmark still silently left TabPFN uncapped. A local regression
+test reproduced 5,000 rows being fitted when 200 were requested for both tasks. The shared
+TFM sampler now enforces identical capped rows and accurate fit counts; full-context behavior
+is preserved. Validation: 1,143 tests passed, one expected skip. This fix is local until deployed.
+
+Preserve all historical files. The subsequently supplied failure of the submitted Exp0 job is
+recorded above; repair it and complete the short Exp0 runs, then revised Exp1 and its benchmark. No new cluster
+job was submitted by the agent during this CSV audit.
+
+
 ## 12-10-2026 — downloaded September campaign re-audited; no new run
 
 **Source:** `Downloads/output.zip`, 7,710,929 bytes; SHA-256

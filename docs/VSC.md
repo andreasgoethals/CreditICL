@@ -293,18 +293,20 @@ What it tests, and why each can break a big run:
 | the benchmark (12 slots per track) | every arm's checkpoint and the four reference models on EVERY dataset with the full protocol, then the capped-context slots | memory and time on the largest (`hackerearth`, ~426k-row context) and widest (`algorithmwatch`) tables, before 120 slots depend on them |
 
 ```bash
-cd $VSC_DATA/CreditICL
-git pull
+cd "$VSC_DATA/CreditICL"
+git pull --ff-only
 source scripts/slurm/_activate_env.sh
-python -c "import tabpfn, tabicl; print(tabpfn.__version__, tabicl.__version__)"   # Exp2 needs tabpfn 9.0.0
+python -m pip install -e '.[dev,eval]'                    # git pull does not update packages
+python -m src.utils.preflight --dependencies-only         # exact TabPFN 9.1.0 + TabICL commit; CatBoost present
 python scripts/check_storage.py
 python -m src.utils.fetch_ood --status                   # the OOD cache (login node: fetch it here if missing)
-python scripts/preprocess.py --task both --force         # the processed cache, rebuilt as TabPFNCredit's (cache version 5)
+sbatch --clusters=wice --export=ALL,TASK=both scripts/slurm/preprocess.slurm  # CPU: rebuild stale caches
 
-# 1. the checks job (~1 h)
-sbatch --clusters=mindwell scripts/slurm/exp0.slurm
+# 1. AFTER the preprocessing job finishes: no GPU allocation if prerequisites fail.
+python -m src.utils.preflight && sbatch --clusters=mindwell scripts/slurm/exp0.slurm
 
 # 2. three tiny arms per track (600 steps: Exp1's scratch TabICL, Exp2's TabICLv2 and TabPFN-3 paths).
+#    AFTER the checks job succeeds; every training job also enforces this gate.
 #    Index 0 gets a 16-minute walltime on purpose: SIGUSR1 arrives before the end, the arm saves,
 #    exits 64 and resubmits itself until it is done — the resilience chain, tested for real.
 for T in pd lgd; do
@@ -331,7 +333,11 @@ rsync -avs --exclude 'checkpoints/' --exclude 'prior_cache/' "$VSC_LOGIN:/lustre
 ```
 
 and run `python -m src.utils.exp0_verify`: every item PASS/FAIL, and the cost of Experiments 1-3 —
-GPU-hours, checkpoint storage — from the measured speeds and sizes.
+GPU-hours, checkpoint storage — from the measured speeds and sizes. On the cluster,
+`python -m src.utils.preflight --require-exp0` additionally verifies current receipt fingerprints
+against the available data and checkpoint files. Production launchers enforce it. Changes to
+executable code/configs invalidate the checks report; changes to training code also invalidate
+the short training evidence. Historical logs and checkpoints are never deleted by these checks.
 
 ## 11. Rename existing output, preserving completed work
 

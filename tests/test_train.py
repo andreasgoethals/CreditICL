@@ -440,9 +440,9 @@ def test_resume_errors_when_the_prior_changed(tmp_path, lgd_cfg):
     lgd_cfg["prior"]["credit_fraction"] = 1.0  # a different arm!
     l2 = tmp_path / "l2"
     t2 = Trainer(lgd_cfg, tmp_path / "o2", device="cpu", ckpt_dir=ck, log_dir=l2)
-    t2.maybe_resume()
+    with pytest.raises(ValueError, match="Resume configuration CHANGED: prior"):
+        t2.maybe_resume()
     t2.close()
-    assert "credit_fraction CHANGED" in _log_text(l2)
 
 
 def test_resume_is_quiet_when_nothing_changed(tmp_path, lgd_cfg):

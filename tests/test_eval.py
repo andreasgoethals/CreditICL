@@ -720,6 +720,57 @@ def test_the_progress_hook_scores_through_upstreams_wrapper_too():
     assert "standardise_from_context(" not in progress
 
 
+@pytest.mark.parametrize("task", ["pd", "lgd"])
+@pytest.mark.parametrize("cap", [None, 200])
+def test_all_tfm_wrappers_receive_the_same_context(monkeypatch, task, cap):
+    """Check the rows actually passed to each estimator, including TabPFN's capped slot."""
+    import sys
+    from types import SimpleNamespace
+
+    from src.eval import baselines
+    from src.eval.runner import _fit_predict
+
+    seen = {}
+
+    class Estimator:
+        def __init__(self, **kwargs):
+            pass
+
+        def fit(self, X, y):
+            seen[name] = (X.copy(), y.copy())
+
+        def predict(self, X):
+            return np.full(len(X), 0.5)
+
+        def predict_proba(self, X):
+            return np.full((len(X), 2), 0.5)
+
+    monkeypatch.setitem(sys.modules, "tabicl", SimpleNamespace(
+        TabICLClassifier=Estimator, TabICLRegressor=Estimator))
+    monkeypatch.setitem(sys.modules, "tabpfn", SimpleNamespace(
+        TabPFNClassifier=Estimator, TabPFNRegressor=Estimator))
+    monkeypatch.setattr(baselines.TabICLBaseline, "_wrapper_kwargs", lambda self: {})
+    monkeypatch.setattr(baselines, "find_local_tabpfn_checkpoint", lambda task: Path("offline-default.ckpt"))
+    rng = np.random.default_rng(12)
+    X = rng.normal(size=(5000, 3))
+    y = (np.arange(len(X)) < 150).astype(float) if task == "pd" else rng.uniform(size=len(X))
+    reports = {}
+    for name in ("tabiclv2", "tabpfn3"):
+        _, _, reports[name] = _fit_predict(name, task, 7, X, y, X[:17], [], None, cap)
+    expected_rows = len(X) if cap is None else cap
+    for name, (X_fit, _) in seen.items():
+        assert len(X_fit) == expected_rows, f"{name} ignored the requested context cap"
+    for name, (X_fit, y_fit) in seen.items():
+        assert reports[name].n_train_used == expected_rows
+        assert reports[name].n_train_available == len(X)
+        if cap is not None:
+            assert reports[name].extra["context_cap"] == cap
+            assert reports[name].extra["n_context_full"] == len(X)
+            assert reports[name].subsampled
+        np.testing.assert_array_equal(X_fit, seen["tabiclv2"][0])
+        np.testing.assert_array_equal(y_fit, seen["tabiclv2"][1])
+
+
 def test_context_cap_lives_on_the_shared_base_class():
     """Both columns must be capped identically, or the cap becomes a handicap on one side.
 
@@ -730,19 +781,12 @@ def test_context_cap_lives_on_the_shared_base_class():
     stage 1 is only 0.3 % of upstream's compute. So the evaluation is matched to the training
     instead — for every model at once.
     """
-    from src.eval.baselines import TabICLBaseline
+    from src.eval.baselines import TabICLBaseline, TabPFNBaseline, _TFMBaseline
     from src.eval.crediticl_baseline import CreditICLBaseline
 
-    # declared once, inherited by both — not two independent settings that can drift
-    assert "max_context_rows" in TabICLBaseline.__dict__
-    assert "max_context_rows" not in CreditICLBaseline.__dict__
-    assert "_cap_context" in TabICLBaseline.__dict__
-    assert TabICLBaseline.max_context_rows is None, "uncapped by default"
-
-    src = (ROOT / "src" / "eval" / "baselines.py").read_text(encoding="utf-8")
-    # applied inside the SHARED _fit, so neither subclass can skip it
-    fit = src[src.index("def _fit", src.index("class TabICLBaseline")) :]
-    assert "self._cap_context(X, y)" in fit[:600]
+    for cls in (TabICLBaseline, TabPFNBaseline, CreditICLBaseline):
+        assert cls.max_context_rows is None, "uncapped by default"
+        assert cls._cap_context is _TFMBaseline._cap_context
 
 
 def test_context_cap_is_stratified_for_pd_and_recorded():

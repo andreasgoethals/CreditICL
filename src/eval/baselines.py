@@ -3,29 +3,26 @@
 Every baseline is wrapped so the runner can treat them identically: `fit(X, y)`
 then `predict(X)`, plus `predict_quantiles(X)` for LGD where the model supports it.
 
-NONE OF THESE IS MODIFIED. In particular **TabPFN's prior is never touched** —
-this project alters TabICL's prior, and TabPFN-3 is here purely as a yardstick.
-Any baseline that cannot be imported reports itself unavailable and is skipped
-with a clear log line, so a missing package costs one column of results rather
-than the whole run.
+Released references use their official inference wrappers. Experiment 2 separately
+continues pretraining of TabICL and TabPFN-3; their released weights stay unchanged.
+Unavailable models are recorded as failed cells and prevent benchmark completion.
 
 The five:
 
 * ``linear`` / ``logistic``  — scikit-learn, with imputation and scaling. The floor.
   A result that cannot beat these is not a result.
-* ``catboost``               — the GBDT every credit-risk paper reports, and the
-  model that beats TFMs on large and high-cardinality data (Purucker 2026).
-* ``tabpfn3``                — TabPFN-3 via `model_path="v3"`. Open weights.
+* ``catboost``               — a gradient-boosted tree reference with native categoricals.
+* ``tabpfn3``                — TabPFN-3 via explicit local released model paths.
 * ``tabiclv2``               — the released TabICLv2 checkpoints. This is the
   model whose *prior* we modify, so its stock performance is the number our
   retrained versions have to be read against.
 
-EVERY MODEL GETS THE WHOLE TRAINING POOL (evaluation protocol 3, `src/eval/protocol.py`). Until
+EVERY MODEL GETS THE WHOLE TRAINING POOL (protocol 5, except explicit context ablations). Until
 28-09-2026 the foundation models were given at most 10,000 training rows (and the benchmark
-capped their context at 1,024); TabICLv2 and TabPFN-3 both handle hundreds of thousands, so
-neither cap is needed and neither is applied. Every model runs at its library's DEFAULT
+capped their context at 1,024). Full-size execution must pass Exp0 on the target hardware;
+there is no silent row cap or OOM subsampling. Every reference uses its library's DEFAULT
 settings — CatBoost's 1,000 iterations with its automatic learning rate, TabPFN-3's and
-TabICLv2's own ensembles — so no column of the table is tuned and none is handicapped.
+TabICLv2's own ensembles. This is a default-settings comparison, not matched HPO budgets.
 """
 
 from __future__ import annotations
@@ -78,7 +75,15 @@ def find_local_tabpfn_checkpoint(which: str) -> Path | None:
     for root in roots:
         if not root.is_dir():
             continue
-        matches = sorted(root.glob(f"tabpfn*{which}*.ckpt"))
+        # Do not accidentally select a v2/v2.5 file when several generations
+        # coexist. The reference and continued-pretraining start must be v3.
+        default = root / f"tabpfn-v3-{which}-v3_default.ckpt"
+        if default.is_file():
+            return default.resolve()
+        matches = sorted(root.glob(f"tabpfn-v3-{which}-*.ckpt"))
+        if len(matches) > 1:
+            raise ValueError(f"Ambiguous TabPFN-3 {which} weights in {root}; "
+                             f"provide the released default {default.name}")
         if matches:
             return matches[0].resolve()
     return None
@@ -149,6 +154,11 @@ class Baseline:
         """(quantiles (n, L), levels (L,)) if the model gives a distribution."""
         return None
 
+    def _regression_output(self, values: np.ndarray) -> np.ndarray:
+        """Credit losses are bounded; generic OOD regression is not."""
+        values = np.asarray(values)
+        return np.clip(values, 0.0, 1.0) if self.kwargs.get("bounded_target", True) else values
+
     # -- public --------------------------------------------------------------
     def fit(self, X: np.ndarray, y: np.ndarray, cat_indices: list[int] | None = None) -> FitReport:
         import time
@@ -201,19 +211,44 @@ class Baseline:
 
 
 class _TFMBaseline(Baseline):
-    """Shared row and feature capping for the in-context models.
+    """Shared feature selection and context sampling for all in-context models.
 
-    Both caps are needed on our data and both are recorded, never silent:
-
-    * ROWS — TabPFN and TabICL are built for roughly 10k context rows. Home Credit
-      has 307k, hackerearth 532k, vehicle_loan 233k.
-    * FEATURES — `0014.algorithmwatch` has **2,986** features and
-      `0011.loan_default` has 759, well past what these models accept.
+    The main benchmark uses the full training pool. Optional capped comparisons
+    give TabPFN, released TabICL and our checkpoints the same seeded rows.
 
     A table wider than the cap keeps the columns the protocol's filter ranks highest
     (`protocol.rank_columns`), scored on the TRAINING rows only — target-aware, and leak-free for
     that reason: the rows it is predicted on never enter the choice.
     """
+
+    max_context_rows: int | None = None
+
+    def _cap_context(self, X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Apply the optional cap before fitting and counting the rows actually used.
+
+        Retain the existing capped protocol: balanced PD contexts where the class
+        counts permit, uniform LGD contexts. All TFM wrappers use the same rule.
+        The default full-context benchmark does not change the class proportions.
+        """
+        cap = self.max_context_rows
+        self.report.extra["context_cap"] = cap
+        self.report.extra["n_context_full"] = int(len(X))
+        if cap is None or len(X) <= cap:
+            return X, y
+        rng = np.random.default_rng(self.seed)
+        if self.task == "pd":
+            pos = np.flatnonzero(y >= 0.5)
+            neg = np.flatnonzero(y < 0.5)
+            per = cap // 2
+            take_pos = rng.choice(pos, size=min(per, len(pos)), replace=False)
+            take_neg = rng.choice(neg, size=min(cap - len(take_pos), len(neg)), replace=False)
+            keep = np.concatenate([take_pos, take_neg])
+            rng.shuffle(keep)
+        else:
+            keep = rng.choice(len(X), size=cap, replace=False)
+        self.report.subsampled = True
+        self.report.extra["subsample_strategy"] = "balanced" if self.task == "pd" else "uniform"
+        return X[keep], y[keep]
 
     def _select_features(self, X: np.ndarray, y: np.ndarray,
                          cat_indices: list[int] | None = None) -> np.ndarray | None:
@@ -245,8 +280,8 @@ class _TFMBaseline(Baseline):
 
     def _maybe_subsample(self, X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         n = X.shape[0]
-        if TFM_MAX_TRAIN_ROWS is None or n <= TFM_MAX_TRAIN_ROWS:
-            return X, y
+        if self.max_context_rows is not None or TFM_MAX_TRAIN_ROWS is None or n <= TFM_MAX_TRAIN_ROWS:
+            return self._cap_context(X, y)
         rng = np.random.default_rng(self.seed)
         # Stratified for classification, so a 7%-positive dataset does not lose
         # its positives to an unlucky uniform draw.
@@ -266,7 +301,7 @@ class _TFMBaseline(Baseline):
             idx = rng.choice(n, size=TFM_MAX_TRAIN_ROWS, replace=False)
         self.report.subsampled = True
         self.report.extra["subsample_strategy"] = "stratified" if self.task == "pd" else "uniform"
-        return X[idx], y[idx]
+        return self._cap_context(X[idx], y[idx])
 
 
 # ---------------------------------------------------------------------------
@@ -302,11 +337,11 @@ class LinearBaseline(Baseline):
         # Clip to [0,1]: LGD is a fraction, and an unclipped linear model
         # routinely predicts outside it. Free, and reported via pred_out_of_unit
         # before clipping so the raw behaviour stays visible.
-        return np.clip(self._model.predict(Xs), 0.0, 1.0)
+        return self._regression_output(self._model.predict(Xs))
 
 
 class CatBoostBaseline(Baseline):
-    """The GBDT every credit paper reports, and the one TFMs lose to at scale."""
+    """A tree reference using native missing-value and categorical handling."""
 
     name = "catboost"
 
@@ -327,22 +362,41 @@ class CatBoostBaseline(Baseline):
         # as every other model here runs at its defaults. Until 28-09-2026: 500 iterations at a
         # fixed 0.05, a choice nobody could have defended in a paper.
         common = dict(random_seed=self.seed, verbose=False, allow_writing_files=False, thread_count=-1)
+        self._cat_indices = list(cat_indices)
+        X = self._categorical_input(X)
         for key in ("iterations", "learning_rate", "depth"):
             if key in self.kwargs:
                 common[key] = self.kwargs[key]
         if self.task == "pd":
             self._model = CatBoostClassifier(**common)
-            self._model.fit(X, (y >= 0.5).astype(int))
+            self._model.fit(X, (y >= 0.5).astype(int), cat_features=self._cat_indices)
         else:
             self._model = CatBoostRegressor(**common)
-            self._model.fit(X, y)
+            self._model.fit(X, y, cat_features=self._cat_indices)
         self.report.extra["iterations"] = int(self._model.tree_count_)
         self.report.extra["learning_rate"] = float(self._model.learning_rate_)
+        self.report.extra["categorical_features"] = len(self._cat_indices)
+
+    def _categorical_input(self, X: np.ndarray):
+        # Processed data stores category codes in float arrays. CatBoost requires
+        # declared categoricals to be integers/strings, never float/NaN. Keep the
+        # numeric columns numeric and use exactly the same conversion at prediction.
+        if not self._cat_indices:
+            return X
+        import pandas as pd
+
+        frame = pd.DataFrame(X)
+        for j in self._cat_indices:
+            values = np.asarray(X[:, j])
+            missing = ~np.isfinite(values) | (values < 0)
+            frame[j] = np.where(missing, "__missing__", values.astype(str))
+        return frame
 
     def _predict(self, X: np.ndarray) -> np.ndarray:
+        X = self._categorical_input(X)
         if self.task == "pd":
             return self._model.predict_proba(X)[:, 1]
-        return np.clip(self._model.predict(X), 0.0, 1.0)
+        return self._regression_output(self._model.predict(X))
 
 
 # ---------------------------------------------------------------------------
@@ -364,16 +418,14 @@ class TabPFNBaseline(_TFMBaseline):
     no internet. Drop the two files in `checkpoints/` (or on project storage) and
     this baseline just runs.
 
-    Falls back to `model_path="v3"` — i.e. let tabpfn resolve it — only when no
-    local file is found, and reports clearly if that would need a token.
+    Missing weights fail before inference. Compute jobs never invoke a download
+    or fall through to the package's default generation (now 3.5).
     """
 
     name = "tabpfn3"
 
     @classmethod
     def is_available(cls) -> tuple[bool, str | None]:
-        import os
-
         try:
             import tabpfn  # noqa: F401
         except Exception as exc:  # noqa: BLE001
@@ -384,18 +436,8 @@ class TabPFNBaseline(_TFMBaseline):
         if have_clf or have_reg:
             return True, None
 
-        if not os.environ.get("TABPFN_TOKEN"):
-            # Say this now, plainly, rather than letting the interactive auth
-            # prompt blow up mid-run with a socket error that names nothing.
-            return False, (
-                "no local TabPFN checkpoint found and TABPFN_TOKEN is not set. "
-                "Easiest fix: put tabpfn-v3-classifier-*.ckpt and "
-                "tabpfn-v3-regressor-*.ckpt in checkpoints/ (or on project storage, "
-                "or point $CREDITICL_TABPFN_DIR at them). Otherwise get a token from "
-                "https://ux.priorlabs.ai/account and let tabpfn download them — but "
-                "that needs internet, which compute nodes do not have."
-            )
-        return True, None
+        return False, ("no local TabPFN-3 weights; prepare the released classifier and regressor "
+                       "files in checkpoints/ before submitting GPU jobs")
 
     def _fit(self, X: np.ndarray, y: np.ndarray, cat_indices: list[int]) -> None:
         import torch
@@ -404,13 +446,14 @@ class TabPFNBaseline(_TFMBaseline):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         which = "classifier" if self.task == "pd" else "regressor"
         local = find_local_tabpfn_checkpoint(which)
-        # A local file if we have one (no token, works offline); otherwise let
-        # tabpfn resolve "v3" itself, which needs a token and internet. An explicit `model_path`
+        # A verified local released file, or an explicit `model_path`:
         # is one of OUR fine-tuned checkpoints (Experiment 2), which names its arm and step.
         given = self.kwargs.get("model_path")
-        version = str(given or (str(local) if local else "v3"))
-        self.report.extra["weights_source"] = ("given checkpoint" if given else
-                                               "local file" if local else "tabpfn download")
+        if not given and local is None:
+            raise FileNotFoundError(f"No local TabPFN-3 {which} weights. "
+                                    "Prepare the released weights before submitting a GPU job.")
+        version = str(given or local)
+        self.report.extra["weights_source"] = "given checkpoint" if given else "local file"
         if given:
             self.report.extra.update(tabpfn_checkpoint_identity(given))
         common = dict(
@@ -438,7 +481,7 @@ class TabPFNBaseline(_TFMBaseline):
     def _predict(self, X: np.ndarray) -> np.ndarray:
         if self.task == "pd":
             return self._model.predict_proba(X)[:, 1]
-        return np.clip(self._model.predict(X), 0.0, 1.0)
+        return self._regression_output(self._model.predict(X))
 
     def predict_quantiles(self, X: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
         """TabPFN-3's predictive distribution at `protocol.QUANTILE_LEVELS`, clipped to [0, 1]."""
@@ -449,7 +492,7 @@ class TabPFNBaseline(_TFMBaseline):
         if getattr(self, "_keep", None) is not None:
             X = X[:, self._keep]
         q = self._model.predict(X, output_type="quantiles", quantiles=[float(a) for a in QUANTILE_LEVELS])
-        return np.clip(np.stack([np.asarray(c) for c in q], axis=1), 0.0, 1.0), QUANTILE_LEVELS
+        return self._regression_output(np.stack([np.asarray(c) for c in q], axis=1)), QUANTILE_LEVELS
 
 
 class TabICLBaseline(_TFMBaseline):
@@ -469,54 +512,13 @@ class TabICLBaseline(_TFMBaseline):
             return False, f"{type(exc).__name__}: {exc}"
         return True, None
 
-    #: Cap on context rows handed to the wrapper. `None` = give it everything, which is the
-    #: protocol since 28-09-2026 (`src/eval/protocol.py`): the whole training pool is the context,
-    #: for our checkpoints and the released model alike.
-    #:
-    #: Protocol 2 capped it at 1,024 rows, because we train on tables of at most 1,024 rows
-    #: (upstream stage 1) and `heloc`'s training split is 46x that. That made the comparison
-    #: about a context size nobody deploys; the length mismatch is now reported as a property of
-    #: our models (trained on stage 1 only) rather than removed from the measurement. The hook
-    #: stays for debug runs and is recorded in every row.
-    max_context_rows: int | None = None
-
-    def _cap_context(self, X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Subsample the context to `max_context_rows`, seeded, stratified for PD.
-
-        Stratified because a 3 %-positive dataset cut uniformly to 1,024 rows can arrive with
-        almost no defaults, and then the model has nothing to learn the positive class from —
-        Tanna et al. 2026 measure balanced context construction at 3-4 AUC points on credit
-        data, which is larger than most model-family differences.
-        """
-        cap = self.max_context_rows
-        # RECORD IT EVEN WHEN IT DOES NOT BIND. Writing these columns only on the datasets
-        # that were actually trimmed makes an absent value ambiguous six months later: "no cap
-        # was set" and "the cap was set and the table was smaller" are different facts and
-        # only one of them is a caveat on the number.
-        self.report.extra["context_cap"] = cap
-        self.report.extra["n_context_full"] = int(len(X))
-        if cap is None or len(X) <= cap:
-            return X, y
-        rng = np.random.default_rng(self.seed)
-        if self.task == "pd":
-            pos = np.flatnonzero(y >= 0.5)
-            neg = np.flatnonzero(y < 0.5)
-            per = cap // 2
-            take_pos = rng.choice(pos, size=min(per, len(pos)), replace=False)
-            take_neg = rng.choice(neg, size=min(cap - len(take_pos), len(neg)), replace=False)
-            keep = np.concatenate([take_pos, take_neg])
-            rng.shuffle(keep)
-        else:
-            keep = rng.choice(len(X), size=cap, replace=False)
-        return X[keep], y[keep]
-
     def _wrapper_kwargs(self) -> dict[str, Any]:
         """Extra arguments for upstream's wrapper: the RELEASED weights, from our own copy.
 
         The local file (`TABICL_RELEASED`, found by `paths.find_pretrained`) is the file Exp2
         fine-tunes from — tensor-for-tensor the wrapper's own download (Experiment 0 checks it) —
         and a compute node has no internet to download anything, so the wrapper is pointed at it
-        and forbidden to fetch. Without a local copy the wrapper resolves its own, as before.
+        and forbidden to fetch. Missing local weights fail before constructing the estimator.
 
         The one hook `CreditICLBaseline` overrides, returning `model_path=<our checkpoint>` and
         nothing else, so our model and the released model go through the same preprocessing, the
@@ -527,9 +529,9 @@ class TabICLBaseline(_TFMBaseline):
 
         try:
             path = find_pretrained(f"checkpoints/{TABICL_RELEASED[self.task]}")
-        except FileNotFoundError:
-            self.report.extra["weights_source"] = "tabicl download"
-            return {}
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(f"Missing local released TabICLv2 weights: {TABICL_RELEASED[self.task]}. "
+                                    "Prepare them before submitting GPU jobs.") from exc
         self.report.extra["weights_source"] = str(path)
         return {"model_path": str(path), "allow_auto_download": False}
 
@@ -539,7 +541,6 @@ class TabICLBaseline(_TFMBaseline):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self.report.extra["device"] = device
         extra = self._wrapper_kwargs()
-        X, y = self._cap_context(X, y)
 
         if self.task == "pd":
             from tabicl import TabICLClassifier
@@ -555,7 +556,7 @@ class TabICLBaseline(_TFMBaseline):
     def _predict(self, X: np.ndarray) -> np.ndarray:
         if self.task == "pd":
             return self._model.predict_proba(X)[:, 1]
-        return np.clip(self._model.predict(X), 0.0, 1.0)
+        return self._regression_output(self._model.predict(X))
 
     def predict_quantiles(self, X: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
         """TabICL's predictive distribution (`TabICLRegressor.predict(output_type="quantiles")`)
@@ -567,7 +568,7 @@ class TabICLBaseline(_TFMBaseline):
         if getattr(self, "_keep", None) is not None:
             X = X[:, self._keep]
         q = self._model.predict(X, output_type="quantiles", alphas=[float(a) for a in QUANTILE_LEVELS])
-        return np.clip(np.asarray(q, dtype=float), 0.0, 1.0), QUANTILE_LEVELS
+        return self._regression_output(np.asarray(q, dtype=float)), QUANTILE_LEVELS
 
 
 # ---------------------------------------------------------------------------

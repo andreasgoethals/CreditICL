@@ -38,14 +38,50 @@ def _runs(track: str) -> list[dict]:
     return expand_with_seeds(load(ROOT / "config" / f"Exp0_{track.upper()}.yaml"))
 
 
-def verify(out_root: Path) -> Verdicts:
+def _verify_receipt(receipt: Path, track: str, slot) -> float:
+    """Verify a downloaded paired benchmark without requiring checkpoint binaries."""
+    from src.eval.benchmark_status import digest, validate_cells
+    from src.eval.protocol import PROTOCOL
+
+    payload = json.loads(receipt.read_text(encoding="utf-8"))
+    request = payload["request"]
+    if request["protocol"] != PROTOCOL or request["models"] != [slot.model]:
+        raise ValueError("receipt belongs to a different protocol or model")
+    if request.get("context_cap") != slot.context:
+        raise ValueError("receipt has a different context budget")
+    if slot.kind == "arm" and request.get("step") != slot.step:
+        raise ValueError("receipt belongs to a different checkpoint step")
+    root = receipt.parent.parent
+    files = {"credit": root / track / f"results_{slot.tag}.csv",
+             "ood": root / "ood" / f"ood_results_{slot.tag}.csv"}
+    seconds = 0.0
+    for domain, path in files.items():
+        if digest(path) != payload["files"][domain]:
+            raise ValueError(f"{domain} CSV hash differs from its receipt")
+        rows = pd.read_csv(path)
+        if domain == "ood" and "status" in rows:
+            rows = rows[rows.status != "skipped"]
+        validate_cells(rows, request[domain], request["models"], request["seeds"],
+                       request["n_folds"], "roc_auc" if track == "pd" else "r2", slot.context)
+        seconds += float(rows["total_seconds"].sum())
+    return seconds / 3600
+
+
+def verify(out_root: Path, *, big_root: Path | None = None) -> Verdicts:
+    from src.utils.preflight import CHECK_SECTIONS, source_fingerprint, training_fingerprint
     from src.eval.benchmark_status import slot_for
 
     v = Verdicts()
     exp0 = out_root / "experiment_0"
+    big_root = out_root if big_root is None else big_root
     report = exp0 / "report" / "checks.json"
     if report.is_file():
-        rows = json.loads(report.read_text(encoding="utf-8"))["rows"]
+        saved_report = json.loads(report.read_text(encoding="utf-8"))
+        rows = saved_report["rows"]
+        current = (CHECK_SECTIONS <= {r["check"] for r in rows}
+                   and saved_report.get("source_fingerprint") == source_fingerprint())
+        v.add(PASS if current else FAIL, "complete checks report for current code",
+              "all check sections and matching source fingerprint required")
         bad = [r for r in rows if r["status"] == FAIL]
         warn = [r for r in rows if r["status"] == WARN]
         v.add(FAIL if bad else PASS, "checks job",
@@ -60,8 +96,17 @@ def verify(out_root: Path) -> Verdicts:
     logs = sorted((exp0 / "logs").glob("*.log")) if (exp0 / "logs").is_dir() else []
     text = {p.name: p.read_text(encoding="utf-8", errors="replace") for p in logs}
     failed = [n for n, t in text.items() if "END status=FAILED" in t]
-    v.add(FAIL if failed else (PASS if text else FAIL), "job logs",
+    v.add(WARN if failed else (PASS if text else FAIL), "historical job logs",
           f"{len(text)} logs; FAILED: {', '.join(failed) or 'none'}")
+    check_logs = [p for p in logs if p.name.startswith("exp0_checks_")]
+    if check_logs:
+        latest = max(check_logs, key=lambda p: p.name)
+        latest_text = text[latest.name]
+        ok = "END status=OK" in latest_text and all(
+            f"equivalence {track} exit code: 0" in latest_text for track in ("PD", "LGD"))
+        v.add(PASS if ok else FAIL, "latest checks job including trainer equivalence", latest.name)
+    else:
+        v.add(FAIL, "latest checks job including trainer equivalence", "missing exp0_checks log")
     resubmitted = [n for n, t in text.items() if "END status=INCOMPLETE-RESUBMITTED" in t]
     v.add(PASS if resubmitted else FAIL, "forced stop: a job saved on SIGUSR1 and resubmitted itself",
           ", ".join(resubmitted) or "no log ends INCOMPLETE-RESUBMITTED — was the scratch arm submitted with the short walltime?")
@@ -76,7 +121,18 @@ def verify(out_root: Path) -> Verdicts:
                 v.add(FAIL, f"{track} {arm}: trained", f"no {summary}")
                 continue
             s = json.loads(summary.read_text(encoding="utf-8"))
+            from src.train.checkpoint import validate_resume_config
+
+            try:
+                saved_config = json.loads((d / "config.json").read_text(encoding="utf-8"))
+                if not {"task", "prior", "train"} <= saved_config.keys():
+                    raise ValueError("Incomplete saved training configuration")
+                validate_resume_config(saved_config, run)
+                v.add(PASS, f"{track} {arm}: training recipe", "matches current configuration")
+            except (OSError, ValueError, TypeError) as exc:
+                v.add(FAIL, f"{track} {arm}: training recipe", str(exc))
             ok = s.get("completed") and s.get("steps") == run["train"]["max_steps"]
+            ok = ok and s.get("training_fingerprint") == training_fingerprint()
             v.add(PASS if ok else FAIL, f"{track} {arm}: trained to the end",
                   f"steps {s.get('steps')}/{run['train']['max_steps']}, {s.get('train_seconds_total')} s of training")
             if arm == "scratch_tabicl":
@@ -130,12 +186,16 @@ def verify(out_root: Path) -> Verdicts:
         for index in range(n_slots(0, track)):
             slot = slot_for(0, track, index)
             owner = "reference" if slot.kind == "reference" else "experiment_0"
-            receipt = out_root / owner / "benchmark" / "receipts" / f"{slot.tag}.json"
-            result = out_root / owner / "benchmark" / track / f"results_{slot.tag}.csv"
+            receipt = big_root / owner / "benchmark" / "receipts" / f"{slot.tag}.json"
+            result = big_root / owner / "benchmark" / track / f"results_{slot.tag}.csv"
             label = f"{track} benchmark slot {index} ({slot.kind} {slot.model})"
             if receipt.is_file():
-                hours = pd.read_csv(result)["total_seconds"].sum() / 3600 if result.is_file() else float("nan")
-                v.add(PASS, label, f"receipt written; {hours:.2f} h of scoring")
+                try:
+                    hours = _verify_receipt(receipt, track, slot)
+                except (OSError, ValueError, KeyError, TypeError) as exc:
+                    v.add(FAIL, label, str(exc))
+                    continue
+                v.add(PASS, label, f"paired CSV hashes and cells verified; {hours:.2f} h of scoring")
                 kind = f"{slot.kind} {slot.model}" + (f" ctx{slot.context}" if slot.context else "")
                 costs.setdefault(f"{track} {kind}", []).append(hours)
                 slot_hours.append(hours)
@@ -194,10 +254,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default=None, help="the folder that holds output CreditICL/")
     args = ap.parse_args(argv)
-    from src.utils.paths import OUTPUT_NAME, outputs_dir
+    from src.utils.paths import OUTPUT_NAME, outputs_dir, big_outputs_dir
 
     out_root = Path(args.root) / OUTPUT_NAME if args.root else outputs_dir()
-    v = verify(out_root)
+    v = verify(out_root, big_root=out_root if args.root else big_outputs_dir())
     n_fail = sum(s == FAIL for s, _, _ in v.items)
     print(f"\n{len(v.items)} items, {n_fail} FAIL.")
     return 1 if n_fail else 0

@@ -88,6 +88,10 @@ def _shrink(cfg: dict) -> dict:
     p["max_features"] = 16
     p["n_nodes_range"] = [2, 5]
     p["max_filter_attempts"] = 6
+    # This undersized fixture tests batching/training mechanics. It cannot rely
+    # on the old "return the last rejected table" fallback. Filter semantics and
+    # upstream equivalence have dedicated tests with sufficiently large tables.
+    p["filter"] = {**p.get("filter", {}), "mode": "off"}
     # `model:` and `architecture:` are NOT set this way in any real config — the architecture
     # is TabICLv2's own, from the upstream `tabicl` package, and is never swept. Tests use the
     # vendored fallback at a fraction of the size purely so the suite runs in seconds on a

@@ -81,7 +81,7 @@ class ProgressConfig:
 
 #: Bumped when the measurement changes; a CSV of an older protocol is set aside, never appended to.
 #: 4 (30-09-2026): the benchmark's fold preprocessing on the context rows.
-PROGRESS_PROTOCOL = 4
+PROGRESS_PROTOCOL = 5  # prediction-time credit feature exclusions
 
 
 class ProgressTracker:
@@ -324,10 +324,16 @@ class ProgressTracker:
             for slug, ds in self._real_datasets():
                 short = slug.split(".", 1)[-1]
                 try:
-                    for k, v in self._score(model, f"real/{slug}", np.asarray(ds.X, np.float32),
+                    from src.eval.feature_policy import prediction_features
+
+                    Xr, cats, policy = prediction_features(
+                        self.task, slug, ds.X, list(getattr(ds, "cat_indices", [])),
+                        getattr(ds, "feature_names", None))
+                    row["feature_policy"] = policy["feature_policy"]
+                    for k, v in self._score(model, f"real/{slug}", np.asarray(Xr, np.float32),
                                             np.asarray(ds.y, np.float32),
                                             regression=self.task == "lgd",
-                                            cat_indices=list(getattr(ds, "cat_indices", []))).items():
+                                            cat_indices=cats).items():
                         row[f"real__{short}__{k}"] = round(v, 6)
                 except Exception as exc:  # noqa: BLE001 — one dataset, one failure
                     errors.append(f"real/{short}: {type(exc).__name__}: {exc}")

@@ -75,6 +75,11 @@ trap _log_exit EXIT
 
 cd "${VSC_DATA}/CreditICL"
 source scripts/slurm/_activate_env.sh
+if [[ "$EXP" == "0" ]]; then
+    python -m src.utils.preflight --require-exp0-checks
+else
+    python -m src.utils.preflight --require-exp0
+fi
 
 echo "=========================================="
 echo "CreditICL — PRETRAIN (PD) — Mindwell gpu_b200"
