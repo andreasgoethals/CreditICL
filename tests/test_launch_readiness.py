@@ -204,6 +204,7 @@ def test_resume_rejects_a_changed_training_recipe(change):
 
 def test_partial_or_stale_exp0_checks_cannot_unlock_paid_training(tmp_path, monkeypatch):
     from src.utils import paths
+    from src.utils.environment import environment_fingerprint
 
     root = tmp_path / "experiment_0"
     (root / "report").mkdir(parents=True)
@@ -218,7 +219,8 @@ def test_partial_or_stale_exp0_checks_cannot_unlock_paid_training(tmp_path, monk
     checks = [dict(check=c, status="PASS") for c in (
         "env", "paths", "storage", "data", "ood", "weights", "prior", "determinism",
         "configs", "orchestration", "train", "benchmark")]
-    report = {"source_fingerprint": "old", "rows": checks}
+    report = {"source_fingerprint": "old", "rows": checks,
+              "environment_fingerprint": environment_fingerprint()}
     file = root / "report" / "checks.json"
     file.write_text(json.dumps(report))
     assert not preflight.experiment_zero_checks(include_runs=False)[0].ok
@@ -329,7 +331,11 @@ def test_current_benchmark_rejects_a_summary_from_different_training_code(tmp_pa
     summary = {"completed": True, "steps": 10, "training_fingerprint": preflight.training_fingerprint()}
     summary_path = tmp_path / "summary.json"
     summary_path.write_text(json.dumps(summary), encoding="utf-8")
-    assert benchmark.request(1, "lgd", 0)[1]["step"] == 10
+    monkeypatch.setattr(benchmark, "package_fingerprint", lambda: "validated packages")
+    first_request = benchmark.request(1, "lgd", 0)[1]
+    assert first_request["step"] == 10
+    monkeypatch.setattr(benchmark, "package_fingerprint", lambda: "changed packages")
+    assert benchmark.request(1, "lgd", 0)[1] != first_request
     for fingerprint in (None, "different implementation"):
         summary["training_fingerprint"] = fingerprint
         summary_path.write_text(json.dumps(summary), encoding="utf-8")

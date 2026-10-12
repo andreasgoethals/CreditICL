@@ -37,6 +37,7 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 12-10-2026 | Preprocessing, job 62297440, wICE, after `57377b2` | **COMPLETED 0:0, 00:03:00** | VSC installed TabPFN 9.1.0; correct TabICL commit and CatBoost 1.2.10 confirmed. Preflight ran while caches were rebuilding (13 current, 8 stale) and correctly prevented GPU submission. Repeat full preflight after completion; do not resubmit preprocessing |
 | 12-10-2026 | Exp0 checks, job 11680453, Mindwell `gpu_b200`, after `78f6b3f` | **FAILED 1:0, 00:17:27; both trainer-equivalence checks passed** | 21 stale v3 data caches, missing new OOD path while legacy cache exists, installed TabPFN 8.2.0 rejecting v9 inference flags. Repair environment/cache, preflight, then repeat checks. No six-arm Exp0 or benchmark completion yet; 0.291 GPU-h used |
 | 12-10-2026 | September benchmark CSV follow-up, `benchmark-results.zip` | **10,437/10,437 rows OK; no nonfinite headline metrics; 184/184 result hashes match receipts** | All 12 recorded evaluation source hashes match `2034cc2`. The 28-09 dataset-calibration development change postdates this campaign; do not attribute it to these checkpoints. Unequal contexts and AXA boundary diagnostics need re-evaluation only; the corrected optimizer/prior require a new 18-arm Exp1 |
 | 12-10-2026 | Audit of downloaded September Exp1 archive, SHA-256 `537f8272f6530e9cc890bddcc839b3ebe64a70ee23a9d8ca99135e017a01b928` | **90/90 training complete; 92/92 benchmark jobs OK; latest event 24-09 22:00 CEST** | 3,087 credit and 7,350 OOD cells reported successful; no benchmark NaN/error lines. CSVs and checkpoint binaries absent. This is the old 45-arm grid, not the revised 9-arm grid; preserve it, download project-storage results, then validate the revised pipeline through Exp0. No jobs submitted |
@@ -71,6 +72,12 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 [`RUNS.md`](RUNS.md).
 
 ## Dead ends
+
+### 12-10-2026 — Checking caches before the CPU job finished
+- **Tried:** full preflight at 18:01, immediately after submitting preprocessing job 62297440.
+- **Result:** 13 current PD caches, one stale PD cache and seven stale LGD caches; no GPU job submitted.
+- **Why:** the cache rebuild had not finished when it was inspected; the later scheduler record reports successful completion in three minutes.
+- **Instead:** wait for the existing CPU job, then repeat preflight. Do not start a duplicate preprocessing job because an intermediate snapshot is stale.
 
 ### 12-10-2026 — A completed summary could hide changed training code
 - **Tried:** mark an arm complete with the requested step count but an older training fingerprint.

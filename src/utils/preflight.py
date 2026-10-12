@@ -79,6 +79,25 @@ def dependency_checks() -> list[Check]:
             rows.append(Check(name, ok, detail))
         except (metadata.PackageNotFoundError, OSError, ValueError) as exc:
             rows.append(Check(name, False, str(exc)))
+    from src.utils.environment import pip_consistency, project_metadata, requirement_audit
+    from src.utils.paths import on_vsc
+
+    try:
+        versions, issues = requirement_audit()
+        rows.append(Check("all project requirements", not issues,
+                          "; ".join(issues) if issues else f"{len(versions)} dependency versions checked, including extras"))
+    except (OSError, ValueError) as exc:
+        rows.append(Check("all project requirements", False, str(exc)))
+    ok, detail = pip_consistency()
+    rows.append(Check("pip check (whole environment)", ok, detail))
+    if on_vsc():
+        wanted = project_metadata()["tool"]["crediticl"]["vsc"]["torch-version"]
+        try:
+            installed = metadata.version("torch")
+            rows.append(Check("VSC CUDA torch", installed == wanted,
+                              f"installed {installed}; required {wanted}"))
+        except metadata.PackageNotFoundError as exc:
+            rows.append(Check("VSC CUDA torch", False, str(exc)))
     return rows
 
 
@@ -151,6 +170,7 @@ def experiment_zero_checks(*, include_runs: bool = True) -> list[Check]:
     from src.eval.benchmark_status import complete, n_slots
     from src.utils import paths
     from src.utils.config import expand_with_seeds, load
+    from src.utils.environment import environment_changes, environment_fingerprint, environment_snapshot
 
     rows = []
     root = paths.experiment_dir(0)
@@ -161,6 +181,12 @@ def experiment_zero_checks(*, include_runs: bool = True) -> list[Check]:
               and report.get("source_fingerprint") == source_fingerprint())
         rows.append(Check("Exp0 full checks for current code", ok,
                           "complete, successful, matching report required"))
+        environment = environment_snapshot()
+        matching = report.get("environment_fingerprint") == environment_fingerprint(environment)
+        changes = environment_changes(report.get("environment", {}), environment)
+        rows.append(Check("Exp0 validated package environment", matching,
+                          "matches successful GPU checks" if matching else
+                          "Installed packages changed or no validated inventory exists: " + "; ".join(changes)))
     except (OSError, ValueError, KeyError, TypeError) as exc:
         rows.append(Check("Exp0 full checks for current code", False, str(exc)))
     logs = list((root / "logs").glob("exp0_checks_*.log"))
@@ -210,9 +236,10 @@ def main(argv: list[str] | None = None) -> int:
     failed = [r for r in rows if not r.ok]
     if failed:
         print(f"\nSTOP: {len(failed)} prerequisite(s) failed. Do not submit GPU jobs.")
-        if any(r.name in ("tabpfn", "tabicl", "catboost") for r in failed):
+        if any(r.name in ("tabpfn", "tabicl", "catboost", "all project requirements",
+                          "pip check (whole environment)", "VSC CUDA torch") for r in failed):
             print("Environment repair, on the login node in the project venv: "
-                  "python -m pip install -e '.[dev,eval]'")
+                  "bash scripts/slurm/update_env.sh")
         if any(r.name.startswith("data ") for r in failed):
             print("Rebuild stale data on a CPU node: sbatch --clusters=wice scripts/slurm/preprocess.slurm")
         if any(r.name.startswith("OOD") for r in failed):

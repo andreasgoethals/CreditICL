@@ -18,6 +18,10 @@
 # =============================================================================
 
 set -euo pipefail
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+    echo "Run setup_venv.sh on a login node, outside any Slurm job." >&2
+    exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # WHERE. $VSC_DATA, never project storage.
@@ -51,11 +55,7 @@ PYTHON_MODULE_PREFS=(
     "Python/3.11.3-GCCcore-12.3.0"
 )
 
-# torch's CUDA build must match the driver. cu128 is what the working environment
-# on this cluster already uses (torch 2.8.0+cu128), so it is the verified choice
-# rather than a guess. A CPU-only wheel would train at ~1/50 the speed and would
-# not announce itself.
-TORCH_INDEX="https://download.pytorch.org/whl/cu128"
+# The explicit CUDA build is recorded in pyproject.toml.
 
 RECREATE=0
 [[ "${1:-}" == "--recreate" ]] && RECREATE=1
@@ -160,8 +160,15 @@ echo "      pip: $(python -m pip --version)"
 # Before the project, deliberately. `pip install -e .` would otherwise pull a
 # default-index torch (CPU-only or a mismatched CUDA build) to satisfy the
 # dependency, and pip would then consider it satisfied.
+read -r TORCH_VERSION TORCH_INDEX < <(python - <<'PY'
+import tomllib
+with open("pyproject.toml", "rb") as stream:
+    settings = tomllib.load(stream)["tool"]["crediticl"]["vsc"]
+print(settings["torch-version"], settings["torch-index"])
+PY
+)
 echo "[3/5] installing torch from ${TORCH_INDEX} ..."
-python -m pip install --quiet --index-url "${TORCH_INDEX}" torch
+python -m pip install --quiet --index-url "${TORCH_INDEX}" "torch==${TORCH_VERSION}"
 python - <<'PY'
 import torch
 print(f"      torch {torch.__version__}  cuda_built={torch.version.cuda}")
@@ -176,6 +183,7 @@ python -m pip install --quiet -e ".[dev,eval]"
 # --- 5. prove it ------------------------------------------------------------
 echo "[5/5] verifying ..."
 FAILED=0
+python -m src.utils.preflight --dependencies-only || FAILED=1
 for pkg in numpy torch sklearn yaml pandas pyarrow tabicl src; do
     if python -c "import ${pkg}" >/dev/null 2>&1; then
         echo "      ok       ${pkg}"

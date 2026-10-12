@@ -601,11 +601,15 @@ SLOW = ("determinism", "train", "benchmark")
 
 def write(rep: Report, out_dir: Path) -> tuple[Path, Path]:
     from src.utils.preflight import source_fingerprint
+    from src.utils.environment import environment_fingerprint, environment_snapshot
 
     out_dir.mkdir(parents=True, exist_ok=True)
     js = out_dir / "checks.json"
+    environment = environment_snapshot()
     js.write_text(json.dumps({"written": time.strftime("%Y-%m-%d %H:%M:%S"), "failed": rep.failed,
-                              "rows": rep.rows, "source_fingerprint": source_fingerprint()},
+                              "rows": rep.rows, "source_fingerprint": source_fingerprint(),
+                              "environment": environment,
+                              "environment_fingerprint": environment_fingerprint(environment)},
                              indent=2, default=str), encoding="utf-8")
     lines = ["# Experiment 0 — checks", "", f"Written {time.strftime('%d-%m-%Y %H:%M')}; "
              f"{sum(r['status'] == PASS for r in rep.rows)} PASS, {sum(r['status'] == WARN for r in rep.rows)} WARN, "

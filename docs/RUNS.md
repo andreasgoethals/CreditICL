@@ -176,6 +176,36 @@ The one thing to do differently.
 ## Runs
 
 
+## 12-10-2026 — Environment updated on VSC; CPU cache rebuild completed
+
+**Submitted** 12-10-2026 around 18:01 CEST by Andreas | **job** `62297440` | **cluster** wICE
+**Checkout pulled** `57377b2` | **script** `preprocess.slurm`, `TASK=both` | **GPUs** none
+**Requested allocation** 8 CPUs, 64 GiB, 02:00:00; raw data unchanged, stale caches rebuilt.
+
+The installation transcript confirms Python 3.12.3 in `.venv-skylake`, torch 2.11.0+cu128,
+TabPFN upgraded from 8.2.0 to **9.1.0**, TabICL 2.1.1 from commit
+`8f1aa2098c894ab91dba15209cf2002ba4be6c6c`, CatBoost 1.2.10, NumPy 2.5.2, SciPy 1.18.1,
+scikit-learn 1.9.0, pandas 2.3.3, PyArrow 25.0.1 and Pydantic 2.13.4. These are observed
+installation versions, not a completed GPU-validation result. The local library pin after
+Andreas's update is `5b6c24dd9337c6e7bef45733730bf52ee280e61c`; no library contents were edited.
+
+An immediate preflight observed 13 rebuilt PD caches and 8 still at version 3 (the final PD
+dataset and all seven LGD datasets). All four released weight files were found; the legacy
+OOD cache supplied 25 datasets per kind, with no missing files. The command chain stopped
+on the stale caches, so **no Exp0 GPU job was submitted**. The later `sacct` output reports
+**COMPLETED, exit 0:0, elapsed 00:03:00**, including both job steps. Final cache versions must
+still be confirmed by post-completion preflight; a successful scheduler exit alone is not that check.
+
+Next: use the project-only package updater and full dependency audit, repeat preflight, then
+submit the single Exp0 checks job. Preserve all earlier checkpoints/results; do not repeat
+this successful preprocessing job unless the final cache check identifies a remaining problem.
+GPU usage for this CPU job is zero; exact CPU billing was not provided.
+
+The subsequent package-safeguard changes passed the local full suite (1,192 passed, 3 skipped,
+781 s), plus all 16 environment-specific tests. The three skips remain the two unavailable
+local CatBoost cases (tested separately earlier) and the inapplicable upstream-absent case.
+This does not count as GPU validation of the newly installed VSC packages.
+
 ## 12-10-2026 — Exp0 checks failed on stale environment/data; trainer equivalence passed
 
 **Submitted** 12-10-2026 14:03 CEST by Andreas | **job** `11680453` | **cluster** Mindwell `gpu_b200`

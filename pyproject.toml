@@ -56,6 +56,7 @@ dependencies = [
 
     # --- Config, CLI, bookkeeping -----------------------------------------
     "pyyaml>=6.0",            # config/**/*.yaml, per the template idiom
+    "packaging>=23.0",        # validate installed requirements and optional dependency markers
     "tqdm>=4.66",
 
     # --- Plots (figures go to results/, which is gitignored locally) ------
@@ -164,6 +165,12 @@ track = [
 
 [project.urls]
 Repository = "https://github.com/andreasgoethals/CreditICL"
+
+# VSC's CUDA build, confirmed in the 12-10-2026 installation transcript.
+# Local Windows tests use their own torch build; do not copy a Windows freeze to Linux.
+[tool.crediticl.vsc]
+torch-version = "2.11.0+cu128"
+torch-index = "https://download.pytorch.org/whl/cu128"
 
 # ---------------------------------------------------------------------------
 # Packaging: src/ is a flat package root matching the faculty template

@@ -10,6 +10,8 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 12-10-2026
 
+- Validate all declared dependencies/extras and `pip check`; pin VSC's CUDA torch build, add a project-only environment updater, and bind Exp0/benchmark evidence to installed package versions.
+- Dependency safeguards validated: full suite 1,192 passed/3 skipped; all 16 environment tests passed, including refusal to install in another project or a Slurm job.
 - Pin TabPFN 9.1.0 and TabICL's source commit; match upstream regression target transforms, padded-table filtering and categorical limits.
 - Add read-only readiness checks and require current Exp0 evidence before production submissions; rebuild stale caches and reuse the existing OOD cache.
 - Apply application-time PD/default-time LGD feature exclusions; preserve all fit rows by default and allow unbounded OOD regression predictions (protocol 5).

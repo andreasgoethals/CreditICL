@@ -192,6 +192,23 @@ cd $VSC_DATA/CreditICL && bash scripts/slurm/setup_venv.sh      # idempotent; --
 It builds from `pyproject.toml`, installs torch from the CUDA index, `pip install -e ".[dev,eval]"`,
 then verifies every import *and* that our model matches the released checkpoints.
 
+**Refresh an existing environment after dependency changes:**
+
+```bash
+bash scripts/slurm/update_env.sh
+```
+
+This only updates a `.venv` or `.venv-*` inside this project and refuses to install inside a
+Slurm job. VSC torch is pinned to **2.11.0+cu128**, the installed build observed on 12-10-2026;
+TabPFN is **9.1.0**, and TabICL uses its pinned Git commit. All runtime/dev/eval requirements,
+including nested extras, are checked along with `pip check`. An inventory of all installed
+package versions goes to `output CreditICL/general/report/environment.json`. Every job checks
+the environment it actually selects. Exp0 records a package fingerprint; production submissions
+require that exact validated environment, and benchmark receipts include it. A package change
+requires revalidation, never a silent continuation under different dependencies. The inventory
+is platform-specific; do not install a Windows freeze onto VSC. These metadata checks supplement
+the GPU tests; they do not prove CUDA/runtime compatibility by themselves.
+
 **Auto-activate on `cd`** (interactive shells): `bash scripts/slurm/shell_hook.sh --install` appends one
 line to `~/.bashrc` that sources the in-repo hook (so `git pull` keeps it current; `--status`/`--uninstall`
 manage it). It uses `PROMPT_COMMAND` (works after `pushd`/subshells/symlinks, unlike an overridden `cd`)
@@ -296,8 +313,8 @@ What it tests, and why each can break a big run:
 cd "$VSC_DATA/CreditICL"
 git pull --ff-only
 source scripts/slurm/_activate_env.sh
-python -m pip install -e '.[dev,eval]'                    # git pull does not update packages
-python -m src.utils.preflight --dependencies-only         # exact TabPFN 9.1.0 + TabICL commit; CatBoost present
+bash scripts/slurm/update_env.sh                        # git pull does not update packages
+python -m src.utils.preflight --dependencies-only         # exact model builds + all dependencies, extras and pip check
 python scripts/check_storage.py
 python -m src.utils.fetch_ood --status                   # the OOD cache (login node: fetch it here if missing)
 sbatch --clusters=wice --export=ALL,TASK=both scripts/slurm/preprocess.slurm  # CPU: rebuild stale caches

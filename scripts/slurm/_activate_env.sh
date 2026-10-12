@@ -15,6 +15,14 @@
 
 CONDA_ENV="${CONDA_ENV:-CreditICL}"
 
+_verify_job_environment() {
+    # Login shells must still activate an old environment so it can be repaired.
+    # Every job, including preprocessing, checks it; jobs never install packages.
+    if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+        python -m src.utils.preflight --dependencies-only || return $?
+    fi
+}
+
 # ---------------------------------------------------------------------------
 # THE PROJECT VENV COMES FIRST, if it exists.
 #
@@ -71,6 +79,7 @@ if [[ -n "${_PROJECT_VENV}" && -x "${_PROJECT_VENV}/bin/python" ]]; then
         echo "               bash scripts/slurm/setup_venv.sh" >&2
         exit 1
     fi
+    _verify_job_environment || { return 1 2>/dev/null || exit 1; }
     echo "  [activate] venv complete — skipping conda" >&2
     return 0 2>/dev/null || exit 0
 fi
@@ -211,6 +220,7 @@ if [[ -z "${_activated}" ]]; then
 fi
 
 echo "Active conda env: ${CONDA_DEFAULT_ENV:-?} ($(command -v python))"
+_verify_job_environment || { return 1 2>/dev/null || exit 1; }
 
 # The vendored architecture is generated from the pinned library dump and is
 # gitignored-adjacent (it IS committed, but a stale pin makes it wrong). Cheap

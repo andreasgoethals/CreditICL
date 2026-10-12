@@ -102,6 +102,15 @@ def input_digest(path: Path) -> str:
     return _cached_digest(str(path.resolve()), stat.st_size, stat.st_mtime_ns)
 
 
+@lru_cache(maxsize=1)
+def package_fingerprint() -> str:
+    # Packages cannot be changed during a benchmark process. Avoid re-reading
+    # every installed distribution for each slot in a status query.
+    from src.utils.environment import environment_fingerprint
+
+    return environment_fingerprint()
+
+
 def slot_for(exp: int, track: str, index: int, reference_models: str = REFERENCE_MODELS,
              variant: str | None = None) -> Slot:
     # Placeholders allowed: only the grid size and the checkpoint steps are read here.
@@ -177,7 +186,8 @@ def request(exp: int, track: str, index: int, seeds: tuple[int, ...] = (0,), n_f
     code = {p.relative_to(ROOT).as_posix(): digest(p) for p in sorted(sources)}
     data = {"protocol": PROTOCOL, "track": track, "kind": kind, "models": models,
             "seeds": list(seeds), "n_folds": n_folds, "credit": credit, "ood": ood,
-            "ood_manifest": digest(manifest_path()), "code": code, "context_cap": slot.context}
+            "ood_manifest": digest(manifest_path()), "code": code, "context_cap": slot.context,
+            "environment_fingerprint": package_fingerprint()}
     credit_inputs = {}
     for name in credit:
         folder = paths.find_processed_dir(track, name)
