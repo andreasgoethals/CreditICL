@@ -81,7 +81,7 @@ class ProgressConfig:
 
 #: Bumped when the measurement changes; a CSV of an older protocol is set aside, never appended to.
 #: 4 (30-09-2026): the benchmark's fold preprocessing on the context rows.
-PROGRESS_PROTOCOL = 5  # prediction-time credit feature exclusions
+PROGRESS_PROTOCOL = 6  # preserve OOD ranges and categorical metadata; reject infinities before clipping
 
 
 class ProgressTracker:
@@ -216,7 +216,8 @@ class ProgressTracker:
         return est
 
     def _fit_predict(self, model, Xc: np.ndarray, yc: np.ndarray, Xt: np.ndarray, *,
-                     regression: bool) -> dict[str, np.ndarray]:
+                     regression: bool, cat_indices: list[int] | None = None,
+                     bounded_target: bool = True) -> dict[str, np.ndarray]:
         """The CURRENT weights on one table: `{"point", "quantiles"}` for a continuous target,
         `{"prob"}` (P(class 1)) for a binary one. Upstream's TabICL wrapper; `TabPFNProgressTracker`
         overrides this for TabPFN-3 and leaves everything else — data, split, metrics — shared."""
@@ -268,15 +269,18 @@ class ProgressTracker:
 
         prep, Xc, yc = fit_fold_preprocessing(Xc, yc, list(cat_indices or []))
         Xt = prep.transform(Xt)
-        pred = self._fit_predict(model, Xc, yc, Xt, regression=regression)
+        pred = self._fit_predict(model, Xc, yc, Xt, regression=regression,
+                                 cat_indices=prep.cat_indices, bounded_target=bounded_target)
         if regression:
             from src.eval.metrics import lgd_metrics
             from src.eval.protocol import QUANTILE_LEVELS
 
-            point = np.clip(np.asarray(pred["point"], dtype=float), 0.0, 1.0)
-            q = np.clip(np.asarray(pred["quantiles"], dtype=float), 0.0, 1.0)
+            point = np.asarray(pred["point"], dtype=float)
+            q = np.asarray(pred["quantiles"], dtype=float)
             if not (np.isfinite(point).all() and np.isfinite(q).all()):
                 raise ValueError("Non-finite predictions")
+            if bounded_target:
+                point, q = np.clip(point, 0.0, 1.0), np.clip(q, 0.0, 1.0)
             m = lgd_metrics(yt, point, quantiles=q, levels=QUANTILE_LEVELS, decoding="mean")
             if not bounded_target:
                 from src.eval.runner import BOUNDARY_KEYS
@@ -342,13 +346,13 @@ class ProgressTracker:
 
             for entry in self._ood_datasets():
                 try:
-                    Xo, yo, _ = load_ood_dataset(entry)
+                    Xo, yo, cats = load_ood_dataset(entry)
                     if self.task == "pd" and len(np.unique(yo)) > 2:
                         yo = (yo == np.bincount(yo.astype(int)).argmax()).astype(np.float32)
                     for k, v in self._score(model, f"ood/{entry.name}", np.asarray(Xo, np.float32),
                                             np.asarray(yo, np.float32), regression=self.task == "lgd",
                                             scale_target=self.task == "lgd",
-                                            bounded_target=False).items():
+                                            bounded_target=False, cat_indices=cats).items():
                         row[f"ood__{entry.name}__{k}"] = round(v, 6)
                 except Exception as exc:  # noqa: BLE001 — a missing OOD file is not fatal
                     errors.append(f"ood/{entry.name}: {type(exc).__name__}: {exc}")

@@ -366,6 +366,7 @@ def _fake_exp0_tree(root: Path, *, resumed: bool = True) -> None:
             for domain, path in files.items():
                 pd.DataFrame([dict(dataset=domain, model=slot.model, seed=0, fold=f, status="ok",
                                    protocol=PROTOCOL, context_cap=slot.context, r2=.3, roc_auc=.7,
+                                   n_train=2000, n_train_used=min(2000, slot.context or 2000), n_test=500,
                                    total_seconds=900) for f in range(5)]).to_csv(path, index=False)
             request = dict(protocol=PROTOCOL, models=[slot.model], seeds=[0], n_folds=5,
                            credit=["credit"], ood=["ood"], context_cap=slot.context, step=slot.step)

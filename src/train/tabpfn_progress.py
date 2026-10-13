@@ -35,14 +35,15 @@ class TabPFNProgressTracker(ProgressTracker):
             path.unlink(missing_ok=True)
 
     def _fit_predict(self, model, Xc: np.ndarray, yc: np.ndarray, Xt: np.ndarray, *,
-                     regression: bool) -> dict[str, np.ndarray]:
+                     regression: bool, cat_indices: list[int] | None = None,
+                     bounded_target: bool = True) -> dict[str, np.ndarray]:
         from src.eval.baselines import build
 
         if self._weights is None:
             raise RuntimeError("no weights file: _fit_predict runs inside record()")
         m = build("tabpfn3", "lgd" if regression else "pd", seed=self.cfg.seed,
-                  model_path=str(self._weights))
-        m.fit(Xc, yc, [])
+                  model_path=str(self._weights), bounded_target=bounded_target)
+        m.fit(Xc, yc, list(cat_indices or []))
         if regression:
             q = m.predict_quantiles(Xt)
             if q is None:

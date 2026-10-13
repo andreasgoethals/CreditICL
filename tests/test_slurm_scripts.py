@@ -146,12 +146,8 @@ def test_every_job_script_is_valid_bash():
         assert result.returncode == 0, f"{job.name} does not parse:\n{result.stderr}"
 
 
-@pytest.mark.parametrize(
-    "checks_rc,pd_rc,lgd_rc,expected",
-    [(0, 0, 0, 0), (1, 0, 0, 1), (0, 3, 0, 3), (0, 0, 4, 4), (5, 3, 4, 5)],
-)
-def test_exp0_reports_failure_from_any_check(checks_rc, pd_rc, lgd_rc, expected):
-    """Execute the launcher's checks with fake trainers: neither track may fail silently."""
+@pytest.mark.parametrize("code", [0, 1, 64])
+def test_exp0_propagates_validation_exit_status(code):
     import shutil
     import subprocess
 
@@ -159,25 +155,11 @@ def test_exp0_reports_failure_from_any_check(checks_rc, pd_rc, lgd_rc, expected)
     if bash is None:
         pytest.skip("no bash on this machine")
     launcher = (SLURM / "exp0.slurm").read_text(encoding="utf-8")
-    checks = launcher[launcher.index("\nset +e\n"):]
-    fake_python = f"""
-python() {{
-    case "$*" in
-        *exp0_checks.py*) return {checks_rc} ;;
-        *Exp1_PD.yaml*) return {pd_rc} ;;
-        *Exp1_LGD.yaml*) return {lgd_rc} ;;
-        *) return 99 ;;
-    esac
-}}
-"""
-    result = subprocess.run(
-        [bash, "-s"], input=fake_python + checks,
-        capture_output=True, text=True, timeout=30,
-    )
-    assert result.returncode == expected, result.stdout + result.stderr
-    # All checks still run, so one failure does not hide another track's diagnostics.
-    assert f"equivalence PD exit code: {pd_rc}" in result.stdout
-    assert f"equivalence LGD exit code: {lgd_rc}" in result.stdout
+    tail = launcher[launcher.index("python -u scripts/validate_experiment.py"):]
+    result = subprocess.run([bash, "-s"], input=f"python() {{ return {code}; }}\n" + tail,
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode == code
+
 
 
 def test_no_two_sweep_arms_do_the_same_thing():
@@ -430,11 +412,8 @@ def test_exp0_runs_every_check_and_the_equivalence_on_the_production_gpu():
     assert d["clusters"] == "mindwell" and d["partition"] == "gpu_b200"
     assert int(d["cpus-per-task"]) <= GPU_B200_MAX_CORES
     text = (SLURM / "exp0.slurm").read_text(encoding="utf-8")
-    assert "scripts/exp0_checks.py" in text
-    assert "scripts/check_equivalence.py" in text and "for TRACK in PD LGD" in text
-    # a failing check must not skip the equivalence runs, and the job still reports the failure
-    run = text.index("python -u scripts/exp0_checks.py")
-    assert text.index("\nset +e\n") < run < text.index("\nset -e\n", run)
+    assert "python -u scripts/validate_experiment.py" in text
+    assert "sbatch " not in "\n".join(line for line in text.splitlines() if not line.startswith("#"))
     assert "EXP=0" in text
 
 
@@ -465,3 +444,35 @@ def test_every_training_launcher_can_run_the_exp2_search():
         assert "VARIANT=${VARIANT}" in text, "a resubmitted search arm must stay in the search"
     bench = (SLURM / BENCH).read_text(encoding="utf-8")
     assert '--variant "$VARIANT"' in bench and "${VARIANT:+_${VARIANT}}" in bench
+
+
+@pytest.mark.parametrize("track", ["pd", "lgd"])
+def test_resubmitted_component_arm_keeps_queue_identity_and_resources(track):
+    import shutil
+    import subprocess
+
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("no bash on this machine")
+    launcher = (SLURM / f"pretrain_{track}.slurm").read_text(encoding="utf-8")
+    resume = launcher[launcher.index('if [[ "$RC" -eq 64 ]]'):]
+    setup = '''
+RC=64
+EXP=1
+VARIANT=ablations
+LIMIT_S=7200
+SLURM_CLUSTER_NAME=mindwell
+SLURM_JOB_PARTITION=gpu_b200
+SLURM_CPUS_PER_TASK=24
+SLURM_MEM_PER_NODE=184320
+SLURM_ARRAY_TASK_ID=14
+SLURM_SUBMIT_DIR=/repo
+sbatch() { printf '%s\\n' "$*"; }
+'''
+    result = subprocess.run([bash, "-s"], input=setup + resume,
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode == 64, result.stderr
+    assert f"--job-name=crediticl-exp1ablations-{track}" in result.stdout
+    assert "--export=ALL,EXP=1,VARIANT=ablations" in result.stdout
+    assert "--array=14" in result.stdout and "--cpus-per-task=24" in result.stdout
+    assert "--mem=184320M" in result.stdout and "--time=120" in result.stdout

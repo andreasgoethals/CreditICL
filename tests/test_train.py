@@ -586,14 +586,14 @@ def test_optim_docstring_matches_the_configs():
     documented the wrong optimizer for weeks — and the optimizer turned out to be the whole
     explanation for the B200 being 12x slow. A stale docstring is a wrong answer with a
     citation."""
-    import yaml
+    from src.utils.config import load
 
     root = Path(__file__).resolve().parents[1]
     doc = (root / "src" / "train" / "optim.py").read_text(encoding="utf-8")
     doc = doc[: doc.index('"""', 3)]
 
     chosen = {
-        p.name: yaml.safe_load(p.read_text(encoding="utf-8"))["train"]["optimizer"].lower()
+        p.name: load(p, allow_placeholders=True)["train"]["optimizer"].lower()
         for p in (root / "config").glob("Exp*.yaml")
     }
     # PRETRAINING IS MUON, CONTINUED PRETRAINING IS ADAMW, and the split is deliberate. Exp1

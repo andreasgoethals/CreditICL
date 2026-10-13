@@ -8,8 +8,22 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 13-10-2026
+
+- Add `clean_run --stale`: remove only failed logs and rebuildable figures/summaries, preserving both tiers' checkpoints and research evidence; refuse active jobs, linked paths and changed files.
+- Fix TabPFN CPU/GPU loss buffers and bounded same-batch AMP retries; preserve optimizer/task budgets on overflow.
+- Save and restore model random state across resumes; isolate loader worker seeds from it.
+- Make Exp0 a single allocation with full tests, isolated CUDA checks, six forced resumes, complete benchmarks and current-evidence gating; preserve historical outputs and reuse validated reference results.
+- Preserve a variant's queue name when resubmitting, preventing duplicate component jobs.
+- Add five component ablations at the 50% mixture (48 Exp1 runs total, user-approved design); score only their final checkpoints and avoid duplicate reference jobs.
+- Reject benchmark receipts with missing row accounting, silent row caps, unequal context budgets, wrong checkpoints in either domain or discarded nonfinite predictions.
+- Align monitoring with OOD target ranges and categorical metadata; reject invalid regression predictions before clipping can hide infinities.
+- Keep Exp0 valid when Exp3 selects a pretested mixture; other recipe changes still require validation.
+- Validation: full pytest 1,266 passed/19 skipped; shell/environment rerun with installed Git Bash 62 passed, covering 11 skipped checks (1,277 distinct passes, 8 remaining skips). Cleanup regressions 23 passed. VSC-only tests and local CatBoost skips remain mandatory on the cluster; no GPU readiness claim or jobs submitted.
+
 ## 12-10-2026
 
+- Record successful VSC prerequisite checks and accepted Exp0 job 11681071; GPU validation remains pending.
 - Validate all declared dependencies/extras and `pip check`; pin VSC's CUDA torch build, add a project-only environment updater, and bind Exp0/benchmark evidence to installed package versions.
 - Dependency safeguards validated: full suite 1,192 passed/3 skipped; all 16 environment tests passed, including refusal to install in another project or a Slurm job.
 - Pin TabPFN 9.1.0 and TabICL's source commit; match upstream regression target transforms, padded-table filtering and categorical limits.

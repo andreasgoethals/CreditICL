@@ -65,7 +65,8 @@ def reference_models_for(cfg: dict, reference_models: str) -> list[str]:
     """The reference slots of a config. NONE for a configuration that scores only the development
     datasets (no holdout list): its reference results would overwrite the shared `reference/`
     files, which hold every dataset, with a development-only subset."""
-    if not (cfg.get("eval") or {}).get("holdout_datasets"):
+    evaluation = cfg.get("eval") or {}
+    if not evaluation.get("holdout_datasets") or not evaluation.get("include_reference_slots", True):
         return []
     return [m for m in reference_models.split(",") if m]
 
@@ -188,13 +189,16 @@ def request(exp: int, track: str, index: int, seeds: tuple[int, ...] = (0,), n_f
             "seeds": list(seeds), "n_folds": n_folds, "credit": credit, "ood": ood,
             "ood_manifest": digest(manifest_path()), "code": code, "context_cap": slot.context,
             "environment_fingerprint": package_fingerprint()}
-    credit_inputs = {}
+    credit_inputs, credit_rows = {}, {}
     for name in credit:
         folder = paths.find_processed_dir(track, name)
         if folder is None:
             raise ValueError(f"Missing processed benchmark data: {track}/{name}")
         credit_inputs[name] = {f: input_digest(folder / f) for f in ("meta.json", "data.parquet")}
+        credit_rows[name] = int(json.loads((folder / "meta.json").read_text(encoding="utf-8"))["n_rows"])
     data["credit_inputs"] = credit_inputs
+    data["credit_rows"] = credit_rows
+    data["ood_rows"] = {e.name: int(e.n_rows) for e in list_ood_datasets(kind)}
     data["ood_inputs"] = {e.slug: input_digest(ood_root() / f"{e.slug}.npz")
                           for e in list_ood_datasets(kind)}
     if slot.kind == "reference" and slot.model in ("tabiclv2", "tabpfn3"):
@@ -230,8 +234,10 @@ def request(exp: int, track: str, index: int, seeds: tuple[int, ...] = (0,), n_f
 
 
 def validate_cells(df: pd.DataFrame, datasets: list[str], models: list[str], seeds: list[int],
-                   n_folds: int, metric: str, context: int | None = None) -> None:
-    required = {"dataset", "model", "seed", "fold", "status", "protocol", metric}
+                   n_folds: int, metric: str, context: int | None = None,
+                   row_counts: dict[str, int] | None = None) -> None:
+    required = {"dataset", "model", "seed", "fold", "status", "protocol", metric,
+                "n_train", "n_train_used", "n_test"}
     if not required.issubset(df.columns):
         raise ValueError(f"Missing result columns: {sorted(required - set(df.columns))}")
     keys = list(df[["dataset", "model", "seed", "fold"]].itertuples(index=False, name=None))
@@ -242,13 +248,28 @@ def validate_cells(df: pd.DataFrame, datasets: list[str], models: list[str], see
         raise ValueError("Failed cells or non-finite headline metrics")
     if not df["protocol"].eq(PROTOCOL).all():
         raise ValueError(f"Rows from another evaluation protocol (want {PROTOCOL})")
+    for column in ("n_train", "n_train_used", "n_test"):
+        values = pd.to_numeric(df[column], errors="coerce")
+        if not (np.isfinite(values).all() and values.gt(0).all() and values.eq(values.round()).all()):
+            raise ValueError(f"Invalid row counts: {column}")
+    if "info_row_cap" in df and df["info_row_cap"].notna().any():
+        raise ValueError("Dataset rows were capped before splitting")
+    if "pred_nonfinite_frac" in df and not df["pred_nonfinite_frac"].eq(0).all():
+        raise ValueError("Non-finite predictions were discarded")
+    if row_counts is not None:
+        for (dataset, _model, _seed), group in df.groupby(["dataset", "model", "seed"]):
+            total = row_counts[dataset]
+            if not (group.n_train + group.n_test).eq(total).all() or group.n_test.sum() != total:
+                raise ValueError(f"Cross-validation did not account for every dataset row: {dataset}")
     if context is None:
         if "context_cap" in df and df["context_cap"].notna().any():
             raise ValueError("A context cap was applied; the protocol gives every model the whole pool")
-        if {"n_train", "n_train_used"}.issubset(df.columns) and not df.n_train.eq(df.n_train_used).all():
+        if not df.n_train.eq(df.n_train_used).all():
             raise ValueError("The full-context benchmark did not fit every training row")
     elif "context_cap" not in df or not pd.to_numeric(df["context_cap"], errors="coerce").eq(context).all():
         raise ValueError(f"This slot scores contexts capped at {context} rows; the file was not")
+    elif not df.n_train_used.eq(df.n_train.clip(upper=context)).all():
+        raise ValueError("The capped benchmark did not use the declared context budget")
 
 
 def check(exp: int, track: str, index: int, *, write: bool = False, **kwargs) -> bool:
@@ -268,14 +289,14 @@ def check(exp: int, track: str, index: int, *, write: bool = False, **kwargs) ->
             df = df[df["status"] != "skipped"]
         metric = ("roc_auc" if track == "pd" else "r2")
         validate_cells(df, wanted[domain], wanted["models"], wanted["seeds"], wanted["n_folds"], metric,
-                       context=wanted.get("context_cap"))
-        if (domain == "credit" and "run_name" in wanted
+                       context=wanted.get("context_cap"), row_counts=wanted.get(f"{domain}_rows"))
+        if ("run_name" in wanted
                 and ("info_run_name" not in df or not df["info_run_name"].eq(wanted["run_name"]).all())):
-            raise ValueError("Credit result belongs to a different training arm")
-        if (domain == "credit" and "step" in wanted
+            raise ValueError(f"{domain.title()} result belongs to a different training arm")
+        if ("step" in wanted
                 and ("info_checkpoint_step" not in df
                      or not df["info_checkpoint_step"].astype(int).eq(wanted["step"]).all())):
-            raise ValueError("Credit result belongs to a different checkpoint")
+            raise ValueError(f"{domain.title()} result belongs to a different checkpoint")
     receipt.parent.mkdir(parents=True, exist_ok=True)
     tmp = receipt.with_suffix(".json.tmp")
     tmp.write_text(json.dumps({"request": wanted, "files": {k: digest(p) for k, p in files.items()}},

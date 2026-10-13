@@ -134,7 +134,9 @@ def test_ood_target_scaling_does_not_use_query_extremes(tmp_path, monkeypatch):
 
 def _cells(n_folds=5, **extra):
     return pd.DataFrame([{"dataset": "a", "model": "m", "seed": 0, "fold": f, "status": "ok",
-                          "protocol": PROTOCOL, "context_cap": np.nan, "r2": 0.3, **extra} for f in range(n_folds)])
+                          "protocol": PROTOCOL, "context_cap": np.nan, "r2": 0.3,
+                          "n_train": 100, "n_train_used": 100, "n_test": 25,
+                          **extra} for f in range(n_folds)])
 
 
 def test_benchmark_requires_every_fold_finite_uncapped_and_current():
@@ -152,6 +154,41 @@ def test_benchmark_requires_every_fold_finite_uncapped_and_current():
         validate_cells(_cells(protocol=2), ["a"], ["m"], [0], 5, "r2")
 
 
+@pytest.mark.parametrize("change,match", [
+    ({"n_train_used": 99}, "every training row"),
+    ({"n_test": 0}, "row counts"),
+    ({"n_train_used": float("nan")}, "row counts"),
+    ({"info_row_cap": 1000}, "capped before"),
+    ({"pred_nonfinite_frac": .01}, "predictions"),
+])
+def test_receipt_refuses_silent_data_reduction(change, match):
+    from src.eval.benchmark_status import validate_cells
+
+    with pytest.raises(ValueError, match=match):
+        validate_cells(_cells(**change), ["a"], ["m"], [0], 5, "r2")
+
+
+def test_receipt_requires_row_accounting_and_equal_capped_budgets():
+    from src.eval.benchmark_status import validate_cells
+
+    with pytest.raises(ValueError, match="Missing"):
+        validate_cells(_cells().drop(columns="n_train_used"), ["a"], ["m"], [0], 5, "r2")
+    good = _cells(context_cap=80, n_train_used=80)
+    validate_cells(good, ["a"], ["m"], [0], 5, "r2", context=80)
+    with pytest.raises(ValueError, match="declared context"):
+        validate_cells(_cells(context_cap=80, n_train_used=70), ["a"], ["m"], [0], 5, "r2", context=80)
+
+
+def test_receipt_checks_all_dataset_rows_reach_cross_validation():
+    from src.eval.benchmark_status import validate_cells
+
+    validate_cells(_cells(), ["a"], ["m"], [0], 5, "r2", row_counts={"a": 125})
+    with pytest.raises(ValueError, match="every dataset row"):
+        validate_cells(_cells(), ["a"], ["m"], [0], 5, "r2", row_counts={"a": 1000})
+    with pytest.raises(ValueError, match="every dataset row"):
+        validate_cells(_cells(n_test=24, n_train=101, n_train_used=101), ["a"], ["m"], [0], 5, "r2", row_counts={"a": 125})
+
+
 def test_benchmark_receipt_requires_both_domains_and_invalidates_changed_inputs(tmp_path, monkeypatch):
     from src.eval import benchmark_status as B
     files = {d: tmp_path / f"{d}.csv" for d in ("credit", "ood")}
@@ -160,7 +197,8 @@ def test_benchmark_receipt_requires_both_domains_and_invalidates_changed_inputs(
     monkeypatch.setattr(B, "receipt_path", lambda tag: tmp_path / "receipt.json")
     for domain, file in files.items():
         pd.DataFrame([{"dataset": wanted[domain][0], "model": "linear", "seed": 0, "fold": f,
-                       "status": "ok", "r2": 0.5, "protocol": PROTOCOL} for f in range(5)]).to_csv(file, index=False)
+                       "status": "ok", "r2": 0.5, "protocol": PROTOCOL,
+                       "n_train": 100, "n_train_used": 100, "n_test": 25} for f in range(5)]).to_csv(file, index=False)
     assert not B.complete(1, "lgd", 45)
     assert B.check(1, "lgd", 45, write=True)
     assert B.complete(1, "lgd", 45)
@@ -199,6 +237,25 @@ def test_prior_ranking_uses_dev_only_and_aggregates_training_seeds(monkeypatch):
     points = [c for c in fig.axes[0].collections if isinstance(c, PathCollection)]
     assert sum(len(c.get_offsets()) for c in points) == n_configs  # one point per configuration
     plt.close(fig)
+
+
+@pytest.mark.parametrize("column,wrong", [("info_run_name", "wrong_run"), ("info_checkpoint_step", 50)])
+def test_ood_receipt_cannot_accept_another_checkpoint(tmp_path, monkeypatch, column, wrong):
+    from src.eval import benchmark_status as b
+
+    files = {d: tmp_path / f"{d}.csv" for d in ("credit", "ood")}
+    wanted = {"credit": ["a"], "ood": ["a"], "models": ["m"], "seeds": [0],
+              "n_folds": 5, "run_name": "correct_run", "step": 100}
+    monkeypatch.setattr(b, "request", lambda *a, **kw: ("arm", wanted, files))
+    monkeypatch.setattr(b, "receipt_path", lambda tag: tmp_path / "receipt.json")
+    for file in files.values():
+        _cells(info_run_name="correct_run", info_checkpoint_step=100).to_csv(file, index=False)
+    assert b.check(1, "lgd", 0, write=True)
+    changed = pd.read_csv(files["ood"])
+    changed[column] = wrong
+    changed.to_csv(files["ood"], index=False)
+    with pytest.raises(ValueError, match="Ood result belongs to a different"):
+        b.check(1, "lgd", 0, write=True)
 
 
 def test_benchmark_cannot_be_complete_with_missing_configured_data(monkeypatch):

@@ -118,6 +118,7 @@ def save_checkpoint(
             "loadable by TabICLRegressor(model_path=...) and `crediticl` cannot be scored from "
             "it. Build the model through src.models.architecture.build_model, which records it."
         )
+    from src.train.random_state import capture
     from src.utils.preflight import training_fingerprint
 
     payload = {
@@ -135,6 +136,7 @@ def save_checkpoint(
         "scheduler_state": scheduler.state_dict(),
         "scaler_state": scaler.state_dict() if scaler is not None else None,
         "extra": extra or {},
+        "random_state": capture(),
     }
     # Write to a temp file then rename: a job killed at the walltime limit
     # mid-write would otherwise leave a truncated checkpoint that resume picks up
@@ -178,6 +180,10 @@ def load_checkpoint(
         scheduler.load_state_dict(payload["scheduler_state"])
     if scaler is not None and payload.get("scaler_state"):
         scaler.load_state_dict(payload["scaler_state"])
+    if optimizer is not None:
+        from src.train.random_state import restore
+
+        restore(payload.get("random_state"))
     return payload
 
 

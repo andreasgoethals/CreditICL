@@ -442,7 +442,8 @@ def test_config_folder_holds_exactly_the_experiments():
     """Four experiments x two tracks, each self-contained. Anything else here is a file nobody
     named, which is how a stale config gets submitted."""
     found = sorted(p.name for p in (ROOT / "config").iterdir())
-    assert found == sorted(Path(p).name for p in EXPERIMENTS), f"unexpected: {found}"
+    expected = [Path(p).name for p in EXPERIMENTS] + ["Exp1_PD_ablations.yaml", "Exp1_LGD_ablations.yaml"]
+    assert found == sorted(expected), f"unexpected: {found}"
 
 
 def test_exp2_and_exp3_differ_only_where_they_should():

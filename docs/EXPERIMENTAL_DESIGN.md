@@ -109,20 +109,18 @@ must not be attributed to its 90 checkpoints.
 |---|---|---|---|---|
 | start | the three paths below | from scratch | the released TabICLv2 and TabPFN-3 weights | from scratch |
 | swept | `arm {scratch TabICL, fine-tuned TabICLv2, fine-tuned TabPFN-3}` | `credit_fraction {0, .5, 1} × 3 seeds` | `arm {TabICLv2, TabPFN-3} × credit_fraction {0, .5, 1} × 3 seeds` | `credit_fraction {0, Exp1's mix}` × 2 seeds |
-| arms/track | 3 | 9 | 18 | 4 |
+| arms/track | 3 | 24 (9 main + 15 component) | 18 | 4 |
 | steps | 600 | 12,500 | 10,000 | 200,000 |
-| optimizer | as the path it checks | Muon (upstream stage 1) | each model's published continued-pretraining recipe | Muon |
+| optimizer | as the path it checks | Muon (upstream stage 1) | upstream TabICL and an adapted TabPFN-Wide recipe | Muon |
 | asks | every path works on the cluster; what a real arm and a real benchmark slot cost | the pure effect of the prior on what the model learns, at a small matched budget | whether the knowledge helps models trained at full scale, and at what out-of-domain cost | whether Exp1's effect holds at a longer budget |
 
-**Exp0** is not an experiment but a gate: a checks job (versions, paths, free space and quota, data,
-weights — including that the file Exp2 fine-tunes from is the file the reference column scores — prior
-throughput, that the task stream is the same in every job and with any number of workers, the SLURM
-tools and `run_experiment`'s plans, a few training steps on the GPU with each checkpoint read back
-through the benchmark's own wrapper, one benchmark fold, the capped-context path, and our TabICL
-trainer against upstream's on the same batches), three 600-step arms per track through the real SLURM
-scripts (one stopped by SIGUSR1, resubmitted and resumed), and the benchmark of their final checkpoints
-plus the reference column on every dataset with the full protocol. `python -m src.utils.exp0_verify`
-reads it back and projects the GPU-hours and storage of Experiments 1-3 (docs/VSC.md §10).
+**Exp0** is one Slurm allocation (`scripts/slurm/exp0.slurm`): the full portable test suite,
+mandatory CUDA tests, isolated ten-step smoke tests of all six training routes, and both upstream
+trainer-equivalence checks. Only if those pass does it run all six 600-step routes with a forced
+SIGUSR1 stop and resume, followed by full credit/OOD benchmarks and capped-context comparisons.
+Every attempt has a separate output namespace. A successful receipt binds code, tests, configurations,
+packages, data, released weights and output hashes; changed or incomplete evidence blocks production.
+Validated reference scores are reused in Experiments 1–3, preserving earlier versions.
 
 **Exp1** measures the prior's effect in its purest form: the same architecture trained from scratch on
 each mix, with the same compute. With so little training (2.5 % of upstream's stage 1) the arms are not
@@ -131,19 +129,29 @@ has 1,024 rows (TabICLv2's stage 1), while real contexts reach ~426,000 rows, so
 with the whole training pool as context, and with contexts capped at 1,024 rows — the prior's effect
 inside the training distribution (`eval.context_caps`, accepted 30-09-2026).
 
+The component study was accepted on 13-10-2026: five removals at the fixed 50% mixture,
+three paired seeds each, in `Exp1_{PD,LGD}_ablations.yaml`. Remove separately (1) the macroeconomic
+term in the target, (2) the dependence of missingness on the target (retain missing values),
+(3) context/query shifts, (4) the marginal tail warp, and (5) the credit categorical ceiling
+(return 500 to the base 200). Architecture, optimizer and task budget stay fixed. These are
+predeclared mechanism comparisons against the main 50% arm, not candidates selected on holdout
+performance. Only final ablation checkpoints are scored; main arms supply the learning curves.
+This adds 15 runs per track to the nine main runs, 48 in total. Component groups follow the
+controlled-ablation principle in `tfm-library/papers/text/2026/05_Bouadi_et_al._Shaping_the_Prior_How_Synthetic_Task_Distributions_Determine_Tabular_Foundation_Model_Quality.txt`;
+that paper studies general classification, not the credit-risk mechanisms here.
+
 **Exp2** asks whether the effect survives where it matters: the released, fully trained models, whose
 pretraining continues on our prior. Two models, because a result for one architecture could be an
 accident of it: TabICLv2 (open prior, trained through our own trainer, verified equal to upstream's)
-and TabPFN-3 (trained through TabPFN's own fine-tuning path, `src/train/tabpfn_trainer.py`). **Each
-model continues at the recipe its own literature uses for exactly this, with no search (30-09-2026):**
+and TabPFN-3 (trained through TabPFN's own fine-tuning path, `src/train/tabpfn_trainer.py`). **Recipes are fixed rather than searched (30-09-2026), with different evidential status:**
 TabICLv2 as its authors' stage 3 continues the released model's pretraining — Muon, lr 2e-5, weight
 decay 0.01, 1 % warm-up, cosine to 1e-7, gradient clipping 1, batch 64, 10,000 steps
-(`tfm-library/repositories/TabICL.txt`, `scripts/train_v2_clf_stage3.sh`; paper §4.1); TabPFN-3 as
-TabPFN-Wide continued the released TabPFN on the synthetic TabICL prior — AdamW, lr 1e-5, weight decay
+(`tfm-library/repositories/TabICL.txt`, `scripts/train_v2_clf_stage3.sh`; paper §4.1); TabPFN-3 uses an adaptation of how
+TabPFN-Wide continued the released TabPFN-v2 classifier on the synthetic TabICL prior — AdamW, lr 1e-5, weight decay
 1e-4, linear warm-up and cosine decay, clipping 1, batch 16, 10,000 steps, where its validation AUC
 plateaus (`papers/2026/03_Kolberg`, "Continued Pre-Training"; they too fixed the length rather than
 selecting a checkpoint). The stage-A search that used to choose among candidates bracketing these values
-is dropped: both recipes are direct precedents, CreditPFN's grid on real-data continued pretraining is
+is dropped. TabPFN-Wide did not evaluate TabPFN-3 or LGD regression: extending its schedule to those models/tasks is our experimental choice, which Exp0 validates technically, not scientifically. The exact installed TabPFN 9.1.0 loss and preprocessing are used. In addition, CreditPFN's grid on real-data continued pretraining is
 not finished and is a different setting (real tables), and a search would have cost as much as half of
 the comparison. The same recipe for every mix keeps the comparison about the prior; every 2,500-step
 checkpoint is scored as a learning curve, and the final one is the result. L2-SP and partial freezing are
@@ -153,7 +161,7 @@ where the released models also saw far longer ones, so the comparison with the r
 our prior's effect with that change (the control arm measures it), while the comparison between mixes
 does not.
 
-**Exp3** runs Experiment 1's chosen mix long, against its control, from scratch: 200,000 steps (8 × Exp1),
+**Exp3** runs Experiment 1's chosen mix long, against its control, from scratch: 200,000 steps (16 × Exp1),
 2 paired seeds (each seed gives both arms the same base tasks and initial weights; 5 seeds were too
 expensive, 30-09-2026). The length: TabICLv2 reaches its reference in normalised accuracy before
 100,000 steps but in log-loss only after ~200,000 (`papers/2026/02_Qu_TabICLv2` §7), our PD and LGD

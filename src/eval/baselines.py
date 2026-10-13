@@ -157,6 +157,8 @@ class Baseline:
     def _regression_output(self, values: np.ndarray) -> np.ndarray:
         """Credit losses are bounded; generic OOD regression is not."""
         values = np.asarray(values)
+        if not np.isfinite(values).all():
+            raise ValueError("Non-finite predictions")
         return np.clip(values, 0.0, 1.0) if self.kwargs.get("bounded_target", True) else values
 
     # -- public --------------------------------------------------------------

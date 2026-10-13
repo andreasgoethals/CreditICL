@@ -1,7 +1,7 @@
 # Running CreditICL on KU Leuven VSC
 
 How to submit, what it costs, and how a multi-day sweep survives a cluster that stops routinely.
-Distilled from `tfm-library/repositories/VSC Documentation.txt` (pin `1ac6e6783f24b2d5cd058af7ad8cad7c1bfaf7ae`, checked 12-10-2026) plus what we learned
+Distilled from `tfm-library/repositories/VSC Documentation.txt` (pin `de324efcca55be392feb0c01830b3b6ce364587f`, checked 13-10-2026) plus what we learned
 running on it; where the docs are silent this file says so. **Verify charge rates and partitions
 against the live docs before a large run.** The recovery procedure after *any* interruption is one
 command — [§4.4](#44-recovery-is-one-command).
@@ -275,7 +275,7 @@ Measured on B200, batch 64, micro-batch 4, the config's prior shape:
 |---|---|
 | B200 GPU-hour, all-in | ~30,625 credits (26,250 + ~4,375 for 24 cores) |
 | one Exp1 arm, 12,500 steps | ~5.5 GPU-h (0.63 steps/s, measured 24-09-2026 on the arms without the `banded` filter, which the redesign dropped) |
-| **Exp1, 9 arms/track** (45 until 28-09-2026) | ~100 GPU-h for both tracks; the 24-09 run took ~1,354 GPU-h for 90 arms, its banded-filter arms 5-7x the rest |
+| **Exp1, 24 arms/track (9 main + 15 component)** (45 until 28-09-2026) | measure the revised 48-run campaign in Exp0; the 24-09 run took ~1,354 GPU-h for 90 arms, its banded-filter arms 5-7x the rest |
 | one Exp3 arm, 200,000 steps | ~88 GPU-h at the same speed; 4 arms/track (control + Exp1's mix, 2 seeds) ≈ 700 GPU-h |
 | TabICLv2's own full pretraining | 24.5 GPU-days per model (the paper's figure) |
 
@@ -288,7 +288,7 @@ upstream sees each dataset once, so there is no corpus), which is why Exp3 uses 
 and pools remain only for Exp1, where they remove draw-luck between short arms.
 
 For Experiment 2 (measured in Experiment 0 before it is committed): 18 arms per track (2 models × 3
-mixes × 3 seeds), 10,000 steps each, at each model's published continued-pretraining recipe — no search
+mixes × 3 seeds), 10,000 steps each, using upstream TabICL and an adapted TabPFN-Wide recipe — no search
 since 30-09-2026. A TabICLv2 arm costs about what an Exp1 arm costs per step (same shapes, batch 64), a
 TabPFN-3 arm 16 tasks per step through TabPFN's own preprocessing. The budget agreed on 29-09-2026 is
 ~400 GPU-h; `python -m src.utils.exp0_verify` prints the per-arm and per-slot hours, and the storage,
@@ -296,65 +296,48 @@ that Experiment 0 measured for every experiment.
 
 ## 10. Experiment 0: run it first
 
-Experiment 0 is the debug suite (`config/Exp0_{PD,LGD}.yaml`, `scripts/slurm/exp0.slurm`): everything
-the real experiments do, on the production GPU, small. It writes to `output CreditICL/experiment_0/`
-(logs, runs and the report on `$VSC_DATA`; benchmark results and checkpoints on staging).
-
-What it tests, and why each can break a big run:
-
-| part | what | a failure it catches |
-|---|---|---|
-| checks job (`exp0.slurm`, ~1 h) | versions and GPU; both output tiers writable; free space and quota; every dataset loads; OOD cache; the released weights load offline and are the files the reference scores; every prior path; the task stream is identical with 0 or 2 workers, in a fresh process, and shared by arms of one seed; every config against the SLURM arrays; the SLURM tools and `run_experiment`'s plans; 10 training steps of each path; each saved checkpoint through the benchmark's own wrapper (its weights = the trained ones); one fold through every reference model; the capped-context path; our trainer against upstream's, step for step (`check_equivalence.py`) | a missing library, an unwritable tier, a full quota, weights downloaded instead of read, arms that silently see different tasks, a checkpoint the benchmark cannot read or reads wrong |
-| three tiny arms per track (600 steps) | Exp1's scratch TabICL, Exp2's TabICLv2 and TabPFN-3 paths, with telemetry, weight drift, the progress monitor | the real training code on the real GPU; the costs of every experiment |
-| index 0 with a 16-minute walltime | SIGUSR1 → save → exit 64 → the job resubmits itself → resume | the requeue chain every long arm depends on |
-| the benchmark (12 slots per track) | every arm's checkpoint and the four reference models on EVERY dataset with the full protocol, then the capped-context slots | memory and time on the largest (`hackerearth`, ~426k-row context) and widest (`algorithmwatch`) tables, before 120 slots depend on them |
+Submit **one job**. It runs the full portable pytest suite, mandatory VSC/CUDA tests, checks every
+input and package, isolates each training route in a fresh process, verifies TabICL equivalence,
+trains six 600-step runs with forced stop/resume, and benchmarks all checkpoints and reference models
+on credit and OOD data. The full benchmark uses every fitted row; the separately tagged context
+analysis uses 1,024 rows. No experiment array is submitted automatically.
 
 ```bash
 cd "$VSC_DATA/CreditICL"
 git pull --ff-only
 source scripts/slurm/_activate_env.sh
-bash scripts/slurm/update_env.sh                        # git pull does not update packages
-python -m src.utils.preflight --dependencies-only         # exact model builds + all dependencies, extras and pip check
-python scripts/check_storage.py
-python -m src.utils.fetch_ood --status                   # the OOD cache (login node: fetch it here if missing)
-sbatch --clusters=wice --export=ALL,TASK=both scripts/slurm/preprocess.slurm  # CPU: rebuild stale caches
-
-# 1. AFTER the preprocessing job finishes: no GPU allocation if prerequisites fail.
+bash scripts/slurm/update_env.sh
 python -m src.utils.preflight && sbatch --clusters=mindwell scripts/slurm/exp0.slurm
-
-# 2. three tiny arms per track (600 steps: Exp1's scratch TabICL, Exp2's TabICLv2 and TabPFN-3 paths).
-#    AFTER the checks job succeeds; every training job also enforces this gate.
-#    Index 0 gets a 16-minute walltime on purpose: SIGUSR1 arrives before the end, the arm saves,
-#    exits 64 and resubmits itself until it is done — the resilience chain, tested for real.
-for T in pd lgd; do
-  sbatch --clusters=mindwell --export=ALL,EXP=0,VARIANT= --array=0   --time=00:16:00 scripts/slurm/pretrain_${T}.slurm
-  sbatch --clusters=mindwell --export=ALL,EXP=0,VARIANT= --array=1-2 --time=01:00:00 scripts/slurm/pretrain_${T}.slurm
-done
-
-# 3. once all six arms are done (python -m src.utils.sweep_status --config config/Exp0_PD.yaml, and _LGD):
-#    3 arm slots + 4 reference models + 5 capped-context slots = 12 per track, every dataset, full protocol.
-#    The reference slots ARE the reference column Experiments 1-3 reuse.
-for T in pd lgd; do
-  sbatch --clusters=mindwell --export=ALL,EXP=0,TRACK=${T},VARIANT= --array=0-11 scripts/slurm/benchmark.slurm
-done
 ```
 
-Then download BOTH halves into the repo's `output CreditICL/` — from your own machine (Git Bash / WSL),
-with your VSC login and host in place of `vscXXXXX@login.hpc.kuleuven.be`:
+The existing v5 caches and 50 OOD datasets passed on 12-10-2026. Rebuild only if preflight reports
+stale/missing inputs. `update_env.sh` changes only the project environment and verifies all declared
+requirements/extras and `pip check`. Exp0 reserves at most 24 hours, not a promised runtime; the
+controller stops within 23.5 hours to leave time to report failures. `sam-quote sbatch --clusters=mindwell
+scripts/slurm/exp0.slurm` gives the reservation quote. No automatic resubmission follows a failure.
+
+Attempts live under `experiment_0/validation/<attempt>/` on both tiers. The canonical receipt is
+`output CreditICL/experiment_0/report/validation.json`; it is RUNNING, FAILED or PASS. Previous
+attempts and all historical checkpoints remain intact. Reference results from a fully successful
+attempt are reused in later experiments; older reference files are retained under `reference/previous/`.
+The launcher refuses production work if tests, code, configurations, packages, inputs or artifacts
+changed after validation. The sole planned exception is filling Exp3's `FILL_FROM_EXP1` with the
+already-tested 50% or 100% mixture after development-set selection; all other recipe changes still
+invalidate validation. Each training run records its fully resolved choice.
+
+After completion:
 
 ```bash
-VSC_LOGIN=vscXXXXX@login.hpc.kuleuven.be
-REMOTE_DATA=$(ssh "$VSC_LOGIN" 'printf "%s" "$VSC_DATA"')
-rsync -avs "$VSC_LOGIN:$REMOTE_DATA/CreditICL/output CreditICL/" "output CreditICL/"
-rsync -avs --exclude 'checkpoints/' --exclude 'prior_cache/' "$VSC_LOGIN:/lustre1/project/stg_00211/CreditICL/output CreditICL/" "output CreditICL/"
+python -m src.utils.preflight --require-exp0
+python -m src.utils.exp0_verify
 ```
 
-and run `python -m src.utils.exp0_verify`: every item PASS/FAIL, and the cost of Experiments 1-3 —
-GPU-hours, checkpoint storage — from the measured speeds and sizes. On the cluster,
-`python -m src.utils.preflight --require-exp0` additionally verifies current receipt fingerprints
-against the available data and checkpoint files. Production launchers enforce it. Changes to
-executable code/configs invalidate the checks report; changes to training code also invalidate
-the short training evidence. Historical logs and checkpoints are never deleted by these checks.
+Only PASS authorizes proceeding with the separate Experiment 1 submission. The verifier estimates
+training hours from the short runs; it cannot predict queue delay. Download the small tier plus the
+benchmark/report files from project storage, retaining the attempt directory structure. Checkpoint
+binaries can remain on VSC; the local verifier reports that omission and VSC preflight verifies them
+in place. Run `python -m src.utils.exp0_verify --root "/path/to/parent"`, where that parent contains
+the downloaded `output CreditICL/` directory.
 
 ## 11. Rename existing output, preserving completed work
 
@@ -380,7 +363,8 @@ September's `manifests/` and `results/` remain readable as historical records un
 its trained checkpoints remain at `<staging>/CreditICL/checkpoints/<run>/`.
 
 **Do not delete these old checkpoints or resubmit the September sweep.** That 45-arm-per-track
-campaign completed, including its benchmark. Today's 9-arm-per-track Exp1 uses a changed prior,
+campaign completed, including its benchmark. Today's Exp1 has 9 main and 15 component runs per track
+and uses a changed prior,
 optimizer settings, dataset partition, and evaluation protocol, so the old outputs do not count
 as completion of the new design. Validate the revised pipeline through Exp0 before launching it.
 

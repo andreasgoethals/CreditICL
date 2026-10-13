@@ -1,6 +1,8 @@
 """Wipe what the previous run produced, so the next one starts clean.
 
     python -m src.utils.clean_run                          list what is there, delete nothing
+    python -m src.utils.clean_run --stale                  list failed logs and generated figures
+    python -m src.utils.clean_run --stale --clean          delete ONLY those rebuildable outputs
     python -m src.utils.clean_run --clean                   delete it
     python -m src.utils.clean_run --clean --checkpoints     ...and OUR trained checkpoints
     python -m src.utils.clean_run --clean --prior-cache     ...and the synthetic prior pools
@@ -29,8 +31,14 @@ rebuilt from a login node with `python -m src.utils.fetch_ood`.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import os
+import re
+import stat
+from dataclasses import dataclass
 from pathlib import Path
 
+from src.utils import paths
 from src.utils.paths import (
     EXPERIMENTS,
     experiment_dir,
@@ -44,6 +52,110 @@ from src.utils.paths import (
 #: Tracked so an empty directory survives a clone, or the tree's index. Not run output, so never
 #: counted or deleted.
 KEEP = frozenset({".gitkeep", ".gitignore", "README.md"})
+
+
+@dataclass(frozen=True)
+class StaleFile:
+    path: Path
+    root: Path
+    reason: str
+    size: int
+    digest: str
+
+
+def _linked(path: Path) -> bool:
+    # lstat also detects Windows junctions on Python 3.11 (before Path.is_junction).
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return False
+    return stat.S_ISLNK(info.st_mode) or bool(
+        getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def _safe_stale_path(path: Path, root: Path) -> bool:
+    """Do not follow output links into another project or traverse checkpoint trees."""
+    if root.name != paths.OUTPUT_NAME or _linked(root):
+        return False
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        return False
+    if not relative.parts or {"checkpoints", "prior_cache"}.intersection(relative.parts):
+        return False
+    if not path.resolve().is_relative_to(root.resolve()):
+        return False
+    return not any(_linked(p) for p in (path, *path.parents) if p == root or root in p.parents)
+
+
+def stale_files() -> list[StaleFile]:
+    """Conservative cleanup across both tiers; records and trained weights are never candidates.
+
+    A log is failed only if its LAST explicit END marker says so. Running logs, successful
+    retries, diagnostics reports, benchmark CSVs/receipts and preprocessing caches survive.
+    Figures and their generated summaries are rebuildable, regardless of their timestamp.
+    """
+    found = []
+    seen = set()
+    for original in (paths.outputs_dir(), paths.big_outputs_dir()):
+        if original.name != paths.OUTPUT_NAME or _linked(original):
+            raise RuntimeError(f"Refusing unexpected or linked output root: {original}")
+        root = original.resolve()
+        if root in seen or not root.exists():
+            continue
+        seen.add(root)
+        for directory, folders, filenames in os.walk(root, followlinks=False):
+            parent = Path(directory)
+            folders[:] = [name for name in sorted(folders)
+                          if _safe_stale_path(parent / name, root)]
+            for name in sorted(filenames):
+                path = parent / name
+                if not _safe_stale_path(path, root) or not path.is_file():
+                    continue
+                relative = path.relative_to(root)
+                reason = None
+                content = None
+                if relative.parts[0] == "figures" and (path.suffix == ".pdf" or name == "_figures.json"):
+                    reason = "generated figure/index"
+                elif parent == root and name in {"All_Results.md", "CAPTIONS.md"}:
+                    reason = "generated notebook summary"
+                elif path.suffix == ".log" and "logs" in relative.parts[:-1]:
+                    content = path.read_bytes()
+                    endings = re.findall(rb"^END status=(\S+)", content, flags=re.MULTILINE)
+                    if endings and endings[-1] == b"FAILED":
+                        reason = "explicitly failed job log"
+                if reason:
+                    content = path.read_bytes() if content is None else content
+                    found.append(StaleFile(path, root, reason, len(content),
+                                           hashlib.sha256(content).hexdigest()))
+    return sorted(found, key=lambda item: str(item.path))
+
+
+def _require_idle_cluster() -> None:
+    if os.environ.get("SLURM_JOB_ID"):
+        raise RuntimeError("Run cleanup on a login node after CreditICL jobs have stopped.")
+    if paths.on_vsc():
+        from src.utils.run_experiment import queued_job_names
+
+        active = sorted(name for name in queued_job_names()
+                        if name.lower().startswith(("crediticl", "cicl")))
+        if active:
+            raise RuntimeError("CreditICL jobs are still queued/running: " + ", ".join(active))
+
+
+def delete_stale_files(plan: list[StaleFile]) -> int:
+    """Recheck the entire plan before the first deletion; leave empty folders in place."""
+    _require_idle_cluster()
+    allowed_roots = {p.absolute() for p in (paths.outputs_dir(), paths.big_outputs_dir())}
+    resolved_roots = {p.resolve() for p in allowed_roots if not _linked(p)}
+    for item in plan:
+        if item.root not in resolved_roots or not _safe_stale_path(item.path, item.root):
+            raise RuntimeError(f"Output path changed or escaped its root: {item.path}")
+        if not item.path.is_file() or hashlib.sha256(item.path.read_bytes()).hexdigest() != item.digest:
+            raise RuntimeError(f"Output changed since listing; nothing deleted: {item.path}")
+    for item in plan:
+        item.path.unlink()
+    return len(plan)
 
 
 def checkpoint_roots(experiment: int | None = None) -> list[Path]:
@@ -144,6 +256,9 @@ def main(argv: list[str] | None = None) -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--clean", action="store_true", help="actually delete; default lists only")
+    parser.add_argument("--stale", action="store_true",
+                        help="only failed job logs and generated figures/summaries; preserve all "
+                             "checkpoints, successful/unfinished logs, results and caches")
     parser.add_argument("--experiment", type=int, choices=EXPERIMENTS, default=None,
                         help="only experiment_<N>/ (both tiers); default the whole tree")
     parser.add_argument("--processed", action="store_true",
@@ -154,6 +269,25 @@ def main(argv: list[str] | None = None) -> int:
                         help="also clear OUR trained checkpoints. Without this a rerun RESUMES "
                              "from them and trains nothing. Never touches the released weights.")
     args = parser.parse_args(argv)
+
+    if args.stale:
+        if args.experiment is not None or args.processed or args.prior_cache or args.checkpoints:
+            parser.error("--stale cannot be combined with other cleanup scopes")
+        try:
+            plan = stale_files()
+            for item in plan:
+                print(f"  {item.reason}: {item.path}")
+            print(f"\nTOTAL: {len(plan)} files, {sum(p.size for p in plan) / 1e6:.2f} MB")
+            print("Preserved: checkpoints, successful/unfinished logs, run records, diagnostic "
+                  "reports, benchmark results/receipts, data and prior pools.")
+            if args.clean:
+                print(f"Removed {delete_stale_files(plan)} files.")
+            else:
+                print("Nothing was deleted. Re-run with --stale --clean to delete these files.")
+            return 0
+        except (OSError, RuntimeError) as exc:
+            print(f"Cleanup refused: {exc}")
+            return 1
 
     targets = roots(experiment=args.experiment, processed=args.processed,
                     prior_cache=args.prior_cache, checkpoints=args.checkpoints)

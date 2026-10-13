@@ -21,6 +21,18 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
+def pytest_addoption(parser):
+    parser.addoption("--run-vsc", action="store_true", default=False,
+                     help="run mandatory CUDA/real-input tests; missing resources are failures")
+
+
+def pytest_collection_modifyitems(config, items):
+    if not config.getoption("--run-vsc"):
+        for item in items:
+            if "vsc" in item.keywords:
+                item.add_marker(pytest.mark.skip(reason="VSC allocation only; enable with --run-vsc"))
+
+
 @pytest.fixture(scope="session")
 def repo_root() -> Path:
     return ROOT

@@ -35,17 +35,12 @@ silently reroute to `$VSC_DATA` and only fail once the 75 GiB quota is gone:
 python scripts/check_storage.py
 ```
 
-**1b. Copy down the last run BEFORE clearing it.** Outputs accumulate and a rerun mixes old
-files with new, but a checkpoint deleted before it was copied is a bug you cannot diagnose —
-the LGD NaN was lost exactly that way.
+**1b. Preserve the previous run.** Current Exp0 attempts have separate directories. Keep completed
+checkpoints and their logs; a rerun does not require clearing them. Inspect before any deliberate cleanup:
 
 ```bash
-# `--ignore-failed-read` + a glob: manifests does not exist until a run has written one, and
-# plain tar exits 1 on a missing path, so the archive that was supposed to protect the run
-# never gets created.
-tar czf ~/crediticl_$(date +%Y%m%d).tar.gz --ignore-failed-read -C "$VSC_DATA/CreditICL" output
+tar czf ~/crediticl_$(date +%Y%m%d).tar.gz -C "$VSC_DATA/CreditICL" "output CreditICL"
 python -m src.utils.clean_run            # LISTS what is there, deletes nothing
-python -m src.utils.clean_run --clean    # delete it
 ```
 
 `clean_run` never touches `data/raw/`, `checkpoints/` or `tfm-library/`, and never
@@ -61,14 +56,12 @@ it can be read and debugged. What to collect:
 
 ```bash
 # on the login node — small enough to pull down whole
-tar czf run_<date>.tar.gz \
-    $VSC_DATA/CreditICL/output/logs/ \
-    $VSC_DATA/CreditICL/output/manifests/
+tar czf "crediticl_$(date +%Y%m%d).tar.gz" -C "$VSC_DATA/CreditICL" "output CreditICL"
 ```
 
-That is the whole diagnostic surface: `logs/*.log` (what happened), `manifests/*__progress.csv`
-(the real-data curve), `manifests/*__telemetry.csv` (GPU and gradients). `output/results/` lives
-on project storage and is only worth pulling when the numbers themselves are needed.
+Also collect the benchmark CSVs and receipts from project storage, retaining their paths relative
+to `output CreditICL/`; the small tier alone cannot verify benchmark results. Keep checkpoint binaries
+on VSC. The historical paths below describe older runs; current paths are in `docs/VSC.md`.
 
 **4. Fill in the entry.** Results, bugs, interpretation. Add a row to `AGENTS_MEMORY.md`, and a
 **Dead ends** entry there for anything that cost more than a couple of minutes.
@@ -175,6 +168,83 @@ The one thing to do differently.
 
 ## Runs
 
+
+## 13-10-2026 — Exp0 job 11681071 output audited; two GPU-specific failures
+
+**Run date:** 12-10-2026, 18:31:35–18:52:36 CEST in the log (21m01s, not a billing record).
+**Job:** 11681071, Mindwell B200, one GPU/24 CPUs/180 GiB, two-hour request.
+**Input:** Downloads `output CreditICL.zip`, 7,753,774 bytes, 1,165 files, CRC valid;
+SHA256 `83299ad94fe6cc81605346fccefc593522d964f2aa4bf04dbf43b51f1ab1697c`.
+**Source fingerprint:** `68a5b2b001b4270a8c64f8f3e836497292758bb4dbd325c24339327f5a358a49`.
+**Environment fingerprint:** `d4ed1fbe1397c0063fc12abffcb338fddd8038f21decb20c8c84accaf0bf0454`.
+The inspected library pin for this audit is `de324efcca55be392feb0c01830b3b6ce364587f`.
+
+### Configuration and evidence
+
+The report is `experiment_0/report/checks.json`; its main log is
+`experiment_0/logs/exp0_checks_20261012_183135_j11681071.log`. TabPFN 9.1.0,
+TabICL 2.1.1 at `8f1aa2098c894ab91dba15209cf2002ba4be6c6c`, CatBoost 1.2.10 and
+PyTorch 2.11.0+cu128 passed dependency checks. All 21 v5 credit caches, four released
+weights and 50 OOD datasets passed. The six smoke configurations are Exp0's resolved
+scratch-TabICL/continued-TabICL/continued-TabPFN routes, both tasks, with max_steps=10,
+progress disabled, save_perm_every=10, save_temp_every=0, 23 workers and production
+1,024-row shapes; batches are 64 for TabICL and 16 for TabPFN.
+
+### Results, bugs and interpretation
+
+95 PASS, 2 FAIL, 1 WARN (dirty checkout). TabICL's four smoke routes and checkpoint-to-wrapper
+weight comparisons passed: PD 51.2/50.9 s, LGD 38.9/39.2 s for ten steps, peaks 12.11–13.05 GiB.
+Both 20-step upstream-equivalence processes exited zero. These short times include startup and
+are not reliable whole-campaign estimates.
+
+PD TabPFN reported a nonfinite gradient norm at strict clipping. The old path prevented recovery
+from scaled AMP overflow; the log alone cannot prove this was its only numerical cause.
+LGD TabPFN failed in searchsorted because CPU-prepared bar-distribution
+buffers accompanied CUDA predictions/targets. The fixes add device-local loss buffers and bounded
+same-batch AMP retries (no silently skipped update or shortened task budget). Actual VSC success
+of those fixes remains unverified until a new Exp0 run. No 600-step run, corrected Exp1 training
+or new benchmark completion is evidenced by this upload.
+
+The historical 90-run campaign remains preserved. On 13-10 the user chose three main mixtures
+plus targeted components: 9 main and 15 ablation runs per task, 48 total. The former 15 settings
+were filter/strength combinations, not 15 distinct mixture fractions. Their reduction appears
+in `0bac424` (29-09-2026); git authorship alone does not establish who approved that decision.
+The new validation workflow uses one Slurm allocation with separate attempt folders; it refuses
+production launch until all required stages and artifact checks pass. No jobs submitted by this audit.
+
+## 12-10-2026 — Prerequisites passed; revised Exp0 checks job accepted
+
+**Submitted** 12-10-2026, terminal returned at 18:30 CEST, by Andreas | **job** `11681071`
+**Cluster** Mindwell `gpu_b200` | **checkout pulled** `0ce444b` | **script** `exp0.slurm`
+**Requested allocation** 1 B200, 24 CPUs, 180 GiB, 02:00:00; runtime and outcome not yet supplied.
+The local library pin is `5b6c24dd9337c6e7bef45733730bf52ee280e61c`; the VSC submodule checkout
+was not printed in this transcript.
+
+### Configuration
+
+The project environment updater completed in `.venv-skylake` (Python 3.12.3). Dependency
+preflight passed TabPFN 9.1.0, TabICL 2.1.1 at the required source commit, CatBoost 1.2.10,
+all 135 checked requirement versions including extras, `pip check`, and torch 2.11.0+cu128.
+It saved 152 installed-package records to `general/report/environment.json`.
+This job checks the GPU pipeline and runs both 20-step trainer-equivalence comparisons;
+it does not submit the six 600-step Exp0 arms or the 18-arm Exp1 campaign.
+
+### Results and anomalies
+
+Post-completion preflight confirms **all 21 data caches at version 5**, all four released
+weight files present, and 25 classification plus 25 regression OOD datasets without missing
+files. This resolves the intermediate stale-cache observations during job `62297440`.
+Slurm accepted job `11681071`; no running/completed state or GPU-check result was supplied.
+There is no new failure in this transcript and no reason to repeat preprocessing.
+
+### Interpretation and next
+
+Wait for this checks job and inspect its exit status/log, then require
+`python -m src.utils.preflight --require-exp0-checks` before the short-arm stage.
+Preserve September's 90 checkpoints. They completed the old training recipe; they do not
+count as the corrected Exp1, whose current configs expand to 9 PD and 9 LGD arms. A local
+comparison against the configs at `2034cc2` confirms 45 old versus 9 current arms per track,
+with no shared run names. No training code or configuration changed in this follow-up.
 
 ## 12-10-2026 — Environment updated on VSC; CPU cache rebuild completed
 

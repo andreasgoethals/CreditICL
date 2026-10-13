@@ -274,7 +274,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--single-cluster", action="store_true",
                     help="keep everything on Mindwell instead of splitting LGD across two")
     ap.add_argument("--variant", default=None,
-                    help="an extra config beside the main one: config/Exp<N>_<TRACK>_<variant>.yaml (none today)")
+                    help="only this config variant; Exp1 includes the main grid and component ablations by default")
     args = ap.parse_args(argv)
     if args.variant:
         missing = [t for t in args.track if not _config(args.exp, t, args.variant).is_file()]
@@ -290,6 +290,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     stages = plan(args.exp, args.track, args.single_cluster, args.variant)
+    if args.exp == 1 and args.variant is None:
+        stages += plan(args.exp, args.track, args.single_cluster, "ablations")
     if args.phase != "all":
         stages = [s for s in stages if s.kind == args.phase]
     print(render(stages, args.exp))

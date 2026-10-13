@@ -146,7 +146,7 @@ if [[ "$RC" -eq 64 ]]; then
     # wICE had actually granted it. Echo THIS task's grant so the resume asks for what the
     # partition allows. (On mindwell these equal the header, so nothing changes there.)
     sbatch --clusters="${SLURM_CLUSTER_NAME:-mindwell}" \
-           --job-name="crediticl-exp${EXP}-lgd" \
+           --job-name="crediticl-exp${EXP}${VARIANT}-lgd" \
            --export="ALL,EXP=${EXP},VARIANT=${VARIANT}" \
            "${RESUME_TIME[@]}" \
            --partition="${SLURM_JOB_PARTITION:-gpu_b200}" \

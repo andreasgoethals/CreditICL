@@ -168,7 +168,10 @@ def load(path: str | Path, *, allow_placeholders: bool = False) -> dict[str, Any
     prior_file = cfg.pop("prior_file", None)
     if prior_file:
         # Resolve beside the experiment file, so config/ can be moved as a unit.
-        cfg = _deep_merge(load_yaml(resolved.parent / prior_file), cfg)
+        # Resolve the parent's sweep before applying the child's body. Otherwise
+        # an inherited sweep silently re-expands a lever the child fixes (e.g.
+        # the 50% mixture in component ablations).
+        cfg = _deep_merge(apply_sweep_block(load_yaml(resolved.parent / prior_file)), cfg)
 
     if not allow_placeholders:
         holes = find_placeholders(cfg)

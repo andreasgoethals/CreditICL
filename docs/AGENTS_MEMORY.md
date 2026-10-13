@@ -37,6 +37,7 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 12-10-2026 | Exp0 checks 11681071, audited 13-10 from ZIP | **FAILED: 95 PASS, 2 FAIL, 1 WARN; both equivalence checks passed** | 21m01s log interval; PD TabPFN nonfinite scaled gradient; LGD TabPFN CPU bar-distribution buffers with CUDA logits. Input/package repairs succeeded. New single-job validation must pass before the corrected 48-run Exp1; preserve historical 90 |
 | 12-10-2026 | Preprocessing, job 62297440, wICE, after `57377b2` | **COMPLETED 0:0, 00:03:00** | VSC installed TabPFN 9.1.0; correct TabICL commit and CatBoost 1.2.10 confirmed. Preflight ran while caches were rebuilding (13 current, 8 stale) and correctly prevented GPU submission. Repeat full preflight after completion; do not resubmit preprocessing |
 | 12-10-2026 | Exp0 checks, job 11680453, Mindwell `gpu_b200`, after `78f6b3f` | **FAILED 1:0, 00:17:27; both trainer-equivalence checks passed** | 21 stale v3 data caches, missing new OOD path while legacy cache exists, installed TabPFN 8.2.0 rejecting v9 inference flags. Repair environment/cache, preflight, then repeat checks. No six-arm Exp0 or benchmark completion yet; 0.291 GPU-h used |
 | 12-10-2026 | September benchmark CSV follow-up, `benchmark-results.zip` | **10,437/10,437 rows OK; no nonfinite headline metrics; 184/184 result hashes match receipts** | All 12 recorded evaluation source hashes match `2034cc2`. The 28-09 dataset-calibration development change postdates this campaign; do not attribute it to these checkpoints. Unequal contexts and AXA boundary diagnostics need re-evaluation only; the corrected optimizer/prior require a new 18-arm Exp1 |
@@ -72,6 +73,21 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 [`RUNS.md`](RUNS.md).
 
 ## Dead ends
+
+### 13-10-2026 — New validation exposed stale test fixtures and monitor semantics
+
+**Tried:** Full pytest after adding component configs and strict benchmark row receipts; targeted OOD monitoring regressions.
+**Result:** Two old fixtures failed; three monitor assertions reproduced clipping/category faults.
+**Why:** Fixtures bypassed config inheritance or omitted row counts; the monitor clipped OOD regression and dropped category metadata, while clipping could hide infinite predictions.
+**Instead:** Resolve inherited configs in fixtures, require row accounting, carry category/bounds metadata and check finiteness before clipping; preserve old monitoring CSVs under their previous protocol.
+
+### 13-10-2026 — CPU tests did not cover TabPFN's CUDA loss/scaler path
+
+**Tried:** Exp0 job 11681071 after repairing packages and processed caches.
+**Result:** Both TabPFN paths failed; 95 other checks and both trainer comparisons passed.
+**Why:** CPU-prepared regression buffers were not moved to the GPU; strict clipping blocked AMP overflow recovery (the log cannot establish that overflow was the only numerical cause). CPU validation cannot establish B200 readiness.
+**Instead:** Device-local loss buffers, bounded same-batch scale backoff, targeted CPU/CUDA regressions and one complete VSC validation receipt. No production rerun until it passes.
+
 
 ### 12-10-2026 — Checking caches before the CPU job finished
 - **Tried:** full preflight at 18:01, immediately after submitting preprocessing job 62297440.

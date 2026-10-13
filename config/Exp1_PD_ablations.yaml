@@ -1,0 +1,25 @@
+# Experiment 1: five predeclared component removals at the 50% mixture.
+# Compare each with Exp1_PD's 50% arm at the SAME seed and training budget.
+# These are mechanism tests, not an extra search for the best holdout score.
+prior_file: Exp1_PD.yaml
+experiment: exp1ablations_pd
+prior:
+  credit_fraction: 0.5
+train:
+  save_perm_every: 12500 # compare final ablations; main grid supplies learning curves
+eval:
+  include_reference_slots: false # reuse the main study's identical reference models
+sweep:
+  arm: [no_macro_target, no_informative_missingness, no_shift, no_tail_warp, base_cardinality]
+  seeds: [0, 1, 2]
+arms:
+  no_macro_target:
+    prior.credit.target.mechanism.rho_range: [0.0, 0.0]
+  no_informative_missingness:
+    prior.credit.missingness.missing_target_coupling_range: [0.0, 0.0]
+  no_shift:
+    prior.credit.shift.shift_prob: 0.0
+  no_tail_warp:
+    prior.credit.marginals.col_fraction_range: [0.0, 0.0]
+  base_cardinality:
+    prior.credit.max_cat_size: 200

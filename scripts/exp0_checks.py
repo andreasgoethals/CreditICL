@@ -410,13 +410,16 @@ def check_orchestration(rep: Report) -> None:
     there, and the planner must plan every experiment — Exp3 refusing until Exp1 chose its mix."""
     import shutil
 
+    from src.utils.run_experiment import unconfigured_tracks
+
     tools = {t: bool(shutil.which(t)) for t in ("sbatch", "squeue", "sacct", "scontrol")}
     rep.add("orchestration", "SLURM tools on PATH", PASS if all(tools.values()) else WARN, tools)
-    for exp, want in ((1, 0), (2, 0), (3, 1)):
+    for exp in (1, 2, 3):
         try:
+            want = int(bool(unconfigured_tracks(exp, ["pd", "lgd"])))
             r = subprocess.run([sys.executable, "-m", "src.utils.run_experiment", str(exp)], cwd=ROOT,
                                capture_output=True, text=True, timeout=900)
-            ok = r.returncode == want and (exp != 3 or "NOT CONFIGURED YET" in r.stdout)
+            ok = r.returncode == want and (not want or "NOT CONFIGURED YET" in r.stdout)
             rep.add("orchestration", f"run_experiment {exp} (plan only)", PASS if ok else FAIL,
                     {"exit": r.returncode, "expected": want, "tail": r.stdout.strip()[-700:]})
         except Exception as exc:  # noqa: BLE001
@@ -434,7 +437,7 @@ def check_configs(rep: Report) -> None:
         text = (ROOT / "scripts" / "slurm" / f"{script}.slurm").read_text(encoding="utf-8")
         m = re.search(r"#SBATCH --array=0-(\d+)", text)
         header[script] = int(m.group(1)) + 1 if m else None
-    for exp, variant in ((0, None), (1, None), (2, None), (3, None)):
+    for exp, variant in ((0, None), (1, None), (1, "ablations"), (2, None), (3, None)):
         for track in ("pd", "lgd"):
             name = f"Exp{exp}_{track.upper()}{'_' + variant if variant else ''}"
             path = ROOT / "config" / f"{name}.yaml"
@@ -446,7 +449,7 @@ def check_configs(rep: Report) -> None:
                 slots = n_slots(exp, track, variant=variant)
                 detail = {"arms": len(runs), "benchmark_slots": slots}
                 status = PASS
-                if exp == 1:
+                if exp == 1 and variant is None:
                     detail["pretrain_header_array"] = header[f"pretrain_{track}"]
                     detail["benchmark_header_array"] = header["benchmark"]
                     if header[f"pretrain_{track}"] != len(runs) or header["benchmark"] != slots:
@@ -456,7 +459,7 @@ def check_configs(rep: Report) -> None:
                 rep.add("configs", name, FAIL, f"{type(exc).__name__}: {exc}")
 
 
-def check_train(rep: Report, steps: int = 10) -> None:
+def check_train(rep: Report, steps: int = 10, *, track_only=None, arm_only=None) -> None:
     import copy
     import tempfile
 
@@ -466,8 +469,12 @@ def check_train(rep: Report, steps: int = 10) -> None:
 
     workers = max(0, int(os.environ.get("SLURM_CPUS_PER_TASK", "4")) - 1)
     for track in ("pd", "lgd"):
+        if track_only and track != track_only:
+            continue
         runs = expand_with_seeds(load(ROOT / "config" / f"Exp0_{track.upper()}.yaml"))
         for run in runs:
+            if arm_only and run["arm"] != arm_only:
+                continue
             label = f"{track} {run['arm']}"
             cfg = copy.deepcopy(run)
             cfg["train"].update(max_steps=steps, num_workers=workers, save_temp_every=0, save_perm_every=steps,
@@ -627,6 +634,9 @@ def main(argv=None) -> int:
     ap.add_argument("--only", nargs="*", choices=sorted(CHECKS), default=None)
     ap.add_argument("--quick", action="store_true", help="skip the slow checks (train, benchmark)")
     ap.add_argument("--out", default=None, help="report folder; default experiment_0/report/")
+    ap.add_argument("--track", choices=("pd", "lgd"), help="isolate one training track")
+    ap.add_argument("--arm", choices=("scratch_tabicl", "finetune_tabicl", "finetune_tabpfn3"),
+                    help="isolate one training route in its own CUDA process")
     args = ap.parse_args(argv)
     from src.utils.paths import experiment_dir
 
@@ -638,7 +648,10 @@ def main(argv=None) -> int:
             continue
         started = time.time()
         try:
-            fn(rep)
+            if name == "train":
+                fn(rep, track_only=args.track, arm_only=args.arm)
+            else:
+                fn(rep)
         except Exception as exc:  # noqa: BLE001 — a crashing check is a failed check
             rep.add(name, "crashed", FAIL, f"{type(exc).__name__}: {exc}\n{traceback.format_exc()[-1500:]}")
         print(f"          ({name}: {time.time() - started:.1f}s)", flush=True)

@@ -144,7 +144,7 @@ if [[ "$RC" -eq 64 ]]; then
     # mindwell today so the header would work, but echoing the grant is strictly correct and
     # costs nothing. (See the LGD script: an LGD wICE arm died on exactly this.)
     sbatch --clusters="${SLURM_CLUSTER_NAME:-mindwell}" \
-           --job-name="crediticl-exp${EXP}-pd" \
+           --job-name="crediticl-exp${EXP}${VARIANT}-pd" \
            --export="ALL,EXP=${EXP},VARIANT=${VARIANT}" \
            "${RESUME_TIME[@]}" \
            --partition="${SLURM_JOB_PARTITION:-gpu_b200}" \

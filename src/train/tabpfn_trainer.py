@@ -38,6 +38,7 @@ effect is still isolated; the paper must say it.
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import signal
@@ -192,7 +193,10 @@ def regression_loss(est, batch, n_estimators: int, weights: dict[str, float]) ->
     _, per_estimator, _ = est.forward(batch.X_query)
     logits = torch.stack(per_estimator, dim=2)  # Q, B, E, L
     q, b, e, n_logits = logits.shape
-    bardist = batch.znorm_space_bardist
+    # Worker preprocessing produces CPU buffers. The loss performs searchsorted
+    # against these borders with GPU targets. Keep a device-local copy: moving
+    # the batch's shared distribution in place can also affect later tasks.
+    bardist = copy.deepcopy(batch.znorm_space_bardist).to(logits.device)
     if b != 1 or e != n_estimators or n_logits != bardist.num_bars:
         raise RuntimeError(f"unexpected logits shape {tuple(logits.shape)}")
     logits_bql = logits.permute(1, 2, 0, 3).reshape(b * e, q, n_logits)
@@ -278,6 +282,7 @@ class TabPFNTrainer:
         self.optimizer = build_optimizer(self.model, tcfg)
         self.scheduler = build_scheduler(self.optimizer, tcfg, self.max_steps)
         self.scaler = torch.amp.GradScaler("cuda") if self.amp else None
+        self.amp_retries = 0
 
         from tabpfn.architectures.interface import PerformanceOptions
 
@@ -329,12 +334,16 @@ class TabPFNTrainer:
         return path
 
     def _save(self) -> None:
+        from src.train.random_state import capture
+
         path = self.save_weights(self.ckpt_dir / f"step-{self.step}.ckpt", extra={
             "optimizer": self.optimizer.state_dict(), "scheduler": self.scheduler.state_dict(),
             "scaler": self.scaler.state_dict() if self.scaler is not None else None,
             "step": self.step,
+            "random_state": capture(),
             "extra": {"datasets_seen": self.datasets_seen, "resumed_at": self.resumed_at,
-                      "train_seconds": self._train_seconds(), "skipped_tasks": self.skipped_tasks},
+                      "train_seconds": self._train_seconds(), "skipped_tasks": self.skipped_tasks,
+                      "amp_retries": self.amp_retries},
         })
         removed = prune_checkpoints(self.ckpt_dir, save_perm_every=self.save_perm_every,
                                     max_temp=self.max_temp_checkpoints)
@@ -368,10 +377,14 @@ class TabPFNTrainer:
         self.scheduler.load_state_dict(payload["scheduler"])
         if self.scaler is not None and payload.get("scaler"):
             self.scaler.load_state_dict(payload["scaler"])
+        from src.train.random_state import restore
+
+        restore(payload.get("random_state"))
         self.step = int(payload.get("step", 0))
         extra = payload.get("extra", {}) or {}
         self.datasets_seen = int(extra.get("datasets_seen", 0))
         self.skipped_tasks = int(extra.get("skipped_tasks", 0))
+        self.amp_retries = int(extra.get("amp_retries", 0))
         self._train_seconds_before = float(extra.get("train_seconds", 0.0) or 0.0)
         self.resumed_at = self.step
         self.telemetry.resume(self.step)
@@ -416,26 +429,58 @@ class TabPFNTrainer:
         usable = [p for p in prepared if p is not None and "item" in p]
         if not usable:
             raise RuntimeError(f"No usable TabPFN training tasks at step {self.step}; refusing an empty update")
+        if len(usable) != len(prepared):
+            raise RuntimeError(f"Incomplete TabPFN batch at step {self.step}: {len(usable)}/{len(prepared)} "
+                               "tasks usable. Refusing to change the matched training budget.")
         from tabpfn.finetuning._torch_compat import sdpa_kernel_context
 
-        self.skipped_tasks += len(prepared) - len(usable)
-        self.datasets_seen += len(prepared)
-        total = 0.0
-        for p in usable:
-            loss = self._task_loss(p)
-            if not torch.isfinite(loss):
-                raise FloatingPointError(f"non-finite loss at step {self.step}")
-            scaled = loss / len(usable)
-            with sdpa_kernel_context():
-                (self.scaler.scale(scaled) if self.scaler is not None else scaled).backward()
-            total += float(loss.detach())
-        if self.scaler is not None:
-            self.scaler.unscale_(self.optimizer)
+        # GradScaler normally skips an overflowing update and lowers its scale.
+        # Here an update has a fixed task budget: retry that SAME batch instead
+        # of consuming new tasks or advancing the scheduler. Restore dropout RNG
+        # as well. Persistent overflow and non-finite forward losses still fail.
+        cpu_rng = torch.get_rng_state()
+        cuda_rng = torch.cuda.get_rng_state_all() if self.device.startswith("cuda") else None
+        params = [p for p in self.model.parameters() if p.requires_grad]
+        retries = 0
+        while True:
+            self.optimizer.zero_grad(set_to_none=True)
+            total = 0.0
+            try:
+                for p in usable:
+                    loss = self._task_loss(p)
+                    if not torch.isfinite(loss):
+                        raise FloatingPointError(f"non-finite loss at step {self.step}")
+                    scaled = loss / len(usable)
+                    with sdpa_kernel_context():
+                        (self.scaler.scale(scaled) if self.scaler is not None else scaled).backward()
+                    total += float(loss.detach())
+                if self.scaler is not None:
+                    self.scaler.unscale_(self.optimizer)
+                flags = [torch.isfinite(p.grad).all() for p in params if p.grad is not None]
+                if not flags:
+                    raise FloatingPointError(f"no gradients at step {self.step}")
+                finite = bool(torch.stack(flags).all())
+                if finite:
+                    break
+                if self.scaler is None or retries >= 16:
+                    raise FloatingPointError(f"non-finite gradients at step {self.step} after {retries} AMP retries")
+                old_scale = self.scaler.get_scale()
+                self.scaler.update(new_scale=old_scale * self.scaler.get_backoff_factor())
+                retries += 1
+                self.amp_retries += 1
+                self.log.warning("AMP overflow at step %d; retrying the same batch (%d/16), scale %g -> %g",
+                                 self.step, retries, old_scale, self.scaler.get_scale())
+                torch.set_rng_state(cpu_rng)
+                if cuda_rng is not None:
+                    torch.cuda.set_rng_state_all(cuda_rng)
+            except BaseException:
+                self.optimizer.zero_grad(set_to_none=True)
+                raise
         if self.telemetry.due_grad(self.step + 1):
             row = self.telemetry.sample_grads(self.model)
-            row.update({"step": self.step + 1, "datasets_seen": self.datasets_seen, "kind": "grad"})
+            row.update({"step": self.step + 1, "datasets_seen": self.datasets_seen + len(prepared), "kind": "grad"})
             self.telemetry.record(row)
-        torch.nn.utils.clip_grad_norm_([p for p in self.model.parameters() if p.requires_grad],
+        torch.nn.utils.clip_grad_norm_(params,
                                        self.grad_clip if self.grad_clip > 0 else float("inf"),
                                        error_if_nonfinite=True)
         if self.scaler is not None:
@@ -445,7 +490,8 @@ class TabPFNTrainer:
             self.optimizer.step()
         self.optimizer.zero_grad(set_to_none=True)
         self.scheduler.step()
-        return {"loss": total / len(usable), "tasks": float(len(usable))}
+        self.datasets_seen += len(prepared)
+        return {"loss": total / len(usable), "tasks": float(len(usable)), "amp_retries": float(retries)}
 
     # -- the loop --------------------------------------------------------------------------
     def _install_stop_signals(self) -> None:
@@ -504,7 +550,7 @@ class TabPFNTrainer:
                 avg = window["loss"] / max(window_n, 1)
                 lr = self.scheduler.get_last_lr()[0]
                 self.metrics.write({"step": self.step, "lr": lr, "datasets_seen": self.datasets_seen,
-                                    "loss": avg, "skipped_tasks": self.skipped_tasks})
+                                    "loss": avg, "skipped_tasks": self.skipped_tasks, "amp_retries": self.amp_retries})
                 done_here = self.step - (self.resumed_at or 0)
                 steps_per_s = done_here / max(time.time() - started, 1e-9)
                 eta = (self.max_steps - self.step) / max(steps_per_s, 1e-9)
@@ -541,7 +587,8 @@ class TabPFNTrainer:
             "training_fingerprint": training_fingerprint(),
             "steps": self.step, "completed": self.step >= self.max_steps,
             "stopped_by_signal": self._stop_requested, "datasets_seen": self.datasets_seen,
-            "skipped_tasks": self.skipped_tasks, "elapsed_s": round(time.time() - started, 1),
+            "skipped_tasks": self.skipped_tasks, "amp_retries": self.amp_retries,
+            "elapsed_s": round(time.time() - started, 1),
             "train_seconds_total": round(self._train_seconds(), 1), "resumed_at": self.resumed_at,
             "architecture": "tabpfn3", "released_weights": str(self.weights_path),
         }

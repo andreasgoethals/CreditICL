@@ -228,11 +228,20 @@ def _check_experiment(exp: int | str) -> int:
 def experiment_dir(exp: int | str, *, big: bool = False) -> Path:
     """`output CreditICL/experiment_<N>/` on the small tier, or its mirror on the big one."""
     root = big_outputs_dir() if big else outputs_dir()
-    return root / f"experiment_{_check_experiment(exp)}"
+    number = _check_experiment(exp)
+    result = root / f"experiment_{number}"
+    attempt = os.environ.get("CREDITICL_EXP0_ATTEMPT")
+    if number == 0 and attempt:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", attempt):
+            raise ValueError("Invalid CREDITICL_EXP0_ATTEMPT; expected a simple directory name")
+        result = result / "validation" / attempt
+    return result
 
 
 def reference_dir(*, big: bool = False) -> Path:
     """The reference column: models whose numbers do not depend on our prior."""
+    if os.environ.get("CREDITICL_EXP0_ATTEMPT"):
+        return experiment_dir(0, big=big) / REFERENCE
     return (big_outputs_dir() if big else outputs_dir()) / REFERENCE
 
 
@@ -268,9 +277,11 @@ def owner_of(tag: str) -> int | str:
 def owner_dir(owner: int | str, *, big: bool = False) -> Path:
     """The folder of an experiment number, of `reference` or of `adhoc`, on either tier."""
     root = big_outputs_dir() if big else outputs_dir()
-    if owner in (REFERENCE, ADHOC):
+    if owner == REFERENCE:
+        return reference_dir(big=big)
+    if owner == ADHOC:
         return root / str(owner)
-    return root / f"experiment_{_check_experiment(owner)}"
+    return experiment_dir(owner, big=big)
 
 
 def logs_dir(owner: int | str | None = None) -> Path:

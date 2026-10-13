@@ -317,7 +317,7 @@ def test_current_benchmark_rejects_a_summary_from_different_training_code(tmp_pa
         "arm", "exp1bench_lgd_a0", arm=0, step=10, final=True, model="crediticl"))
     monkeypatch.setattr(discovery, "list_datasets", lambda task: ["credit"])
     monkeypatch.setattr(ood, "N_PER_TASK", 1)
-    monkeypatch.setattr(ood, "list_ood_datasets", lambda kind: [SimpleNamespace(name="ood", slug="ood")])
+    monkeypatch.setattr(ood, "list_ood_datasets", lambda kind: [SimpleNamespace(name="ood", slug="ood", n_rows=125)])
     monkeypatch.setattr(ood, "manifest_path", lambda: tmp_path / "manifest.json")
     monkeypatch.setattr(ood, "ood_root", lambda: tmp_path)
     monkeypatch.setattr(paths, "find_processed_dir", lambda *a: tmp_path)
@@ -327,6 +327,7 @@ def test_current_benchmark_rejects_a_summary_from_different_training_code(tmp_pa
     monkeypatch.setattr(paths, "benchmark_dir_for", lambda *a: tmp_path)
     for filename in ("manifest.json", "meta.json", "data.parquet", "ood.npz", "step-10.ckpt"):
         (tmp_path / filename).write_bytes(b"immutable input")
+    (tmp_path / "meta.json").write_text(json.dumps({"n_rows": 125}), encoding="utf-8")
     (tmp_path / "config.json").write_text(json.dumps(run), encoding="utf-8")
     summary = {"completed": True, "steps": 10, "training_fingerprint": preflight.training_fingerprint()}
     summary_path = tmp_path / "summary.json"
@@ -334,6 +335,8 @@ def test_current_benchmark_rejects_a_summary_from_different_training_code(tmp_pa
     monkeypatch.setattr(benchmark, "package_fingerprint", lambda: "validated packages")
     first_request = benchmark.request(1, "lgd", 0)[1]
     assert first_request["step"] == 10
+    assert first_request["credit_rows"] == {"credit": 125}
+    assert first_request["ood_rows"] == {"ood": 125}
     monkeypatch.setattr(benchmark, "package_fingerprint", lambda: "changed packages")
     assert benchmark.request(1, "lgd", 0)[1] != first_request
     for fingerprint in (None, "different implementation"):
@@ -393,7 +396,9 @@ def test_tabpfn_regression_loss_uses_each_members_transformed_targets(monkeypatc
             return y + 10
 
     y = torch.tensor([[0., 1., 2.]])
-    batch = SimpleNamespace(X_query=None, y_query=y, znorm_space_bardist=SimpleNamespace(num_bars=4),
+    from tabpfn.architectures.shared.bar_distribution import FullSupportBarDistribution
+    batch = SimpleNamespace(X_query=None, y_query=y,
+                            znorm_space_bardist=FullSupportBarDistribution(torch.linspace(-3, 3, 5)),
                             configs=[[SimpleNamespace(target_transform=ShiftTarget())],
                                      [SimpleNamespace(target_transform=None)]])
     est = SimpleNamespace(forward=lambda _: (None, [torch.zeros(3, 1, 4), torch.zeros(3, 1, 4)], None))

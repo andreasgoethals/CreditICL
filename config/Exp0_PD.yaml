@@ -1,13 +1,11 @@
 # =============================================================================
 # EXPERIMENT 0 — PD — THE CLUSTER DEBUG SUITE (3 arms x 1 seed, 600 steps)
 #
-# Not an experiment: the run that proves every path works ON THE CLUSTER before Exp1 spends real
-# credits. One tiny arm per training path — Exp1's scratch TabICL, Exp2's fine-tuned TabICLv2 and
-# fine-tuned TabPFN-3 — through the real SLURM scripts, with frequent telemetry and a progress
-# curve; the scratch arm is submitted with a short walltime so it is stopped by SIGUSR1, saves,
-# resubmits itself and resumes. The benchmark then scores each arm's final checkpoint and the
-# four reference models on every dataset with the full protocol — which measures what a real slot
-# costs, and writes the real reference column Exp1-3 reuse. Commands: docs/VSC.md, Experiment 0.
+# One Slurm allocation validates every production route before the main campaign.
+# All six routes train, stop on SIGUSR1, and resume inside that allocation.
+# Full and capped credit/OOD benchmarks follow; validated reference scores are reused.
+# Every attempt is isolated under experiment_0/validation/<attempt>/ on both tiers.
+# Submit scripts/slurm/exp0.slurm; no separate short-arm or benchmark submission.
 #
 #   python scripts/pretrain.py --config config/Exp0_PD.yaml --list
 # =============================================================================
@@ -123,7 +121,7 @@ init:
 # TRAINING — continued pretraining (docs/EXPERIMENTAL_DESIGN.md, Experiment 2)
 # ----------------------------------------------------------------------------
 train:
-  max_steps: 600 # a check: ~10 minutes per arm on a B200, long enough for a forced stop and resume
+  max_steps: 600 # measure time on the current GPU; long enough for a forced stop and resume
   batch_size: 64 # datasets per UPDATE, upstream's; the tabpfn3 arms use 16, as TabPFN-Wide
   micro_batch_size: 4 # datasets per TabICL forward pass (TabPFN takes one at a time)
   num_quantiles: 999 # TabICL's quantile grid (LGD)

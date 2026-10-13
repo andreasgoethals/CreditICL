@@ -146,6 +146,10 @@ def build_loader(
         "collate_fn": collate_identity,
         "num_workers": num_workers,
         "pin_memory": torch.cuda.is_available(),
+        # DataLoader draws a worker seed even with zero workers. Keep that draw
+        # off the model's global RNG so starting a resumed loader cannot change
+        # the next stochastic forward pass.
+        "generator": torch.Generator().manual_seed(int(seed)),
     }
     if num_workers > 0:
         kwargs["persistent_workers"] = True

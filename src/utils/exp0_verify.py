@@ -62,12 +62,16 @@ def _verify_receipt(receipt: Path, track: str, slot) -> float:
         if domain == "ood" and "status" in rows:
             rows = rows[rows.status != "skipped"]
         validate_cells(rows, request[domain], request["models"], request["seeds"],
-                       request["n_folds"], "roc_auc" if track == "pd" else "r2", slot.context)
+                       request["n_folds"], "roc_auc" if track == "pd" else "r2", slot.context,
+                       row_counts=request.get(f"{domain}_rows"))
         seconds += float(rows["total_seconds"].sum())
     return seconds / 3600
 
 
 def verify(out_root: Path, *, big_root: Path | None = None) -> Verdicts:
+    modern = out_root / "experiment_0" / "report" / "validation.json"
+    if modern.is_file():
+        return verify_validation(out_root, big_root=big_root)
     from src.utils.preflight import CHECK_SECTIONS, source_fingerprint, training_fingerprint
     from src.eval.benchmark_status import slot_for
 
@@ -231,6 +235,76 @@ def verify(out_root: Path, *, big_root: Path | None = None) -> Verdicts:
     for key, hours in sorted(costs.items()):
         print(f"  {key:<40} {sum(hours) / len(hours):5.2f} h per benchmark slot")
     return v
+
+
+def verify_validation(out_root: Path, *, big_root: Path | None = None) -> Verdicts:
+    """Inspect a downloaded single-job receipt without pretending to be the VSC environment."""
+    from src.eval.benchmark_status import digest
+    from src.utils import paths
+    from src.utils.config import expand_with_seeds, load
+    from src.utils.preflight import source_fingerprint
+    from src.utils.validation import SCHEMA, attempt_scope, plan
+
+    v = Verdicts()
+    receipt = out_root / "experiment_0" / "report" / "validation.json"
+    try:
+        saved = json.loads(receipt.read_text(encoding="utf-8"))
+        with attempt_scope(saved["attempt"]):
+            expected = [s.name for s in plan()]
+        rows = saved.get("stages", [])
+        complete = (saved.get("schema") == SCHEMA and saved.get("status") == "PASS"
+                    and [r["name"] for r in rows] == expected and all(r["status"] == "PASS" for r in rows))
+        v.add(PASS if complete else FAIL, "single-job Experiment 0", f"{saved.get('status')}: {saved.get('attempt')}")
+        for row in rows:
+            v.add(PASS if row["status"] == "PASS" else FAIL, row["name"],
+                  row.get("error", f"{row.get('seconds', '?')} seconds"))
+        if saved.get("error"):
+            v.add(FAIL, "validation stopped", saved["error"])
+        v.add(PASS if saved.get("source_fingerprint") == source_fingerprint() else FAIL,
+              "current code/config/tests", "source fingerprint comparison; package compatibility is checked on VSC")
+        roots = [out_root] + ([big_root] if big_root else [])
+        missing_weights = 0
+        for remote, expected_hash in saved.get("artifacts", {}).items():
+            relative = remote.replace("\\", "/").split(paths.OUTPUT_NAME + "/", 1)[-1]
+            rel = Path(relative)
+            if rel.is_absolute() or ".." in rel.parts:
+                raise ValueError(f"Unsafe artifact path: {remote}")
+            candidates = [r / rel for r in roots]
+            local = next((p for p in candidates if p.is_file()), None)
+            if local is None and rel.suffix == ".ckpt":
+                missing_weights += 1
+                continue
+            if local is None or digest(local) != expected_hash:
+                v.add(FAIL, "artifact missing or changed", relative)
+        if complete and not saved.get("artifacts"):
+            v.add(FAIL, "evidence", "PASS without artifact hashes")
+        if missing_weights:
+            v.add(WARN, "checkpoints omitted from download", f"{missing_weights}; VSC preflight must verify them in place")
+
+        attempt = out_root / "experiment_0" / "validation" / saved["attempt"]
+        print("\nTraining cost projections (GPU-hours, not queue time or a billing statement):")
+        for track in ("pd", "lgd"):
+            summaries = {}
+            for run in expand_with_seeds(load(f"config/Exp0_{track.upper()}.yaml")):
+                file = attempt / "runs" / run["_run_name"] / "summary.json"
+                if file.is_file():
+                    summaries[run["arm"]] = json.loads(file.read_text(encoding="utf-8"))
+            for exp, variant in ((1, ""), (1, "_ablations"), (2, ""), (3, "")):
+                runs = expand_with_seeds(load(f"config/Exp{exp}_{track.upper()}{variant}.yaml", allow_placeholders=True))
+                total, measured = 0., 0
+                for run in runs:
+                    arm = ("scratch_tabicl" if exp != 2 else
+                           "finetune_tabpfn3" if run["architecture"] == "tabpfn3" else "finetune_tabicl")
+                    summary = summaries.get(arm, {})
+                    if summary.get("completed") and summary.get("steps", 0) > 0:
+                        total += summary["train_seconds_total"] / summary["steps"] * run["train"]["max_steps"] / 3600
+                        measured += 1
+                if measured == len(runs):
+                    print(f"  Exp{exp}{variant} {track}: {len(runs)} runs, about {total:.1f} GPU-h (short-run extrapolation)")
+        return v
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        v.add(FAIL, "validation receipt", str(exc))
+        return v
 
 
 def _walltime_hours(script: Path) -> float | None:

@@ -24,10 +24,10 @@ def source_fingerprint() -> str:
 
     files = [REPO_ROOT / "pyproject.toml"]
     for directory in ("src/data", "src/eval", "src/models", "src/prior", "src/train", "src/utils",
-                      "config", "scripts"):
+                      "config", "scripts", "tests"):
         files.extend(p for p in (REPO_ROOT / directory).rglob("*")
                      if p.is_file() and p.suffix in (".py", ".yaml", ".slurm", ".sh"))
-    return _fingerprint(files)
+    return _fingerprint(files, planned_selection=True)
 
 
 def training_fingerprint() -> str:
@@ -40,7 +40,7 @@ def training_fingerprint() -> str:
     return _fingerprint(files)
 
 
-def _fingerprint(files: list[Path]) -> str:
+def _fingerprint(files: list[Path], *, planned_selection: bool = False) -> str:
     from src.utils.paths import REPO_ROOT
 
     digest = hashlib.sha256()
@@ -48,7 +48,24 @@ def _fingerprint(files: list[Path]) -> str:
         digest.update(path.relative_to(REPO_ROOT).as_posix().encode())
         digest.update(b"\0")
         # Git converts line endings between Windows and Linux.
-        digest.update(path.read_text(encoding="utf-8").encode())
+        text = path.read_text(encoding="utf-8")
+        if planned_selection and path.relative_to(REPO_ROOT).as_posix() in (
+                "config/Exp3_PD.yaml", "config/Exp3_LGD.yaml"):
+            # Exp3 deliberately chooses between the already-tested 50% and 100%
+            # mixtures AFTER Exp1. That one planned choice is not a code change.
+            # Every other recipe value (and any untested mixture) remains hashed.
+            import yaml
+
+            cfg = yaml.safe_load(text)
+            sweep = cfg.get("sweep", {}) if isinstance(cfg, dict) else {}
+            values = sweep.get("prior.credit_fraction")
+            if (isinstance(values, list) and len(values) == 2
+                    and type(values[0]) in (int, float) and values[0] == 0
+                    and (values[1] == "FILL_FROM_EXP1" or
+                         (type(values[1]) in (int, float) and values[1] in (.5, 1.0)))):
+                sweep["prior.credit_fraction"] = [0.0, "FILL_FROM_EXP1"]
+            text = json.dumps(cfg, sort_keys=True)
+        digest.update(text.encode())
         digest.update(b"\0")
     return digest.hexdigest()
 
@@ -167,9 +184,11 @@ def run_checks(*, dependencies_only: bool = False) -> list[Check]:
 
 def experiment_zero_checks(*, include_runs: bool = True) -> list[Check]:
     """The paid experiment launcher requires completed validation for this code."""
-    from src.eval.benchmark_status import complete, n_slots
+    from src.utils.validation import readiness, receipt_path
+
+    if include_runs or receipt_path().is_file():
+        return readiness()
     from src.utils import paths
-    from src.utils.config import expand_with_seeds, load
     from src.utils.environment import environment_changes, environment_fingerprint, environment_snapshot
 
     rows = []
@@ -194,30 +213,6 @@ def experiment_zero_checks(*, include_runs: bool = True) -> list[Check]:
     log = latest.read_text(encoding="utf-8", errors="replace") if latest else ""
     ok = "END status=OK" in log and all(f"equivalence {t} exit code: 0" in log for t in ("PD", "LGD"))
     rows.append(Check("Exp0 latest GPU job and both equivalence checks", ok, str(latest)))
-    if not include_runs:
-        return rows
-    from src.train.checkpoint import validate_resume_config
-
-    for track in ("pd", "lgd"):
-        cfg = load(paths.REPO_ROOT / "config" / f"Exp0_{track.upper()}.yaml")
-        for run in expand_with_seeds(cfg):
-            name = run["_run_name"]
-            try:
-                summary = json.loads(paths.run_summary_path(name).read_text(encoding="utf-8"))
-                saved_config = json.loads(paths.run_config_path(name).read_text(encoding="utf-8"))
-                if not {"task", "prior", "train"} <= saved_config.keys():
-                    raise ValueError("Incomplete saved training configuration")
-                validate_resume_config(saved_config, run)
-                ok = summary.get("completed") and summary.get("steps") == run["train"]["max_steps"]
-                ok = ok and summary.get("training_fingerprint") == training_fingerprint()
-                if run.get("arm") == "scratch_tabicl":
-                    ok = ok and bool(summary.get("resumed_at"))
-                rows.append(Check(f"Exp0 {name}", bool(ok),
-                                  "current training code; completed; scratch arm must prove resumption"))
-            except (OSError, ValueError) as exc:
-                rows.append(Check(f"Exp0 {name}", False, str(exc)))
-        missing = [i for i in range(n_slots(0, track)) if not complete(0, track, i)]
-        rows.append(Check(f"Exp0 {track} benchmarks", not missing, f"incomplete/stale slots: {missing}"))
     return rows
 
 

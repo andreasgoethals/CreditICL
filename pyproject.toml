@@ -57,6 +57,7 @@ dependencies = [
     # --- Config, CLI, bookkeeping -----------------------------------------
     "pyyaml>=6.0",            # config/**/*.yaml, per the template idiom
     "packaging>=23.0",        # validate installed requirements and optional dependency markers
+    "filelock>=3.11",         # prevent two Exp0 jobs from publishing competing readiness reports
     "tqdm>=4.66",
 
     # --- Plots (figures go to results/, which is gitignored locally) ------
@@ -244,4 +245,5 @@ addopts = "-ra --strict-markers"
 markers = [
     "slow: takes more than a few seconds (prior generation, training steps)",
     "gpu: requires CUDA; skipped on the local Windows dev machine",
+    "vsc: mandatory GPU and real-input checks enabled only by Experiment 0 with --run-vsc",
 ]

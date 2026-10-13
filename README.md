@@ -69,9 +69,9 @@ block and a `sweep:` block that lists exactly the knobs it crosses. Full rationa
 
 | # | question | how | arms/track |
 |---|---|---|---|
-| **0** | **Does the revised pipeline run correctly?** | checks, three short training paths and their benchmarks | 3 |
-| **1** | **Does the prior help at matched compute?** | scratch TabICL, `credit_fraction {0, .5, 1} × 3 seeds`, 12,500 steps | 9 |
-| **2** | **Does continued pretraining help released models?** | TabICLv2 and TabPFN-3, three mixes × three seeds at their published recipes, 10,000 steps | 18 |
+| **0** | **Does the revised pipeline run correctly?** | one Slurm job: full tests, CUDA checks, six stop/resume runs and benchmarks | 3 |
+| **1** | **Does the prior help at matched compute?** | three mixtures × three seeds, plus five component removals × three seeds; 12,500 steps | 24 |
+| **2** | **Does continued pretraining help released models?** | TabICLv2 and TabPFN-3, three mixes × three seeds using upstream or adapted literature recipes, 10,000 steps | 18 |
 | **3** | **Does the effect persist with longer training?** | scratch TabICL, Exp1's chosen mix vs control, two seeds, 200,000 steps | 4 |
 
 `credit_fraction` is the master switch: the share of each batch drawn from our credit-targeted path,
@@ -200,12 +200,19 @@ python scripts/evaluate.py --task lgd --models linear,catboost
 > `CREDITICL_TABPFN_DIR` at them) — letting the package fetch its own triggers a token flow that
 > fails on a compute node. Without the file the baseline skips with an explanatory line.
 
-**On VSC** — the whole pipeline is one command (`preprocess → prior pools → verify gate → GPU
-training array → evaluation`, chained with `--dependency=afterok`), so you can submit and log out:
+**On VSC** — validate the current code first, in one allocation:
 
 ```bash
-bash scripts/slurm/submit_pipeline.sh both
+bash scripts/slurm/update_env.sh
+python -m src.utils.preflight && sbatch --clusters=mindwell scripts/slurm/exp0.slurm
+# After the job passes:
+python -m src.utils.preflight --require-exp0
+python -m src.utils.run_experiment 1 --submit
 ```
+
+The last command includes the main grid and component ablations. Repeat it after training to
+submit only missing benchmarks; repeat after an interruption to resume incomplete runs.
+The older pool-building launcher is not the corrected campaign entry point.
 
 The local venv is for development and analysis only; **do not copy it to VSC**. The cluster's own
 environment, GPU/partition choice, credit costs, storage rule and the checkpoint/resume mechanism are
@@ -214,7 +221,7 @@ all in **[docs/VSC.md](docs/VSC.md)**.
 ## Conventions
 
 - **Library pin.** Literature claims are written against a recorded `tfm-library` commit (currently
-  **`52dab01`**); record the pin whenever a result depends on it (`git submodule status`).
+  **`de324ef`**, audit 13-10-2026); record the pin whenever a result depends on it (`git submodule status`).
 - **Cite code dumps by symbol name, never line number** — the dumps are refreshed and lines drift.
 - **Distinguish evaluated from supported.** A mechanism existing in a paper's code is not that paper
   having measured it; several of this project's premises turned on exactly this.
