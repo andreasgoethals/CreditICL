@@ -7,11 +7,11 @@
 #  checkpoints phase 1 wrote — that ordering is a fact about the data, not a convention.
 #
 #      python -m src.utils.sweep_status --config config/Exp1_PD.yaml    # must say all done
-#      python -m src.eval.benchmark_status --exp 1 --track pd --count   # array size (Exp1: 60)
+#      python -m src.eval.benchmark_status --exp 1 --track pd --count   # array size (Exp1: 49)
 #      sbatch --clusters=mindwell --export=ALL,EXP=1,TRACK=pd  scripts/slurm/benchmark.slurm
 #      sbatch --clusters=mindwell --export=ALL,EXP=1,TRACK=lgd scripts/slurm/benchmark.slurm
 #
-#  THE PROTOCOL (src/eval/protocol.py, version 4): 5-fold cross-validation on every real credit
+#  THE PROTOCOL (src/eval/protocol.py, version 6): 5-fold cross-validation on every real credit
 #  dataset and every out-of-domain suite; the WHOLE training pool as context, for every model;
 #  the PD threshold chosen to maximise F1 on a validation split of the training pool; every
 #  metric (ROC-AUC, PR-AUC, Brier, log-loss, ECE, F1, ... / R2, RMSE, CRPS, boundary mass, ...).
@@ -51,7 +51,7 @@
 # Exp1: 9 arms x 5 saved checkpoints + 4 reference models + 11 capped-context slots = 60, 0-59. Others:
 #     python -m src.eval.benchmark_status --exp N --track T --count
 # and pass --array=0-<count-1>%8. Indices past the last slot exit in seconds.
-#SBATCH --array=0-59%8
+#SBATCH --array=0-48%8
 
 sleep $((RANDOM % 30 + 1))
 

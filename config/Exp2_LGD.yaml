@@ -62,6 +62,7 @@ prior:
     category_frequency: balanced # how category counts are distributed
 
   credit: # OUR credit prior. Every range is from the credit-risk literature or deliberately wide; none is set from the evaluation data (docs/PRIORS.md)
+    use_corrected_cat_sizes: true # upstream opt-in sampler; legacy sampler never exceeds 9 levels
     max_cat_size: 500 # credit has state, region, product codes — high cardinality
     category_frequency: balanced # as the control
 

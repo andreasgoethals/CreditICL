@@ -1,15 +1,15 @@
 #!/bin/bash -l
 # =============================================================================
-#  CreditICL — EXPERIMENT 0: the checks that run before any arm does, on the production GPU.
+#  CreditICL - EXPERIMENT 0: the checks that run before any arm does, on the production GPU.
 #
 #      sbatch --clusters=mindwell scripts/slurm/exp0.slurm
 #
-#  One allocation: unit tests, mandatory CUDA checks, isolated model smoke tests,
+#  GPU allocation after CPU validation: mandatory CUDA checks, isolated model smoke tests,
 #  upstream trainer equivalence, six short runs with forced stop/resume, and
-#  full credit/OOD benchmark receipts. Each attempt has its own output folder.
+#  selected full-row credit/OOD benchmark receipts. Each attempt has its own output folder.
 #  PASS is bound to code, packages, inputs and artifacts; any failure blocks Exp1.
 # =============================================================================
-#SBATCH --job-name=crediticl-exp0
+#SBATCH --job-name=crediticl-exp0-gpu
 #SBATCH --clusters=mindwell
 #SBATCH --account=lp_verbekelab
 #SBATCH --partition=gpu_b200
@@ -34,7 +34,7 @@ OUTPUT_ROOT="${VSC_DATA}/CreditICL/output CreditICL"   # = src.utils.paths.outpu
 LOGDIR="${OUTPUT_ROOT}/experiment_${EXP}/logs"
 mkdir -p "${LOGDIR}"
 TS=$(date +%Y%m%d_%H%M%S)
-LOG="${LOGDIR}/exp0_checks_${TS}_j${SLURM_JOB_ID}.log"
+LOG="${LOGDIR}/exp0_gpu_${TS}_j${SLURM_JOB_ID}.log"
 exec > "$LOG" 2>&1
 
 _log_exit() {
@@ -50,7 +50,7 @@ cd "${VSC_DATA}/CreditICL"
 source scripts/slurm/_activate_env.sh
 
 echo "=========================================="
-echo "CreditICL — EXPERIMENT 0 — CHECKS"
+echo "CreditICL - EXPERIMENT 0 - CHECKS"
 echo "=========================================="
 echo "Job            : ${SLURM_JOB_ID}   node ${SLURMD_NODENAME:-?}"
 echo "Cluster / part : ${SLURM_CLUSTER_NAME:-?} / ${SLURM_JOB_PARTITION:-?}"
@@ -61,4 +61,4 @@ echo "Log            : ${LOG}"
 nvidia-smi || true
 echo "=========================================="
 
-python -u scripts/validate_experiment.py
+python -u scripts/validate_experiment.py --phase gpu

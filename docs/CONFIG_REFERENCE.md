@@ -7,7 +7,7 @@ submit, so prose in it makes the settings unfindable. If you catch yourself writ
 a knob, it belongs here.
 
 Neighbours: [EXPERIMENTAL_DESIGN.md](EXPERIMENTAL_DESIGN.md) (what the experiments ask) ·
-[PRIORS.md](PRIORS.md) (how the prior is built) · [VSC.md](VSC.md) (the cluster). Library pin `52dab01`.
+[PRIORS.md](PRIORS.md) (how the prior is built) · [VSC.md](VSC.md) (the cluster). Library pin `de324efcca55be392feb0c01830b3b6ce364587f`.
 
 ## Contents
 
@@ -79,28 +79,26 @@ What limits inference is the evaluation protocol, and it is the same number: `pr
 the target, scored on each fit's own rows — for every model alike, ours, the released ones and the
 baselines (`protocol.rank_columns`; docs/EXPERIMENTAL_DESIGN.md §5 for the literature behind the rule).
 It binds on five datasets. Every model gets the whole training pool as context (the 1,024-row cap of
-protocol 2 is gone); Exp0 and Exp1 are also scored with contexts capped at 1,024 rows
-(`eval.context_caps`).
+protocol 2 is gone). No current campaign configuration schedules capped-context comparisons.
 
 **Keep 100.** It is the control variable (a wider training distribution is a second difference from
 TabICLv2); training wider and then reporting a win on a wide table would measure feature width, not the
 prior; and nothing in the architecture wants it changed. Since the evaluation cap is the same 100, no
 model meets a table wider than it trained on; the row count remains the exposure (`heloc`'s training
-pool is 46× the training tables), matched across arms, and measured by the capped-context scores.
+pool is 46× the training tables), matched across arms and measured in full-row evaluation.
 
 ## 4. Why one stage
 
 Upstream trains in three, and what changes between them is the row count and the LR (stage 1: 500k
-steps, 1,024 rows, lr 8e-4, clip 10 → stage 3: 10k steps, up to 60k rows, lr 2e-5, clip 1). **Rows
-enter the cost quadratically** through the 12-block ICL predictor, so a stage-3 step costs ~120× a
-stage-1 step: keep upstream's 90.9/7.3/1.8 step split on our budget and stage 3 becomes ~227 steps —
-1.8% of the steps but ~61% of the cost — and at 1/40th the LR those 227 steps would move the weights
-almost not at all. Upstream's stages 2–3 are low-rate adaptation to long context, not more prior
-learning. **So: stage 1 only.** Evaluation gives every model the whole training pool (protocol 4), so
-our checkpoints meet contexts far longer than they trained on — the same for every arm, which keeps the
-arm-vs-control contrast matched, but not for the released model, which trained to 60,000 rows. Long
-context belongs in Exp3 on the winning prior — `init.strategy: full` + `pretrained_path`
-is upstream's `--checkpoint_path … --only_load_model True`, no new code.
+steps, 1,024 rows, lr 8e-4, clip 10 → stage 3: 10k steps, up to 60k rows, lr 2e-5, clip 1). We use the stage-1 table size as a controlled compute budget, not as a claim to reproduce
+the complete released-model curriculum. The 1,024-row task size is shared by every main
+mixture and component test. Experiment 0 measures current throughput; a constant cost ratio
+between upstream stages is not justified by their maximum row lengths. Full-row evaluation
+measures transfer to longer contexts and does not cap the training fold. The released model
+has seen longer contexts and far more compute, so the causal comparison is each credit arm
+against its matched control, with released weights as external references. Current Exp3 increases
+steps to 200,000 while retaining 1,024 rows per task; long-context training is a separate possible
+extension, not something the current experiment silently supplies.
 
 ## 5. Training budget
 

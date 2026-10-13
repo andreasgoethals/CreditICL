@@ -30,13 +30,10 @@ FOUR KINDS, all standard in the credit literature:
 * `prior_prob` — the base rate itself changes: the query book defaults more, or less,
                than the context did. This is the dangerous case, because a model that
                anchors on the context's base rate is systematically wrong.
-* `selection` — reject inference: the context is the APPROVED book (an underwriting screen
-               kept the low-risk applicants) while the query reaches into the high-risk
-               region the screen turned away. The model must rank applicants the historical
-               policy never booked — the credit problem `apply_underwriting_selection`'s
-               support truncation only gestures at, because there the rejected region leaves
-               the whole table, whereas here it is withheld from the context but kept in the
-               query, which is what makes it an extrapolation.
+* `selection` — a noisy feature-based acceptance policy puts approved applicants
+               in context and rejected applicants in query. It changes feature
+               support without consulting future labels. It does not guarantee
+               that rejected applicants are riskier or model MNAR reject inference.
 
 WHAT IS DELIBERATELY *NOT* DONE: the feature-to-target relationship is never broken.
 Shifting the inputs is a solvable problem a good model should handle; changing the
@@ -137,7 +134,10 @@ def _covariate_shift(
     n, d = int(X.shape[0]), int(X.shape[1])
     if d == 0:
         return X, y, {"shift": "none"}
-    col = int(rng.randint(0, d))
+    usable = torch.nonzero(torch.isfinite(X).all(dim=0) & (X.std(dim=0) > 1e-9)).flatten()
+    if not len(usable):
+        return X, y, {"shift": "none"}
+    col = int(usable[int(rng.randint(0, len(usable)))])
     values = X[:, col]
     if not bool(torch.isfinite(values).all()) or float(values.std()) < 1e-9:
         return X, y, {"shift": "none"}
@@ -218,39 +218,26 @@ def _prior_prob_shift(
 def _selection_shift(
     rng: PriorRNG, X: torch.Tensor, y: torch.Tensor, cfg: dict[str, Any], cut: int
 ) -> tuple[torch.Tensor, torch.Tensor, dict[str, Any]]:
-    """Reject inference: context = approved applicants, query = the through-the-door book.
+    """Split by a noisy feature policy, independently of realised outcomes.
 
-    An underwriting policy approves the low-risk applicants and rejects the high-risk ones,
-    so a book only ever holds approved loans — yet a scorecard fitted on it must still rank
-    the applicants the old policy turned away. We pose exactly that: score every row on a
-    NOISY risk proxy (the screen is informed but imperfect), put the lowest-risk (approved)
-    rows in the context, and let the query reach into the higher-risk region the context
-    barely covers. No row is dropped — the rejected region is absent from the *context* but
-    present in the *query*, so the task is extrapolation across the acceptance boundary, not
-    the support truncation `apply_underwriting_selection` does.
-
-    The feature-to-target relationship is untouched: only the split is selective, so the
-    region is unseen but learnable — the principle every kind here follows.
+    All rows are retained; low policy scores form context, high scores form query.
+    Risk means in the metadata are diagnostics, never inputs to the policy.
     """
     n = int(X.shape[0])
-    if float(y.std()) < 1e-9:
-        return X, y, {"shift": "none"}  # no risk gradient to select on
-
-    # Higher y = higher risk. A soft screen: risk proxy plus noise, so the approved book is
-    # not a clean cut and still contains some of the bad outcomes.
+    usable = torch.isfinite(X).all(dim=0) & (X.std(dim=0) > 1e-9)
+    if not usable.any():
+        return X, y, {"shift": "none"}
+    # A policy can inspect applicant features, not the future realised outcome.
+    features = X[:, usable]
+    features = (features - features.mean(dim=0)) / features.std(dim=0).clamp_min(1e-8)
+    direction = rng.randn_like(features[0])
+    proxy = features @ direction
+    z = (proxy - proxy.mean()) / proxy.std().clamp_min(1e-8)
     sharpness = float(cfg.get("selection_sharpness", 0.35))
-    z = (y - y.mean()) / (y.std() + 1e-8)
     score = sharpness * z + (1.0 - sharpness) * rng.randn_like(z)
-    order = torch.argsort(score)  # ascending: approved (low risk) first
+    order = torch.argsort(score)  # ascending: approved (low policy score) first
     ctx = order[:cut][rng.randperm(cut)]
     qry = order[cut:][rng.randperm(n - cut)]
-
-    # An approved book with none of the rare class teaches nothing about it. Decline the
-    # extreme (a hard screen on a low base rate) rather than hand over a single-class context.
-    if bool(((y == 0) | (y == 1)).all()):
-        pos = float(y[ctx].sum())
-        if pos < 1 or pos > len(ctx) - 1:
-            return X, y, {"shift": "none"}
 
     order = torch.cat([ctx, qry])
     return X[order], y[order], {

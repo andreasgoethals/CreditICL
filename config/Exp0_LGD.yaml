@@ -1,9 +1,9 @@
 # =============================================================================
 # EXPERIMENT 0 — LGD — THE CLUSTER DEBUG SUITE (3 arms x 1 seed, 600 steps)
 #
-# One Slurm allocation validates every production route before the main campaign.
+# Two jobs validate the campaign: CPU tests first, then production GPU validation.
 # All six routes train, stop on SIGUSR1, and resume inside that allocation.
-# Full and capped credit/OOD benchmarks follow; validated reference scores are reused.
+# Full-table, five-fold credit/OOD benchmarks follow; validated reference scores are reused.
 # Every attempt is isolated under experiment_0/validation/<attempt>/ on both tiers.
 # Submit scripts/slurm/exp0.slurm; no separate short-arm or benchmark submission.
 #
@@ -26,7 +26,7 @@ sweep:
 
 arms: # one set of overrides per arm (src/utils/config.py)
   scratch_tabicl: { architecture: tabicl, init.strategy: scratch, init.pretrained_path: null, train.optimizer: muon, train.lr: 8.0e-4, train.gradient_clipping: 10.0, train.warmup_proportion: 0.01, train.beta2: 0.95 } # Experiment 1's path
-  finetune_tabicl: { architecture: tabicl, train.optimizer: muon, train.lr: 2.0e-5, train.weight_decay: 0.01, train.warmup_proportion: 0.01, train.gradient_clipping: 1.0 } # Experiment 2's TabICLv2 path (upstream stage 3)
+  finetune_tabicl: { architecture: tabicl, train.optimizer: muon, train.lr: 2.0e-5, train.weight_decay: 0.01, train.warmup_proportion: 0.01, train.gradient_clipping: 1.0 } # Experiment 2's TabICLv2 path (stage-3 optimiser; fixed 1024-row tasks)
   finetune_tabpfn3: { architecture: tabpfn3, prior.encoding: raw, init.pretrained_path: checkpoints/tabpfn-v3-regressor-v3_default.ckpt, train.batch_size: 16, train.optimizer: adamw, train.lr: 1.0e-5, train.weight_decay: 1.0e-4, train.gradient_clipping: 1.0, progress.every_datasets: 3200 } # Experiment 2's TabPFN-3 path
 
 # ----------------------------------------------------------------------------
@@ -56,6 +56,7 @@ prior:
     category_frequency: balanced # how category counts are distributed
 
   credit: # OUR credit prior. Every range is from the credit-risk literature or deliberately wide; none is set from the evaluation data (docs/PRIORS.md)
+    use_corrected_cat_sizes: true # upstream opt-in sampler; legacy sampler never exceeds 9 levels
     max_cat_size: 500 # credit has state, region, product codes — high cardinality
     category_frequency: balanced # as the control
 
@@ -176,6 +177,5 @@ eval:
   dev_datasets: [0007.lgd_lendingclub, 0004.base_model, 0005.base_modelisation, 0001.heloc] # used to choose the prior
   holdout_datasets: [0002.loss2, 0003.axa, 0006.lgd_freddie] # every dataset: the benchmark check measures a real slot's cost
   metrics: [pinball, crps, coverage, boundary_mass, r2, rmse] # all computed in one run
-  context_caps: [1024] # also scored with at most 1,024 context rows — the size every training table has
   select_on: dev # dev | holdout — anything but `dev` here invalidates the experiment
   ood_suites: all # which out-of-domain suites to score; see src/eval/ood.py SUITES

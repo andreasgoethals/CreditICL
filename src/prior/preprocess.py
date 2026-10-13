@@ -69,17 +69,11 @@ def process_features(X: torch.Tensor) -> torch.Tensor:
 
 
 def to_ranks(x: torch.Tensor) -> torch.Tensor:
-    """Map a 1-D tensor to (0, 1) by rank. Strictly monotone, so the predictive
-    relationship with the features is preserved exactly (Spearman rho = 1).
-
-    This is what lets a target-shaping transform change only the *marginal*
-    without changing how much signal the features carry — the property that
-    makes the LGD arm a clean intervention rather than a confounded one.
-    """
+    """Midranks in (0, 1); equal inputs remain equal, independent of row order."""
     n = x.numel()
     if n <= 1:
         return torch.full_like(x, 0.5)
-    order = torch.argsort(x)
-    ranks = torch.empty(n, dtype=torch.long)
-    ranks[order] = torch.arange(n)
-    return (ranks.to(x.dtype) + 0.5) / n
+    _, inverse, counts = torch.unique(x, sorted=True, return_inverse=True, return_counts=True)
+    ends = counts.cumsum(0)
+    middle = ends.to(torch.float32) - counts.to(torch.float32) / 2
+    return (middle[inverse] / n).to(x.dtype)

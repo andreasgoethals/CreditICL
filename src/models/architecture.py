@@ -106,7 +106,7 @@ def build_model(task: str, *, architecture: str = DEFAULT, **overrides: Any) -> 
         row_num_blocks=3, row_nhead=8, row_num_cls=4,
         row_rope_base=100000, row_rope_interleaved=False,
         icl_num_blocks=12, icl_nhead=8, icl_ssmax="qassmax-mlp-elementwise",
-        ff_factor=2, norm_first=True,
+        ff_factor=2, norm_first=True, zero_init=False,
     )
     if task == "lgd":
         # Regression: `max_classes=0` switches the target embedding to a linear layer and the

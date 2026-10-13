@@ -231,17 +231,12 @@ def plot_default_clustering(
     real: dict[str, Any] | None = None,
     n_cohorts: int = 12,
 ):
-    """FAR MORE INFORMATIVE FOR PD THAN ANY TARGET HISTOGRAM.
+    """Row-block variability; this does not identify economic cohorts.
 
-    Real credit's defining feature is that defaults arrive in **waves**: a recession lifts
-    everyone's risk at once, so the default rate moves between cohorts far more than
-    independent coin flips would. An i.i.d. prior cannot produce that, and our Vasicek
-    one-factor mechanism is there precisely to.
-
-    So: split each dataset into cohorts, and plot the SPREAD of the default rate across them.
-    A flat line means independence; a wide spread means clustering. The reference is what the
-    spread would be if rows were independent at the same base rate — drawn as a dashed line,
-    because "more than chance" is the whole claim and needs a yardstick.
+    Synthetic tasks may be shuffled, and the benchmark inputs do not carry
+    verified cohort labels here. Contiguous blocks therefore describe row order,
+    not evidence for or against the Vasicek mechanism. The dashed reference is a
+    binomial scale comparison, not a test of default independence.
     """
     style.apply()
     fig, (ax_spread, ax_example) = plt.subplots(
@@ -303,9 +298,9 @@ def plot_default_clustering(
     labels = [style.variant_label(r[0]) for r in rows] + (["real datasets"] if real else [])
     ax_spread.set_xticks(range(len(labels)))
     ax_spread.set_xticklabels(labels)
-    ax_spread.set_ylabel("between-cohort SD ÷ binomial SD")
+    ax_spread.set_ylabel("between-block SD ÷ binomial SD")
     ax_spread.set_ylim(bottom=0)
-    style.title(ax_spread, "Clustering of defaults")
+    style.title(ax_spread, "Row-block variability (not cohorts)")
 
     # RIGHT: one concrete example per variant, so the abstraction is grounded.
     for i, (name, tasks) in enumerate(variants.items()):
@@ -325,11 +320,11 @@ def plot_default_clustering(
                         color=style.STAR, linestyle=":",
                         label=None if (real and "real" not in _labelled) else "_nolegend_")
         _labelled.add("real")
-    ax_example.set_xlabel("cohort (twelve contiguous blocks of rows)")
-    ax_example.set_ylabel("default rate in the cohort")
+    ax_example.set_xlabel("contiguous row block")
+    ax_example.set_ylabel("positive-label rate in the block")
     ax_example.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(1.0, decimals=0))
     ax_example.set_ylim(bottom=0)
-    style.title(ax_example, "Default rate by cohort")
+    style.title(ax_example, "Label rate by row block")
     style.legend_below(fig, ncol=4)
     return fig
 

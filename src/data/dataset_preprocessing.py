@@ -4,13 +4,9 @@ Dataset-specific preprocessing for the 21 real credit datasets.
 
 PROVENANCE: copied from the sibling TabPFNCredit project
 (`1. TabPFN/TabPFNCredit/src/data/dataset_preprocessing.py`) where these
-per-dataset recipes were developed and validated. Only the imports and the
-staging environment-variable name were changed. Do NOT rewrite the recipes here:
-they encode which columns are IDs, which leak the target, and which need log or
-clip transforms, per dataset. That knowledge is not recoverable from the CSVs.
-
-If a recipe needs fixing, fix it in BOTH projects or they will silently disagree
-and their results will stop being comparable.
+per-dataset recipes originated. CreditICL now maintains explicit corrections for
+numeric preservation and duration parsing; other projects are not modified here.
+Cross-project comparisons must name these preprocessing differences.
 
 This module handles the critical first stage of the data pipeline:
 loading raw data and transforming it into a clean, standardized format.
@@ -263,17 +259,28 @@ def _clip_lgd_target(
     return df, n_clipped
 
 
+def parse_credit_age(value):
+    """Parse both '1yrs11mon' and '1 yrs 11 mon'; unparseable values stay missing."""
+    import re
+    if pd.isna(value):
+        return np.nan
+    parts = re.findall(r"(\d+)\s*(yr[a-z]*|year[a-z]*|mon[a-z]*)", str(value).lower())
+    if not parts:
+        return np.nan
+    return sum(int(n) * (12 if unit.startswith(("yr", "year")) else 1) for n, unit in parts)
+
+
 def _sanitize_numeric_values(
     df: pd.DataFrame, 
     num_cols: List[str],
-    clip_threshold: float = 1e10
+    clip_threshold: float = float(np.finfo(np.float32).max)
 ) -> pd.DataFrame:
     """
     Sanitize numeric columns to prevent numerical overflow.
     
     Operations:
     1. Replace infinity values (±inf) with NaN
-    2. Clip extreme values to ±clip_threshold
+    2. Bound only values outside float32 representability; preserve finite source scales
     
     This is DATA CLEANING, not statistical modeling, so it's safe to 
     apply before splitting (no leakage).
@@ -500,28 +507,10 @@ def preprocess_dataset_specific(
                 }
                 df["PERFORM_CNS.SCORE.DESCRIPTION"] = df["PERFORM_CNS.SCORE.DESCRIPTION"].map(risk_map)
 
-            def _months(s: str) -> int:
-                if pd.isna(s):
-                    return np.nan
-                parts = str(s).split()
-                years, months = 0, 0
-                for i, tok in enumerate(parts):
-                    if "yr" in tok:
-                        try:
-                            years = int(parts[i - 1])
-                        except Exception:
-                            pass
-                    if "mon" in tok:
-                        try:
-                            months = int(parts[i - 1])
-                        except Exception:
-                            pass
-                return years * 12 + months
-
             if "AVERAGE.ACCT.AGE" in df.columns:
-                df["AVERAGE.ACCT.AGE"] = df["AVERAGE.ACCT.AGE"].apply(_months)
+                df["AVERAGE.ACCT.AGE"] = df["AVERAGE.ACCT.AGE"].apply(parse_credit_age)
             if "CREDIT.HISTORY.LENGTH" in df.columns:
-                df["CREDIT.HISTORY.LENGTH"] = df["CREDIT.HISTORY.LENGTH"].apply(_months)
+                df["CREDIT.HISTORY.LENGTH"] = df["CREDIT.HISTORY.LENGTH"].apply(parse_credit_age)
 
             target_col = "loan_default"
             if target_col not in df.columns:

@@ -6,7 +6,7 @@ the model, so it decides what the model is good at. This project changes that ge
 what upstream does, what we add, and why every mechanism — and every number in it — comes from the credit-risk
 literature rather than from the datasets the models are scored on.
 
-Sources, in-repo (pin `52dab01`): paper `tfm-library/papers/2026/02_Qu_et_al._TabICLv2_*.pdf`; code
+Sources, in-repo (pin `de324efcca55be392feb0c01830b3b6ce364587f`): paper `tfm-library/papers/2026/02_Qu_et_al._TabICLv2_*.pdf`; code
 `tfm-library/repositories/TabICL.txt`, including their own `scripts/train_v2_{clf,reg}_stage{1,2,3}.sh`.
 Code is cited **by symbol name**, never line number. The *values* these mechanisms take are in
 [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md); why they exist is [EXPERIMENTAL_DESIGN.md](EXPERIMENTAL_DESIGN.md).
@@ -89,7 +89,7 @@ Three rules govern every addition:
    compared with the prior in notebooks 0.2 and 0.3 (`src/prior/realism.py`) — as a *description* of
    how far a literature prior lands from real books, never as a target.
 
-`credit_fraction` **mixes** rather than replaces: at 0.5, half of each batch is ours. A model that
+`credit_fraction` **mixes** rather than replaces: at 0.5, each task slot independently has 50% probability of using our prior. A model that
 only ever saw credit tables would be a credit model, not a foundation model — which is what the
 out-of-domain suites check.
 
@@ -158,7 +158,7 @@ Kumaraswamy interior) remain in the code for ablations; no experiment uses them.
 | `marginals` | 0 – 100 % of continuous columns, skew 0.25 – 2.5 | money amounts, balances and incomes are positive and right-skewed; a monotone warp, so every split a tree could make — and the dependence on the target — is unchanged; magnitudes **wide** |
 | `shift` | 30 % of tables | populations drift with the economic cycle and with acceptance policy (economic-cycle dependency and reject inference; Baesens et al. 2026); kinds **wide** |
 | `prior_prob_ratio_range` | 1.25 – 4, log-uniform, either way | the prior-probability shift sets the query's default rate (LGD: its share of above-median losses) to the context's times this ratio. Under the Vasicek model of 5.1, a one-to-two standard-deviation move of the factor multiplies a book's default rate by 1.1 – 6.1 over ρ 0.03 – 0.24 and default rates 1 – 50 %; the range sits inside that. Until 29-09-2026 the knob (`prior_prob_range`) set the context's share of defaults to an absolute 15 – 85 %, which left the query of a low-default book a single default in 85 % of these tables |
-| `noise_features` | 30 % of columns | generic: real tables carry uninformative columns |
+| `noise_features` | add 30 % of the original width (about 23 % of the expanded table) | generic: real tables carry uninformative columns |
 | `max_cat_size` | 500 | credit tables hold high-cardinality codes (region, product, servicer) |
 | `filter.apply_to` | `base` | TabICLv2's filter judges TabICLv2's tables, as upstream; the credit tables are used as specified — re-selecting them by learnability would change the specified prior |
 

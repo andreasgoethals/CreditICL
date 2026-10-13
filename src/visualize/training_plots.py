@@ -1021,7 +1021,7 @@ def lever_interaction(track: str, exp: str = "exp1", metric: str | None = None):
         control_has_lever = len({_lever_value(n, lever) for n in finals if _is_control(n)}) > 1
         values = _value_order(lever, {_lever_value(n, lever) for n in finals} - {None})
         if not control_has_lever and control:
-            m, s = float(np.mean(control)), float(np.std(control))
+            m, s = float(np.mean(control)), float(np.std(control, ddof=1)) if len(control) > 1 else 0.0
             ax.axhspan(m - s, m + s, color=style.ORIGINAL, alpha=0.22, lw=0, zorder=0)
             ax.axhline(m, color=style.ORIGINAL, lw=1.2, zorder=1)
             band_drawn = True
@@ -1038,7 +1038,7 @@ def lever_interaction(track: str, exp: str = "exp1", metric: str | None = None):
                     continue
                 ax.scatter(np.full(vals.size, i + offset), vals, s=12, color=colour, alpha=0.55,
                            marker=style.credit_fraction_marker(f), edgecolor="none", zorder=2)
-                ax.errorbar(i + offset, vals.mean(), yerr=vals.std(), color=colour, lw=1.2,
+                ax.errorbar(i + offset, vals.mean(), yerr=vals.std(ddof=1) if len(vals) > 1 else 0.0, color=colour, lw=1.2,
                             capsize=2, zorder=3)
                 means.append(vals.mean())
             ax.plot(np.arange(len(values)) + offset, means, color=colour, lw=1.6,
@@ -1585,7 +1585,7 @@ def _by_lever(finals: dict[str, float], lever: str) -> list[tuple[str, float, fl
         if lv is not None and not (lever == "intensity" and _is_control(name)):
             groups.setdefault(lv, []).append(v)
     keys = _value_order(lever, groups)
-    return [(k, float(np.mean(groups[k])), float(np.std(groups[k])), len(groups[k])) for k in keys]
+    return [(k, float(np.mean(groups[k])), float(np.std(groups[k], ddof=1)) if len(groups[k]) > 1 else 0.0, len(groups[k])) for k in keys]
 
 
 def training_summary(track: str, exp: str = "exp1") -> str:

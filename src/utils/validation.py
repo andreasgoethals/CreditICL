@@ -1,4 +1,4 @@
-"""One-allocation Experiment 0 and a fail-closed production gate.
+"""CPU and GPU Experiment 0 jobs, and a fail-closed production gate.
 
 Every invocation gets its own output namespace. A killed/failed invocation leaves
 RUNNING/FAILED, never a stale PASS from an earlier job. The receipt binds tests,
@@ -23,7 +23,7 @@ from pathlib import Path
 from src.utils import paths
 from src.utils.config import expand_with_seeds, load, run_name
 
-SCHEMA = 1
+SCHEMA = 2
 ATTEMPT_ENV = "CREDITICL_EXP0_ATTEMPT"
 
 
@@ -38,25 +38,34 @@ class Stage:
     report: str | None = None
 
 
-def plan() -> list[Stage]:
+def plan(phase: str = "gpu") -> list[Stage]:
     """The mandatory manifest; no optional bypasses in the production receipt."""
-    from src.eval.benchmark_status import n_slots, slot_for
+    from src.eval.benchmark_status import diagnostic_datasets, n_slots, slot_for
     from src.utils.preflight import CHECK_SECTIONS
 
     py = sys.executable
     report = paths.experiment_dir(0) / "report"
+    if phase not in ("cpu", "gpu"):
+        raise ValueError(f"Unknown validation phase: {phase}")
     stages = [Stage("preflight", (py, "-m", "src.utils.preflight"))]
-    for name, args, cpu in (
+    suites = (
         ("unit", ("tests", "-m", "not vsc"), True),
         ("vsc", ("tests/test_vsc.py", "--run-vsc"), False),
-    ):
+    )
+    if phase == "cpu":
+        stages.insert(0, Stage("preprocess", (py, "scripts/preprocess.py", "--task", "both")))
+    for name, args, cpu in (suites[:1] if phase == "cpu" else suites[1:]):
         junit = str(report / f"{name}.xml")
         stages.append(Stage(name, (py, "-m", "pytest", "-q", *args, f"--junitxml={junit}"),
                             cpu=cpu, junit=junit))
-    for section in sorted(CHECK_SECTIONS - {"train"}):
+    gpu_sections = {"env", "weights"}
+    sections = CHECK_SECTIONS - {"train"} - gpu_sections if phase == "cpu" else gpu_sections
+    for section in sorted(sections):
         folder = report / section
         stages.append(Stage(f"check-{section}", (py, "scripts/exp0_checks.py", "--only", section,
                                                  "--out", str(folder)), report=str(folder / "checks.json")))
+    if phase == "cpu":
+        return stages
     for track in paths.TASKS:
         config = f"config/Exp0_{track.upper()}.yaml"
         runs = expand_with_seeds(load(config))
@@ -76,8 +85,8 @@ def plan() -> list[Stage]:
             name = run_name(run)
             stages.append(Stage(f"stop-{track}-{index}", args, "training", stop_run=name))
             stages.append(Stage(f"resume-{track}-{index}", args, "training"))
-        datasets = ",".join(dict.fromkeys(runs[0]["eval"]["dev_datasets"] +
-                                         runs[0]["eval"]["holdout_datasets"]))
+        credit_names, ood_names = diagnostic_datasets(track)
+        datasets = ",".join(credit_names)
         for index in range(n_slots(0, track)):
             slot = slot_for(0, track, index)
             common = ("--models", slot.model, "--seeds", "0", "--tag", slot.tag)
@@ -90,7 +99,8 @@ def plan() -> list[Stage]:
                 Stage(f"credit-{track}-{index}", (py, "scripts/evaluate.py", "--task", track,
                       "--datasets", datasets, *common), "benchmark"),
                 Stage(f"ood-{track}-{index}", (py, "scripts/evaluate_ood.py", "--kinds",
-                      "classification" if track == "pd" else "regression", *common), "benchmark"),
+                      "classification" if track == "pd" else "regression", "--datasets", ",".join(ood_names),
+                      *common), "benchmark"),
                 Stage(f"receipt-{track}-{index}", (py, "-m", "src.eval.benchmark_status", "--exp", "0",
                       "--track", track, "--index", str(index), "--write"), "benchmark"),
             ])
@@ -98,8 +108,8 @@ def plan() -> list[Stage]:
     return sorted(stages, key=lambda s: ("diagnostics", "training", "benchmark").index(s.phase))
 
 
-def receipt_path() -> Path:
-    return paths.outputs_dir() / "experiment_0" / "report" / "validation.json"
+def receipt_path(phase: str = "gpu") -> Path:
+    return paths.outputs_dir() / "experiment_0" / "report" / ("cpu_validation.json" if phase == "cpu" else "validation.json")
 
 
 def write_json(path: Path, data: dict) -> None:
@@ -133,10 +143,10 @@ def input_inventory() -> dict:
 
     result = {}
     for track in paths.TASKS:
-        for index in range(n_slots(0, track)):
-            slot = slot_for(0, track, index)
+        for index in range(n_slots(1, track)):
+            slot = slot_for(1, track, index)
             if slot.kind == "reference" and slot.context is None:
-                _, wanted, _ = request(0, track, index)
+                _, wanted, _ = request(1, track, index)
                 result[f"{track}/{slot.model}"] = wanted
     if len(result) != 8:
         raise ValueError("Expected four reference models for each track")
@@ -208,7 +218,7 @@ def execute(stage: Stage, log: Path, *, timeout: float) -> dict:
     return detail
 
 
-def collect_artifacts(stages: list[Stage]) -> dict[str, str]:
+def collect_artifacts(stages: list[Stage], phase: str = "gpu") -> dict[str, str]:
     """Verify actual training completion, resume, monitoring and paired evaluation."""
     import numpy as np
     import pandas as pd
@@ -221,6 +231,8 @@ def collect_artifacts(stages: list[Stage]) -> dict[str, str]:
     for stage in stages:
         files.append(paths.experiment_dir(0) / "logs" / f"{stage.name}.log")
         files.extend(Path(p) for p in (stage.junit, stage.report) if p)
+    if phase == "cpu":
+        return {str(p.resolve()): digest(p) for p in files}
     for track in paths.TASKS:
         for run in expand_with_seeds(load(f"config/Exp0_{track.upper()}.yaml")):
             name = run_name(run)
@@ -257,13 +269,17 @@ def collect_artifacts(stages: list[Stage]) -> dict[str, str]:
     return {str(p.resolve()): digest(p) for p in files}
 
 
-def readiness() -> list:
+def readiness(phase: str = "gpu") -> list:
     from src.eval.benchmark_status import input_digest
     from src.utils.environment import environment_fingerprint
     from src.utils.preflight import Check, source_fingerprint
 
     try:
-        saved = json.loads(receipt_path().read_text(encoding="utf-8"))
+        if phase == "gpu":
+            cpu = readiness("cpu")
+            if not cpu[0].ok:
+                raise ValueError(cpu[0].detail)
+        saved = json.loads(receipt_path(phase).read_text(encoding="utf-8"))
         if saved.get("schema") != SCHEMA or saved.get("status") != "PASS":
             raise ValueError(f"Latest Experiment 0 status: {saved.get('status', 'missing')}")
         with attempt_scope(saved["attempt"]):
@@ -271,7 +287,9 @@ def readiness() -> list:
                 raise ValueError("Code/config/tests changed since Experiment 0")
             if saved.get("environment_fingerprint") != environment_fingerprint():
                 raise ValueError("Installed packages changed since Experiment 0")
-            expected = [s.name for s in plan()]
+            if phase == "gpu" and saved.get("cpu_receipt") != input_digest(receipt_path("cpu")):
+                raise ValueError("CPU validation was rerun after GPU validation")
+            expected = [s.name for s in plan(phase)]
             actual = saved.get("stages", [])
             if [s["name"] for s in actual] != expected or any(s["status"] != "PASS" for s in actual):
                 raise ValueError("Not every mandatory stage passed")
@@ -280,55 +298,25 @@ def readiness() -> list:
             artifacts = saved.get("artifacts", {})
             if not artifacts or any(input_digest(Path(p)) != h for p, h in artifacts.items()):
                 raise ValueError("Validation artifacts missing or modified")
-        return [Check("complete Experiment 0", True, f"PASS: {saved['attempt']}; all stages and artifacts current")]
+        return [Check(f"Experiment 0 {phase}", True, f"PASS: {saved['attempt']}; all stages and artifacts current")]
     except (OSError, ValueError, KeyError, TypeError) as exc:
-        return [Check("complete Experiment 0", False, f"{exc}. Run sbatch --clusters=mindwell scripts/slurm/exp0.slurm")]
+        return [Check(f"Experiment 0 {phase}", False, f"{exc}. Run the CPU job, then the GPU job, for the current code.")]
 
 
-def publish_references() -> None:
-    """Reuse validated reference scores in Exp1-3, keeping any prior version."""
-    import shutil
-
-    from src.eval.benchmark_status import digest, n_slots, request, slot_for
-    from src.eval.benchmark_status import receipt_path as bench_receipt
-
-    global_root = paths.big_outputs_dir() / paths.REFERENCE
-    scoped_root = paths.reference_dir(big=True)
-    for track in paths.TASKS:
-        for index in range(n_slots(0, track)):
-            slot = slot_for(0, track, index)
-            if slot.kind != "reference":
-                continue
-            _, _, results = request(0, track, index)
-            for source in [*results.values(), bench_receipt(slot.tag)]:
-                relative = source.relative_to(scoped_root)
-                target = global_root / relative
-                target.parent.mkdir(parents=True, exist_ok=True)
-                if target.is_file():
-                    if digest(target) == digest(source):
-                        continue
-                    backup = global_root / "previous" / digest(target) / relative
-                    backup.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copyfile(target, backup)
-                temp = target.with_suffix(target.suffix + ".tmp")
-                shutil.copyfile(source, temp)
-                temp.replace(target)
-
-
-def run_validation(*, hours: float = 23.5) -> int:
+def run_validation(*, hours: float = 23.5, phase: str = "gpu") -> int:
     from filelock import FileLock
 
     from src.utils.environment import environment_fingerprint
     from src.utils.preflight import source_fingerprint
 
     if sys.platform != "linux" or not os.environ.get("SLURM_JOB_ID"):
-        raise RuntimeError("Submit scripts/slurm/exp0.slurm; this command requires a Linux Slurm GPU allocation")
-    pointer = receipt_path()
+        raise RuntimeError("Submit an Experiment 0 Slurm script; validation requires a Linux Slurm allocation")
+    pointer = receipt_path(phase)
     pointer.parent.mkdir(parents=True, exist_ok=True)
-    with FileLock(str(pointer.with_suffix(".lock")), timeout=0):
-        attempt = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + f"_j{os.environ['SLURM_JOB_ID']}_{uuid.uuid4().hex[:8]}"
+    with FileLock(str(receipt_path().with_suffix(".lock")), timeout=0):
+        attempt = phase + "_" + datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + f"_j{os.environ['SLURM_JOB_ID']}_{uuid.uuid4().hex[:8]}"
         with attempt_scope(attempt):
-            saved = {"schema": SCHEMA, "status": "RUNNING", "attempt": attempt, "stages": [],
+            saved = {"schema": SCHEMA, "phase": phase, "status": "RUNNING", "attempt": attempt, "stages": [],
                      "source_fingerprint": source_fingerprint(), "environment_fingerprint": environment_fingerprint()}
             history = paths.experiment_dir(0) / "report" / "validation.json"
 
@@ -339,8 +327,15 @@ def run_validation(*, hours: float = 23.5) -> int:
             publish()
             deadline = time.monotonic() + hours * 3600
             try:
-                stages = plan()
-                saved["inputs"] = input_inventory()
+                if phase == "gpu":
+                    cpu_check = readiness("cpu")[0]
+                    if not cpu_check.ok:
+                        raise ValueError(f"CPU validation must pass first: {cpu_check.detail}")
+                    from src.eval.benchmark_status import digest
+                    saved["cpu_receipt"] = digest(receipt_path("cpu"))
+                stages = plan(phase)
+                if phase == "gpu":
+                    saved["inputs"] = input_inventory()
                 for stage in stages:
                     if any(s["status"] == "FAIL" for s in saved["stages"]) and stage.phase != "diagnostics":
                         raise RuntimeError("Diagnostics failed; longer training/benchmark stages were not started")
@@ -352,17 +347,20 @@ def run_validation(*, hours: float = 23.5) -> int:
                     except Exception as exc:
                         row.update(status="FAIL", error=f"{type(exc).__name__}: {exc}")
                     saved["stages"].append(row)
+                    if phase == "cpu" and stage.name == "preflight" and row["status"] == "PASS":
+                        saved["inputs"] = input_inventory()
                     publish()
                     print(f"[Experiment 0] {row}", flush=True)
-                    if row["status"] == "FAIL" and (stage.name == "preflight" or stage.phase != "diagnostics"):
+                    if row["status"] == "FAIL" and (stage.name in ("preflight", "preprocess") or stage.phase != "diagnostics"):
                         raise RuntimeError(f"Stopping after {stage.name}; dependent work cannot be validated")
                 if any(s["status"] != "PASS" for s in saved["stages"]):
                     raise RuntimeError("One or more validation stages failed")
-                saved["artifacts"] = collect_artifacts(stages)
+                saved["artifacts"] = collect_artifacts(stages, phase)
                 if (saved["inputs"] != input_inventory() or saved["source_fingerprint"] != source_fingerprint()
                         or saved["environment_fingerprint"] != environment_fingerprint()):
                     raise ValueError("Code, environment or inputs changed during validation")
-                publish_references()
+                # Exp0 probes only selected tables; never publish these partial
+                # reference results into the production benchmark namespace.
                 saved["status"] = "PASS"
             except Exception as exc:
                 saved.update(status="FAILED", error=f"{type(exc).__name__}: {exc}")
@@ -375,9 +373,11 @@ def run_validation(*, hours: float = 23.5) -> int:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--plan", action="store_true", help="print stages without executing or writing")
+    ap.add_argument("--phase", choices=("cpu", "gpu"), required=True)
+    ap.add_argument("--hours", type=float, default=None)
     args = ap.parse_args(argv)
     if args.plan:
-        for stage in plan():
+        for stage in plan(args.phase):
             print(f"{stage.phase:12} {stage.name}")
         return 0
-    return run_validation()
+    return run_validation(phase=args.phase, hours=args.hours or (3.8 if args.phase == "cpu" else 23.5))

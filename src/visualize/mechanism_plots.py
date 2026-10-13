@@ -499,7 +499,10 @@ def predictability_scores(config_path: str, real: dict[str, Any] | None = None, 
                 items.append((label, f"task {k}", t.X, t.y))
     rng = np.random.default_rng(seed)
     for name, ds in (real or {}).items():
-        X = np.nan_to_num(np.asarray(getattr(ds, "X", ds), dtype=np.float32), nan=0.0,
+        from src.eval.feature_policy import prediction_features
+        X, _, _ = prediction_features(task, name, np.asarray(ds.X, dtype=np.float32),
+                                      getattr(ds, "cat_indices", []), getattr(ds, "feature_names", None))
+        X = np.nan_to_num(X, nan=0.0,
                           posinf=0.0, neginf=0.0)
         y = np.asarray(ds.y, dtype=np.float32).ravel()
         for _ in range(real_repeats):

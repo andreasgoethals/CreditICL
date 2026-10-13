@@ -74,7 +74,7 @@ def main() -> int:
         n_features.append(t.n_features)
         stats.append(target_stats(t.y))
         if task == "pd":
-            rates.append(float(t.y.mean()))
+            rates.append(min(float(t.y.mean()), 1.0 - float(t.y.mean())))
 
         if (i + 1) % 100 == 0:
             print(f"  sampled {i + 1}/{args.n}", flush=True, file=sys.stderr)

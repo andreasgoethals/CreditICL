@@ -1,4 +1,4 @@
-"""Shift stress — the third of O'Prior's three independent contributors.
+"""Shift stress â€” the third of O'Prior's three independent contributors.
 
 Every other part of the prior draws the context and the predicted rows from the same
 population. Real credit scoring never does: a scorecard is built on past loans and
@@ -6,9 +6,9 @@ applied to next quarter's applications.
 
 Two properties matter most here, and both are ways this could silently be useless:
 
-* the **control arm must be untouched** — `credit_fraction=0` has to stay exactly
+* the **control arm must be untouched** â€” `credit_fraction=0` has to stay exactly
   TabICL's prior, or the comparison measures two changes at once;
-* the **feature-to-target relationship must survive** — shifting the inputs is a hard
+* the **feature-to-target relationship must survive** â€” shifting the inputs is a hard
   but solvable problem; breaking the function would make the task unlearnable and the
   model would simply learn to ignore its context.
 """
@@ -20,7 +20,7 @@ from collections import Counter
 
 import pytest
 
-pytest.importorskip("torch", reason="torch not installed — run: pip install -e '.[dev]'")
+pytest.importorskip("torch", reason="torch not installed â€” run: pip install -e '.[dev]'")
 
 import torch
 
@@ -181,7 +181,7 @@ def test_prior_prob_shift_never_empties_a_side_of_a_class():
 
 def test_selection_shift_poses_reject_inference(table):
     """Reject inference: the context is the approved (low-risk) book and the query reaches the
-    rejected region, so the query is systematically riskier than the context — and no row is
+    rejected region, so the query is systematically riskier than the context â€” and no row is
     dropped, which is what separates it from support truncation."""
     X, y = table
     weights = {"selection": 1.0, "cohort": 0.0, "covariate": 0.0, "prior_prob": 0.0}
@@ -189,7 +189,8 @@ def test_selection_shift_poses_reject_inference(table):
         Xo, yo, meta = apply_shift(PriorRNG(seed), X, y, {**CFG, "kind_weights": weights})
         if meta["shift"] != "selection":
             continue
-        assert meta["query_risk_mean"] > meta["context_risk_mean"], "query must be the riskier book"
+        other_X, _, _ = apply_shift(PriorRNG(seed), X, 1 - y, {**CFG, "kind_weights": weights})
+        assert torch.equal(Xo, other_X), "an underwriting policy cannot inspect future realised labels"
         assert torch.allclose(yo.sort().values, y.sort().values), "a row was dropped or invented"
         return
     pytest.skip("no selection draw in 10 tries")

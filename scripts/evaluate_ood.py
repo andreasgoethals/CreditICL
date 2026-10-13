@@ -35,6 +35,7 @@ def main() -> int:
     ap.add_argument("--seeds", default="0",
                     help="fold-assignment seeds, one full CV each; the protocol is one: 0")
     ap.add_argument("--kinds", default="classification,regression")
+    ap.add_argument("--datasets", default=None, help="comma-separated cached names for diagnostic probes; all rows are retained")
     ap.add_argument("--folds", type=int, default=5)
     ap.add_argument("--max-rows", type=int, default=None,
                     help="DEBUG ONLY: cap rows per dataset (seeded random subsample)")
@@ -91,6 +92,7 @@ def main() -> int:
         models=models,
         seeds=[int(s) for s in args.seeds.split(",") if s.strip()],
         kinds=kinds,
+        datasets=args.datasets.split(",") if args.datasets is not None else None,
         crediticl_task=(task if "crediticl" in models else None),
         n_folds=args.folds,
         max_rows=args.max_rows,

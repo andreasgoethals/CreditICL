@@ -14,7 +14,7 @@ import numpy as np
 
 from src.data.dataset_registry import canonical_slug
 
-FEATURE_POLICY = "application-pd_default-lgd_v1"
+FEATURE_POLICY = "application-pd_default-lgd_v2"
 
 # 29 September source-data audit, applied after the prediction-time decision on
 # 12 October. Exact source names, including categorical copies, are excluded.
@@ -34,10 +34,11 @@ EXCLUDED = {
         "DFLT_RationalEndDefault", "DFLT_RecoveryApproach",
         "FCLT_duree", "FCLT_duree_cat", "cat_FCLT_duree", "classe_FCLT_duree",
         "rating_1yad", "cat_rating_1yad",
+        "DFLT_SIREN", "classe_DFLT_dicho_2A", "borne_1", "diff",
     },
     ("lgd", "0002.loss2"): {
         "UPB_At_Resolution", "Unpaid_Interest", "Total_Debt", "REO_Appraisal_Amount",
-        "_Miclaimbal", "_Mirecovery", "_adv_interest1M", "_adv_interest", "_Accrued_int",
+        "_Miclaimbal", "_Mirecovery", "_adv_interest1M", "_adv_interest", "_Accrued_int", "_Accruad_int", "_EAD",
     },
 }
 

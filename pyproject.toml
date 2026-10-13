@@ -49,7 +49,7 @@ dependencies = [
     # uses ExtraTreesRegressor for its predictability filter (see
     # `should_filter` in TabICL's prior/_genload.py) and tree-based structural
     # equations. Reproducing arm A requires it.
-    "scikit-learn>=1.3,<2.0",
+    "scikit-learn>=1.6,<2.0",
 
     "pandas>=2.1,<3.0",
     "pyarrow>=15.0",          # data/raw/pd/0014.algorithmwatch.parquet
@@ -62,6 +62,8 @@ dependencies = [
 
     # --- Plots (figures go to results/, which is gitignored locally) ------
     "matplotlib>=3.8",
+    "catboost==1.2.10",      # Required benchmark; same tested version on Windows and VSC.
+    "tabpfn==9.1.0",        # Required reference and continued-pretraining API.
 
     # ---------------------------------------------------------------------
     # THE MODEL. Not optional, and not a reimplementation.
@@ -104,23 +106,7 @@ muon = [
 ]
 
 # ---------------------------------------------------------------------------
-# TabICL from source, not from PyPI.
-#
-# We MODIFY the prior generator, which is the entire point of the project.
-# A pinned PyPI wheel would give us a read-only copy of exactly the code we
-# need to change, and would silently diverge from the checkpoints in
-# checkpoints/ (tabicl-{classifier,regressor}-v2-20260212.ckpt).
-#
-# Two ways to get it, deliberately kept OUT of the default dependencies so a
-# plain `pip install -e .` never reaches the network for a git repo:
-#
-#   1. `pip install -e ".[tabicl]"` — editable clone of upstream, for
-#      reading/diffing the reference prior and for the full-scale runs.
-#   2. Vendor NanoTabICL's `model.py` into src/models/ — this is the
-#      prototyping path we actually chose (see docs/EXPERIMENTAL_DESIGN.md
-#      §Venue). NanoTabICL ships NO pretraining code, so src/train/ is ours.
-#
-# Pin by commit, never by branch, so a prior ablation stays reproducible.
+# Compatibility extra: the same pinned TabICL source is already mandatory above.
 tabicl = [
     "tabicl @ git+https://github.com/soda-inria/tabicl.git@8f1aa2098c894ab91dba15209cf2002ba4be6c6c",
 ]
@@ -135,20 +121,10 @@ dev = [
 # ---------------------------------------------------------------------------
 # Baselines for the evaluation pipeline.
 #
-# These are ONLY used to score our pretrained models against established
-# alternatives on the real credit datasets. None of them is modified, and in
-# particular TabPFN's prior is never touched — the whole point of this project is
-# that we alter TabICL's prior, and TabPFN-3 is here purely as a reference point.
-#
-# `tabicl` appears here as well as in the [tabicl] extra: eval needs the released
-# v2 checkpoints (inference only), while the [tabicl] extra is for reading and
-# diffing the upstream prior generator.
-# ---------------------------------------------------------------------------
+# TabPFN and CatBoost are required above; the exact TabICL source serves both
+# training and released-weight inference. OpenML is needed to prepare the OOD
+# input cache on a connected machine; compute nodes read the cache offline.
 eval = [
-    "catboost>=1.2",          # the GBDT baseline every credit paper reports
-    "tabpfn==9.1.0",          # Includes upstream's transformed regression-target loss fix.
-                             # TabPFN-3 inference and Exp2 continued pretraining call
-                              # tabpfn.finetuning internals of exactly this version (Exp0 checks it)
     "tabicl>=2.0",            # released TabICLv2 checkpoints, inference only
 
     # OUT-OF-DOMAIN benchmarks: OpenML-CC18 (classification, the suite O'Prior used)
@@ -212,10 +188,9 @@ extend-exclude = [
     # The faculty template's own sample script. Left exactly as shipped so the
     # template stays a usable reference; its ASCII-art docstring trips W605.
     "docs/templates/example_script.py",
-    # COPIED VERBATIM from the sibling TabPFNCredit project, where these
-    # per-dataset recipes were developed and validated. Reformatting them would
-    # make the two copies diff-noisy for no benefit, and the whole point is that
-    # they stay comparable. Fix bugs in BOTH projects, not just here.
+    # Original per-dataset recipes came from TabPFNCredit. Avoid wholesale
+    # reformatting; CreditICL corrections are explicit and tested separately.
+    # This project does not modify its sibling checkout.
     "src/data/dataset_preprocessing.py",
     "src/data/dataset_registry.py",
 ]

@@ -46,7 +46,7 @@ What remains open is the word **domain**:
 1. **Domain-targeting is unmeasured.** O'Prior optimises *average* behaviour across 52 general
    tasks; whether encoding a *specific* domain's structure transfers to that domain is untouched —
    and their own probing singles out **Credit-g** as a dataset where the signal was too weak to tell
-   the priors apart. Credit is where their gains vanish.
+   the priors apart. That probe does not establish that O'Prior fails on credit tasks; it also reports strong Home Credit results.
 2. **Regression is outside their study** — all their experiments are classification, so bounded
    targets with boundary mass (the LGD case) are genuinely open.
 3. **Prior-side class imbalance is unexplored**, and in O'Prior actively filtered out.
@@ -69,7 +69,7 @@ block and a `sweep:` block that lists exactly the knobs it crosses. Full rationa
 
 | # | question | how | arms/track |
 |---|---|---|---|
-| **0** | **Does the revised pipeline run correctly?** | one Slurm job: full tests, CUDA checks, six stop/resume runs and benchmarks | 3 |
+| **0** | **Does the revised pipeline run correctly?** | CPU + GPU Slurm jobs: full portable tests, CUDA checks, six stop/resume runs and full-row probes | 3 |
 | **1** | **Does the prior help at matched compute?** | three mixtures × three seeds, plus five component removals × three seeds; 12,500 steps | 24 |
 | **2** | **Does continued pretraining help released models?** | TabICLv2 and TabPFN-3, three mixes × three seeds using upstream or adapted literature recipes, 10,000 steps | 18 |
 | **3** | **Does the effect persist with longer training?** | scratch TabICL, Exp1's chosen mix vs control, two seeds, 200,000 steps | 4 |
@@ -198,21 +198,25 @@ python scripts/evaluate.py --task lgd --models linear,catboost
 
 > TabPFN-3 reads a **local** checkpoint (put weights in `checkpoints/` or point
 > `CREDITICL_TABPFN_DIR` at them) — letting the package fetch its own triggers a token flow that
-> fails on a compute node. Without the file the baseline skips with an explanatory line.
+> fails on a compute node. Without the file validation fails before production starts.
 
-**On VSC** — validate the current code first, in one allocation:
+**On VSC** — validate the current code in a CPU job, then a GPU job:
 
 ```bash
 bash scripts/slurm/update_env.sh
-python -m src.utils.preflight && sbatch --clusters=mindwell scripts/slurm/exp0.slurm
-# After the job passes:
+python -m src.utils.fetch_ood
+sbatch --clusters=wice scripts/slurm/exp0_cpu.slurm
+# After the CPU job passes:
+python -m src.utils.preflight --require-exp0-cpu && sbatch --clusters=mindwell scripts/slurm/exp0.slurm
+# After the GPU job passes:
 python -m src.utils.preflight --require-exp0
 python -m src.utils.run_experiment 1 --submit
 ```
 
 The last command includes the main grid and component ablations. Repeat it after training to
 submit only missing benchmarks; repeat after an interruption to resume incomplete runs.
-The older pool-building launcher is not the corrected campaign entry point.
+The older pool-building launchers refuse submission. Experiment 0 uses selected full-row tables;
+the complete five-fold credit/OOD benchmark runs in Experiments 1–3.
 
 The local venv is for development and analysis only; **do not copy it to VSC**. The cluster's own
 environment, GPU/partition choice, credit costs, storage rule and the checkpoint/resume mechanism are
@@ -225,9 +229,9 @@ all in **[docs/VSC.md](docs/VSC.md)**.
 - **Cite code dumps by symbol name, never line number** — the dumps are refreshed and lines drift.
 - **Distinguish evaluated from supported.** A mechanism existing in a paper's code is not that paper
   having measured it; several of this project's premises turned on exactly this.
-- **`output CreditICL/` is generated; a handful of tracked files in it are the exception**
-  (`README.md`, `All_Results.md`, `CAPTIONS.md`, each figure folder's `_figures.json`) — never sweep them
-  into a deletion.
+- **`output CreditICL/` is generated.** `python -m src.utils.clean_run --reset-output --clean`
+  clears generated output on both tiers, including trained checkpoints, while preserving inputs,
+  released weights and the directory README. Use only for an intentional fresh campaign.
 - **Never write project content into `tfm-library/`** (the one permitted file is
   `tfm-library/PROJECT_SPECIFIC.md`).
 

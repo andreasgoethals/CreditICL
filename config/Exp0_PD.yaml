@@ -1,9 +1,9 @@
 # =============================================================================
 # EXPERIMENT 0 — PD — THE CLUSTER DEBUG SUITE (3 arms x 1 seed, 600 steps)
 #
-# One Slurm allocation validates every production route before the main campaign.
+# Two jobs validate the campaign: CPU tests first, then production GPU validation.
 # All six routes train, stop on SIGUSR1, and resume inside that allocation.
-# Full and capped credit/OOD benchmarks follow; validated reference scores are reused.
+# Full-table, five-fold credit/OOD benchmarks follow; validated reference scores are reused.
 # Every attempt is isolated under experiment_0/validation/<attempt>/ on both tiers.
 # Submit scripts/slurm/exp0.slurm; no separate short-arm or benchmark submission.
 #
@@ -26,7 +26,7 @@ sweep:
 
 arms: # one set of overrides per arm (src/utils/config.py)
   scratch_tabicl: { architecture: tabicl, init.strategy: scratch, init.pretrained_path: null, train.optimizer: muon, train.lr: 8.0e-4, train.gradient_clipping: 10.0, train.warmup_proportion: 0.01, train.beta2: 0.95 } # Experiment 1's path
-  finetune_tabicl: { architecture: tabicl, train.optimizer: muon, train.lr: 2.0e-5, train.weight_decay: 0.01, train.warmup_proportion: 0.01, train.gradient_clipping: 1.0 } # Experiment 2's TabICLv2 path (upstream stage 3)
+  finetune_tabicl: { architecture: tabicl, train.optimizer: muon, train.lr: 2.0e-5, train.weight_decay: 0.01, train.warmup_proportion: 0.01, train.gradient_clipping: 1.0 } # Experiment 2's TabICLv2 path (stage-3 optimiser; fixed 1024-row tasks)
   finetune_tabpfn3: { architecture: tabpfn3, prior.encoding: raw, init.pretrained_path: checkpoints/tabpfn-v3-classifier-v3_default.ckpt, train.batch_size: 16, train.optimizer: adamw, train.lr: 1.0e-5, train.weight_decay: 1.0e-4, train.gradient_clipping: 1.0, progress.every_datasets: 3200 } # Experiment 2's TabPFN-3 path
 
 # ----------------------------------------------------------------------------
@@ -57,12 +57,14 @@ prior:
     category_frequency: balanced # how category counts are distributed
 
   credit: # OUR credit prior. Every range is from the credit-risk literature or deliberately wide; none is set from the evaluation data (docs/PRIORS.md)
+    use_corrected_cat_sizes: true # upstream opt-in sampler; legacy sampler never exceeds 9 levels
     max_cat_size: 500 # credit has state, region, product codes — high cardinality
     category_frequency: balanced # as the control
 
     target:
       mode: mechanism # Merton/Vasicek one-factor default model, the basis of the Basel IRB formula (Vasicek 2002)
       mechanism:
+        macro_scale: 1.0 # ablation zeroes only the shared shock, preserving idiosyncratic risk
         rho_range: [0.03, 0.24] # asset correlation: the Basel IRB range, other retail 0.03 to corporate 0.24 (BCBS 2005)
         base_rate_range: [0.01, 0.50] # default rate: from Brown & Mues (2012)'s most imbalanced 1 % up to balanced
         base_rate_log: true # log-uniform: the imbalanced end as present as the balanced one
@@ -182,6 +184,5 @@ eval:
                      0010.thomas, 0011.loan_default, 0012.home_credit, 0013.hmeq,
                      0014.algorithmwatch] # every dataset: the benchmark check measures a real slot's cost
   metrics: [auc, ap, brier, logloss, ks, calibration_slope] # all computed in one run
-  context_caps: [1024] # also scored with at most 1,024 context rows — the size every training table has
   select_on: dev # dev | holdout — anything but `dev` here invalidates the experiment
   ood_suites: all # which out-of-domain suites to score; see src/eval/ood.py SUITES

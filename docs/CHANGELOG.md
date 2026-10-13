@@ -10,16 +10,25 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 13-10-2026
 
+- Final local validation: 1,339 tests passed/7 expected skips (6 VSC-only); 11/11 notebooks produced 119 figures, all 21 credit tables passed five-fold checks, and `pip check` passed. Clear generated output and notebook results for the requested fresh campaign; VSC validation remains pending. Library pin: `de324efcca55be392feb0c01830b3b6ce364587f`.
+- Handle Windows read-only empty output folders during reset; subsequent cleanup/campaign/notebook regressions passed 137 tests (one generated-figure check skipped after the reset).
+- Split Exp0 into mandatory CPU and GPU jobs; use full-row five-fold probes on selected tables, bind both receipts, and keep diagnostic scores out of production results.
+- Remove scheduled context caps and the OOD download row limit; preserve pinned OOD identities and refuse incomplete refreshes.
+- Correct prior sampling, initialization, categorical cardinality, target/shift handling and fp32 quantile loss against the pinned implementations.
+- Add grouped loan/obligor folds, additional verified feature exclusions, correct age parsing and preserve finite large numeric values.
+- Require complete benchmark matrices, average training seeds, and report paired dataset uncertainty instead of best-seed scores.
+- Make CatBoost mandatory; install and test this project's declared dependency tree, including TabPFN 9.1.0 and pinned TabICL.
+- Add explicit `clean_run --reset-output` for the user-requested fresh campaign on both storage tiers; preserve input data and released reference weights.
 - Add `clean_run --stale`: remove only failed logs and rebuildable figures/summaries, preserving both tiers' checkpoints and research evidence; refuse active jobs, linked paths and changed files.
 - Fix TabPFN CPU/GPU loss buffers and bounded same-batch AMP retries; preserve optimizer/task budgets on overflow.
 - Save and restore model random state across resumes; isolate loader worker seeds from it.
-- Make Exp0 a single allocation with full tests, isolated CUDA checks, six forced resumes, complete benchmarks and current-evidence gating; preserve historical outputs and reuse validated reference results.
+- Initial Exp0 revision used one allocation; superseded above by the requested CPU/GPU split and focused benchmark probes.
 - Preserve a variant's queue name when resubmitting, preventing duplicate component jobs.
 - Add five component ablations at the 50% mixture (48 Exp1 runs total, user-approved design); score only their final checkpoints and avoid duplicate reference jobs.
 - Reject benchmark receipts with missing row accounting, silent row caps, unequal context budgets, wrong checkpoints in either domain or discarded nonfinite predictions.
 - Align monitoring with OOD target ranges and categorical metadata; reject invalid regression predictions before clipping can hide infinities.
 - Keep Exp0 valid when Exp3 selects a pretested mixture; other recipe changes still require validation.
-- Validation: full pytest 1,266 passed/19 skipped; shell/environment rerun with installed Git Bash 62 passed, covering 11 skipped checks (1,277 distinct passes, 8 remaining skips). Cleanup regressions 23 passed. VSC-only tests and local CatBoost skips remain mandatory on the cluster; no GPU readiness claim or jobs submitted.
+- Earlier validation: full pytest 1,266 passed/19 skipped; shell/environment rerun with installed Git Bash 62 passed (1,277 distinct passes, 8 remaining skips). CatBoost has since been installed and its tests now run locally; VSC-only behavior still requires the GPU job.
 
 ## 12-10-2026
 

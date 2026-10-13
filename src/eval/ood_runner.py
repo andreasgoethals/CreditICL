@@ -35,6 +35,7 @@ class OODEvalConfig:
     n_folds: int = N_FOLDS
     val_fraction: float = VALIDATION_FRACTION
     kinds: list[str] = field(default_factory=lambda: ["classification", "regression"])
+    datasets: list[str] | None = None  # explicit subset for diagnostic probes; never a row cap
     #: Row cap per dataset. `None` — the protocol: every cached row (the cache itself stops at
     #: 50,000 per dataset, `ood.fetch`). Until 28-09-2026: 10,000.
     max_rows: int | None = None
@@ -80,13 +81,9 @@ def _prepare(entry: OODDataset, seed: int, cfg: OODEvalConfig) -> tuple[np.ndarr
 
 def _fold_arrays(X: np.ndarray, y: np.ndarray, train_idx: np.ndarray, test_idx: np.ndarray,
                  regression: bool) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
-    """Impute and (for regression) rescale the target, with TRAINING-fold statistics only."""
+    """Preserve model-specific missing-value handling and rescale the regression target, with TRAINING-fold statistics only."""
     Xtr, Xte, ytr, yte = X[train_idx], X[test_idx], y[train_idx], y[test_idx]
     info: dict[str, Any] = {}
-    if not np.isfinite(Xtr).all() or not np.isfinite(Xte).all():
-        med = np.nan_to_num(np.nanmedian(np.where(np.isfinite(Xtr), Xtr, np.nan), axis=0))
-        Xtr = np.where(np.isfinite(Xtr), Xtr, med)
-        Xte = np.where(np.isfinite(Xte), Xte, med)
     if regression:
         # Retain training-fold affine normalisation for comparable error units.
         # OOD wrappers receive bounded_target=False: a test value beyond the
@@ -176,6 +173,10 @@ def run_ood(cfg: OODEvalConfig) -> pd.DataFrame:
         )
 
     entries = [d for d in list_ood_datasets() if d.kind in cfg.kinds]
+    if cfg.datasets is not None:
+        if not cfg.datasets or not set(cfg.datasets) <= {d.name for d in entries}:
+            raise ValueError("Requested OOD diagnostic datasets are missing or empty")
+        entries = [d for d in entries if d.name in cfg.datasets]
     log.info("[ood] %d datasets x %d models x %d folds x %d seeds = %d cells",
              len(entries), len(cfg.models), cfg.n_folds, len(cfg.seeds),
              len(entries) * len(cfg.models) * cfg.n_folds * len(cfg.seeds))

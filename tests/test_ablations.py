@@ -27,12 +27,12 @@ def test_five_component_tests_share_the_main_training_and_evaluation_budget(trac
     assert Counter(r["arm"] for r in runs) == dict.fromkeys(
         ["no_macro_target", "no_informative_missingness", "no_shift", "no_tail_warp", "base_cardinality"], 3)
     permitted = {
-        "no_macro_target": ({"credit.target.mechanism.rho_range"} if track == "pd" else
+        "no_macro_target": ({"credit.target.mechanism.macro_scale"} if track == "pd" else
                             {f"credit.target.zoib.macro_{x}_range" for x in ("p0", "p1", "mu")}),
         "no_informative_missingness": {"credit.missingness.missing_target_coupling_range"},
         "no_shift": {"credit.shift.shift_prob"},
         "no_tail_warp": {"credit.marginals.col_fraction_range"},
-        "base_cardinality": {"credit.max_cat_size"},
+        "base_cardinality": {"credit.max_cat_size", "credit.use_corrected_cat_sizes"},
     }
     for run in runs:
         reference = next(r for r in main if r["seed"] == run["seed"] and r["prior"]["credit_fraction"] == .5)
@@ -43,8 +43,8 @@ def test_five_component_tests_share_the_main_training_and_evaluation_budget(trac
         assert run["_run_name"] != reference["_run_name"]
     from src.eval.benchmark_status import n_slots, slot_for
 
-    assert n_slots(1, track, variant="ablations") == 30
-    assert all(slot_for(1, track, i, variant="ablations").kind == "arm" for i in range(30))
+    assert n_slots(1, track, variant="ablations") == 15
+    assert all(slot_for(1, track, i, variant="ablations").kind == "arm" for i in range(15))
 
 
 @pytest.mark.parametrize("track", ["pd", "lgd"])

@@ -1,8 +1,7 @@
 """Download the out-of-domain benchmark suites. RUN THIS ON A VSC LOGIN NODE.
 
-    python -m src.utils.fetch_ood            # fetch 10 classification + 10 regression
+    python -m src.utils.fetch_ood            # fetch/refresh 25 classification + 25 regression
     python -m src.utils.fetch_ood --status   # what is already cached
-    python -m src.utils.fetch_ood --n 20     # more per task
 
 WHY A LOGIN NODE: VSC compute nodes have **no outbound internet**, so a training or
 evaluation job cannot download anything. This caches the tables to project storage once;
@@ -21,7 +20,7 @@ import json
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -31,10 +30,10 @@ from src.utils.paths import logs_dir  # noqa: E402
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--n", type=int, default=10, help="datasets per task type")
+    from src.eval.ood import N_PER_TASK
+    ap.add_argument("--n", type=int, default=N_PER_TASK, help="datasets per task type when creating a new list")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--force", action="store_true", help="re-download even if cached")
-    ap.add_argument("--max-rows", type=int, default=50_000)
     ap.add_argument("--max-features", type=int, default=500)
     args = ap.parse_args()
 
@@ -56,7 +55,7 @@ def main() -> int:
 
     kept = fetch_ood_datasets(
         n_per_task=args.n, force=args.force,
-        max_rows=args.max_rows, max_features=args.max_features,
+        max_features=args.max_features,
     )
 
     status = ood_status()
@@ -65,12 +64,11 @@ def main() -> int:
         log.info("  %-15s %s", kind, ", ".join(sorted(names)))
     if not status["complete"]:
         log.warning(
-            "Fewer than %d datasets for at least one task type. Usable, but say so when "
-            "reporting — a thin out-of-domain set is weak evidence either way.",
+            "Fewer than %d datasets for at least one task type; Experiment 0 will refuse this cache.",
             args.n,
         )
     log.info("log file -> %s", log_path)
-    return 0
+    return 0 if status["complete"] else 1
 
 
 if __name__ == "__main__":

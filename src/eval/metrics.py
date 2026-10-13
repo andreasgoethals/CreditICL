@@ -53,31 +53,43 @@ def crps_from_quantiles(y_true: np.ndarray, q_pred: np.ndarray, levels: np.ndarr
     """CRPS approximated from a quantile grid.
 
     The mean pinball loss over a uniform grid of levels converges to CRPS/2 as the
-    grid gets finer, so this is 2 x mean pinball. With 999 levels the
-    approximation is tight; the factor is applied so the number is comparable to
-    CRPS values reported elsewhere.
+    grid gets finer, so this is 2 x mean pinball on our uniform 99-level
+    evaluation grid. This is an approximation, not the exact distributional CRPS.
     """
     return 2.0 * pinball_loss(y_true, q_pred, levels)
 
 
 def interval_coverage(y_true: np.ndarray, lo: np.ndarray, hi: np.ndarray) -> float:
-    """Fraction of observations inside [lo, hi]. Compare to the nominal level."""
+    """Closed-interval coverage; atoms can make correct intervals exceed nominal coverage."""
     y_true = np.asarray(y_true, dtype=float)
     return float(np.mean((y_true >= np.asarray(lo)) & (y_true <= np.asarray(hi))))
 
 
-def boundary_mass_error(y_true: np.ndarray, y_pred: np.ndarray, tol: float = BOUNDARY_TOL) -> dict[str, float]:
+def quantile_weights(levels: np.ndarray) -> np.ndarray:
+    """Probability cells around ordered quantiles, including the two tail cells."""
+    levels = np.asarray(levels, dtype=float)
+    if (levels.ndim != 1 or not len(levels) or not np.isfinite(levels).all()
+            or np.any(np.diff(levels) <= 0) or levels[0] <= 0 or levels[-1] >= 1):
+        raise ValueError("Quantile levels must be strictly increasing inside (0, 1)")
+    return np.diff(np.r_[0., (levels[:-1] + levels[1:]) / 2, 1.])
+
+
+def boundary_mass_error(y_true: np.ndarray, quantiles: np.ndarray,
+                        levels: np.ndarray | None = None, tol: float = BOUNDARY_TOL) -> dict[str, float]:
     """Does the model predict the right amount of mass at 0 and at 1?
 
     The metric this project exists to move, and one nothing in the library
     reports. Positive error means the model predicts too much boundary mass.
     """
     y_true = np.asarray(y_true, dtype=float)
-    y_pred = np.asarray(y_pred, dtype=float)
+    q = np.asarray(quantiles, dtype=float)
+    if q.ndim != 2 or levels is None or q.shape != (len(y_true), len(levels)):
+        raise ValueError("Boundary mass requires predictive quantiles and levels, not point means")
+    weights = quantile_weights(levels)
     true_0 = float(np.mean(y_true <= tol))
     true_1 = float(np.mean(y_true >= 1.0 - tol))
-    pred_0 = float(np.mean(y_pred <= tol))
-    pred_1 = float(np.mean(y_pred >= 1.0 - tol))
+    pred_0 = float(np.mean((q <= tol) @ weights))
+    pred_1 = float(np.mean((q >= 1.0 - tol) @ weights))
     return {
         "true_mass_at_0": true_0,
         "true_mass_at_1": true_1,
@@ -127,7 +139,6 @@ def lgd_metrics(
         "pred_max": float(y_pred.max()),
         "pred_out_of_unit": float(np.mean((y_pred < -1e-6) | (y_pred > 1 + 1e-6))),
     }
-    out.update(boundary_mass_error(y_true, y_pred))
 
     # -- systematic error -----------------------------------------------------
     # `bias` separates "wrong on average" from "noisy": an RMSE of 0.2 made of a constant
@@ -147,7 +158,7 @@ def lgd_metrics(
         out["calibration_slope"] = float("nan")
         out["nan_predictions"] = 1.0
     elif var_pred > EPS:
-        out["calibration_slope"] = float(np.cov(y_true, y_pred)[0, 1] / var_pred)
+        out["calibration_slope"] = float(np.cov(y_true, y_pred, bias=True)[0, 1] / var_pred)
     else:
         # A model that outputs one value for everything. Not an error worth raising, but it
         # must not be reported as perfectly calibrated.
@@ -175,6 +186,10 @@ def lgd_metrics(
     if quantiles is not None and levels is not None:
         q = np.asarray(quantiles, dtype=float)
         lv = np.asarray(levels, dtype=float)
+        if q.shape != (len(y_true), len(lv)) or not np.isfinite(q).all():
+            raise ValueError("Invalid predictive quantiles")
+        q = np.sort(q, axis=1)
+        out.update(boundary_mass_error(y_true, q, lv))
         out["pinball"] = pinball_loss(y_true, q, lv)
         out["crps"] = crps_from_quantiles(y_true, q, lv)
         for nominal in (0.5, 0.8, 0.9):
@@ -186,7 +201,11 @@ def lgd_metrics(
         # predictive is right, these are uniform on [0,1], so the distance from uniform is a
         # single number for "is the whole distribution right", not just its middle. Reported
         # as the mean absolute deviation of the PIT histogram from flat.
-        pit = np.mean(q <= y_true[:, None], axis=1)
+        weights = quantile_weights(lv)
+        left = (q < y_true[:, None]) @ weights
+        right = (q <= y_true[:, None]) @ weights
+        # Randomise inside CDF jumps: a point mass is not evidence of miscalibration.
+        pit = left + np.random.default_rng(0).uniform(size=len(y_true)) * (right - left)
         hist, _ = np.histogram(pit, bins=10, range=(0.0, 1.0))
         out["pit_uniformity_error"] = float(np.mean(np.abs(hist / max(pit.size, 1) - 0.1)))
         out["pit_mean"] = float(pit.mean())  # 0.5 when centred; away from it means biased
@@ -308,7 +327,7 @@ def recall_at_top_k(y_true: np.ndarray, p: np.ndarray, k_frac: float) -> float:
     return float(y_true[top].sum() / n_pos)
 
 
-def pd_metrics(y_true: np.ndarray, p: np.ndarray) -> dict[str, float]:
+def pd_metrics(y_true: np.ndarray, p: np.ndarray, *, decision_base_rate: float | None = None) -> dict[str, float]:
     """Everything we report for a PD prediction."""
     from sklearn.metrics import (
         average_precision_score,
@@ -350,14 +369,15 @@ def pd_metrics(y_true: np.ndarray, p: np.ndarray) -> dict[str, float]:
     out["brier_uncertainty"] = float(base_rate * (1 - base_rate))
     out["brier_skill_score"] = float(1.0 - out["brier"] / max(out["brier_uncertainty"], EPS))
 
-    # Hard labels at 0.5, and at the base rate. A single threshold on an imbalanced target is
-    # close to meaningless on its own — at a 2 % base rate almost nothing crosses 0.5 and F1
-    # collapses to 0 for a model that ranks perfectly — so the base-rate threshold is reported
-    # beside it as the version a credit policy would actually pick.
+    # Decision thresholds cannot use the realised test prevalence. An optional
+    # base-rate threshold must be supplied from the fitted training pool.
     out.update(threshold_metrics(y_true, p, 0.5))
-    for key, value in threshold_metrics(y_true, p, max(base_rate, EPS)).items():
-        if key not in ("true_positives", "false_positives", "false_negatives", "true_negatives"):
-            out[f"{key}_at_base_rate"] = value
+    if decision_base_rate is not None:
+        if not np.isfinite(decision_base_rate) or not 0 <= decision_base_rate <= 1:
+            raise ValueError("decision_base_rate must be a training-set probability")
+        for key, value in threshold_metrics(y_true, p, max(decision_base_rate, EPS)).items():
+            if key not in ("true_positives", "false_positives", "false_negatives", "true_negatives"):
+                out[f"{key}_at_base_rate"] = value
 
     # `calibration_slope` from a logistic regression of the outcome on the log-odds. 1.0 is
     # calibrated, below 1 over-confident. Named in every credit-scoring validation standard,

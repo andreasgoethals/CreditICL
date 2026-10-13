@@ -440,7 +440,7 @@ def pd_vasicek(
         # realised rate still differs from the target rate, as a real sample does.
         z = torch.full((n,), float(rng.randn(1).item()))
 
-    asset = math.sqrt(rho) * z + math.sqrt(1.0 - rho) * eps
+    asset = float(cfg.get("macro_scale", 1.0)) * math.sqrt(rho) * z + math.sqrt(1.0 - rho) * eps
     threshold = float(_normal_icdf(torch.tensor([pd_rate])).item())
     y = (asset < threshold).float()
 

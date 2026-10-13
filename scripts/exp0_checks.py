@@ -27,8 +27,8 @@ THE CHECKS, in order:
     orchestration the SLURM tools the jobs call; `run_experiment` plans each experiment (dry run)
     train         a few real training steps of every training path on the GPU (speed, memory), then
                   the saved checkpoint through the BENCHMARK'S wrapper: loaded weights = trained ones
-    benchmark     one fold of one dataset through every reference wrapper on the GPU, and the
-                  capped-context path (1,024 rows) of the two in-context ones
+    benchmark     every dataset loads and supports full-row five-fold splitting on CPU;
+                  selected whole-table GPU predictions are separate validation stages
 """
 from __future__ import annotations
 
@@ -554,47 +554,43 @@ def _checkpoint_round_trip(rep: Report, track: str, run: dict, trainer: Any, ckp
 
 
 def check_benchmark(rep: Report) -> None:
-    from src.eval.benchmark_status import REFERENCE_MODELS
+    """CPU validation of every table and every fold; real GPU scoring is a later stage."""
+    from src.data.discovery import list_datasets
     from src.eval.protocol import cv_folds
-    from src.eval.runner import load_arrays, score_fold
+    from src.eval.runner import load_arrays
+    from src.eval.ood import list_ood_datasets
+    from src.eval.ood_runner import _prepare, OODEvalConfig
 
-    for track, dataset in (("pd", "0008.german"), ("lgd", "0004.base_model")):
-        try:
-            X, y, cats, _ = load_arrays(track, dataset)
-            tr, te = cv_folds(y, track)[0]
-        except Exception as exc:  # noqa: BLE001
-            rep.add("benchmark", f"{track}/{dataset}", FAIL, f"cannot load: {exc}")
-            continue
-        for model in REFERENCE_MODELS.split(","):
+    def check(label, task, X, y, groups=None):
+        if X.shape[0] != len(y) or not np.isfinite(y).all() or np.isinf(X).any():
+            raise ValueError("Misaligned rows or non-finite targets/infinite features")
+        seen = np.zeros(len(y), dtype=np.uint8)
+        folds = cv_folds(y, task, groups=groups)
+        for train, test in folds:
+            if len(train) + len(test) != len(y) or np.intersect1d(train, test).size:
+                raise ValueError("Invalid train/test partition")
+            if groups is not None and np.intersect1d(groups[train], groups[test]).size:
+                raise ValueError("An entity appears on both sides of a fold")
+            if task == "pd" and (len(np.unique(y[train])) != 2 or len(np.unique(y[test])) != 2):
+                raise ValueError("A classification fold is missing a class")
+            seen[test] += 1
+        if len(folds) != 5 or not np.all(seen == 1):
+            raise ValueError("Five-fold CV did not test every row exactly once")
+        rep.add("benchmark", label, PASS, {"rows": len(y), "folds": 5, "grouped": groups is not None})
+
+    for track in ("pd", "lgd"):
+        for dataset in list_datasets(track):
             try:
-                started = time.time()
-                out = score_fold(track, model, X[tr], y[tr], X[te], y[te], cats, seed=0, fold=0)
-                key = "roc_auc" if track == "pd" else "r2"
-                rep.add("benchmark", f"{track}/{dataset} {model}", PASS,
-                        {key: round(float(out[key]), 4), "seconds": round(time.time() - started, 1)})
-            except Exception as exc:  # noqa: BLE001
-                rep.add("benchmark", f"{track}/{dataset} {model}", FAIL, f"{type(exc).__name__}: {exc}")
-    # THE CAPPED-CONTEXT PATH (Exp1's second evaluation): a table larger than the cap, so it binds.
-    for track, dataset in (("pd", "0001.gmsc"), ("lgd", "0001.heloc")):
+                X, y, _, info = load_arrays(track, dataset)
+                check(f"{track}/{dataset}", track, X, y, info.pop("_cv_groups", None))
+            except Exception as exc:
+                rep.add("benchmark", f"{track}/{dataset}", FAIL, f"{type(exc).__name__}: {exc}")
+    for entry in list_ood_datasets():
         try:
-            X, y, cats, _ = load_arrays(track, dataset, max_rows=5000)
-            tr, te = cv_folds(y, track)[0]
-        except Exception as exc:  # noqa: BLE001
-            rep.add("benchmark", f"{track}/{dataset} capped", FAIL, f"cannot load: {exc}")
-            continue
-        for model in ("tabiclv2", "tabpfn3"):
-            try:
-                started = time.time()
-                out = score_fold(track, model, X[tr], y[tr], X[te], y[te], cats, seed=0, fold=0,
-                                 max_context_rows=1024)
-                key = "roc_auc" if track == "pd" else "r2"
-                used = out.get("info_n_context_full"), out.get("info_context_cap")
-                ok = out.get("info_context_cap") == 1024
-                rep.add("benchmark", f"{track}/{dataset} {model} context capped at 1,024", PASS if ok else FAIL,
-                        {key: round(float(out[key]), 4), "context_full_and_cap": used,
-                         "seconds": round(time.time() - started, 1)})
-            except Exception as exc:  # noqa: BLE001
-                rep.add("benchmark", f"{track}/{dataset} {model} capped", FAIL, f"{type(exc).__name__}: {exc}")
+            X, y, _, _ = _prepare(entry, 0, OODEvalConfig())
+            check(f"ood/{entry.name}", "pd" if entry.kind == "classification" else "lgd", X, y)
+        except Exception as exc:
+            rep.add("benchmark", f"ood/{entry.name}", FAIL, f"{type(exc).__name__}: {exc}")
 
 
 CHECKS: dict[str, Callable[[Report], None]] = {

@@ -14,7 +14,7 @@ sweep:
   seeds: [0, 1, 2]
 arms:
   no_macro_target:
-    prior.credit.target.mechanism.rho_range: [0.0, 0.0]
+    prior.credit.target.mechanism.macro_scale: 0.0
   no_informative_missingness:
     prior.credit.missingness.missing_target_coupling_range: [0.0, 0.0]
   no_shift:
@@ -23,3 +23,4 @@ arms:
     prior.credit.marginals.col_fraction_range: [0.0, 0.0]
   base_cardinality:
     prior.credit.max_cat_size: 200
+    prior.credit.use_corrected_cat_sizes: false

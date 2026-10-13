@@ -90,22 +90,11 @@ def test_each_arm_is_scored_by_the_wrapper_of_its_architecture():
     assert models == {"crediticl", "tabpfn3"}
 
 
-def test_experiment_1_is_scored_again_with_contexts_capped_at_1024_rows():
-    """Accepted 30-09-2026: after every checkpoint and the reference column, each arm's FINAL
-    checkpoint and each in-context reference model are scored with at most 1,024 context rows."""
-    from src.eval.benchmark_status import CONTEXT_MODELS, n_slots, slot_for
-    from src.utils.paths import owner_of
-
-    full = 9 * 5 + 4  # 9 arms x 5 kept checkpoints (12,500 and every 2,500), then 4 reference models
+def test_experiment_1_uses_full_tables_only():
+    from src.eval.benchmark_status import n_slots, slot_for
     total = n_slots(1, "pd")
-    assert total == full + 9 + 2, "then 9 capped arms and the 2 capped in-context reference models"
-    capped = [slot_for(1, "pd", i) for i in range(full, total)]
-    assert all(s.context == 1024 and s.tag.endswith("_ctx1024") for s in capped)
-    assert [s.arm for s in capped if s.kind == "arm"] == list(range(9))
-    assert all(s.final for s in capped if s.kind == "arm")
-    assert {s.model for s in capped if s.kind == "reference"} == {"tabiclv2", "tabpfn3"} <= set(CONTEXT_MODELS)
-    assert owner_of(capped[0].tag) == 1 and owner_of(capped[-1].tag) == "reference"
-    assert all(slot_for(1, "pd", i).context is None for i in range(full))
+    assert total == 9 * 5 + 4
+    assert all(slot_for(1, "pd", i).context is None for i in range(total))
     assert slot_for(1, "pd", total).kind == "none"
 
 
@@ -121,7 +110,7 @@ def test_the_main_benchmark_scores_both_models_and_the_reference_column():
 
 
 def test_wide_tables_keep_the_columns_most_associated_with_the_target():
-    """The cap keeps the columns with the strongest rank association with the target — whatever
+    """The cap keeps the columns with the strongest rank association with the target â€” whatever
     their unit: raw variance would keep the huge-unit noise first."""
     from src.eval.protocol import MAX_FEATURES, rank_columns
 

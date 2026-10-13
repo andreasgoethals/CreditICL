@@ -1,4 +1,4 @@
-"""Run the complete Experiment 0 workflow in a single GPU allocation."""
+"""Run the complete Experiment 0 workflow in its CPU or GPU allocation."""
 import sys
 from pathlib import Path
 

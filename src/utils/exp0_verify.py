@@ -70,7 +70,7 @@ def _verify_receipt(receipt: Path, track: str, slot) -> float:
 
 def verify(out_root: Path, *, big_root: Path | None = None) -> Verdicts:
     modern = out_root / "experiment_0" / "report" / "validation.json"
-    if modern.is_file():
+    if modern.is_file() or modern.with_name("cpu_validation.json").is_file():
         return verify_validation(out_root, big_root=big_root)
     from src.utils.preflight import CHECK_SECTIONS, source_fingerprint, training_fingerprint
     from src.eval.benchmark_status import slot_for
@@ -238,7 +238,7 @@ def verify(out_root: Path, *, big_root: Path | None = None) -> Verdicts:
 
 
 def verify_validation(out_root: Path, *, big_root: Path | None = None) -> Verdicts:
-    """Inspect a downloaded single-job receipt without pretending to be the VSC environment."""
+    """Inspect downloaded CPU/GPU receipts without pretending to be the VSC environment."""
     from src.eval.benchmark_status import digest
     from src.utils import paths
     from src.utils.config import expand_with_seeds, load
@@ -247,6 +247,22 @@ def verify_validation(out_root: Path, *, big_root: Path | None = None) -> Verdic
 
     v = Verdicts()
     receipt = out_root / "experiment_0" / "report" / "validation.json"
+    cpu_file = receipt.with_name("cpu_validation.json")
+    cpu_saved = None
+    try:
+        cpu_saved = json.loads(cpu_file.read_text(encoding="utf-8"))
+        with attempt_scope(cpu_saved["attempt"]):
+            cpu_expected = [s.name for s in plan("cpu")]
+        cpu_rows = cpu_saved.get("stages", [])
+        cpu_ok = (cpu_saved.get("schema") == SCHEMA and cpu_saved.get("status") == "PASS"
+                  and [r["name"] for r in cpu_rows] == cpu_expected
+                  and all(r["status"] == "PASS" for r in cpu_rows)
+                  and bool(cpu_saved.get("artifacts")))
+        v.add(PASS if cpu_ok else FAIL, "CPU Experiment 0", str(cpu_saved.get("status")))
+        v.add(PASS if cpu_saved.get("source_fingerprint") == source_fingerprint() else FAIL,
+              "CPU current code/config/tests")
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        v.add(FAIL, "CPU Experiment 0", str(exc))
     try:
         saved = json.loads(receipt.read_text(encoding="utf-8"))
         with attempt_scope(saved["attempt"]):
@@ -254,7 +270,12 @@ def verify_validation(out_root: Path, *, big_root: Path | None = None) -> Verdic
         rows = saved.get("stages", [])
         complete = (saved.get("schema") == SCHEMA and saved.get("status") == "PASS"
                     and [r["name"] for r in rows] == expected and all(r["status"] == "PASS" for r in rows))
-        v.add(PASS if complete else FAIL, "single-job Experiment 0", f"{saved.get('status')}: {saved.get('attempt')}")
+        v.add(PASS if complete else FAIL, "GPU Experiment 0", f"{saved.get('status')}: {saved.get('attempt')}")
+        v.add(PASS if cpu_saved and saved.get("cpu_receipt") == digest(cpu_file) else FAIL,
+              "GPU used this CPU validation")
+        v.add(PASS if cpu_saved and all(saved.get(k) == cpu_saved.get(k)
+                                       for k in ("inputs", "environment_fingerprint")) else FAIL,
+              "CPU and GPU used the same inputs and packages")
         for row in rows:
             v.add(PASS if row["status"] == "PASS" else FAIL, row["name"],
                   row.get("error", f"{row.get('seconds', '?')} seconds"))
@@ -264,7 +285,8 @@ def verify_validation(out_root: Path, *, big_root: Path | None = None) -> Verdic
               "current code/config/tests", "source fingerprint comparison; package compatibility is checked on VSC")
         roots = [out_root] + ([big_root] if big_root else [])
         missing_weights = 0
-        for remote, expected_hash in saved.get("artifacts", {}).items():
+        artifacts = {**(cpu_saved or {}).get("artifacts", {}), **saved.get("artifacts", {})}
+        for remote, expected_hash in artifacts.items():
             relative = remote.replace("\\", "/").split(paths.OUTPUT_NAME + "/", 1)[-1]
             rel = Path(relative)
             if rel.is_absolute() or ".." in rel.parts:

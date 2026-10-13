@@ -84,6 +84,8 @@ def main() -> int:
         "what the SLURM chain uses; 'generate' builds datasets live.",
     )
     args = ap.parse_args()
+    if int(os.environ.get("WORLD_SIZE", "1")) > 1 and not (args.list or args.dry_run):
+        raise RuntimeError("This campaign validates single-GPU training only; multi-GPU resume is not supported")
 
     # `--list` may show a template (placeholders still unfilled); anything that trains may not.
     cfg = load(args.config, allow_placeholders=args.list)

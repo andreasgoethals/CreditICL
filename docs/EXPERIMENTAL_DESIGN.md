@@ -3,7 +3,7 @@
 What the three experiments ask, why the design can fail, and the premises it rests on. This
 describes what is **built** (the `config/Exp{1,2,3}_*.yaml` sweeps); the prior's mechanics are in
 [PRIORS.md](PRIORS.md), every knob's value in [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md), and what
-each run actually did in [RUNS.md](RUNS.md). Library pin `52dab01`.
+each run actually did in [RUNS.md](RUNS.md). Library pin `de324efcca55be392feb0c01830b3b6ce364587f`.
 
 ## Contents
 
@@ -91,7 +91,7 @@ variant contradicts a published result *with evidence behind it*, and must beat 
 
 **2.6 Our data does not match a single premise.** Measured from `data/raw/`: Freddie LGD is genuinely
 U-shaped (11.4% at 0, 8.1% at 1); LendingClub LGD is unimodal, left-skewed, peaks at 0.80–0.85; AXA
-is fully interior. PD base rates span 6.7% (GMSC) to 40% (myhom). **Consequence:** the prior must be
+has a substantial atom near zero (within the documented boundary tolerance). PD base rates span 6.7% (GMSC) to 40% (myhom). **Consequence:** the prior must be
 a *family* over boundary mass and base rate, not a single shape — else it overfits one dataset.
 
 ## 3. The experiments
@@ -114,26 +114,27 @@ must not be attributed to its 90 checkpoints.
 | optimizer | as the path it checks | Muon (upstream stage 1) | upstream TabICL and an adapted TabPFN-Wide recipe | Muon |
 | asks | every path works on the cluster; what a real arm and a real benchmark slot cost | the pure effect of the prior on what the model learns, at a small matched budget | whether the knowledge helps models trained at full scale, and at what out-of-domain cost | whether Exp1's effect holds at a longer budget |
 
-**Exp0** is one Slurm allocation (`scripts/slurm/exp0.slurm`): the full portable test suite,
-mandatory CUDA tests, isolated ten-step smoke tests of all six training routes, and both upstream
-trainer-equivalence checks. Only if those pass does it run all six 600-step routes with a forced
-SIGUSR1 stop and resume, followed by full credit/OOD benchmarks and capped-context comparisons.
-Every attempt has a separate output namespace. A successful receipt binds code, tests, configurations,
-packages, data, released weights and output hashes; changed or incomplete evidence blocks production.
-Validated reference scores are reused in Experiments 1–3, preserving earlier versions.
+**Exp0** uses two Slurm allocations: `exp0_cpu.slurm` checks every input, package, split and portable
+test; `exp0.slurm` then checks CUDA, all six training/save/resume routes and both upstream trainer
+equivalence checks. Each GPU route completes 600 steps with forced SIGUSR1 stop/resume. All model
+routes are benchmarked on selected largest/widest/median-size credit and OOD tables, with full rows
+and five folds. The complete benchmark matrix belongs to Experiments 1–3. CPU and GPU PASS receipts
+bind code, packages, inputs and output hashes; either missing/currently failed receipt blocks production.
+Diagnostic reference scores stay isolated from publication results.
 
 **Exp1** measures the prior's effect in its purest form: the same architecture trained from scratch on
 each mix, with the same compute. With so little training (2.5 % of upstream's stage 1) the arms are not
 expected to reach the released model; the question is the contrast between mixes. Every training table
-has 1,024 rows (TabICLv2's stage 1), while real contexts reach ~426,000 rows, so Exp1 is scored twice:
-with the whole training pool as context, and with contexts capped at 1,024 rows — the prior's effect
-inside the training distribution (`eval.context_caps`, accepted 30-09-2026).
+has 1,024 rows (TabICLv2's stage-1 budget), while evaluation uses every eligible row in the real
+table with five-fold CV. Each fold fits on four folds and predicts the fifth; there is no scheduled
+1,024-row context comparison. This tests transfer to larger contexts and must not be described as
+reproducing upstream's full multi-stage, long-context training curriculum.
 
 The component study was accepted on 13-10-2026: five removals at the fixed 50% mixture,
 three paired seeds each, in `Exp1_{PD,LGD}_ablations.yaml`. Remove separately (1) the macroeconomic
 term in the target, (2) the dependence of missingness on the target (retain missing values),
 (3) context/query shifts, (4) the marginal tail warp, and (5) the credit categorical ceiling
-(return 500 to the base 200). Architecture, optimizer and task budget stay fixed. These are
+(restore the upstream categorical sampler, whose legacy effective ceiling is nine). Architecture, optimizer and task budget stay fixed. These are
 predeclared mechanism comparisons against the main 50% arm, not candidates selected on holdout
 performance. Only final ablation checkpoints are scored; main arms supply the learning curves.
 This adds 15 runs per track to the nine main runs, 48 in total. Component groups follow the
@@ -144,7 +145,7 @@ that paper studies general classification, not the credit-risk mechanisms here.
 pretraining continues on our prior. Two models, because a result for one architecture could be an
 accident of it: TabICLv2 (open prior, trained through our own trainer, verified equal to upstream's)
 and TabPFN-3 (trained through TabPFN's own fine-tuning path, `src/train/tabpfn_trainer.py`). **Recipes are fixed rather than searched (30-09-2026), with different evidential status:**
-TabICLv2 as its authors' stage 3 continues the released model's pretraining — Muon, lr 2e-5, weight
+TabICLv2 uses its authors' stage-3 optimizer schedule at our controlled table size — Muon, lr 2e-5, weight
 decay 0.01, 1 % warm-up, cosine to 1e-7, gradient clipping 1, batch 64, 10,000 steps
 (`tfm-library/repositories/TabICL.txt`, `scripts/train_v2_clf_stage3.sh`; paper §4.1); TabPFN-3 uses an adaptation of how
 TabPFN-Wide continued the released TabPFN-v2 classifier on the synthetic TabICL prior — AdamW, lr 1e-5, weight decay
@@ -171,8 +172,8 @@ ablations are single runs at 280,000 steps, with the reference run twice to show
 at 200,000 steps (~700 B200 GPU-hours for both tracks) follow that design at a price the project can pay.
 100,000 steps with 2 seeds (~350) is the cheaper option, at the cost of stopping before log-loss has
 settled. A stage-2-like end of training on longer tables (upstream's 400-10,240 rows) would shrink the
-length gap at test time; it is not built, and is the natural extension if Exp3's capped and full-context
-results diverge.
+length gap at test time. It is not part of the current Exp3: Exp3 increases steps, not rows per task.
+Any long-context training extension requires a separately specified budget and validation.
 
 **What was designed but not built.** An **O'Prior-style generic-realism arm** (the ideal causal
 control) and an **unrealistic-but-complex arm** (TabForestPFN's counter-hypothesis that complexity
@@ -240,8 +241,7 @@ does not erase the effects of earlier inspection and must not be described as an
 **The protocol** (`src/eval/protocol.py`, version 5 since 12-10-2026) is the same for every model —
 our checkpoints, released TabICLv2, TabPFN-3, CatBoost, the linear floor — and for the out-of-domain
 suites: **5-fold cross-validation** (stratified for PD, one fixed fold assignment); **the whole training
-pool is the context** — no row cap, no context selection (Exp1 is also scored with contexts capped at
-1,024 rows, §3); for PD, **the decision threshold maximises F1 on a validation split** (20 % of the
+pool is the context** — no row cap or context selection; for PD, **the decision threshold maximises F1 on a validation split** (20 % of the
 training pool), after which the model is refitted on the whole pool and the test fold is scored at that
 threshold. Every model runs at its library defaults.
 
@@ -299,13 +299,12 @@ positive result supports only the full prior package under the tested budget and
 
 **5.3 Out-of-domain retention is a first-class axis, not an appendix.** After training on a
 credit-targeted prior, score general/out-of-domain benchmarks to measure whether in-domain gains were
-bought at out-of-domain cost — Kolberg's Spearman-ρ-vs-base-model instrument (they report 0.9935),
-and Hoo 2026 predicts exactly this trade. **If domain-targeting costs general performance, that is
+bought at out-of-domain cost. Report dataset-paired score changes; a specialization trade-off
+is a hypothesis to test, not a conclusion borrowed from time-series adaptation. **If domain-targeting costs general performance, that is
 the finding** — Exp2's `2.1`/`2.2` notebooks plot the credit-vs-out-of-domain curve directly.
 
 **5.4 Temporal splits.** Distribution-shift work motivates testing time and borrower/source groups,
-rather than generalising an i.i.d. result to deployment. These splits are **not implemented** in the
-current runner; requesting temporal splitting raises an error. Feasibility depends on identifying
+rather than generalising an i.i.d. result to deployment. Grouped five-fold splits are implemented for HELOC loans and base_model obligors. Temporal splits remain unimplemented; requesting temporal splitting raises an error. Feasibility depends on identifying
 observation dates, label maturity and repeated borrowers in each source — see [§7](#7-open-decisions).
 
 ## 6. Risks
@@ -365,6 +364,6 @@ observation dates, label maturity and repeated borrowers in each source — see 
 6. **Exp2's reported checkpoint** — resolved 30-09-2026: with no search there is no chosen checkpoint;
    the final one (10,000 steps, the recipes' own length) is the result, the others a learning curve.
    `eval.headline_step`, if a config sets it, is honoured by `results_plots.load_results`.
-7. **Matched-context results** — implemented 30-09-2026: Exp0 and Exp1 are also scored with contexts
-   capped at 1,024 rows (`eval.context_caps: [1024]`), the prior's effect inside the training
-   distribution, beside the full-context numbers. Columns are capped at 100 for every evaluation (§5).
+7. **Full-row evaluation** — user decision 13-10-2026: no capped-context comparison. All eligible
+   rows participate in five-fold CV. Columns are still filtered/capped at 100 using fitted-fold
+   information only, identically for every model (§5). Full rows do not mean unfiltered raw columns.

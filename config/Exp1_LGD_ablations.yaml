@@ -25,3 +25,4 @@ arms:
     prior.credit.marginals.col_fraction_range: [0.0, 0.0]
   base_cardinality:
     prior.credit.max_cat_size: 200
+    prior.credit.use_corrected_cat_sizes: false

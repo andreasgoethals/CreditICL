@@ -56,7 +56,7 @@ from src.data.discovery import list_datasets
 from src.utils.logging_setup import get_logger
 from src.utils.paths import find_processed_dir, find_raw_file, processed_write_dir
 
-CACHE_VERSION = 5  # bump to invalidate every cache; recorded in meta.json (5: TabPFNCredit's column set and codes)
+CACHE_VERSION = 6  # repeated-record groups, corrected duration parsing and finite numeric preservation
 
 #: The categorical copy of a column a recipe lists as numeric AND categorical (TabPFNCredit feeds
 #: both: `N = X[num_cols]`, `C = X[cat_cols]`). The parquet needs unique names.
@@ -90,11 +90,14 @@ class DatasetMeta:
     cache_version: int = CACHE_VERSION
     raw_path: str = ""
     seconds: float = 0.0
+    group_column: str | None = None
 
 
 #: The target is stored as a COLUMN, not a separate file, so one read gets
 #: everything and features and target can never drift out of alignment.
 TARGET_COLUMN = "__target__"
+GROUP_COLUMN = "__cv_group__"
+GROUP_SOURCES = {("lgd", "0001.heloc"): "REC", ("lgd", "0004.base_model"): "DFLT_SIREN"}
 
 
 def stored_category(series: pd.Series) -> pd.Categorical:
@@ -228,6 +231,20 @@ def preprocess_one(task: str, dataset: str, *, force: bool = False) -> Path:
         # its numeric copy under its own name and gets this one beside it.
         tidy[f"{c}{CATEGORICAL_COPY}" if c in doubled else c] = stored_category(df[c])
     tidy[TARGET_COLUMN] = y
+    group_source = GROUP_SOURCES.get((task, dataset))
+    if group_source:
+        from src.data.dataset_preprocessing import _load_dataset_file
+        raw = _load_dataset_file(raw_path.with_suffix(""))
+        if group_source not in raw:
+            raise ValueError(f"{dataset}: required cross-validation group {group_source} missing")
+        ids = raw.loc[df.index, group_source].astype("string")
+        if group_source == "DFLT_SIREN" and "DFLT_MainID" in raw:
+            fallback = raw.loc[df.index, "DFLT_MainID"].astype("string")
+            ids = ids.fillna("default:" + fallback)
+        # Missing identifiers must not lump unrelated records into one giant group.
+        ids = ids.fillna(pd.Series([f"row:{i}" for i in df.index], index=df.index))
+        tidy[GROUP_COLUMN] = pd.factorize(ids, sort=False)[0]
+        meta.group_column = group_source
 
     # Atomic write, because on the cluster several array tasks can call
     # ensure_processed() for the SAME not-yet-cached dataset at once, on different
@@ -280,6 +297,7 @@ class ProcessedDataset:
     cat_indices: list[int]
     feature_names: list[str]
     meta: DatasetMeta
+    groups: np.ndarray | None = None
 
     @property
     def n_rows(self) -> int:
@@ -314,7 +332,8 @@ def load_frame(task: str, dataset: str) -> tuple[pd.DataFrame, DatasetMeta]:
 def _load_cached(task: str, dataset: str) -> ProcessedDataset:
     frame, meta = load_frame(task, dataset)
     y = frame[TARGET_COLUMN].to_numpy(dtype=np.float32)
-    features = frame.drop(columns=[TARGET_COLUMN])
+    groups = frame[GROUP_COLUMN].to_numpy() if GROUP_COLUMN in frame else None
+    features = frame.drop(columns=[TARGET_COLUMN, GROUP_COLUMN], errors="ignore")
 
     # Numeric first, categorical last, so cat_indices is a contiguous tail. The
     # parquet dtype is the source of truth for which is which — no index list to
@@ -340,6 +359,7 @@ def _load_cached(task: str, dataset: str) -> ProcessedDataset:
         cat_indices=list(range(len(num_names), len(ordered))),
         feature_names=[str(c) for c in ordered],
         meta=meta,
+        groups=groups,
     )
 
 

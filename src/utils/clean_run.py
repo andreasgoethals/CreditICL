@@ -8,6 +8,7 @@
     python -m src.utils.clean_run --clean --prior-cache     ...and the synthetic prior pools
     python -m src.utils.clean_run --clean --processed       ...and the data/processed cache
     python -m src.utils.clean_run --experiment 0 --clean --checkpoints   only experiment_0
+    python -m src.utils.clean_run --reset-output --clean    ALL generated output on both tiers
 
 Clears the `output CreditICL/` tree (`src/utils/paths.py`) on BOTH storage tiers: the small
 half on `$VSC_DATA` (logs, run records, benchmark scores, figures) and, when asked, the big
@@ -158,6 +159,67 @@ def delete_stale_files(plan: list[StaleFile]) -> int:
     return len(plan)
 
 
+def reset_output(*, clean: bool = False) -> tuple[int, int]:
+    """Reset BOTH output tiers, including nested validation checkpoints and pools.
+
+    Inputs live outside these roots. Refuse links/junctions anywhere in a root,
+    verify the entire plan before deleting, and never infer sibling project paths.
+    """
+    roots_seen, files, directories = set(), [], []
+    for original in (paths.outputs_dir(), paths.big_outputs_dir()):
+        if original.name != paths.OUTPUT_NAME or _linked(original):
+            raise RuntimeError(f"Unexpected or linked output root: {original}")
+        root = original.resolve()
+        if root in roots_seen or not root.exists():
+            continue
+        roots_seen.add(root)
+        inputs = [paths.datasets_dir(), paths.pretrained_dir(), paths.ood_cache_dir()]
+        if os.environ.get("CREDITICL_TABPFN_DIR"):
+            inputs.append(Path(os.environ["CREDITICL_TABPFN_DIR"]))
+        if any(p.resolve().is_relative_to(root) or root.is_relative_to(p.resolve()) for p in inputs):
+            raise RuntimeError(f"Input data or released weights overlap output root; move inputs before resetting: {root}")
+        print(f"Output reset root: {root}")
+        for directory, folders, names in os.walk(root, followlinks=False):
+            for name in folders + names:
+                item = Path(directory) / name
+                if _linked(item) or not item.resolve().is_relative_to(root):
+                    raise RuntimeError(f"Linked or escaping output path: {item}")
+            directories.extend(Path(directory) / n for n in folders)
+            for name in names:
+                if name in KEEP:
+                    continue
+                item = Path(directory) / name
+                info = item.stat()
+                files.append((item, root, (info.st_size, info.st_mtime_ns, info.st_ino)))
+    total = sum(info[0] for _, _, info in files)
+    print(f"Full reset: {len(files)} generated files, {total / 1e9:.3f} GB, including trained checkpoints.")
+    if clean:
+        _require_idle_cluster()
+        for item, root, before in files:
+            info = item.stat()
+            if (any(_linked(p) for p in (item, *item.parents) if p == root or root in p.parents)
+                    or not item.resolve().is_relative_to(root)
+                    or (info.st_size, info.st_mtime_ns, info.st_ino) != before):
+                raise RuntimeError(f"Output changed since planning; reset refused: {item}")
+        for item, _, _ in files:
+            item.unlink()
+        for directory in sorted(directories, key=lambda p: len(p.parts), reverse=True):
+            if _linked(directory) or not any(directory.resolve().is_relative_to(root) for root in roots_seen):
+                raise RuntimeError(f"Output directory changed or escaped its root: {directory}")
+            if not any(directory.iterdir()):
+                try:
+                    directory.rmdir()
+                except PermissionError:
+                    # Explorer can mark ordinary output directories read-only.
+                    # On Windows that attribute prevents rmdir even when empty.
+                    attributes = getattr(directory.stat(), "st_file_attributes", 0)
+                    if os.name != "nt" or not attributes & stat.FILE_ATTRIBUTE_READONLY:
+                        raise
+                    directory.chmod(stat.S_IWRITE)
+                    directory.rmdir()
+    return len(files), total
+
+
 def checkpoint_roots(experiment: int | None = None) -> list[Path]:
     """`experiment_<N>/checkpoints/` on the big tier, for one experiment or all of them."""
     exps = EXPERIMENTS if experiment is None else (int(experiment),)
@@ -256,6 +318,8 @@ def main(argv: list[str] | None = None) -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--clean", action="store_true", help="actually delete; default lists only")
+    parser.add_argument("--reset-output", action="store_true",
+                        help="fresh campaign: ALL generated output on both tiers, including trained checkpoints and validation attempts")
     parser.add_argument("--stale", action="store_true",
                         help="only failed job logs and generated figures/summaries; preserve all "
                              "checkpoints, successful/unfinished logs, results and caches")
@@ -269,6 +333,18 @@ def main(argv: list[str] | None = None) -> int:
                         help="also clear OUR trained checkpoints. Without this a rerun RESUMES "
                              "from them and trains nothing. Never touches the released weights.")
     args = parser.parse_args(argv)
+
+    if args.reset_output:
+        if args.stale or args.experiment is not None or args.processed or args.prior_cache or args.checkpoints:
+            parser.error("--reset-output is a complete output scope; combine only with --clean")
+        try:
+            reset_output(clean=args.clean)
+        except (OSError, RuntimeError) as exc:
+            print(f"Reset refused: {exc}")
+            return 1
+        print("Output reset completed." if args.clean else "Nothing deleted; add --clean to reset.")
+        print("Dataset inputs and released reference weights were preserved.")
+        return 0
 
     if args.stale:
         if args.experiment is not None or args.processed or args.prior_cache or args.checkpoints:

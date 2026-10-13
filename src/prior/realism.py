@@ -168,15 +168,17 @@ def describe_real(task: str, datasets: list[str] | None = None, repeats: int = 3
     for name in datasets or list_datasets(task):
         ds = load_processed(task, name)
         X, y = np.asarray(ds.X, dtype=np.float64), np.asarray(ds.y, dtype=np.float64)
+        from src.eval.feature_policy import prediction_features
+        X, cat_indices, _ = prediction_features(task, name, X, ds.cat_indices, ds.feature_names)
         row: dict[str, Any] = {"dataset": name.split(".", 1)[-1], "n_rows": len(y),
-                               "n_features_full": X.shape[1], "share_categorical": len(ds.cat_indices) / max(X.shape[1], 1)}
+                               "n_features_full": X.shape[1], "share_categorical": len(cat_indices) / max(X.shape[1], 1)}
         row.update(target_stats(y, task))
         samples = []
         for _ in range(repeats):
             idx = rng.choice(len(y), size=min(N_ROWS, len(y)), replace=False)
             Xs = X[idx].copy()
             # A categorical code of -1 is pandas' "missing category": count it as missing.
-            for j in ds.cat_indices:
+            for j in cat_indices:
                 Xs[Xs[:, j] < 0, j] = np.nan
             s = feature_stats(Xs)
             s.update(view_stats(prediction_view_of_real(Xs)))
@@ -232,7 +234,12 @@ def describe_prior(config_path: str, *, n: int = 80, credit_fraction: float = 1.
             row["share_cols_missing"] = n_miss / max(d, 1)
             lo, hi = miss.get("missing_rate_range", [0.0, 0.0])
             row["missing_rate_in_those"] = (float(lo) + float(hi)) / 2 if n_miss else 0.0
-        row.update(target_stats(y, task))
+        target = target_stats(y, task)
+        if task == "lgd" and t.source != "credit":
+            # Upstream targets are standardised, not loss fractions. Values below
+            # zero / above one are not boundary atoms; suppress that comparison.
+            target = dict.fromkeys(target, float("nan"))
+        row.update(target)
         row["pseudo_r2"] = _pseudo_r2(X, y, task)
         if task == "pd":
             row["oob_auc"] = _oob_auc(X, y)
@@ -255,4 +262,6 @@ def compare(task: str, config_path: str | None = None, n: int = 80, overrides: d
     lines = [f"{task.upper()} — p10 / median / p90", f"{'statistic':<24}{'real data':>21}{'credit prior':>21}{'TabICL prior':>21}"]
     for st in stats:
         lines.append(f"{st:<24}{q(real[st]):>21}{q(credit[st]):>21}{q(base[st]) if st in base else '   -':>21}")
+    if task == "lgd":
+        lines.append("TabICL target-shape cells are not comparable: upstream targets are standardised, not LGD fractions.")
     return "\n".join(lines)

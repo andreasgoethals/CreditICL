@@ -2,7 +2,7 @@
 which checkpoints are scored. Every model — ours, released TabICLv2, TabPFN-3, CatBoost, the
 linear floor — goes through exactly this.
 
-THE PROTOCOL (version 5, 12-10-2026)
+THE PROTOCOL (version 6, 13-10-2026)
 
 * **5-fold cross-validation**, stratified on the default flag for PD, shuffled with a fixed
   seed, so every model sees the same folds. Each row is scored exactly once, by a model whose
@@ -39,7 +39,7 @@ import numpy as np
 #: Bumped whenever the protocol changes, so a completion receipt written under an older one is
 #: never mistaken for a current result (`benchmark_status`). 4 (30-09-2026): TabPFNCredit's
 #: fold preprocessing (below) and the feature cap it replaces PCA with.
-PROTOCOL = 5  # all fitted rows retained; shared context caps; unbounded OOD regression decoding
+PROTOCOL = 6  # full-table five-fold evaluation; corrected distribution metrics and OOD caches
 N_FOLDS = 5
 #: Share of the training pool held out to choose the PD threshold.
 VALIDATION_FRACTION = 0.2
@@ -77,8 +77,6 @@ FEATURE_SELECTION = "univariate"
 #: A categorical column is scored through its per-category mean target, shrunk toward the overall
 #: mean with this many pseudo-rows, so a rare category cannot look perfectly predictive.
 CATEGORY_SMOOTHING = 10.0
-#: The column scores use at most this many of the fitted rows (a fixed, seeded sample).
-SCORE_ROWS = 20_000
 
 
 def _rank_score(Z: np.ndarray, y: np.ndarray) -> np.ndarray:
@@ -126,9 +124,6 @@ def rank_columns(X: np.ndarray, y: np.ndarray, cat_indices: list[int], *,
             score = np.nanvar(np.where(np.isfinite(X), X, np.nan), axis=0)
     elif method == "univariate":
         y = np.asarray(y, dtype=np.float64)
-        if len(y) > SCORE_ROWS:  # a rank statistic is settled long before this many rows
-            rows = np.sort(np.random.default_rng(0).choice(len(y), SCORE_ROWS, replace=False))
-            X, y = X[rows], y[rows]
         Z = X.copy()
         cats = set(int(c) for c in cat_indices)
         for j in range(Z.shape[1]):
@@ -276,13 +271,21 @@ def fit_fold_preprocessing(X_fit: np.ndarray, y_fit: np.ndarray, cat_indices: li
     return prep, np.array(X[:, keep], dtype=np.float32), y
 
 
-def cv_folds(y: np.ndarray, task: str, *, n_folds: int = N_FOLDS, seed: int = 0) -> list[tuple[np.ndarray, np.ndarray]]:
+def cv_folds(y: np.ndarray, task: str, *, n_folds: int = N_FOLDS, seed: int = 0,
+             groups: np.ndarray | None = None) -> list[tuple[np.ndarray, np.ndarray]]:
     """`(train_idx, test_idx)` for each fold. Stratified on the class for PD (so a 7 %-default
     table keeps defaults in every fold), plain shuffled folds for a continuous target."""
     from sklearn.model_selection import KFold, StratifiedKFold
 
     y = np.asarray(y)
     index = np.arange(len(y))
+    if groups is not None:
+        from sklearn.model_selection import GroupKFold, StratifiedGroupKFold
+        if len(groups) != len(y) or len(np.unique(groups)) < n_folds:
+            raise ValueError("Cross-validation requires aligned groups and at least one group per fold")
+        splitter = (StratifiedGroupKFold(n_splits=n_folds, shuffle=True, random_state=seed) if task == "pd"
+                    else GroupKFold(n_splits=n_folds, shuffle=True, random_state=seed))
+        return list(splitter.split(index, y, groups))
     if task == "pd":
         labels = (y >= 0.5).astype(int)
         if np.bincount(labels, minlength=2).min() >= n_folds:
@@ -293,11 +296,16 @@ def cv_folds(y: np.ndarray, task: str, *, n_folds: int = N_FOLDS, seed: int = 0)
 
 
 def validation_split(y: np.ndarray, task: str, *, fraction: float = VALIDATION_FRACTION,
-                     seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
+                     seed: int = 0, groups: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
     """`(fit_idx, val_idx)` inside a training pool, stratified for PD."""
     from sklearn.model_selection import train_test_split
 
     index = np.arange(len(y))
+    if groups is not None:
+        from sklearn.model_selection import GroupShuffleSplit
+        fit_idx, val_idx = next(GroupShuffleSplit(n_splits=1, test_size=fraction,
+                                                random_state=seed).split(index, y, groups))
+        return np.sort(fit_idx), np.sort(val_idx)
     strat = (np.asarray(y) >= 0.5).astype(int) if task == "pd" else None
     if strat is not None and np.bincount(strat, minlength=2).min() < 2:
         strat = None

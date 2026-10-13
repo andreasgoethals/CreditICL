@@ -55,6 +55,7 @@ STAGE1_CONFIG: dict[str, Any] = {
     "min_n_nodes": 2,
     "max_n_nodes": 32,
     "cauchy_dag_offset": 0.0,
+    "filter_unpredictable_graphs": True,
 }
 
 #: `sample_categorical_sizes(self.num_features, context, max_cat_size=200)` in
@@ -177,6 +178,7 @@ def sample_base_latent(
     config: Any | None = None,
     seed: int | None = None,
     max_cat_size: int = UPSTREAM_MAX_CAT_SIZE,
+    use_corrected_cat_sizes: bool = True,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """The credit arms' starting point: `(X, y_latent)`, UNPADDED and UNPERMUTED.
 
@@ -194,6 +196,8 @@ def sample_base_latent(
     `outlier_removing` and `standard_scaling`.
     """
     require()
+    if config is None:
+        config = prior_config({"use_corrected_cat_sizes": use_corrected_cat_sizes})
     with seeded(seed) if seed is not None else contextlib.nullcontext():
         return _sample_base_latent(seq_len, num_features, device, config, max_cat_size)
 

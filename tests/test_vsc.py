@@ -1,6 +1,6 @@
 """Mandatory Experiment 0 checks that must fail, never skip, on the VSC node.
 
-Full-model training/save/load tests and the complete benchmark matrix run as
+Full-model training/save/load tests and selected full-table benchmark probes run as
 separate child processes in src.utils.validation, avoiding shared CUDA failures.
 """
 import os
@@ -30,6 +30,17 @@ def test_cuda_stack_executes_and_backpropagates():
     loss.backward()
     torch.cuda.synchronize()
     assert torch.isfinite(loss) and torch.isfinite(x.grad).all()
+
+
+def test_cuda_bfloat16_regression_retains_the_999_quantile_grid():
+    from src.train.loop import pinball_loss
+    pred = torch.ones(32, 999, dtype=torch.bfloat16, device="cuda", requires_grad=True)
+    target = torch.zeros(32, device="cuda")
+    with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+        loss = pinball_loss(pred, target, 999)
+    loss.backward()
+    assert loss.dtype == torch.float32 and abs(loss.item() - .5) < 1e-6
+    assert torch.isfinite(pred.grad).all()
 
 
 def test_regression_cpu_preparer_cuda_loss():

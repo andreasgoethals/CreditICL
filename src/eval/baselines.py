@@ -159,6 +159,8 @@ class Baseline:
         values = np.asarray(values)
         if not np.isfinite(values).all():
             raise ValueError("Non-finite predictions")
+        if values.ndim == 1:
+            self.report.extra["raw_pred_out_of_unit"] = float(np.mean((values < 0) | (values > 1)))
         return np.clip(values, 0.0, 1.0) if self.kwargs.get("bounded_target", True) else values
 
     # -- public --------------------------------------------------------------
@@ -337,7 +339,7 @@ class LinearBaseline(Baseline):
         if self.task == "pd":
             return self._model.predict_proba(Xs)[:, 1]
         # Clip to [0,1]: LGD is a fraction, and an unclipped linear model
-        # routinely predicts outside it. Free, and reported via pred_out_of_unit
+        # routinely predicts outside it. Reported via info_raw_pred_out_of_unit
         # before clipping so the raw behaviour stays visible.
         return self._regression_output(self._model.predict(Xs))
 
@@ -465,6 +467,7 @@ class TabPFNBaseline(_TFMBaseline):
             # Our largest tables exceed the documented envelope; without this the wrapper
             # refuses them. Nothing is subsampled: the protocol gives every model the whole pool.
             ignore_pretraining_limits=True,
+            inference_config={"SUBSAMPLE_SAMPLES": None},
             categorical_features_indices=cat_indices or None,
         )
         # The library's own ensemble size (`"auto"`) unless one is asked for. Until 28-09-2026: 4.

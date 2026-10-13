@@ -52,12 +52,14 @@ prior:
     category_frequency: balanced # how category counts are distributed
 
   credit: # OUR credit prior. Every range is from the credit-risk literature or deliberately wide; none is set from the evaluation data (docs/PRIORS.md)
+    use_corrected_cat_sizes: true # upstream opt-in sampler; legacy sampler never exceeds 9 levels
     max_cat_size: 500 # credit has state, region, product codes — high cardinality
     category_frequency: balanced # as the control
 
     target:
       mode: mechanism # Merton/Vasicek one-factor default model, the basis of the Basel IRB formula (Vasicek 2002)
       mechanism:
+        macro_scale: 1.0 # ablation zeroes only the shared shock, preserving idiosyncratic risk
         rho_range: [0.03, 0.24] # asset correlation: the Basel IRB range, other retail 0.03 to corporate 0.24 (BCBS 2005)
         base_rate_range: [0.01, 0.50] # default rate: from Brown & Mues (2012)'s most imbalanced 1 % up to balanced
         base_rate_log: true # log-uniform: the imbalanced end as present as the balanced one

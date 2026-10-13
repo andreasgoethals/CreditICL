@@ -133,6 +133,8 @@ def apply_underwriting_selection(
     X: torch.Tensor,
     latent: torch.Tensor,
     cfg: dict,
+    *,
+    higher_is_risk: bool = True,
 ) -> tuple[torch.Tensor, torch.Tensor, dict]:
     """Drop the rows an underwriting screen would have rejected.
 
@@ -153,6 +155,8 @@ def apply_underwriting_selection(
     # Screen on a noisy version of the latent: policy is informed but imperfect.
     sharpness = _per_table(rng, cfg, "selection_sharpness", 0.7)
     z = (latent - latent.mean()) / (latent.std() + 1e-8)
+    if not higher_is_risk:
+        z = -z
     score = sharpness * z + (1.0 - sharpness) * rng.randn_like(z)
 
     n_keep = int(round(X.shape[0] * (1.0 - drop)))
@@ -202,7 +206,16 @@ def apply_informative_missingness(
         target_rate = rng.uniform(rate_lo, rate_hi)
         # Logit intercept chosen so the marginal missing rate hits target_rate.
         signed = 2.0 * y - 1.0
-        logits = beta * signed + math.log(target_rate / (1.0 - target_rate))
+        if not 0 < target_rate < 1:
+            raise ValueError("missing_rate_range must be inside (0, 1)")
+        lower, upper = -40.0 - abs(beta), 40.0 + abs(beta)
+        for _ in range(35):
+            intercept = (lower + upper) / 2
+            if float(torch.sigmoid(beta * signed + intercept).mean()) < target_rate:
+                lower = intercept
+            else:
+                upper = intercept
+        logits = beta * signed + (lower + upper) / 2
         mask = rng.rand_like(logits) < torch.sigmoid(logits)
         if mask.all() or not mask.any():
             continue
@@ -266,7 +279,8 @@ def apply_pd_target(
         # Selection: the observed book holds only the approved applicants. Until 28-09-2026 this
         # branch returned before selection and before the label noise below, so Exp1's credit
         # tasks had neither although the config set both (docs/AGENTS_MEMORY.md, 28-09-2026).
-        X, latent, sel_meta = apply_underwriting_selection(rng, X, latent, cfg.get("selection", {}))
+        X, latent, sel_meta = apply_underwriting_selection(
+            rng, X, latent, cfg.get("selection", {}), higher_is_risk=False)
         meta.update(sel_meta)
         y, mech_meta = apply_pd_mechanism(rng, latent, cfg.get("mechanism", {}))
         period = mech_meta.pop("_period_factor", None)
@@ -285,7 +299,7 @@ def apply_pd_target(
         # a single-class draw by quantile-cutting the scored latent to a floor base rate.
         if float(y.sum()) < 2 or float(y.sum()) > y.numel() - 2:
             zc = (latent - latent.mean()) / (latent.std() + 1e-8)
-            y = _quantile_cut(zc, 3.0 / max(y.numel(), 1))
+            y = _quantile_cut(-zc, 3.0 / max(y.numel(), 1))
             meta["mechanism_single_class_rescued"] = True
         meta["mode"] = "mechanism"
         meta["realised_base_rate"] = float(y.mean())

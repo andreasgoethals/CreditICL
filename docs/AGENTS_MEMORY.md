@@ -31,6 +31,11 @@ with no other context, and expect that to be the *only* record of the run — so
 
 ## Runs
 
+Current campaign decision (13-10-2026): Andreas requested a fresh output reset, superseding the
+older preservation instructions below. Exp0 now requires CPU then GPU PASS receipts; the revised
+Exp1 has 48 runs including component tests. Historical run entries remain an audit trail, not
+reusable completion evidence. No new VSC job was submitted during this local repair.
+
 One row per cluster run worth remembering — which is most of them, because *"have we already tried
 that configuration?"* is the question this table exists to answer. The **full** write-up of each
 one lives in [`RUNS.md`](RUNS.md); this table is the index.
@@ -73,6 +78,20 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 [`RUNS.md`](RUNS.md).
 
 ## Dead ends
+
+### 13-10-2026 — Windows read-only empty output directories
+
+**Tried:** The requested full local output reset after the complete tests and notebooks passed.
+**Result:** Generated files were removed, but `rmdir` raised WinError 5 on an empty figure directory.
+**Why:** Windows read-only directory attributes block `rmdir`; reproduced in a temporary directory.
+**Instead:** Recheck directory boundaries and clear only that attribute on empty Windows output directories. Added a regression; 137 relevant tests passed, and cleanup completed with only the tracked output README retained.
+
+### 13-10-2026 — Full-row protocol and fresh-output test migration
+
+**Tried:** Full local suite after removing capped benchmarks and tightening complete-matrix reporting.
+**Result:** 1,327 passed, 10 failed, 8 skipped; repaired focused rerun passed 425 tests.
+**Why:** Legacy fixtures expected capped/one-fold results, generated summary files or pre-imputed OOD data; the benchmark Slurm default also retained obsolete array slots.
+**Instead:** Preserve explicit protocol-5 fixtures for historical readers, test complete protocol-6 matrices, require only tracked scaffolding, preserve fold-local missing-value handling, and set the main Exp1 default to 49 slots. Final verification: 1,339 passed/7 expected skips; 11/11 notebooks, 119 figures.
 
 ### 13-10-2026 — New validation exposed stale test fixtures and monitor semantics
 

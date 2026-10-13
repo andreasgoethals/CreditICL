@@ -61,8 +61,6 @@ def _read_frames(files: list[Any], protocol: int | None, context: int | None = N
     if not frames:
         return None
     df = pd.concat(frames, ignore_index=True)
-    if "status" in df:
-        df = df[df["status"].eq("ok")]
     # Full-context rows carry no cap; capped ones only when asked for, and only that cap.
     cap = pd.to_numeric(df["context_cap"], errors="coerce") if "context_cap" in df \
         else pd.Series(np.nan, index=df.index)
@@ -73,6 +71,11 @@ def _read_frames(files: list[Any], protocol: int | None, context: int | None = N
         else pd.Series(2, index=df.index)
     want = int(version.max()) if protocol is None and len(df) else protocol
     df = df[version.eq(want)].assign(protocol=want)
+    if "status" in df and not df["status"].eq("ok").all():
+        raise ValueError("Benchmark contains failed or skipped cells; reporting a success-only average is refused")
+    if want is not None and want >= 6 and len(df):
+        from src.eval.comparisons import require_balanced_cells
+        require_balanced_cells(df)
     return df if len(df) else None
 
 
@@ -136,7 +139,21 @@ def load_results(track: str, exp: str = "exp1", protocol: int | None = None,
     files += sorted(p for p in ref.glob(f"results_reference_{track}_*.csv")
                     if (p.name.endswith(f"{tail}.csv") if context is not None
                         else not _CTX_FILE.search(p.name)))
-    return _read_frames(files, protocol, context)
+    result = _read_frames(files, protocol, context)
+    if result is not None and result.protocol.min() >= 6:
+        from src.eval.benchmark_status import REFERENCE_MODELS
+        from src.eval.comparisons import identities, require_balanced_cells
+        from src.utils.config import expand_with_seeds, load, run_name
+        cfg = load(paths.config_path(f"{exp.capitalize()}_{track.upper()}"), allow_placeholders=True)
+        evaluation = cfg["eval"]
+        require_balanced_cells(result, evaluation["dev_datasets"] + evaluation["holdout_datasets"])
+        expected = {run_name(run) for run in expand_with_seeds(cfg)}
+        expected.update(REFERENCE_MODELS.split(","))
+        if set(identities(result)) != expected:
+            import warnings
+            warnings.warn("Benchmark still lacks complete model coverage; final comparisons are withheld", stacklevel=2)
+            return None
+    return result
 
 
 def load_checkpoint_results(track: str, exp: str = "exp1", protocol: int | None = None) -> pd.DataFrame | None:
@@ -343,7 +360,7 @@ def overall_ranking(track: str, exp: str = "exp1", metric: str | None = None):
 
 
 def per_dataset(track: str, exp: str = "exp1", metric: str | None = None):
-    """Headline score per dataset, the best model of each group, so no dataset is hidden by a mean."""
+    """Per-dataset descriptive group means; no selection on test-set scores."""
     df = load_results(track, exp)
     metric = metric or HEADLINE[track]
     style.apply()
@@ -363,7 +380,7 @@ def per_dataset(track: str, exp: str = "exp1", metric: str | None = None):
                label=_group_label(g))
     ax.set_xticks(x + w * (len(groups) - 1) / 2)
     ax.set_xticklabels([_role_tag(d, roles) for d in datasets], rotation=30, ha="right", fontsize=7)
-    ax.set_ylabel(f"best {style.metric_label(metric)} in the group")
+    ax.set_ylabel(f"mean {style.metric_label(metric)} in the group")
     # Under the whole figure: the rotated dataset names are taller than the one line of ticks that
     # a legend under the axes makes room for, and it sat on them.
     style.legend_below(fig, ncol=2)
@@ -371,18 +388,17 @@ def per_dataset(track: str, exp: str = "exp1", metric: str | None = None):
 
 
 def _best_per_group(df: pd.DataFrame, metric: str) -> tuple[pd.DataFrame, list[float | None]]:
-    """`(dataset × group table of the best model's score, the groups in order)`.
+    """Dataset × group descriptive means (historical function name retained).
 
-    A model's score on a dataset is its mean over evaluation seeds, and the best of those is taken.
-    The best single (model, seed) row favoured whichever group had the most rows to find a lucky
-    seed among.
+    Average folds within each model, then models/training seeds equally. Taking
+    the best training seed on each test dataset is optimistic model selection.
+    Formal comparisons keep configurations and reference models separate.
     """
     df, mc = _with_identity(df)
     per_model = df.groupby(["dataset", mc])[metric].mean().reset_index()
     groups = _groups(per_model[mc].unique())
     per_model["group"] = per_model[mc].map(lambda m: _group_label(_share(m)))
-    agg = "max" if HIGHER_IS_BETTER.get(metric, True) else "min"
-    piv = per_model.groupby(["dataset", "group"])[metric].agg(agg).unstack("group")
+    piv = per_model.groupby(["dataset", "group"])[metric].mean().unstack("group")
     return piv[[_group_label(g) for g in groups]], groups
 
 
@@ -513,9 +529,11 @@ def lever_effect(track: str, exp: str = "exp2", metric: str | None = None):
     no panel. Degrades to a placeholder before the benchmark runs.
     """
     df = load_results(track, exp)
+    if df is not None:
+        df = _restrict(df, track, exp, "development")
     metric = metric or HEADLINE[track]
     style.apply()
-    if df is None or metric not in df.columns:
+    if df is None or metric not in df.columns or df.empty:
         return _placeholder("no benchmark results yet")
     fig, axes = plt.subplots(2, 2, figsize=style.grid_figsize(2, 2, panel_ratio=0.62), sharey=True)
     axes = np.atleast_1d(axes).ravel()
@@ -731,13 +749,26 @@ def results_summary(track: str, exp: str = "exp1") -> str:
         for share, (mean, better, n) in paired_differences(df, track, exp, role).items():
             lines.append(f"  {role:<11} {style.prior_mix_label(share)} minus 0 % credit: "
                          f"{mean:+.4f} {label}, better in {better} of {n} pairs")
+    if "protocol" in df and df.protocol.min() >= 6:
+        from src.eval.comparisons import paired_prior_effects
+        holdout = _restrict(df, track, exp, "holdout") if roles else df
+        lines += ["", "D. PAIRED HOLDOUT UNCERTAINTY (datasets are the sampling units)",
+                  "  Fold/seed means within each dataset; paired dataset bootstrap 95% CI.",
+                  "  Two-sided sign test; Holm correction across the comparisons below."]
+        if not holdout.empty:
+            for row in paired_prior_effects(holdout, metric).itertuples():
+                name = style.arm_name(row.configuration, track, seed=False)
+                lines.append(f"  {name}: {row.mean_difference:+.4f}, CI [{row.ci_low:+.4f}, "
+                             f"{row.ci_high:+.4f}], n={row.datasets} datasets, p(Holm)={row.p_holm:.4g}")
     return "\n".join(lines)
 
 
 def _group_means(df: pd.DataFrame, mc: str, metric: str, track: str) -> pd.Series:
     """`metric`'s mean per group — each share of our prior, then each reference model — in that
     order: our shares increasing, then the references by name."""
-    means = df.groupby(df[mc].map(lambda m: _share_group(m, track)))[metric].mean()
+    per_dataset = df.groupby([mc, "dataset"])[metric].mean()
+    per_model = per_dataset.groupby(level=0).mean()
+    means = per_model.groupby(per_model.index.map(lambda m: _share_group(m, track))).mean()
 
     def order(g: str) -> tuple:
         share = re.match(r"([0-9.]+) % credit", g)
@@ -752,7 +783,9 @@ def _share_group(model: str, track: str) -> str:
         return f"reference: {style.reference_label(model, track)}"
     m = re.search(r"credit_fraction=([0-9p.]+)", str(model))
     share = float(m.group(1).replace("p", ".")) if m else 0.0
-    return style.prior_mix_label(share, control=True)
+    family = re.search(r"(?:architecture|arm)=([^_]+)", str(model))
+    suffix = f" · {family.group(1)}" if family else ""
+    return style.prior_mix_label(share, control=True) + suffix
 
 
 def _pair_key(run_name: str) -> str:
@@ -772,9 +805,12 @@ def paired_differences(df: pd.DataFrame, track: str, exp: str,
     part = _restrict(df, track, exp, role) if _roles(track, exp) else df
     if part is None or not len(part) or "info_run_name" not in part.columns:
         return {}
-    ours = part[part["model"].astype(str).eq("crediticl") & part[metric].notna()]
+    ours = part[part["info_run_name"].fillna("").ne("") & part[metric].notna()]
     if ours.empty:
         return {}
+    if "protocol" in ours and ours["protocol"].min() >= 6:
+        from src.eval.comparisons import require_balanced_cells
+        require_balanced_cells(ours)
     arm = ours.groupby(["info_run_name", "dataset"])[metric].mean().groupby(level=0).mean()
     frame = pd.DataFrame({"score": arm})
     frame["key"] = [_pair_key(n) for n in frame.index]

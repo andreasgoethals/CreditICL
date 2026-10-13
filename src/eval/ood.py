@@ -90,18 +90,10 @@ SUITES = (
 #: one kind leaves half the project with no out-of-domain evidence at all.
 KINDS = ("classification", "regression")
 
-#: Per SUITE, not per task. The out-of-domain average is the number that catches a prior which
-#: buys credit performance by destroying generality, so it wants to be a real average — and
-#: 25 x 3 suites is ~75 per task, against the 10 it used to be.
-#:
-#: The ceiling is inference cost, not principle: this runs at every `progress.every_datasets`
-#: during training as well as in the final pass, so it must stay cheap enough that the
-#: diagnostic does not dominate the run it is diagnosing. `progress.n_ood` samples a handful
-#: mid-training; the full set is used for the end-of-run report.
-N_PER_SUITE = 25
-
-#: Kept as the old name so nothing that imported it breaks; it now means "per suite".
-N_PER_TASK = N_PER_SUITE
+#: 25 classification and 25 regression datasets, filled across the suites.
+#: Monitoring samples a handful; the production benchmark evaluates the full list.
+N_PER_TASK = 25
+N_PER_SUITE = N_PER_TASK  # historical import alias, not a separate per-suite quota
 
 #: Anything matching these is NOT out-of-domain and must be dropped. CC18 contains
 #: `credit-g` and `credit-approval`, and O'Prior specifically singles out Credit-g as a
@@ -149,7 +141,7 @@ def our_dataset_names() -> frozenset[str]:
 #:    list instead of the task, so continuous targets (diamonds, houses, airfoil_self_noise,
 #:    miami_housing) were coded into thousands of arbitrary classes — and `heloc`, one of our
 #:    own LGD datasets, was cached as out-of-domain. Neither is repairable in place.
-OOD_VERSION = 2
+OOD_VERSION = 3  # full eligible tables; version 2 may contain the old 50,000-row truncation
 
 
 def is_credit_like(name: str) -> bool:
@@ -233,6 +225,8 @@ class OODDataset:
     n_rows: int
     n_features: int
     n_classes: int | None = None
+    target_name: str | None = None
+    source_rows: int | None = None
 
     @property
     def slug(self) -> str:
@@ -263,7 +257,7 @@ def fetch_ood_datasets(
     n_per_task: int = N_PER_TASK,
     *,
     force: bool = False,
-    max_rows: int = 50_000,
+    max_rows: int | None = None,
     max_features: int = 500,
 ) -> list[OODDataset]:
     """Download and cache the OOD suites. **Run on a login node only.**
@@ -273,11 +267,13 @@ def fetch_ood_datasets(
     selection is reproducible without a seed), and writes one `.npz` per dataset plus a
     manifest.
 
-    Size caps exist because the in-context models have practical row and feature
-    ceilings; a 500k-row OOD table would be capped at evaluation time anyway and would
-    cost a long download for data we then throw away.
+    Eligible tables are cached without any row truncation. The feature-count
+    eligibility rule and missing-target exclusions remain explicit. Once a list
+    is pinned, refresh those same datasets and fail if one cannot be recovered.
     """
     log = get_logger()
+    if max_rows is not None:
+        raise ValueError("The benchmark requires full tables; row-capped OOD downloads are disabled")
     try:
         import openml
     except ImportError as exc:
@@ -290,23 +286,28 @@ def fetch_ood_datasets(
 
     root = ood_root()
     root.mkdir(parents=True, exist_ok=True)
-    existing = {d.openml_id: d for d in list_ood_datasets()} if not force else {}
-    kept: list[OODDataset] = []
+    previous = json.loads(manifest_path().read_text(encoding="utf-8")) if manifest_path().is_file() else {}
+    # Refresh the same pinned benchmark list, never replace a failed large dataset
+    # with an easier new one while upgrading an old capped cache.
+    pinned = {int(d["openml_id"]): d for d in previous.get("datasets", [])}
+    existing = {d.openml_id: d for d in list_ood_datasets()
+                if (root / f"{d.slug}.npz").is_file()} if not force else {}
+    kept: list[OODDataset] = list(existing.values())
 
     unavailable: list[str] = []
     # Quota PER KIND, filled across every suite. Both kinds have to be covered or half the
     # project has no out-of-domain evidence, and no single suite covers both reliably.
-    chosen_by_kind: dict[str, int] = dict.fromkeys(KINDS, 0)
+    chosen_by_kind = {k: sum(d.kind == k for d in kept) for k in KINDS}
     # Names already taken, so overlapping suites cannot cache the same table twice. Seeded from
     # the existing cache so a resumed fetch does not re-add what is already there.
     seen_names: set[str] = {d.name.strip().lower() for d in existing.values()}
-    for suite_name in SUITES:
-        if all(chosen_by_kind[k] >= n_per_task for k in KINDS):
+    for suite_name in (("pinned",) if pinned else SUITES):
+        if not pinned and all(chosen_by_kind[k] >= n_per_task for k in KINDS):
             log.info("[ood] every kind is full — stopping before %s", suite_name)
             break
         log.info("[ood] resolving suite %s (have %s)", suite_name, dict(chosen_by_kind))
         try:
-            suite = openml.study.get_suite(suite_name)
+            suite = None if pinned else openml.study.get_suite(suite_name)
         except Exception as exc:  # noqa: BLE001
                 # A suite alias that OpenML does not host must not cost the whole download.
                 # TabArena and TALENT are named in TabICLv2's paper but are not guaranteed to
@@ -316,12 +317,12 @@ def fetch_ood_datasets(
                         suite_name, type(exc).__name__, exc)
             unavailable.append(suite_name)
             continue
-        task_ids = list(suite.tasks or [])
+        task_ids = list(pinned) if pinned else list(suite.tasks or [])
         log.info("[ood] %s advertises %d tasks", suite_name, len(task_ids))
 
         added_here = 0
         for task_id in sorted(task_ids):
-            if all(chosen_by_kind[k] >= n_per_task for k in KINDS):
+            if not pinned and all(chosen_by_kind[k] >= n_per_task for k in KINDS):
                 break
             # Log EVERY attempt, not just successes. The first cluster run logged
             # "advertises 72 tasks" and then went silent for minutes while downloading,
@@ -331,8 +332,14 @@ def fetch_ood_datasets(
                      " ".join(f"{k[:3]}={chosen_by_kind[k]}/{n_per_task}" for k in KINDS),
                      task_id)
             try:
-                task = openml.tasks.get_task(task_id, download_data=False)
-                ds = openml.datasets.get_dataset(task.dataset_id, download_data=False)
+                if pinned:
+                    from types import SimpleNamespace
+                    ds = openml.datasets.get_dataset(task_id, download_data=False)
+                    task = SimpleNamespace(dataset_id=task_id, task_type=pinned[task_id]["kind"],
+                                           target_name=pinned[task_id].get("target_name") or ds.default_target_attribute)
+                else:
+                    task = openml.tasks.get_task(task_id, download_data=False)
+                    ds = openml.datasets.get_dataset(task.dataset_id, download_data=False)
             except Exception as exc:  # noqa: BLE001 — one bad task must not stop the sweep
                 log.warning("[ood] task %s unavailable: %s", task_id, exc)
                 continue
@@ -365,14 +372,8 @@ def fetch_ood_datasets(
                 log.info("[ood] SKIP %s — task type %r is neither classification nor "
                          "regression", ds.name, getattr(task, "task_type", "?"))
                 continue
-            if chosen_by_kind[kind] >= n_per_task:
+            if not pinned and chosen_by_kind[kind] >= n_per_task:
                 log.info("[ood] SKIP %s — %s quota already full", ds.name, kind)
-                continue
-
-            if ds.dataset_id in existing:
-                kept.append(existing[ds.dataset_id])
-                chosen_by_kind[existing[ds.dataset_id].kind] += 1
-                seen_names.add(slug_name)
                 continue
 
             log.info("[ood]   downloading %s (id=%s, %s) ...", ds.name, ds.dataset_id, kind)
@@ -387,11 +388,7 @@ def fetch_ood_datasets(
             if X_df.shape[1] > max_features:
                 log.info("[ood] SKIP %s — %d features exceeds the cap", ds.name, X_df.shape[1])
                 continue
-            if len(X_df) > max_rows:
-                # Subsample rather than skip: a large table is still a valid OOD task,
-                # and the in-context models cap rows anyway.
-                X_df = X_df.iloc[:max_rows]
-                y_s = y_s.iloc[:max_rows]
+            source_rows = len(X_df)
 
             # Category codes for object/categorical columns, so the cache is numeric and
             # `.npz` can hold it. Which columns were categorical is recorded separately.
@@ -445,6 +442,7 @@ def fetch_ood_datasets(
                 name=ds.name, openml_id=int(ds.dataset_id), kind=kind,
                 n_rows=int(X_arr.shape[0]), n_features=int(X_arr.shape[1]),
                 n_classes=n_classes,
+                target_name=str(task.target_name), source_rows=source_rows,
             )
             out = root / f"{entry.slug}.npz"
             tmp = out.with_suffix(".npz.tmp")
@@ -470,7 +468,11 @@ def fetch_ood_datasets(
                  dict(chosen_by_kind))
 
     # Manifest LAST, as the completeness marker — same contract as the data pipeline.
-    payload = {"version": OOD_VERSION, "suites": SUITES, "datasets": [asdict(d) for d in kept]}
+    if pinned and set(pinned) != {d.openml_id for d in kept}:
+        raise RuntimeError("Full-table refresh incomplete; the pinned manifest was preserved. Retry the fetch.")
+    if not pinned and any(chosen_by_kind[k] < n_per_task for k in KINDS):
+        raise RuntimeError("Initial benchmark download incomplete; no partial list was pinned. Retry the fetch.")
+    payload = {"version": OOD_VERSION, "suites": previous.get("suites", SUITES), "datasets": [asdict(d) for d in kept]}
     tmp = manifest_path().with_suffix(".json.tmp")
     tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     tmp.replace(manifest_path())

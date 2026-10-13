@@ -142,7 +142,8 @@ def _stage(X_fit: np.ndarray, y_fit: np.ndarray, X_pred: np.ndarray, cat_indices
 
 
 def prepare_fold(task: str, X_tr: np.ndarray, y_tr: np.ndarray, X_te: np.ndarray, cat_indices: list[int],
-                 *, seed: int = 0, fold: int = 0, val_fraction: float = VALIDATION_FRACTION) -> dict[str, Any]:
+                 *, seed: int = 0, fold: int = 0, val_fraction: float = VALIDATION_FRACTION,
+                 groups: np.ndarray | None = None) -> dict[str, Any]:
     """Every fit one fold needs, preprocessed ONCE for all models (`protocol.fit_fold_preprocessing`).
 
     `final`: fitted on the whole training pool, predicting the test fold. PD adds `threshold`:
@@ -150,7 +151,7 @@ def prepare_fold(task: str, X_tr: np.ndarray, y_tr: np.ndarray, X_te: np.ndarray
     chosen. Each fit learns its own preprocessing from its own fitted rows."""
     stages: dict[str, Any] = {"final": _stage(X_tr, y_tr, X_te, cat_indices)}
     if task == "pd":
-        fit_idx, val_idx = validation_split(y_tr, "pd", fraction=val_fraction, seed=1000 * seed + fold)
+        fit_idx, val_idx = validation_split(y_tr, "pd", fraction=val_fraction, seed=1000 * seed + fold, groups=groups)
         stages["threshold"] = _stage(X_tr[fit_idx], y_tr[fit_idx], X_tr[val_idx], cat_indices)
         stages["y_val"] = np.asarray(y_tr)[val_idx]
     return stages
@@ -182,7 +183,7 @@ def score_fold(task: str, model_name: str, X_tr: np.ndarray, y_tr: np.ndarray, X
         _release_memory()
         p, _, report = _fit_predict(model_name, task, seed, final.X_fit, final.y_fit, final.X_pred,
                                     final.cat_indices, model_kwargs, max_context_rows)
-        out.update(pd_metrics(y_te, p))
+        out.update(pd_metrics(y_te, p, decision_base_rate=float(final.y_fit.mean())))
         for key, value in threshold_metrics(y_te, p, threshold).items():
             out[f"{key}_tuned"] = value
         out.update({"n_val": int(len(val_idx)), "val_f1": val_f1})
@@ -222,6 +223,7 @@ def load_arrays(task: str, dataset: str, *, max_rows: int | None = None, seed: i
     X, cats, policy = prediction_features(task, dataset, ds.X, ds.cat_indices,
                                          getattr(ds, "feature_names", None))
     y = ds.y
+    groups = getattr(ds, "groups", None)
     info: dict[str, Any] = {"n_rows": ds.n_rows, "n_features": int(X.shape[1]),
                             "n_categorical": len(cats), **policy}
     if policy["n_features_excluded"]:
@@ -232,9 +234,14 @@ def load_arrays(task: str, dataset: str, *, max_rows: int | None = None, seed: i
     if max_rows is not None and len(X) > max_rows:
         keep = np.random.default_rng(seed).choice(len(X), size=max_rows, replace=False)
         X, y = X[keep], y[keep]
+        if groups is not None:
+            groups = groups[keep]
         info["row_cap"] = max_rows
         info["n_rows_full"] = int(ds.n_rows)
         log.info("[eval] %s capped %d -> %d rows (max_rows)", dataset, ds.n_rows, max_rows)
+    if groups is not None:
+        info["_cv_groups"] = groups
+        info["cv_grouped"] = True
     return X, y, cats, info
 
 
@@ -250,7 +257,8 @@ def evaluate_dataset(task: str, dataset: str, models: list[str], seed: int, *, n
     try:
         X, y, cat_indices, info = load_arrays(task, dataset, max_rows=max_rows, seed=seed)
         # The folds are fixed by (dataset, seed) alone, so every model sees the same ones.
-        folds = cv_folds(y, task, n_folds=n_folds, seed=seed)
+        groups = info.pop("_cv_groups", None)
+        folds = cv_folds(y, task, n_folds=n_folds, seed=seed, groups=groups)
     except Exception as exc:  # noqa: BLE001 — a broken dataset costs its own rows only
         log.error("[eval] %s/%s could not be loaded: %s", task, dataset, exc)
         return [{**base, "model": m, "fold": f, "status": "failed", "error": f"{type(exc).__name__}: {exc}"}
@@ -262,7 +270,7 @@ def evaluate_dataset(task: str, dataset: str, models: list[str], seed: int, *, n
         X_tr, y_tr, X_te = X[train_idx], y[train_idx], X[test_idx]
         try:
             stages = prepare_fold(task, X_tr, y_tr, X_te, cat_indices, seed=seed, fold=fold,
-                                  val_fraction=val_fraction)
+                                  val_fraction=val_fraction, groups=groups[train_idx] if groups is not None else None)
             prep_error = ""
         except Exception as exc:  # noqa: BLE001 — recorded per model below, like a model failure
             stages, prep_error = None, f"{type(exc).__name__}: {exc}"
@@ -358,4 +366,4 @@ def summarise(df: pd.DataFrame, task: str) -> pd.DataFrame:
     per_dataset = ok.groupby(["model", "dataset"])[present].mean()
     out = per_dataset.groupby(level="model").mean().reset_index()
     out["n_datasets"] = per_dataset.groupby(level="model").size().values
-    return out.sort_values(present[0], ascending=(task != "pd"))
+    return out.sort_values(present[0], ascending=(present[0] not in ("roc_auc", "r2", "ap")))

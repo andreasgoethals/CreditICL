@@ -554,11 +554,10 @@ def test_datasets_that_share_loans_sit_on_one_side_of_the_split(track):
 
 
 @pytest.mark.parametrize("track", ["LGD", "PD"])
-def test_exp1_is_also_scored_inside_the_training_distribution(track):
-    """Accepted 30-09-2026: Exp1 is benchmarked with the whole training pool as context AND with
-    contexts capped at 1,024 rows, the size every training table has (Exp0 tests the path)."""
-    for exp in ("Exp0", "Exp1"):
-        assert _load(f"config/{exp}_{track}.yaml")["eval"]["context_caps"] == [1024]
+def test_campaign_only_scores_full_contexts(track):
+    """User decision: every experiment evaluates all eligible rows, with no capped companion."""
+    for exp in ("Exp0", "Exp1", "Exp2", "Exp3"):
+        assert not _load(f"config/{exp}_{track}.yaml")["eval"].get("context_caps")
 
 
 @pytest.mark.parametrize("track", ["LGD", "PD"])

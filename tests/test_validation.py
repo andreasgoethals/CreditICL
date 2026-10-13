@@ -1,4 +1,4 @@
-"""Execution and provenance tests for the single-job Experiment 0 gate."""
+"""Execution and provenance tests for the GPU Experiment 0 gate."""
 import json
 import os
 import sys
@@ -62,7 +62,7 @@ def test_complete_manifest_covers_all_routes_budgets_and_benchmarks():
     assert sum(s.stop_run is not None for s in stages) == 6
     assert sum(s.name.startswith("resume-") for s in stages) == 6
     assert sum(s.name.startswith("equivalence-") for s in stages) == 2
-    assert sum(s.name.startswith("receipt-") for s in stages) == 24
+    assert sum(s.name.startswith("receipt-") for s in stages) == 14
     assert stages[0].name == "preflight"
     phases = [s.phase for s in stages]
     assert phases == sorted(phases, key=("diagnostics", "training", "benchmark").index)
@@ -108,13 +108,14 @@ def fake_campaign(monkeypatch, isolated_output):
     monkeypatch.setattr(preflight, "source_fingerprint", lambda: "source")
     monkeypatch.setattr(environment, "environment_fingerprint", lambda: "env")
     monkeypatch.setattr(v, "input_inventory", lambda: {"bytes": "inputs"})
-    monkeypatch.setattr(v, "publish_references", lambda: None)
     artifact = isolated_output / "evidence"
     artifact.write_text("valid")
     from src.eval.benchmark_status import digest
-    monkeypatch.setattr(v, "collect_artifacts", lambda _: {str(artifact): digest(artifact)})
-    monkeypatch.setattr(v, "plan", lambda: [v.Stage("preflight", ()), v.Stage("check", ()),
+    monkeypatch.setattr(v, "collect_artifacts", lambda _, phase="gpu": {str(artifact): digest(artifact)})
+    monkeypatch.setattr(v, "plan", lambda phase="gpu": [v.Stage("preflight", ()), v.Stage("check", ()),
                                           v.Stage("train", (), phase="training")])
+    monkeypatch.setattr(v, "execute", lambda *_a, **_k: {})
+    assert v.run_validation(phase="cpu") == 0
     return artifact
 
 
@@ -134,6 +135,23 @@ def test_failed_diagnostic_blocks_training_and_cannot_reuse_older_pass(monkeypat
     assert ran == ["preflight", "check"]
     receipt = json.loads(v.receipt_path().read_text())
     assert receipt["status"] == "FAILED" and receipt["attempt"] != "old"
+    assert not v.readiness()[0].ok
+
+
+def test_gpu_refuses_to_start_without_a_current_cpu_pass(monkeypatch, isolated_output):
+    fake_campaign(monkeypatch, isolated_output)
+    v.receipt_path("cpu").unlink()
+    ran = []
+    monkeypatch.setattr(v, "execute", lambda stage, *_a, **_k: ran.append(stage.name))
+    assert v.run_validation(phase="gpu") == 1
+    assert ran == []
+
+
+def test_rerunning_cpu_invalidates_the_older_gpu_pass(monkeypatch, isolated_output):
+    fake_campaign(monkeypatch, isolated_output)
+    assert v.run_validation(phase="gpu") == 0
+    assert v.readiness()[0].ok
+    assert v.run_validation(phase="cpu") == 0
     assert not v.readiness()[0].ok
 
 
@@ -164,34 +182,13 @@ def test_readiness_requires_current_complete_evidence(monkeypatch, isolated_outp
     assert v.ATTEMPT_ENV not in os.environ
 
 
-def test_reference_reuse_preserves_previous_results(monkeypatch, isolated_output):
-    from types import SimpleNamespace
-
-    from src.eval import benchmark_status as b
-
-    monkeypatch.setattr(b, "n_slots", lambda *_a: 1)
-    monkeypatch.setattr(b, "slot_for", lambda _exp, track, _i: SimpleNamespace(kind="reference", tag=f"reference_{track}_linear"))
-    with v.attempt_scope("reuse"):
-        def request(_exp, track, _i):
-            tag = f"reference_{track}_linear"
-            file = paths.benchmark_dir_for(tag, track) / f"results_{tag}.csv"
-            return tag, {}, {"credit": file}
-
-        monkeypatch.setattr(b, "request", request)
-        for track in paths.TASKS:
-            tag, _, files = request(0, track, 0)
-            for file in [*files.values(), b.receipt_path(tag)]:
-                file.parent.mkdir(parents=True, exist_ok=True)
-                file.write_text("new validated result")
-        target = paths.big_outputs_dir() / "reference/benchmark/pd/results_reference_pd_linear.csv"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text("previous result")
-        old_digest = b.digest(target)
-        v.publish_references()
-        v.publish_references()  # idempotent
-        assert target.read_text() == "new validated result"
-        backup = paths.big_outputs_dir() / f"reference/previous/{old_digest}/benchmark/pd/{target.name}"
-        assert backup.read_text() == "previous result"
+def test_diagnostic_pass_cannot_overwrite_production_reference(monkeypatch, isolated_output):
+    fake_campaign(monkeypatch, isolated_output)
+    target = paths.big_outputs_dir() / "reference/benchmark/pd/results_reference_pd_linear.csv"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("complete publication benchmark")
+    assert v.run_validation(phase="gpu") == 0
+    assert target.read_text() == "complete publication benchmark"
 
 
 def test_download_verifier_reports_failed_and_unrun_stages(tmp_path):
@@ -204,14 +201,14 @@ def test_download_verifier_reports_failed_and_unrun_stages(tmp_path):
     })
     result = verify(tmp_path)
     assert any(status == FAIL and "missing package" in detail for status, _, detail in result.items)
-    assert any(status == FAIL and what == "single-job Experiment 0" for status, what, _ in result.items)
+    assert any(status == FAIL and what == "GPU Experiment 0" for status, what, _ in result.items)
 
 
 def test_invalid_manifest_replaces_old_pass_with_failed_receipt(monkeypatch, isolated_output):
     fake_campaign(monkeypatch, isolated_output)
     v.write_json(v.receipt_path(), {"status": "PASS", "attempt": "previous"})
 
-    def broken_plan():
+    def broken_plan(phase="gpu"):
         raise ValueError("configuration is broken")
 
     monkeypatch.setattr(v, "plan", broken_plan)

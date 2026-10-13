@@ -158,6 +158,33 @@ def receipt_path(tag: str) -> Path:
     return paths.benchmark_dir_for(tag, "receipts") / f"{tag}.json"
 
 
+def diagnostic_datasets(track: str) -> tuple[list[str], list[str]]:
+    """Fixed, score-independent Exp0 probes: largest, widest and median-size tables.
+
+    Every selected table is evaluated in full. CPU checks cover the entire input
+    list; these GPU probes measure capacity and exercise both benchmark routes.
+    """
+    from src.eval.ood import list_ood_datasets
+    cfg = load(config_path(0, track))
+    names = sorted(set(cfg["eval"]["dev_datasets"] + cfg["eval"]["holdout_datasets"]))
+    metadata = {}
+    for name in names:
+        folder = paths.find_processed_dir(track, name)
+        metadata[name] = json.loads((folder / "meta.json").read_text(encoding="utf-8")) if folder else {}
+
+    def choose(rows):
+        if not rows:
+            return []
+        by_size = sorted(rows, key=lambda r: (r[1], r[0]))
+        return sorted({by_size[-1][0], max(rows, key=lambda r: (r[2], r[0]))[0],
+                       by_size[len(by_size) // 2][0]})
+
+    credit = choose([(n, int(metadata[n].get("n_rows", 0)), int(metadata[n].get("n_features", 0))) for n in names])
+    ood = choose([(e.name, e.n_rows, e.n_features) for e in
+                  list_ood_datasets("classification" if track == "pd" else "regression")])
+    return credit, ood
+
+
 def request(exp: int, track: str, index: int, seeds: tuple[int, ...] = (0,), n_folds: int = N_FOLDS,
             reference_models: str = REFERENCE_MODELS, variant: str | None = None
             ) -> tuple[str, dict, dict[str, Path]]:
@@ -177,6 +204,8 @@ def request(exp: int, track: str, index: int, seeds: tuple[int, ...] = (0,), n_f
         raise ValueError("Not all configured credit datasets are available")
     if len(ood) < N_PER_TASK:
         raise ValueError(f"OOD cache needs at least {N_PER_TASK} {kind} datasets")
+    if exp == 0:
+        credit, ood = diagnostic_datasets(track)
     # Hash executable evaluation code, so old receipts cannot silently survive a fix.
     sources = list((ROOT / "src/eval").rglob("*.py")) + [
         ROOT / "scripts/evaluate.py", ROOT / "scripts/evaluate_ood.py",
@@ -198,9 +227,9 @@ def request(exp: int, track: str, index: int, seeds: tuple[int, ...] = (0,), n_f
         credit_rows[name] = int(json.loads((folder / "meta.json").read_text(encoding="utf-8"))["n_rows"])
     data["credit_inputs"] = credit_inputs
     data["credit_rows"] = credit_rows
-    data["ood_rows"] = {e.name: int(e.n_rows) for e in list_ood_datasets(kind)}
+    data["ood_rows"] = {e.name: int(e.n_rows) for e in list_ood_datasets(kind) if e.name in ood}
     data["ood_inputs"] = {e.slug: input_digest(ood_root() / f"{e.slug}.npz")
-                          for e in list_ood_datasets(kind)}
+                          for e in list_ood_datasets(kind) if e.name in ood}
     if slot.kind == "reference" and slot.model in ("tabiclv2", "tabpfn3"):
         from src.eval.baselines import TABICL_RELEASED, find_local_tabpfn_checkpoint
 

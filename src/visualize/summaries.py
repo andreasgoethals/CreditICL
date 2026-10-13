@@ -445,7 +445,11 @@ def real_difficulty(task: str, real: dict[str, Any]) -> dict[str, float]:
 
     scores: dict[str, float] = {}
     for name, ds in real.items():
-        score = _quick_score(ds, task)
+        from types import SimpleNamespace
+        from src.eval.feature_policy import prediction_features
+        X, cats, _ = prediction_features(task, name, np.asarray(ds.X),
+                                         getattr(ds, "cat_indices", []), getattr(ds, "feature_names", None))
+        score = _quick_score(SimpleNamespace(X=X, y=ds.y, cat_indices=cats), task)
         if score is not None:
             scores[name.split(".", 1)[-1]] = score
     return scores

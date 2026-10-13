@@ -288,22 +288,22 @@ def test_results_loader_excludes_obsolete_grid_indices(tmp_path, monkeypatch):
     assert sorted(old["model"]) == ["arm-45", "arm-74"] and set(old["protocol"]) == {2}
     # Once the current benchmark writes, it alone is read — never a mixture of the two.
     pd.DataFrame([{"dataset": "example", "model": "arm-0", "roc_auc": 0.5, "status": "ok", "fold": 0,
-                   "protocol": PROTOCOL}]).to_csv(tmp_path / "results_exp1bench_pd_a0.csv", index=False)
+                   "protocol": 5}]).to_csv(tmp_path / "results_exp1bench_pd_a0.csv", index=False)
     pd.DataFrame([{"dataset": "example", "model": "arm-0", "roc_auc": 0.4, "status": "ok", "fold": 0,
-                   "protocol": PROTOCOL, "info_checkpoint_step": 2500}]).to_csv(
+                   "protocol": 5, "info_checkpoint_step": 2500}]).to_csv(
         tmp_path / "results_exp1bench_pd_a0_s2500.csv", index=False)
     result = results_plots.load_results("pd")
     assert result["model"].tolist() == ["arm-0"], "an earlier checkpoint is not a final result"
-    assert set(result["protocol"]) == {PROTOCOL}
+    assert set(result["protocol"]) == {5}
 
 
-def test_ood_imputation_and_target_scaling_use_the_training_fold_only():
+def test_ood_keeps_missingness_for_the_same_model_specific_preprocessing_as_credit():
     from src.eval import ood_runner as O
 
     X = np.array([[1.0], [np.nan], [3.0], [10000.0], [2.0]])
     y = np.array([0.0, 0.5, 1.0, 0.25, 0.75])
     Xtr, Xte, ytr, yte, info = O._fold_arrays(X, y, np.array([0, 1, 2]), np.array([3, 4]), regression=True)
-    assert Xtr[1, 0] == 2.0, "the training fold's median (of 1 and 3), untouched by the test fold"
+    assert np.isnan(Xtr[1, 0]), "OOD must not impose extra imputation before the model wrapper"
     assert info["target_scaled_from"] == [0.0, 1.0]
     assert yte.tolist() == [0.25, 0.75]
 
@@ -367,13 +367,13 @@ def test_the_learning_curve_draws_every_saved_checkpoint(tmp_path, monkeypatch):
     for arm, share in enumerate(("0", "0p5")):
         for step, suffix in ((12500, ""), (2500, "_s2500")):
             rows = [{"dataset": d, "model": "crediticl", "fold": f, "seed": 0, "status": "ok",
-                     "protocol": PROTOCOL, "roc_auc": 0.6 + step / 1e5 + 0.01 * arm,
+                     "protocol": 5, "roc_auc": 0.6 + step / 1e5 + 0.01 * arm,
                      "info_checkpoint_step": step,
                      "info_run_name": f"exp1_pd__prior-credit_fraction={share}__s0"}
                     for d in ("a", "b") for f in range(5)]
             pd.DataFrame(rows).to_csv(tmp_path / f"results_exp1bench_pd_a{arm}{suffix}.csv", index=False)
     pd.DataFrame([{"dataset": d, "model": "catboost", "fold": f, "seed": 0, "status": "ok",
-                   "protocol": PROTOCOL, "roc_auc": 0.8} for d in ("a", "b") for f in range(5)]).to_csv(
+                   "protocol": 5, "roc_auc": 0.8} for d in ("a", "b") for f in range(5)]).to_csv(
         tmp_path / "results_reference_pd_catboost.csv", index=False)
     fig = results_plots.checkpoint_curve("pd", role=None)
     ax = fig.axes[0]
@@ -381,7 +381,7 @@ def test_the_learning_curve_draws_every_saved_checkpoint(tmp_path, monkeypatch):
     assert len(curves) == 2, "one line per credit share over the two saved checkpoints"
     assert any(abs(ln.get_ydata()[0] - 0.8) < 1e-9 for ln in ax.get_lines()), "the reference line"
     text = results_plots.results_summary("pd")
-    assert f"protocol {PROTOCOL}" in text and "2,500:" in text
+    assert f"protocol {5}" in text and "2,500:" in text
     plt.close(fig)
 
 

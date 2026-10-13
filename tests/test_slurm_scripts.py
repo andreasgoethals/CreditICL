@@ -360,7 +360,7 @@ def test_the_reference_column_is_scored_once_and_reused():
     refs = [r for r in slots if r.kind == "reference" and r.context is None]
     assert [r.tag for r in refs] == [f"reference_pd_{m}" for m in ("tabiclv2", "tabpfn3", "catboost", "linear")]
     capped = [r for r in slots if r.kind == "reference" and r.context is not None]
-    assert [r.tag for r in capped] == ["reference_pd_tabiclv2_ctx1024", "reference_pd_tabpfn3_ctx1024"]
+    assert not capped
     assert all("exp" not in r.tag for r in refs + capped), "the tag must not mention the experiment"
 
 

@@ -7,9 +7,8 @@ a notebook's references cell prints the sources (`literature.references_md(...)`
 from memory: if a fact is not in the library, it is tagged `external` and says so, so a reader never
 mistakes domain knowledge for a library-grounded result.
 
-Library pin: `81c749b` (`git submodule status`); every citation re-verified at this pin (from
-`e5ce016` the library only added papers and re-dumped five repositories this module does not cite;
-the two `SYNTHESIS.md` passages it does cite still say the same). Tags:
+Current library pin: `de324efcca55be392feb0c01830b3b6ce364587f`.
+Training and benchmark claims were checked against this snapshot. Tags:
   paper-evaluated — the paper *measured* it        code-supported — the code does it, unevaluated
   editorial       — the library's own synthesis    external — NOT in the library (domain knowledge)
 """
@@ -21,7 +20,7 @@ from typing import Any
 
 #: The tfm-library commit these citations were read against. Record it beside any result that uses
 #: them; bump with `python -m src.utils.update_tfm_library`.
-PIN = "81c749b"
+PIN = "de324efcca55be392feb0c01830b3b6ce364587f"
 
 
 @dataclass(frozen=True)
@@ -40,9 +39,9 @@ class Ref:
 REFS: dict[str, Ref] = {
     # -- the prior generator (graph_scm), for 0.2 / 0.3 -----------------------
     "filter_rate_clf": Ref("TabICLv2 filters ~35% (classif.)", "papers/2026/02_Qu_TabICLv2 §Data filtering, Fig. 10",
-                           "paper-evaluated", 0.35, "stage-1 rejection rate of the predictability filter"),
+                           "paper-evaluated", 0.35, "combined stage-1 graph and ExtraTrees rejection rate"),
     "filter_rate_reg": Ref("TabICLv2 filters ~25% (regr.)", "papers/2026/02_Qu_TabICLv2 §Data filtering",
-                           "paper-evaluated", 0.25, "stage-1 rejection rate, regression"),
+                           "paper-evaluated", 0.25, "combined stage-1 graph and ExtraTrees rejection rate, regression"),
     "quantiles": Ref("999-quantile pinball head", "papers/2026/02_Qu_TabICLv2 §I; NanoTabICLv2(out_dim=999)",
                      "paper+code", 999, "represents a point mass exactly — atoms are representable"),
     "max_cat_size": Ref("graph_scm cap 200 categories", "TabICL.txt GraphSCM(max_cat_size=200)",
@@ -97,7 +96,7 @@ REFS: dict[str, Ref] = {
                          "code-supported", None, "discards informative missingness — a thin file is itself a risk signal"),
 
     # -- downstream credit evaluation (1.3/1.4, 2.3/2.4) ---------------------
-    "tanna_resampling": Ref("context construction beats architecture (+3–4 AUC)", "papers/2026/05_Tanna_DataPresentation Table 2",
+    "tanna_resampling": Ref("strategy gap exceeds the inter-model gap (~0.03–0.05 AUC)", "papers/2026/05_Tanna_DataPresentation Table 2",
                             "paper-evaluated", None, "balanced sampling adds more AUC than the choice of TFM"),
     "tanna_zerorecall": Ref("default-threshold GBDTs collapse to 0% recall", "papers/2026/05_Tanna_DataPresentation Table 1",
                             "paper-evaluated", 0.0, "the accuracy paradox — why we never report accuracy alone"),
@@ -108,21 +107,21 @@ REFS: dict[str, Ref] = {
     "crps": Ref("CRPS scores the whole predictive, not its mean", "SYNTHESIS.md; TabICLv2 §I.7",
                 "editorial+paper", None, "why LGD's primary metrics are distributional"),
 
-    # -- credit-domain BENCHMARKS: the only credit-dataset numbers anywhere in the library, all
+    # -- selected credit-domain BENCHMARKS (not an exhaustive library survey), all
     #    ROC-AUC so they share one axis. From Tanna 2026 (Home Credit / Lending Club) and Hollmann
     #    2023 (Credit-g). A DIFFERENT protocol from ours — full-dataset context of thousands of rows,
-    #    not our 1024-row ICL query — so they are a landscape to set our numbers beside, never a
+    #    not our full-row five-fold protocol — a landscape to set our numbers beside, never a
     #    like-for-like target. The distinction is exactly what §3 of the project rules insists on. --
     "tanna_rf_hc": Ref("Home Credit: RandomForest 0.739", "papers/2026/05_Tanna_DataPresentation §5.3",
                        "paper-evaluated", 0.739, "the classical baseline the TFMs chase; full-dataset protocol, not ICL"),
     "tanna_tabicl_hc": Ref("Home Credit: TabICL 0.771", "papers/2026/05_Tanna_DataPresentation Table 3",
-                           "paper-evaluated", 0.771, "50K balanced context on the full dataset — not our 1024-row ICL setting"),
+                           "paper-evaluated", 0.771, "50K balanced context on the full dataset — different from our full-row five-fold protocol"),
     "tanna_tabpfn_hc": Ref("Home Credit: TabPFN 0.786", "papers/2026/05_Tanna_DataPresentation Table 3",
                            "paper-evaluated", 0.786, "strongest TFM on HC at 50K balanced context; a different protocol from ours"),
     "tanna_xgb_lc": Ref("Lending Club: XGBoost 0.718", "papers/2026/05_Tanna_DataPresentation §5.3",
                         "paper-evaluated", 0.718, "the LC crossover most TFMs do not reach within 50K context"),
-    "tanna_hybrid_lc": Ref("Lending Club: best TFM 0.686", "papers/2026/05_Tanna_DataPresentation Table 2",
-                           "paper-evaluated", 0.686, "hybrid-context mean; LC is the harder of the two books"),
+    "tanna_hybrid_lc": Ref("Lending Club: hybrid strategy mean 0.686", "papers/2026/05_Tanna_DataPresentation Table 2",
+                           "paper-evaluated", 0.686, "mean across five models, not the best individual TFM"),
     "tanna_hc_ceiling": Ref("Home Credit Kaggle ceiling ~0.80", "papers/2026/05_Tanna_DataPresentation §6.3",
                             "paper-described", 0.80, "top competition ensembles, cited as an external ceiling — NOT a TFM result"),
     "creditg_tabpfn": Ref("Credit-g (German): TabPFN 0.789", "papers/2023/09_Hollmann_TabPFN Table 2",

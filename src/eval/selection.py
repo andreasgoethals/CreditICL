@@ -35,7 +35,7 @@ def development_ranking(df: pd.DataFrame, track: str, exp: str = "exp1",
         return pd.DataFrame(columns=columns)
     part = df[df["dataset"].isin(dev)].copy()
     identity = part.get("info_run_name", pd.Series("", index=part.index)).fillna("")
-    part["identity"] = identity.where(part["model"].eq("crediticl"), part["model"])
+    part["identity"] = identity.where(identity.ne(""), part["model"])
     part["configuration"] = part["identity"].str.replace(r"__s\d+$", "", regex=True)
     groups: dict[str, list[str]] = {}
     for run in expand_with_seeds(cfg):
@@ -43,10 +43,10 @@ def development_ranking(df: pd.DataFrame, track: str, exp: str = "exp1",
         groups.setdefault(re.sub(r"__s\d+$", "", name), []).append(name)
     # Arms of a grid the config no longer describes (the 45-arm Exp1 benchmark, read as protocol 2
     # after the redesign) are ranked with the training seeds the data holds for them.
-    ours = part[part["model"].eq("crediticl")]
+    ours = part[identity.ne("")]
     for configuration, identities in ours.groupby("configuration")["identity"]:
         groups.setdefault(configuration, sorted(set(identities)))
-    for model in part.loc[~part["model"].eq("crediticl"), "model"].unique():
+    for model in part.loc[identity.eq(""), "model"].unique():
         groups[model] = [model]
     rows = []
     by_fold = "fold" in part.columns and part["fold"].notna().any()

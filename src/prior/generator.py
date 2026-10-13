@@ -205,6 +205,7 @@ class TaskGenerator:
 
         credit = cfg.get("credit", {})
         self.credit_max_cat_size = int(credit.get("max_cat_size", self.base_max_cat_size))
+        self.credit_corrected_cat_sizes = bool(credit.get("use_corrected_cat_sizes", True))
         self.credit_category_frequency = credit.get("category_frequency", self.base_category_frequency)
         self.credit_target_cfg = credit.get("target", {})
         self.credit_noise_cfg = credit.get("noise_features", {})
@@ -392,7 +393,8 @@ class TaskGenerator:
         # and unpermuted so the credit columns have somewhere to go.
         if self.base_impl == "upstream":
             X, y_latent = upstream.sample_base_latent(seq_len=n_gen, num_features=informative, seed=seed,
-                                                    max_cat_size=self.credit_max_cat_size)
+                                                    max_cat_size=self.credit_max_cat_size,
+                                                    use_corrected_cat_sizes=self.credit_corrected_cat_sizes)
             meta["base_impl"] = "upstream.graph_lib"
         else:
             cols = rand_dataset_plain(rng, rand_cat_sizes(rng, informative, max_cat_size=self.credit_max_cat_size),
@@ -451,20 +453,22 @@ class TaskGenerator:
             X, nmeta = add_noise_features(rng, X, self.credit_noise_cfg, self.max_features, n_add=n_noise)
             meta.update(nmeta)
 
-        X, y = X[:n_rows], y[:n_rows]
         if X.shape[0] < n_rows:
             return None, None  # selection left too few rows; resample the slot
+        if X.shape[0] > n_rows:
+            # Sample the whole retained population, then retain its cohort order.
+            # Taking the first rows systematically removed the later vintages.
+            take = rng.randperm(len(y))[:n_rows].sort().values
+            X, y = X[take], y[take]
         width = int(X.shape[1])  # the table's real columns; zero padding follows them
-
-        # PERMUTE THEN PAD, exactly as `GraphSCM.__call__` ends, so a noise column is as likely
-        # to land anywhere as a real feature.
-        X = self._permute_and_pad(rng, X)
 
         # Shift stress: order the rows so the context/query split — known exactly here — falls
         # across a change of population.
         if self.shift_cfg:
             X, y, smeta = apply_shift(rng, X, y, self.shift_cfg, plan.train_size / n_rows)
             meta.update(smeta)
+        # Shifts see real features, never the constant padding columns.
+        X = self._permute_and_pad(rng, X)
         # Otherwise the rows go in a random order, so the split is random: upstream's rows are
         # i.i.d. and a cross-validation fold is a random split. The PD mechanism stacks vintages
         # in contiguous row blocks (`sample_cohort_factor`); until 28-09-2026 nothing reshuffled

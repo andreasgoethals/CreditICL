@@ -509,32 +509,18 @@ def test_no_pipeline_job_defaults_to_the_most_contended_partition():
         assert "#SBATCH --partition=gpu_a100" not in active, job.name
 
 
-def test_the_submitter_knows_every_target_and_its_core_budget():
-    """Cores per GPU is the real constraint — TabICL generates its prior on the CPU — and the
-    VSC limits differ per partition (8 / 18 / 16 / 24). Requesting more than the limit earns a
-    warning and requesting fewer wastes the allocation."""
-    text = (ROOT / "scripts" / "slurm" / "submit.sh").read_text(encoding="utf-8")
-    for target in ("free", "b200", "a100", "h100", "dbg1h"):
-        assert f"{target})" in text, f"submit.sh does not handle {target}"
-    # The documented per-GPU core limits, from the VSC docs.
-    for partition, cores in (("interactive", 8), ("gpu_b200", 24), ("gpu_a100", 18),
-                             ("gpu_h100", 16)):
-        block = text[text.index(f"--partition={partition}"):]
-        assert f"--cpus-per-task={cores}" in block[:200], (
-            f"{partition} should request {cores} cores per GPU"
-        )
-
-
-def test_the_job_config_is_an_argument_not_an_environment_variable():
-    """`CONFIG=x bash submit.sh` sets the variable for the CALLING shell, not for sbatch's
-    environment — so the job never received it, and a run intended as PD went out as a second
-    LGD job with nothing on screen to say so. `sbatch [opts] script args...` passes trailing
-    arguments straight to the script, which needs no plumbing and cannot be lost."""
-    sub = (ROOT / "scripts" / "slurm" / "submit.sh").read_text(encoding="utf-8")
-    assert 'TRACK="${2:-lgd}"' in sub, "submit.sh must take the track as an argument"
-    # and every input that changes what runs must be printed before submitting
-    for label in ('echo "where', 'echo "track', 'echo "config', 'echo "script'):
-        assert label in sub, f"{label} is not reported before submission"
+@pytest.mark.parametrize("script", ["submit.sh", "submit_pipeline.sh"])
+def test_retired_launchers_cannot_submit_old_pipelines(script):
+    import shutil
+    import subprocess
+    bash = shutil.which("bash")
+    if not bash:
+        pytest.skip("Bash is not installed on this host")
+    result = subprocess.run([bash, str(ROOT / "scripts/slurm" / script), "b200", "pd"],
+                            text=True, capture_output=True)
+    assert result.returncode == 2
+    assert "nothing was submitted" in result.stderr
+    assert "exp0_cpu.slurm" in result.stderr and "run_experiment" in result.stderr
 
 
 def test_changelog_is_one_chapter_per_date():
@@ -569,23 +555,6 @@ def test_changelog_is_one_chapter_per_date():
     assert dates == sorted(dates, reverse=True), "chapters must be newest first"
 
 
-def test_tracked_output_files_still_exist():
-    """`output CreditICL/` is mostly generated and gitignored, but a few files in it are
-    TRACKED — written by hand or by a notebook and meant to survive.
-
-    On 17-08-2026 they were deleted by something run locally and then swept into a commit by a
-    blanket `git add -A`: `All_Results.md` (272 lines), `figures/CAPTIONS.md` (133 lines, the
-    paper's figure captions) and every `.gitkeep`, without which a fresh clone has nowhere to
-    write. Nothing noticed until the deletion appeared in someone else's `git pull`.
-    """
-    required = [
-        ROOT / "output CreditICL" / "README.md",
-        ROOT / "output CreditICL" / "CAPTIONS.md",
-        ROOT / "output CreditICL" / "All_Results.md",
-    ]
-    missing = [p.relative_to(ROOT).as_posix() for p in required if not p.exists()]
-    assert not missing, (
-        f"tracked files under output CreditICL/ are gone: {missing}. Restore them with "
-        f"`git checkout HEAD -- output CreditICL/` BEFORE committing — a `git add -A` would "
-        f"otherwise record the deletion."
-    )
+def test_output_readme_survives_a_clean_campaign():
+    """The README is the only tracked output marker. Summaries are regenerated, not prerequisites."""
+    assert (ROOT / "output CreditICL" / "README.md").is_file()

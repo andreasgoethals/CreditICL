@@ -8,6 +8,7 @@ length would silently not reach the tables.
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 
 def _write(path, rows):
@@ -16,7 +17,7 @@ def _write(path, rows):
 
 
 def test_the_final_checkpoint_is_reported_by_default_and_a_headline_step_when_named(tmp_path, monkeypatch):
-    from src.eval.protocol import PROTOCOL
+    PROTOCOL = 5  # historical file-selection behavior, before complete-matrix reporting
     from src.utils import paths
     from src.visualize import results_plots as rp
 
@@ -50,7 +51,7 @@ def test_no_config_names_a_headline_step_today():
 
 
 def test_the_capped_context_results_are_read_apart_from_the_full_context_ones(tmp_path, monkeypatch):
-    from src.eval.protocol import PROTOCOL
+    PROTOCOL = 5  # historical file-selection behavior, before complete-matrix reporting
     from src.utils import paths
     from src.visualize import results_plots as rp
 
@@ -67,3 +68,34 @@ def test_the_capped_context_results_are_read_apart_from_the_full_context_ones(tm
     assert sorted(rp.load_results("pd", "exp1", context=1024)["roc_auc"].tolist()) == [0.5, 0.6]
     assert rp.load_results("pd", "exp1", context=2048) is None
     assert rp.load_checkpoint_results("pd", "exp1") is None, "the capped final checkpoint is not a curve point"
+
+
+def test_current_report_requires_the_whole_configured_matrix(tmp_path, monkeypatch):
+    from src.eval.benchmark_status import REFERENCE_MODELS
+    from src.eval.protocol import PROTOCOL
+    from src.utils import paths
+    from src.utils.config import expand_with_seeds, load, run_name
+    from src.visualize import results_plots as rp
+    monkeypatch.setattr(paths, "benchmark_dir", lambda owner, part=None: tmp_path / str(owner) / str(part))
+    cfg = load("config/Exp1_PD.yaml")
+    datasets = cfg["eval"]["dev_datasets"] + cfg["eval"]["holdout_datasets"]
+    def cells(model, name=""):
+        return [{"dataset": ds, "model": model, "info_run_name": name, "seed": 0, "fold": fold,
+                 "status": "ok", "protocol": PROTOCOL, "roc_auc": .7}
+                for ds in datasets for fold in range(5)]
+    for i, run in enumerate(expand_with_seeds(cfg)):
+        _write(tmp_path / "1/pd" / f"results_exp1bench_pd_a{i}.csv", cells("crediticl", run_name(run)))
+    for model in REFERENCE_MODELS.split(","):
+        _write(tmp_path / "reference/pd" / f"results_reference_pd_{model}.csv", cells(model))
+    result = rp.load_results("pd")
+    assert len(result) == (9 + 4) * len(datasets) * 5
+    missing = tmp_path / "1/pd/results_exp1bench_pd_a0.csv"
+    saved = missing.read_bytes()
+    missing.unlink()
+    with pytest.warns(UserWarning, match="model coverage"):
+        assert rp.load_results("pd") is None
+    missing.write_bytes(saved)
+    broken = pd.read_csv(missing).iloc[1:]
+    broken.to_csv(missing, index=False)
+    with pytest.raises(ValueError, match="Incomplete"):
+        rp.load_results("pd")

@@ -245,27 +245,17 @@ Useful KU Leuven tooling: `slurm_jobinfo <jobid>`, `slurmtop`, `sam-balance`,
 
 ## 8. Submitting: the scripts
 
-Don't hand-roll `#SBATCH` — the launchers pick the partition and read `$SLURM_CPUS_PER_TASK`, so one
-script is correct everywhere. `#SBATCH` directives are only defaults, overridden on the command line.
+Use the two Experiment 0 scripts below. After both pass, the receipt-aware launcher reads
+actual completion and queue state:
 
 ```bash
-bash scripts/slurm/submit.sh --list                 # the partition inventory, from the shell
-bash scripts/slurm/submit.sh b200 pd                # <where> <track> — one debug arm
-sbatch --clusters=mindwell --array=0-8%8 scripts/slurm/pretrain_pd.slurm    # a full phase-1 sweep (Exp1: 9 arms)
-bash scripts/slurm/submit_pipeline.sh both          # the whole chain, submit and log out
+python -m src.utils.run_experiment 1             # inspect, submit nothing
+python -m src.utils.run_experiment 1 --submit    # missing main/component training or benchmarks
 ```
 
-**The track is an argument, never an environment variable:** `CONFIG=… bash submit.sh` sets the var for
-the *calling* shell, not sbatch's — so the job never saw it and a run meant as PD went out as a second
-LGD job. `submit.sh` prints `where / track / config / script` before submitting and refuses an unknown
-track.
-
-`submit_pipeline.sh` chains five stages, each on the hardware it needs, with `--dependency`: preprocess
-(1 CPU job) → **prior pools (2 arrays × 20 CPU tasks** — the two variants are independent, so submitting
-separately makes 40 tasks eligible at once) → **verify gate** (`afterok` on the arrays — equal, complete
-pools or the chain stops) → GPU training array → evaluation (`afterany` — keep the numbers from arms
-that finished). Prior generation pins `OMP_NUM_THREADS=1` (the parallelism is the array, not BLAS) and
-each task sleeps 1–20 s to avoid a Lustre metadata storm.
+Repeat after a stage finishes or a resumable interruption. Complete/current runs are skipped.
+The retired `submit.sh` and `submit_pipeline.sh` refuse submission; their old pool/dependency chain
+does not implement the current experiment design. Production scripts also enforce the Exp0 gate.
 
 ## 9. Compute budget
 
@@ -279,47 +269,55 @@ Measured on B200, batch 64, micro-batch 4, the config's prior shape:
 | one Exp3 arm, 200,000 steps | ~88 GPU-h at the same speed; 4 arms/track (control + Exp1's mix, 2 seeds) ≈ 700 GPU-h |
 | TabICLv2's own full pretraining | 24.5 GPU-days per model (the paper's figure) |
 
-At throttle `%8`, 9 arms run in two waves; 45 arms of ~20 h was `ceil(45/8) × 20 ≈ 120 h` wall-clock — **the throttle, not the
-credit balance, sets how long the sweep takes**, so decide it against the QoS limits (§4.1). Our 12,500
-steps is 2.5% of upstream's 500k-step stage 1 (which would be ~347 h *per arm*) — the whole reason Exp1
-is a *screening* tier: it ranks priors; only Exp3 runs the winner long enough for the number to stand
-alone. **Storage rules out pooling at full scale** (35M datasets ≈ 3.5–4.7 TB/variant vs a ~1 TB quota;
-upstream sees each dataset once, so there is no corpus), which is why Exp3 uses `--prior-source generate`
-and pools remain only for Exp1, where they remove draw-luck between short arms.
+The revised configurations generate tasks live in every experiment. Exp1 uses 12,500 updates,
+2.5% of upstream's 500k-step first stage; Exp3 increases updates while retaining 1,024-row tasks.
+Neither reproduces upstream's complete curriculum. The historical speeds above are planning
+references, not measurements of the corrected pipeline. Queue delays, simultaneous allocations,
+and the new full-row benchmarks must be added to training time.
 
 For Experiment 2 (measured in Experiment 0 before it is committed): 18 arms per track (2 models × 3
 mixes × 3 seeds), 10,000 steps each, using upstream TabICL and an adapted TabPFN-Wide recipe — no search
 since 30-09-2026. A TabICLv2 arm costs about what an Exp1 arm costs per step (same shapes, batch 64), a
-TabPFN-3 arm 16 tasks per step through TabPFN's own preprocessing. The budget agreed on 29-09-2026 is
-~400 GPU-h; `python -m src.utils.exp0_verify` prints the per-arm and per-slot hours, and the storage,
-that Experiment 0 measured for every experiment.
+TabPFN-3 arm 16 tasks per step through TabPFN's own preprocessing. The old ~400 GPU-hour estimate
+is provisional. `python -m src.utils.exp0_verify` extrapolates training hours from the new six
+diagnostic runs. Benchmark probes measure selected tables only: their times do not establish
+the runtime of the complete publication benchmark matrix.
 
 ## 10. Experiment 0: run it first
 
-Submit **one job**. It runs the full portable pytest suite, mandatory VSC/CUDA tests, checks every
-input and package, isolates each training route in a fresh process, verifies TabICL equivalence,
-trains six 600-step runs with forced stop/resume, and benchmarks all checkpoints and reference models
-on credit and OOD data. The full benchmark uses every fitted row; the separately tagged context
-analysis uses 1,024 rows. No experiment array is submitted automatically.
+Experiment 0 consists of **two sequential Slurm jobs**. The CPU job rebuilds preprocessing,
+checks every credit/OOD table and all five folds, audits dependencies and runs the portable tests.
+The GPU job tests mandatory CUDA behavior, six isolated training routes, two upstream-equivalence
+checks, and six 600-step runs with forced stop/resume. It scores every model route on the largest,
+widest and median-size tables in each domain/track (duplicates removed), using all eligible rows
+and five folds. It is a capacity and correctness gate, not the publication benchmark matrix.
 
 ```bash
 cd "$VSC_DATA/CreditICL"
 git pull --ff-only
 source scripts/slurm/_activate_env.sh
+# Optional intentional clean restart; deletes generated output and our trained checkpoints:
+python -m src.utils.clean_run --reset-output --clean
 bash scripts/slurm/update_env.sh
-python -m src.utils.preflight && sbatch --clusters=mindwell scripts/slurm/exp0.slurm
+# Refresh the existing pinned OOD list without the old 50,000-row download cap:
+python -m src.utils.fetch_ood
+sbatch --clusters=wice scripts/slurm/exp0_cpu.slurm
+# Wait for CPU COMPLETED/PASS before submitting the GPU job:
+python -m src.utils.preflight --require-exp0-cpu && sbatch --clusters=mindwell scripts/slurm/exp0.slurm
 ```
 
-The existing v5 caches and 50 OOD datasets passed on 12-10-2026. Rebuild only if preflight reports
-stale/missing inputs. `update_env.sh` changes only the project environment and verifies all declared
-requirements/extras and `pip check`. Exp0 reserves at most 24 hours, not a promised runtime; the
-controller stops within 23.5 hours to leave time to report failures. `sam-quote sbatch --clusters=mindwell
-scripts/slurm/exp0.slurm` gives the reservation quote. No automatic resubmission follows a failure.
+`update_env.sh` installs this project's requirements/extras and verifies all transitive dependencies
+and `pip check`. CPU and GPU jobs must use that same environment. Preprocessing cache v6 adds
+group identifiers and corrects numeric/age parsing. OOD cache v3 retains the same pinned dataset IDs
+but restores full rows; a failed refresh cannot silently substitute another dataset.
+The CPU reservation is 4 hours (controller 3.8), GPU 24 hours (controller 23.5); these are limits,
+not runtime promises. No production array or automatic retry follows a failed validation.
 
 Attempts live under `experiment_0/validation/<attempt>/` on both tiers. The canonical receipt is
 `output CreditICL/experiment_0/report/validation.json`; it is RUNNING, FAILED or PASS. Previous
-attempts and all historical checkpoints remain intact. Reference results from a fully successful
-attempt are reused in later experiments; older reference files are retained under `reference/previous/`.
+attempts remain until an explicit reset. CPU completion is recorded in `cpu_validation.json`;
+the GPU receipt binds that exact CPU receipt. Rerunning CPU invalidates an older GPU PASS.
+Exp0 reference probes are isolated and are never published as complete production results.
 The launcher refuses production work if tests, code, configurations, packages, inputs or artifacts
 changed after validation. The sole planned exception is filling Exp3's `FILL_FROM_EXP1` with the
 already-tested 50% or 100% mixture after development-set selection; all other recipe changes still
@@ -381,10 +379,10 @@ substitute for checking every result cell in those CSVs.
 ## 12. Experiments 1, 2 and 3: the commands
 
 ```bash
-# Experiment 1 (after Experiment 0 passed): train, then benchmark (full and 1,024-row contexts).
+# Experiment 1 (after Experiment 0 passed): train, then benchmark (full rows, five folds).
 python -m src.utils.run_experiment 1 --submit          # again later: it submits what is left
 
-# Experiment 2: continued pretraining at the published recipes (TabICLv2 stage 3, TabPFN-Wide).
+# Experiment 2: continued pretraining using the controlled TabICL and adapted TabPFN recipes.
 python -m src.utils.run_experiment 2 --submit
 
 # Experiment 3: once Experiment 1 has chosen its mix on the development datasets, fill FILL_FROM_EXP1

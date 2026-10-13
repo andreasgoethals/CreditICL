@@ -138,8 +138,9 @@ def enforce_monotonic_quantiles(quantiles: Any, method: str = "sort") -> Any:
 
 def pinball_loss(pred: torch.Tensor, target: torch.Tensor, num_quantiles: int) -> torch.Tensor:
     """pred: (B, n_test, Q); target: (B, n_test)."""
-    alphas = quantile_levels(num_quantiles, device=pred.device, dtype=pred.dtype).view(1, 1, -1)
-    errors = target.unsqueeze(-1) - pred
+    # bf16 cannot represent the 999 distinct levels (the last rounds to 1).
+    alphas = quantile_levels(num_quantiles, device=pred.device, dtype=torch.float32).view(1, 1, -1)
+    errors = target.float().unsqueeze(-1) - pred.float()
     return torch.maximum(alphas * errors, (alphas - 1) * errors).mean()
 
 

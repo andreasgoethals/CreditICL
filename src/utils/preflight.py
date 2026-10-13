@@ -222,8 +222,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--require-exp0", action="store_true", help="also gate the paid experiment arrays on Exp0")
     parser.add_argument("--require-exp0-checks", action="store_true",
                         help="require the checks job before running Exp0's six training arms")
+    parser.add_argument("--require-exp0-cpu", action="store_true", help="require current successful CPU validation")
     args = parser.parse_args(argv)
     rows = run_checks(dependencies_only=args.dependencies_only)
+    if args.require_exp0_cpu:
+        from src.utils.validation import readiness
+        rows.extend(readiness("cpu"))
     if args.require_exp0 or args.require_exp0_checks:
         rows.extend(experiment_zero_checks(include_runs=args.require_exp0))
     for row in rows:

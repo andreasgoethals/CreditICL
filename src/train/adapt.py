@@ -36,7 +36,8 @@ import torch.nn as nn
 
 # Parameters that stay trainable under every freeze setting: the target
 # embeddings and the output head. See the docstring for why.
-ALWAYS_TRAINABLE = ("y_embed_in", "y_embed_icl", "out_ln", "out_mlp", "row_ln", "row_cls_tokens")
+ALWAYS_TRAINABLE = ("y_embed_in", "y_embed_icl", "out_ln", "out_mlp", "row_ln", "row_cls_tokens",
+                    "col_embedder.y_encoder", "icl_predictor.y_encoder", "icl_predictor.decoder")
 
 STRATEGIES = ("scratch", "full", "icl_only", "head_only")
 
