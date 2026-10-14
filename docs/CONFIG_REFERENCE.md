@@ -74,18 +74,18 @@ stops noise/missingness columns pushing past it. It does **not** limit inference
 takes no feature-count parameter — `col_embedder` is a permutation-equivariant induced-set transformer
 with learned inducing points and no per-feature weights, so a trained checkpoint accepts any width.
 
-What limits inference is the evaluation protocol, and it is the same number: `protocol.MAX_FEATURES =
-100` (protocol 4, 30-09-2026) keeps a wider table's 100 columns with the strongest rank association with
-the target, scored on each fit's own rows — for every model alike, ours, the released ones and the
-baselines (`protocol.rank_columns`; docs/EXPERIMENTAL_DESIGN.md §5 for the literature behind the rule).
-It binds on five datasets. Every model gets the whole training pool as context (the 1,024-row cap of
-protocol 2 is gone). No current campaign configuration schedules capped-context comparisons.
+Protocol 7 (13-10-2026) has **no benchmark feature cap**: `protocol.MAX_FEATURES = None`.
+All prediction-time eligible columns and all training-fold rows reach every model. The wrappers
+do not rank or select columns; the near-constant filter is also off. TabPFN's checkpoint-defined
+per-estimator feature budget is enlarged to retain every input column, including preprocessing
+expansion; fit fails if upstream still selects a subset. The other upstream transformations remain.
+Exp0 tests real 2,986-column PD / 601-column LGD predictions and the widest selected full tables on the target GPU.
 
 **Keep 100.** It is the control variable (a wider training distribution is a second difference from
 TabICLv2); training wider and then reporting a win on a wide table would measure feature width, not the
-prior; and nothing in the architecture wants it changed. Since the evaluation cap is the same 100, no
-model meets a table wider than it trained on; the row count remains the exposure (`heloc`'s training
-pool is 46× the training tables), matched across arms and measured in full-row evaluation.
+prior. Both width and context-length extrapolation now occur at evaluation time, identically
+across synthetic-pretraining arms. Supporting wider input does not guarantee unchanged accuracy
+or that every table fits GPU memory; Exp0 checks execution on the selected largest/widest tables.
 
 ## 4. Why one stage
 

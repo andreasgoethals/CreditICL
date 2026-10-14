@@ -244,6 +244,50 @@ def test_initial_ood_download_does_not_pin_an_incomplete_list(tmp_path, monkeypa
     assert not ood.manifest_path().exists()
 
 
+@pytest.mark.parametrize("winerror", [5, 32, 33])
+def test_cache_publication_retries_windows_locks_without_deleting_old_data(tmp_path, monkeypatch, winerror):
+    from src.eval import ood
+    source, destination = tmp_path / "new.tmp", tmp_path / "manifest.json"
+    source.write_text("new")
+    destination.write_text("old")
+    replace = Path.replace
+    attempts = []
+    def locked_once(path, target):
+        assert destination.read_text() == "old"
+        attempts.append(path)
+        if len(attempts) == 1:
+            error = PermissionError("locked")
+            error.winerror = winerror
+            raise error
+        return replace(path, target)
+    monkeypatch.setattr(Path, "replace", locked_once)
+    monkeypatch.setattr(ood.time, "sleep", lambda _: None)
+    ood._replace_cache(source, destination)
+    assert len(attempts) == 2 and destination.read_text() == "new" and not source.exists()
+
+
+@pytest.mark.parametrize("winerror,attempts_expected", [(5, 6), (None, 1)])
+def test_cache_publication_preserves_old_manifest_when_replacement_is_refused(
+        tmp_path, monkeypatch, winerror, attempts_expected):
+    from src.eval import ood
+    source, destination = tmp_path / "new.tmp", tmp_path / "manifest.json"
+    source.write_text("new")
+    destination.write_text("old")
+    attempts = []
+    def denied(path, target):
+        attempts.append(path)
+        error = PermissionError("denied")
+        if winerror is not None:
+            error.winerror = winerror
+        raise error
+    monkeypatch.setattr(Path, "replace", denied)
+    monkeypatch.setattr(ood.time, "sleep", lambda _: None)
+    with pytest.raises(PermissionError):
+        ood._replace_cache(source, destination)
+    assert len(attempts) == attempts_expected
+    assert source.read_text() == "new" and destination.read_text() == "old"
+
+
 @pytest.mark.parametrize("task", ["pd", "lgd"])
 def test_scratch_initialization_and_head_freezing_on_real_architecture(task):
     from src.models.architecture import build_model

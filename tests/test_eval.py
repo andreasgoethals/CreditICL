@@ -322,27 +322,28 @@ def test_a_debug_row_cap_is_stratified_for_pd_and_recorded(monkeypatch):
     assert m.y_seen.sum() > 0, "positives must survive the subsample"
 
 
-def test_tfm_feature_cap_applies_and_records():
-    """algorithmwatch has 2,986 features; TabPFN will not accept that."""
-    from src.eval.baselines import TFM_MAX_FEATURES, _TFMBaseline
+def test_tfm_wrapper_keeps_all_features_and_records_width():
+    from src.eval.baselines import _TFMBaseline
 
     class Dummy(_TFMBaseline):
         name = "dummy"
 
         def _fit(self, X, y, cat_indices):
             self.n_seen = X.shape[1]
+            assert cat_indices == [120, 299]
 
         def _predict(self, X):
+            assert X.shape[1] == self.n_seen
             return np.zeros(X.shape[0])
 
     rng = np.random.default_rng(0)
-    X = rng.normal(size=(100, TFM_MAX_FEATURES + 200)).astype(np.float32)
+    X = rng.normal(size=(100, 300)).astype(np.float32)
     y = np.zeros(100, dtype=np.float32)
     m = Dummy(task="lgd", seed=0)
-    rep = m.fit(X, y, [])
-    assert m.n_seen == TFM_MAX_FEATURES
-    assert rep.extra["features_capped_from"] == TFM_MAX_FEATURES + 200
-    assert m.predict(X).shape == (100,), "predict must apply the same column subset"
+    rep = m.fit(X, y, [120, 299])
+    assert m.n_seen == rep.n_features == 300
+    assert "features_capped_from" not in rep.extra
+    assert m.predict(X).shape == (100,)
 
 
 # -- one evaluation harness, shared by all three experiments -------------------
@@ -736,6 +737,9 @@ def test_all_tfm_wrappers_receive_the_same_context(monkeypatch, task, cap):
 
         def fit(self, X, y):
             seen[name] = (X.copy(), y.copy())
+            self.ensemble_preprocessor_ = SimpleNamespace(
+                feature_schema=SimpleNamespace(num_columns=X.shape[1]),
+                subsample_feature_indices=[None])
 
         def predict(self, X):
             return np.full(len(X), 0.5)
@@ -749,6 +753,7 @@ def test_all_tfm_wrappers_receive_the_same_context(monkeypatch, task, cap):
         TabPFNClassifier=Estimator, TabPFNRegressor=Estimator))
     monkeypatch.setattr(baselines.TabICLBaseline, "_wrapper_kwargs", lambda self: {})
     monkeypatch.setattr(baselines, "find_local_tabpfn_checkpoint", lambda task: Path("offline-default.ckpt"))
+    monkeypatch.setattr(baselines, "full_feature_tabpfn_config", lambda path, width: {})
     rng = np.random.default_rng(12)
     X = rng.normal(size=(5000, 3))
     y = (np.arange(len(X)) < 150).astype(float) if task == "pd" else rng.uniform(size=len(X))

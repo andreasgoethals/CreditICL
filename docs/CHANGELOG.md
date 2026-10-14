@@ -10,6 +10,9 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 13-10-2026
 
+- Final verification of full-feature/reset fixes: 1,353 tests passed, 12 expected skips (10 VSC-only); released TabPFN/TabICL PD passed 2,986-column probes, both LGD models passed 601-column point/quantile probes; local reset audit found zero generated files.
+- Retry transient Windows OOD-cache publication locks without deleting the existing cache; cover successful retries and permanent refusal.
+- Remove benchmark feature selection (protocol 7), retain all columns inside TabPFN ensembles, and add width accounting/2,986-column PD and 601-column LGD GPU probes; extend full reset to legacy output names and flat experiment checkpoint folders on both storage tiers while preserving released weights.
 - Final local validation: 1,339 tests passed/7 expected skips (6 VSC-only); 11/11 notebooks produced 119 figures, all 21 credit tables passed five-fold checks, and `pip check` passed. Clear generated output and notebook results for the requested fresh campaign; VSC validation remains pending. Library pin: `de324efcca55be392feb0c01830b3b6ce364587f`.
 - Handle Windows read-only empty output folders during reset; subsequent cleanup/campaign/notebook regressions passed 137 tests (one generated-figure check skipped after the reset).
 - Split Exp0 into mandatory CPU and GPU jobs; use full-row five-fold probes on selected tables, bind both receipts, and keep diagnostic scores out of production results.

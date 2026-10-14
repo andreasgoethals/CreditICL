@@ -21,13 +21,15 @@ EVERY MODEL GETS THE WHOLE TRAINING POOL (protocol 5, except explicit context ab
 28-09-2026 the foundation models were given at most 10,000 training rows (and the benchmark
 capped their context at 1,024). Full-size execution must pass Exp0 on the target hardware;
 there is no silent row cap or OOM subsampling. Every reference uses its library's DEFAULT
-settings — CatBoost's 1,000 iterations with its automatic learning rate, TabPFN-3's and
-TabICLv2's own ensembles. This is a default-settings comparison, not matched HPO budgets.
+settings except the explicit full-row/full-feature policy — CatBoost's 1,000 iterations with
+its automatic learning rate, TabPFN-3's and TabICLv2's own ensemble sizes. TabPFN's per-member
+feature budget is enlarged to retain all inputs. This comparison does not match HPO budgets.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -38,11 +40,6 @@ from src.utils.logging_setup import get_logger
 # Row cap for the in-context models: `None` = the whole training pool, which is the protocol.
 # Kept as a hook for debug runs only; a cap is recorded in every row it touches.
 TFM_MAX_TRAIN_ROWS: int | None = None
-# Column cap for the foundation models: the protocol's own (`protocol.MAX_FEATURES`, chosen by
-# `protocol.rank_columns` on the training rows). The benchmark runners apply it to EVERY model
-# before any fit (`protocol.fit_fold_preprocessing`), so on that path this is a no-op; it remains
-# the guard for a caller that hands a wider table directly.
-from src.eval.protocol import MAX_FEATURES as TFM_MAX_FEATURES  # noqa: E402
 
 #: The released TabICLv2 files: the ones Exp2 fine-tunes from and the reference column scores.
 TABICL_RELEASED = {"pd": "tabicl-classifier-v2-20260212.ckpt", "lgd": "tabicl-regressor-v2-20260212.ckpt"}
@@ -90,6 +87,33 @@ def find_local_tabpfn_checkpoint(which: str) -> Path | None:
 
 
 _IDENTITY_CACHE: dict[tuple[str, int], dict[str, Any]] = {}
+
+
+@lru_cache(maxsize=32)
+def _tabpfn_preprocessors(path: str, mtime_ns: int, size: int) -> tuple[dict, ...]:
+    """Read only the checkpoint's preprocessing recipe; never cache its weight tensors."""
+    import torch
+
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    configs = payload["inference_config"]["PREPROCESS_TRANSFORMS"]
+    return tuple(dict(c) for c in configs)
+
+
+def full_feature_tabpfn_config(path: str | Path, n_features: int) -> dict:
+    """Keep the checkpoint's transforms, allowing every input column in every estimator.
+
+    TabPFNEnsemblePreprocessor budgets *expanded* columns (SVD, appended originals,
+    fingerprint), so merely setting the budget to X.shape[1] would still drop inputs.
+    Four times the input width plus the fingerprint allowance covers the released v3
+    transforms. Exp0 verifies the resulting subsample indices against the real wrapper.
+    """
+    p = Path(path).resolve()
+    stat = p.stat()
+    transforms = [dict(c) for c in _tabpfn_preprocessors(str(p), stat.st_mtime_ns, stat.st_size)]
+    for config in transforms:
+        config["max_features_per_estimator"] = max(
+            int(config["max_features_per_estimator"]), 4 * n_features + 16)
+    return {"SUBSAMPLE_SAMPLES": None, "PREPROCESS_TRANSFORMS": transforms}
 
 
 def tabpfn_checkpoint_identity(path: str | Path) -> dict[str, Any]:
@@ -215,14 +239,11 @@ class Baseline:
 
 
 class _TFMBaseline(Baseline):
-    """Shared feature selection and context sampling for all in-context models.
+    """Shared optional context sampling for all in-context models; all columns pass through.
 
     The main benchmark uses the full training pool. Optional capped comparisons
     give TabPFN, released TabICL and our checkpoints the same seeded rows.
 
-    A table wider than the cap keeps the columns the protocol's filter ranks highest
-    (`protocol.rank_columns`), scored on the TRAINING rows only — target-aware, and leak-free for
-    that reason: the rows it is predicted on never enter the choice.
     """
 
     max_context_rows: int | None = None
@@ -253,34 +274,6 @@ class _TFMBaseline(Baseline):
         self.report.subsampled = True
         self.report.extra["subsample_strategy"] = "balanced" if self.task == "pd" else "uniform"
         return X[keep], y[keep]
-
-    def _select_features(self, X: np.ndarray, y: np.ndarray,
-                         cat_indices: list[int] | None = None) -> np.ndarray | None:
-        """Column indices to keep, or None to keep all."""
-        from src.eval.protocol import FEATURE_SELECTION, rank_columns
-
-        n_features = X.shape[1]
-        if n_features <= TFM_MAX_FEATURES:
-            return None
-        order = rank_columns(X, y, list(cat_indices or []))
-        keep = np.sort(order[:TFM_MAX_FEATURES])
-        self.report.extra["features_capped_from"] = n_features
-        self.report.extra["feature_selection"] = f"{FEATURE_SELECTION} (train only)"
-        return keep
-
-    def fit(self, X: np.ndarray, y: np.ndarray, cat_indices: list[int] | None = None) -> FitReport:
-        self._keep = self._select_features(X, y, cat_indices)
-        if self._keep is not None:
-            keep_set = set(self._keep.tolist())
-            remap = {old: new for new, old in enumerate(self._keep.tolist())}
-            cat_indices = [remap[c] for c in (cat_indices or []) if c in keep_set]
-            X = X[:, self._keep]
-        return super().fit(X, y, cat_indices)
-
-    def predict(self, X: np.ndarray) -> np.ndarray:
-        if getattr(self, "_keep", None) is not None:
-            X = X[:, self._keep]
-        return super().predict(X)
 
     def _maybe_subsample(self, X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         n = X.shape[0]
@@ -467,7 +460,7 @@ class TabPFNBaseline(_TFMBaseline):
             # Our largest tables exceed the documented envelope; without this the wrapper
             # refuses them. Nothing is subsampled: the protocol gives every model the whole pool.
             ignore_pretraining_limits=True,
-            inference_config={"SUBSAMPLE_SAMPLES": None},
+            inference_config=full_feature_tabpfn_config(version, X.shape[1]),
             categorical_features_indices=cat_indices or None,
         )
         # The library's own ensemble size (`"auto"`) unless one is asked for. Until 28-09-2026: 4.
@@ -482,6 +475,12 @@ class TabPFNBaseline(_TFMBaseline):
         else:
             self._model = TabPFNRegressor(**common)
             self._model.fit(X, y)
+        ensemble = self._model.ensemble_preprocessor_
+        expected = np.arange(ensemble.feature_schema.num_columns)
+        if any(indices is not None and not np.array_equal(np.sort(indices), expected)
+               for indices in ensemble.subsample_feature_indices):
+            raise ValueError("TabPFN silently subsampled feature columns; full-feature evaluation required")
+        self.report.extra["feature_subsampling"] = False
 
     def _predict(self, X: np.ndarray) -> np.ndarray:
         if self.task == "pd":
@@ -494,8 +493,6 @@ class TabPFNBaseline(_TFMBaseline):
             return None
         from src.eval.protocol import QUANTILE_LEVELS
 
-        if getattr(self, "_keep", None) is not None:
-            X = X[:, self._keep]
         q = self._model.predict(X, output_type="quantiles", quantiles=[float(a) for a in QUANTILE_LEVELS])
         return self._regression_output(np.stack([np.asarray(c) for c in q], axis=1)), QUANTILE_LEVELS
 
@@ -546,6 +543,8 @@ class TabICLBaseline(_TFMBaseline):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self.report.extra["device"] = device
         extra = self._wrapper_kwargs()
+        if "n_estimators" in self.kwargs:
+            extra["n_estimators"] = int(self.kwargs["n_estimators"])
 
         if self.task == "pd":
             from tabicl import TabICLClassifier
@@ -570,8 +569,6 @@ class TabICLBaseline(_TFMBaseline):
             return None
         from src.eval.protocol import QUANTILE_LEVELS
 
-        if getattr(self, "_keep", None) is not None:
-            X = X[:, self._keep]
         q = self._model.predict(X, output_type="quantiles", alphas=[float(a) for a in QUANTILE_LEVELS])
         return self._regression_output(np.asarray(q, dtype=float)), QUANTILE_LEVELS
 

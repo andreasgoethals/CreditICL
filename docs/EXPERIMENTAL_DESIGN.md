@@ -238,12 +238,12 @@ search (30-09-2026), the one choice left is Exp3's mix, made on development; eve
 is reported on all eligible datasets, with the designated holdout shown separately. This separation
 does not erase the effects of earlier inspection and must not be described as an unbiased fresh test.
 
-**The protocol** (`src/eval/protocol.py`, version 5 since 12-10-2026) is the same for every model —
+**The protocol** (`src/eval/protocol.py`, version 7 since 13-10-2026) is the same for every model —
 our checkpoints, released TabICLv2, TabPFN-3, CatBoost, the linear floor — and for the out-of-domain
 suites: **5-fold cross-validation** (stratified for PD, one fixed fold assignment); **the whole training
 pool is the context** — no row cap or context selection; for PD, **the decision threshold maximises F1 on a validation split** (20 % of the
 training pool), after which the model is refitted on the whole pool and the test fold is scored at that
-threshold. Every model runs at its library defaults.
+threshold. Library defaults apply except the explicit full-row/full-feature overrides below.
 
 **The base data caches** follow TabPFNCredit's per-dataset recipes (the sibling project
 `1. TabPFN/TabPFNCredit`; `tests/test_data_identity.py` compares the processed arrays).
@@ -252,23 +252,20 @@ prediction times: **PD at application, LGD at default**. It records excluded nam
 categorical columns identically for all models and monitoring. Raw/cache files remain unchanged.
 Remaining anonymised fields and cohort observation dates still need source-dictionary validation;
 behavioural card datasets cannot automatically be described as application underwriting tasks.
-After those exclusions, post-split steps are learned on the rows each
-fit is fitted on and applied to the rows it predicts (`protocol.fit_fold_preprocessing`, from
-TabPFNCredit's `DataFeeder._apply_post_split_preprocessing`): columns where one value covers more than
-99 % of the fitted rows go; **all fitted rows are retained by default** (row-outlier removal is an
-explicit optional ablation); validation and test values are clipped to the fitted
-rows' 0.1st and 99.9th percentiles. Where TabPFNCredit reduced a table wider than 99 columns to 99 PCA
-components, we keep **the 100 columns with the strongest rank association with the target** — |AUC −
-0.5| for PD, |Spearman ρ| for LGD — scored on the fitted rows of each fit, the same columns for every
-model (`protocol.rank_columns`). Why this rule: no foundation-model pipeline ranks columns by raw
-variance, which favours large units; variance after standardising is one for every column; the
-reductions the literature does use are the models' own (TabPFN-3's per-member subsets) or a univariate
-supervised filter refitted inside each training set (Mitra v2's F-test top-256, TabForestPFN's F-test,
-the TabPFN documentation's mutual information) — leak-free when refitted per fit, and in its rank form
-indifferent to units and monotone transforms. The shared 100-column budget is an experimental
-choice matching our synthetic tables, not a claimed architectural limit of every reference model.
-It affects several wide datasets; the exact retained count is fit-dependent and recorded in every
-result row. An all-features reference comparison is a useful separate sensitivity analysis. Every
+After those exclusions, protocol 7 retains **every feature and every fitted row**, without
+univariate selection or near-constant filtering. Validation/test numeric values are clipped to
+the fitted rows' 0.1st and 99.9th percentiles, learned separately inside each fit. TabPFN retains
+its released preprocessing transforms but receives a per-estimator budget large enough for all
+input columns and their preprocessing expansion; a runtime check rejects internal feature
+subsampling. All other models receive the same full input matrices. Result receipts require
+matching input/preprocessing/model feature counts as well as complete row accounting.
+The 100-column budget of protocols 4–6 was a project choice, not an architectural constraint;
+it is removed from the main comparison. The synthetic training distribution remains 1–100
+columns, so wide-table extrapolation is shared across prior arms. Source audit: `TabICL` and
+`TabPFNEnsemblePreprocessor`/`PreprocessorConfig` in the library repository dumps, pin
+`de324efcca55be392feb0c01830b3b6ce364587f`; real released PD/LGD models also passed local
+601-feature prediction and regression-quantile probes, and both released classifiers passed
+2,986-feature probes matching the widest local table's width. Exp0 repeats wide probes on CUDA. Every
 saved checkpoint (every 2,500 steps and the final one) is scored, so each arm has a learning curve on
 real data as well as a final number. Our checkpoints train on 1,024-row tables and are scored on contexts
 of up to ~426,000 rows: that length gap is identical for every arm, so the arm-vs-control contrast is

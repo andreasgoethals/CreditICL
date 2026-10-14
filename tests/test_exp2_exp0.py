@@ -112,7 +112,8 @@ def test_the_main_benchmark_scores_both_models_and_the_reference_column():
 def test_wide_tables_keep_the_columns_most_associated_with_the_target():
     """The cap keeps the columns with the strongest rank association with the target â€” whatever
     their unit: raw variance would keep the huge-unit noise first."""
-    from src.eval.protocol import MAX_FEATURES, rank_columns
+    from src.eval.protocol import rank_columns
+    MAX_FEATURES = 100  # explicit legacy feature-budget ablation, never the benchmark default
 
     rng = np.random.default_rng(0)
     n, d = 2000, 300
@@ -146,15 +147,15 @@ def test_the_fold_preprocessing_learns_from_the_fitted_rows_only():
 
     rng = np.random.default_rng(2)
     X = rng.normal(size=(400, 150))
-    X[:, 7] = 1.0  # near-constant: goes
+    X[:, 7] = 1.0  # the full-feature protocol also retains near-constant columns
     y = (X[:, 0] + rng.normal(size=400) > 0).astype(float)
     prep, Xf, yf = fit_fold_preprocessing(X, y, [])
     again, _, _ = fit_fold_preprocessing(X, y, [])
-    assert 7 not in prep.keep and len(prep.keep) == 100 and Xf.shape == (len(yf), 100)
+    assert 7 in prep.keep and len(prep.keep) == 150 and Xf.shape == (len(yf), 150)
     assert np.array_equal(prep.keep, again.keep)
     test = rng.normal(size=(50, 150)) * 100  # wild prediction rows
     out = prep.transform(test)
-    assert out.shape == (50, 100)
+    assert out.shape == (50, 150)
     kept = np.isfinite(prep.lower)
     assert (out[:, kept] <= prep.upper[kept] + 1e-6).all() and (out[:, kept] >= prep.lower[kept] - 1e-6).all()
 
@@ -177,7 +178,7 @@ def test_every_model_gets_the_same_data_in_a_fold(monkeypatch):
     monkeypatch.setattr(runner, "score_fold", fake_score)
     rows = runner.evaluate_dataset("pd", "fake", ["catboost", "tabpfn3", "linear"], seed=0, n_folds=2)
     assert len({v for v in seen.values()}) == 1, seen
-    assert all(r["prep_features_in"] == 700 and r["prep_features_used"] == 100 for r in rows)
+    assert all(r["prep_features_in"] == 700 and r["prep_features_used"] == 700 for r in rows)
 
 
 # -- the released weights, wherever they live ---------------------------------------------------------
@@ -356,6 +357,7 @@ def _fake_exp0_tree(root: Path, *, resumed: bool = True) -> None:
                 pd.DataFrame([dict(dataset=domain, model=slot.model, seed=0, fold=f, status="ok",
                                    protocol=PROTOCOL, context_cap=slot.context, r2=.3, roc_auc=.7,
                                    n_train=2000, n_train_used=min(2000, slot.context or 2000), n_test=500,
+                                   prep_features_in=216, prep_features_used=216, n_features_used=216,
                                    total_seconds=900) for f in range(5)]).to_csv(path, index=False)
             request = dict(protocol=PROTOCOL, models=[slot.model], seeds=[0], n_folds=5,
                            credit=["credit"], ood=["ood"], context_cap=slot.context, step=slot.step)

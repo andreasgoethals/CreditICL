@@ -164,3 +164,48 @@ def test_no_tree_is_listed_twice():
                    {"experiment": 0, "checkpoints": True}):
         found = clean_run.roots(**kwargs)
         assert len(found) == len({str(r) for r in found}), kwargs
+
+
+def test_full_reset_includes_legacy_runs_and_names_on_both_tiers(isolated_output, monkeypatch):
+    from src.utils import paths
+
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
+    monkeypatch.setattr("src.utils.run_experiment.queued_job_names", lambda: set())
+    generated, protected = [], []
+    for project in {paths.outputs_dir().parent, paths.big_outputs_dir().parent}:
+        for relative in ("output/results.csv", "outputCreditICL/logs/old.log",
+                         "output_CreditICL/experiment_1/progress.csv",
+                         "checkpoints/exp1_pd__mechanism-rho_range=[0.03,0.12]__s2/step-12500.ckpt",
+                         "checkpoints/exp1_lgd__s0/step-12500.ckpt",
+                         "checkpoints/debug_pd/step-3.ckpt"):
+            p = project / relative
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(b"generated")
+            generated.append(p)
+        for relative in ("checkpoints/tabicl-classifier-v2-20260212.ckpt",
+                         "checkpoints/tabpfn-v3-regressor-v3_default.ckpt",
+                         "checkpoints/released_bundle/weights.ckpt",
+                         "data/raw/input.csv", "prior_cache/ood/table.npz"):
+            p = project / relative
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(b"input")
+            protected.append(p)
+    assert clean_run.reset_output()[0] == len(generated)
+    assert all(p.exists() for p in generated)
+    clean_run.reset_output(clean=True)
+    assert all(not p.exists() for p in generated)
+    assert all(p.read_bytes() == b"input" for p in protected)
+
+
+def test_full_reset_refuses_active_jobs_even_for_legacy_only(isolated_output, monkeypatch):
+    import pytest
+    from src.utils import paths
+
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
+    monkeypatch.setattr("src.utils.run_experiment.queued_job_names", lambda: {"crediticl-exp0-cpu"})
+    path = paths.pretrained_dir() / "exp1_pd__s0/step-12500.ckpt"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"old")
+    with pytest.raises(RuntimeError, match="queued/running"):
+        clean_run.reset_output(clean=True)
+    assert path.exists()

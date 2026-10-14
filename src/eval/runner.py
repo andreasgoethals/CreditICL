@@ -109,6 +109,8 @@ def _fit_predict(model_name: str, task: str, seed: int, X_fit: np.ndarray, y_fit
     if max_context_rows is not None and hasattr(model, "max_context_rows"):
         model.max_context_rows = int(max_context_rows)
     report = model.fit(X_fit, y_fit, cat_indices)
+    if report.n_features != X_fit.shape[1]:
+        raise ValueError("The model wrapper discarded benchmark feature columns")
     pred = np.asarray(model.predict(X_pred), dtype=float)
     if pred.shape != (len(X_pred),):
         raise ValueError(f"Expected one prediction per test row: {pred.shape} for {len(X_pred)} rows")
@@ -205,6 +207,7 @@ def score_fold(task: str, model_name: str, X_tr: np.ndarray, y_tr: np.ndarray, X
         raise ValueError("Non-finite headline metric")
     out.update({
         "n_train_used": report.n_train_used,
+        "n_features_used": report.n_features,
         "subsampled": report.subsampled,
         "fit_seconds": report.fit_seconds,
         "predict_seconds": report.predict_seconds,

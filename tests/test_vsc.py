@@ -72,6 +72,13 @@ def test_every_real_input_and_released_weight_is_present():
         assert request["credit_inputs"] and len(request["ood_inputs"]) >= 25
 
 
+@pytest.mark.parametrize("model_name", ["tabiclv2", "tabpfn3"])
+@pytest.mark.parametrize("task,width", [("pd", 2986), ("lgd", 601)])
+def test_released_models_retain_wide_inputs(model_name, task, width):
+    from test_full_features import assert_released_full_width
+    assert_released_full_width(model_name, task, width)
+
+
 def test_storage_tiers_handle_spaces_and_atomic_writes():
     import json
     import tempfile

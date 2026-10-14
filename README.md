@@ -215,8 +215,10 @@ python -m src.utils.run_experiment 1 --submit
 
 The last command includes the main grid and component ablations. Repeat it after training to
 submit only missing benchmarks; repeat after an interruption to resume incomplete runs.
-The older pool-building launchers refuse submission. Experiment 0 uses selected full-row tables;
-the complete five-fold credit/OOD benchmark runs in Experiments 1–3.
+The older pool-building launchers refuse submission. Experiment 0 uses selected full-row,
+full-feature tables and wide-input model probes (2,986 PD / 601 LGD columns); the complete five-fold credit/OOD benchmark runs
+in Experiments 1–3. Every eligible column is retained; the synthetic training width is not an
+inference limit. The GPU validation job requires the updated CPU job's PASS receipt first.
 
 The local venv is for development and analysis only; **do not copy it to VSC**. The cluster's own
 environment, GPU/partition choice, credit costs, storage rule and the checkpoint/resume mechanism are

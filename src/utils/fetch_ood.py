@@ -34,7 +34,8 @@ def main() -> int:
     ap.add_argument("--n", type=int, default=N_PER_TASK, help="datasets per task type when creating a new list")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--force", action="store_true", help="re-download even if cached")
-    ap.add_argument("--max-features", type=int, default=500)
+    ap.add_argument("--max-features", type=int, default=None,
+                    help="optional dataset eligibility filter; default keeps full widths")
     args = ap.parse_args()
 
     log, _, log_path = setup_logging("fetch_ood", logs_dir(), console=True)

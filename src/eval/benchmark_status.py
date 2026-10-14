@@ -266,7 +266,8 @@ def validate_cells(df: pd.DataFrame, datasets: list[str], models: list[str], see
                    n_folds: int, metric: str, context: int | None = None,
                    row_counts: dict[str, int] | None = None) -> None:
     required = {"dataset", "model", "seed", "fold", "status", "protocol", metric,
-                "n_train", "n_train_used", "n_test"}
+                "n_train", "n_train_used", "n_test", "prep_features_in", "prep_features_used",
+                "n_features_used"}
     if not required.issubset(df.columns):
         raise ValueError(f"Missing result columns: {sorted(required - set(df.columns))}")
     keys = list(df[["dataset", "model", "seed", "fold"]].itertuples(index=False, name=None))
@@ -283,6 +284,13 @@ def validate_cells(df: pd.DataFrame, datasets: list[str], models: list[str], see
             raise ValueError(f"Invalid row counts: {column}")
     if "info_row_cap" in df and df["info_row_cap"].notna().any():
         raise ValueError("Dataset rows were capped before splitting")
+    feature_counts = df[["prep_features_in", "prep_features_used", "n_features_used"]].apply(
+        pd.to_numeric, errors="coerce")
+    if (not np.isfinite(feature_counts.to_numpy()).all()
+            or not (feature_counts > 0).all().all()
+            or not feature_counts.eq(feature_counts.round()).all().all()
+            or not feature_counts.eq(feature_counts.prep_features_in, axis=0).all().all()):
+        raise ValueError("The full-feature benchmark did not retain every eligible column")
     if "pred_nonfinite_frac" in df and not df["pred_nonfinite_frac"].eq(0).all():
         raise ValueError("Non-finite predictions were discarded")
     if row_counts is not None:

@@ -2,16 +2,16 @@
 which checkpoints are scored. Every model — ours, released TabICLv2, TabPFN-3, CatBoost, the
 linear floor — goes through exactly this.
 
-THE PROTOCOL (version 6, 13-10-2026)
+THE PROTOCOL (version 7, 13-10-2026)
 
 * **5-fold cross-validation**, stratified on the default flag for PD, shuffled with a fixed
   seed, so every model sees the same folds. Each row is scored exactly once, by a model whose
   context (or training set) did not contain it.
 * **The whole training pool is the context.** No row cap, no context selection, no
   subsampling: the four training folds go to the model as they are.
-* **At most `MAX_FEATURES` = 100 columns, the SAME ones for every model**: near-constant columns
-  are removed, then a univariate association filter fitted on training rows chooses columns.
-  This is a controlled feature budget, not a claim that the upstream models cannot take more.
+* **All eligible feature columns, the SAME ones for every model.** No width cap, association
+  ranking or near-constant filter. The prediction-time feature policy still excludes targets,
+  identifiers and information unavailable at the declared prediction time.
 * **No training-row deletion.** Rare/extreme fitted rows are retained. Test rows are never
   removed; numeric test values are winsorised using training-fold bounds.
 * **PD: the decision threshold maximises F1 on a validation split.** 20 % of the training pool
@@ -39,13 +39,12 @@ import numpy as np
 #: Bumped whenever the protocol changes, so a completion receipt written under an older one is
 #: never mistaken for a current result (`benchmark_status`). 4 (30-09-2026): TabPFNCredit's
 #: fold preprocessing (below) and the feature cap it replaces PCA with.
-PROTOCOL = 6  # full-table five-fold evaluation; corrected distribution metrics and OOD caches
+PROTOCOL = 7  # full rows AND features; no project-level selection or TabPFN feature subsampling
 N_FOLDS = 5
 #: Share of the training pool held out to choose the PD threshold.
 VALIDATION_FRACTION = 0.2
-#: Column cap for every model (see the protocol above): the width TabICLv2 — and every model we
-#: pretrain — was trained on (at most 100 features, all stages), and the 99 TabPFNCredit reduced to.
-MAX_FEATURES = 100
+#: The synthetic training width is NOT a benchmark input limit.
+MAX_FEATURES: int | None = None
 #: Quantile levels requested from models with a predictive distribution: 99, fine enough that
 #: `2 x mean pinball` approximates CRPS closely.
 QUANTILE_LEVELS = np.round(np.linspace(0.01, 0.99, 99), 2)
@@ -54,7 +53,7 @@ QUANTILE_LEVELS = np.round(np.linspace(0.01, 0.99, 99), 2)
 # ---------------------------------------------------------------------------------------------
 # FOLD PREPROCESSING — TabPFNCredit's post-split steps (`1. TabPFN/TabPFNCredit/src/data/
 # data_feeder.py`, `DataFeeder._apply_post_split_preprocessing`, as its main benchmark ran them),
-# with its PCA replaced by a column cap (30-09-2026). Everything is learned on the rows a model
+# with optional legacy filters for explicit ablations only. Everything is learned on the rows a model
 # is FITTED on and applied to the rows it predicts, so the test fold never shapes it. Identical
 # for every model.
 # ---------------------------------------------------------------------------------------------
@@ -72,7 +71,7 @@ MIN_ROWS_AFTER_OUTLIERS = 20
 MIN_OBSERVED = 20
 #: Predicted rows are clipped to the fitted rows' 0.1st and 99.9th percentiles (numeric columns).
 WINSORIZE = (0.001, 0.999)
-#: How a table wider than `MAX_FEATURES` chooses its columns (`rank_columns`).
+#: Ranking method for an explicitly requested legacy feature-budget ablation only.
 FEATURE_SELECTION = "univariate"
 #: A categorical column is scored through its per-category mean target, shrunk toward the overall
 #: mean with this many pseudo-rows, so a rare category cannot look perfectly predictive.
@@ -105,9 +104,9 @@ def _rank_score(Z: np.ndarray, y: np.ndarray) -> np.ndarray:
 
 def rank_columns(X: np.ndarray, y: np.ndarray, cat_indices: list[int], *,
                  method: str = FEATURE_SELECTION) -> np.ndarray:
-    """Column positions of `X`, best first, for the column cap — computed on the fitted rows only.
+    """Column ranking for explicit legacy ablations, computed on fitted rows only.
 
-    `univariate` (the protocol, 30-09-2026): each column's rank association with the target —
+    `univariate` (protocols 4–6): each column's rank association with the target —
     |AUC - 0.5| for PD, |Spearman rho| for LGD. The filter family foundation-model pipelines use
     for too-wide tables (Mitra v2's F-test top-256, TabForestPFN's F-test, the TabPFN docs'
     mutual information), in its rank form: indifferent to units and to any monotone transform,
@@ -218,18 +217,19 @@ def _outlier_rows(X: np.ndarray, numeric: list[int]) -> np.ndarray:
 def fit_fold_preprocessing(X_fit: np.ndarray, y_fit: np.ndarray, cat_indices: list[int], *,
                            max_features: int | None = MAX_FEATURES,
                            selection: str | None = None,
+                           remove_near_constant: bool = False,
                            remove_outliers: bool = False) -> tuple[FoldPreprocessing, np.ndarray, np.ndarray]:
     """Learn the fold preprocessing on the fitted rows. Returns the preprocessing and the fitted
     rows ready for the model: `(prep, X_fit_clean, y_fit_clean)`.
 
-    All fitted rows are retained by default. The legacy row filter is opt-in for an explicit
-    ablation. Column filtering and prediction winsorisation learn only from fitted rows."""
+    All rows and columns are retained by default. Legacy filters are opt-in for explicit
+    ablations. Prediction winsorisation learns only from fitted rows."""
     X = np.asarray(X_fit, dtype=np.float32)
     y = np.asarray(y_fit)
     cats = {int(c) for c in cat_indices}
     d = X.shape[1]
 
-    constant = _near_constant(X, cats)
+    constant = _near_constant(X, cats) if remove_near_constant else np.zeros(d, dtype=bool)
     keep = np.flatnonzero(~constant)
     numeric = [int(j) for j in keep if j not in cats]
 

@@ -21,6 +21,10 @@ def test_benchmark_rejects_invalid_predictions_before_clipping(value, bounded):
 
 @pytest.mark.parametrize("bounded,expected", [(False, 2.0), (True, 1.0)])
 def test_monitor_clips_only_credit_losses(tmp_path, monkeypatch, bounded, expected):
+    # The monitor lazily imports BOUNDARY_KEYS from runner. Import it before the
+    # metric mock, otherwise runner keeps that mock after monkeypatch restores metrics.
+    import src.eval.runner  # noqa: F401
+
     tracker = ProgressTracker(ProgressConfig(), "lgd", "test", tmp_path)
     monkeypatch.setattr(tracker, "_split", lambda *a, **kw: (np.arange(24), np.arange(24, 40)))
     monkeypatch.setattr(tracker, "_fit_predict", lambda m, X, y, Xt, **kw: {
@@ -74,8 +78,8 @@ def test_tabpfn_monitor_receives_remapped_categories_and_target_bounds(tmp_path,
     X = np.column_stack([np.ones(40), np.arange(40) % 3, np.arange(40)])
     tracker._score(None, "ood/test", X, np.linspace(0, 1, 40), regression=True,
                    bounded_target=False, cat_indices=[1])
-    assert observed["cats"] == [0]  # the constant first column was removed
-    assert observed["features"] == 2
+    assert observed["cats"] == [1]  # the full-feature protocol keeps the constant first column
+    assert observed["features"] == 3
     assert observed["bounded_target"] is False
 
 

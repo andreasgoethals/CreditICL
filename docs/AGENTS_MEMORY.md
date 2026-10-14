@@ -42,6 +42,7 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 13-10-2026 | Exp0 CPU 62306531, wICE, commit `91a568a` | **RUNNING 00:10:32 at 16:53; no completion supplied** | 1,703 current-output files/0.042 GB removed on both tiers; subsequent listing proves flat `checkpoints/exp1_*` survived. Environment audit passed (152 packages), 50 full-row OOD tables refreshed. Protocol 7/full-feature changes require a new CPU PASS before GPU validation; do not update or reset a running checkout |
 | 12-10-2026 | Exp0 checks 11681071, audited 13-10 from ZIP | **FAILED: 95 PASS, 2 FAIL, 1 WARN; both equivalence checks passed** | 21m01s log interval; PD TabPFN nonfinite scaled gradient; LGD TabPFN CPU bar-distribution buffers with CUDA logits. Input/package repairs succeeded. New single-job validation must pass before the corrected 48-run Exp1; preserve historical 90 |
 | 12-10-2026 | Preprocessing, job 62297440, wICE, after `57377b2` | **COMPLETED 0:0, 00:03:00** | VSC installed TabPFN 9.1.0; correct TabICL commit and CatBoost 1.2.10 confirmed. Preflight ran while caches were rebuilding (13 current, 8 stale) and correctly prevented GPU submission. Repeat full preflight after completion; do not resubmit preprocessing |
 | 12-10-2026 | Exp0 checks, job 11680453, Mindwell `gpu_b200`, after `78f6b3f` | **FAILED 1:0, 00:17:27; both trainer-equivalence checks passed** | 21 stale v3 data caches, missing new OOD path while legacy cache exists, installed TabPFN 8.2.0 rejecting v9 inference flags. Repair environment/cache, preflight, then repeat checks. No six-arm Exp0 or benchmark completion yet; 0.291 GPU-h used |
@@ -78,6 +79,20 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 [`RUNS.md`](RUNS.md).
 
 ## Dead ends
+
+### 13-10-2026 — Windows OOD manifest overwrite intermittently denied
+
+**Tried:** Full local pytest after removing benchmark feature caps.
+**Result:** 1,346 passed, 12 skipped; two failures: a stale monitor-test expectation and WinError 5 replacing an OOD manifest. Independent OOD reruns passed.
+**Why:** Monitor now correctly retains all columns. Windows intermittently refused atomic file replacement; the external lock owner is not established.
+**Instead:** Update the monitor expectation and retry Windows access/sharing failures for at most 3.1 seconds, preserving the old cache if retries fail; test both transient and permanent refusal. Prevent a monitor metric mock escaping through a lazy runner import. Final full local suite: 1,353 passed, 12 expected skips (10 VSC-only).
+
+### 13-10-2026 — Reset missed pre-migration checkpoints; full-table benchmark still capped features
+
+**Tried:** Full reset of both `output CreditICL` trees and full-row protocol 6.
+**Result:** VSC removed only 42 MB; historical `checkpoints/exp1_*` remained. Benchmarks still selected 100 columns.
+**Why:** Legacy run folders shared the released-weight parent outside the output tree; the row-only protocol change retained the old column budget. TabPFN also had internal per-member feature budgets.
+**Instead:** Reset recognises only legacy experiment subdirectories, protecting released files. Protocol 7 retains all eligible columns, overrides TabPFN member budgets with a runtime coverage check, and adds local/CUDA wide-input tests. Revalidate CPU then GPU after updating; no cluster rerun submitted here.
 
 ### 13-10-2026 — Windows read-only empty output directories
 

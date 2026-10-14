@@ -160,25 +160,50 @@ def delete_stale_files(plan: list[StaleFile]) -> int:
 
 
 def reset_output(*, clean: bool = False) -> tuple[int, int]:
-    """Reset BOTH output tiers, including nested validation checkpoints and pools.
+    """Reset BOTH output tiers, including historical output names and flat run checkpoints.
 
     Inputs live outside these roots. Refuse links/junctions anywhere in a root,
     verify the entire plan before deleting, and never infer sibling project paths.
     """
     roots_seen, files, directories = set(), [], []
-    for original in (paths.outputs_dir(), paths.big_outputs_dir()):
-        if original.name != paths.OUTPUT_NAME or _linked(original):
+    candidates = []
+    current = (paths.outputs_dir(), paths.big_outputs_dir())
+    if any(p.name != paths.OUTPUT_NAME or _linked(p) for p in current):
+        raise RuntimeError(f"Unexpected or linked output roots: {current}")
+    projects = {p.parent for p in current}
+    for project in sorted(projects):
+        for name in (paths.OUTPUT_NAME, "output", "outputCreditICL", "output_CreditICL"):
+            candidates.append((project / name, False))
+        # Before the output-tree migration, generated runs and released downloads
+        # shared checkpoints/. Delete only the recognised RUN subdirectories,
+        # never the directory itself or its top-level released model files.
+        old = project / "checkpoints"
+        if _linked(old):
+            raise RuntimeError(f"Linked legacy checkpoint root: {old}")
+        if old.is_dir():
+            for child in sorted(old.iterdir()):
+                if re.match(r"^(?:exp[0-3][a-z]*_|debug_)", child.name):
+                    candidates.append((child, True))
+    for original, legacy_run in candidates:
+        if _linked(original):
             raise RuntimeError(f"Unexpected or linked output root: {original}")
         root = original.resolve()
         if root in roots_seen or not root.exists():
             continue
+        project = original.parent.parent if legacy_run else original.parent
+        if not root.is_relative_to(project.resolve()) or not root.is_dir():
+            raise RuntimeError(f"Output root escaped its project: {original}")
         roots_seen.add(root)
-        inputs = [paths.datasets_dir(), paths.pretrained_dir(), paths.ood_cache_dir()]
+        inputs = [paths.datasets_dir(), paths.ood_cache_dir()]
+        if not legacy_run:
+            inputs.append(paths.pretrained_dir())
         if os.environ.get("CREDITICL_TABPFN_DIR"):
-            inputs.append(Path(os.environ["CREDITICL_TABPFN_DIR"]))
+            weights = Path(os.environ["CREDITICL_TABPFN_DIR"])
+            if not legacy_run or weights.resolve() != original.parent.resolve():
+                inputs.append(weights)
         if any(p.resolve().is_relative_to(root) or root.is_relative_to(p.resolve()) for p in inputs):
             raise RuntimeError(f"Input data or released weights overlap output root; move inputs before resetting: {root}")
-        print(f"Output reset root: {root}")
+        print(f"{'Legacy run' if legacy_run else 'Output'} reset root: {root}")
         for directory, folders, names in os.walk(root, followlinks=False):
             for name in folders + names:
                 item = Path(directory) / name
@@ -191,6 +216,8 @@ def reset_output(*, clean: bool = False) -> tuple[int, int]:
                 item = Path(directory) / name
                 info = item.stat()
                 files.append((item, root, (info.st_size, info.st_mtime_ns, info.st_ino)))
+        if legacy_run:
+            directories.append(root)
     total = sum(info[0] for _, _, info in files)
     print(f"Full reset: {len(files)} generated files, {total / 1e9:.3f} GB, including trained checkpoints.")
     if clean:

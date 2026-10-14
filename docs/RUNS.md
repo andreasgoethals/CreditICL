@@ -43,7 +43,7 @@ tar czf ~/crediticl_$(date +%Y%m%d).tar.gz -C "$VSC_DATA/CreditICL" "output Cred
 python -m src.utils.clean_run            # LISTS what is there, deletes nothing
 ```
 
-`clean_run` never touches `data/raw/`, `checkpoints/` or `tfm-library/`, and never
+`clean_run` never touches `data/raw/`, released files in `checkpoints/`, or `tfm-library/`, and never
 `prior_cache/ood/` even under `--prior-cache` — compute nodes have no outbound internet, so
 that cache can only be rebuilt from a login node.
 
@@ -167,6 +167,29 @@ The one thing to do differently.
 ---
 
 ## Runs
+
+## 13-10-2026 — Exp0 CPU 62306531 submitted; legacy checkpoint cleanup gap confirmed
+
+- **Job/config:** `scripts/slurm/exp0_cpu.slurm`, wICE batch, 8 CPUs, 64 GB, four-hour limit;
+  submitted at 16:43 after `git pull --ff-only` reached `91a568a`. Library pin
+  `de324efcca55be392feb0c01830b3b6ce364587f`. No training hyperparameters: CPU validation only.
+- **Resolved setup:** project Python 3.12 environment; dependency update/audit succeeded with
+  152 installed-package records, torch `2.11.0+cu128`; 25 classification + 25 regression OOD
+  tables refreshed without changing the pinned dataset list. Protocol 6, five folds, full rows,
+  but the then-current 100-feature cap remained. The job's resolved receipt has not been supplied.
+- **Observed outcome:** user `sacct` at 16:53 reports RUNNING, elapsed 00:10:32. No CPU completion
+  or GPU submission/result is established by this transcript.
+- **Cleanup evidence:** reset removed 1,703 generated files (0.042 GB) from both current output
+  roots. A subsequent `find` enumerated old `step-*.ckpt` files beneath project-storage
+  `checkpoints/exp1_pd__*` and `checkpoints/exp1_lgd__*`, alongside four released reference files.
+  Therefore the previous reset was incomplete for historical generated checkpoints.
+- **Interpretation/action:** local correction adds legacy run/output discovery while preserving
+  the released files, and protocol 7 removes shared and wrapper feature caps. Four real released
+  model probes (TabPFN/TabICL × PD/LGD) passed with 601 input features, including LGD quantiles;
+  both classifiers also passed at 2,986 features. This is local CPU evidence, not a VSC PASS.
+  After the active job stops, update the checkout,
+  reset with the corrected command, run CPU validation again, and only then submit GPU validation.
+  No cluster command was executed by the agent; no GPU hours were consumed in this session.
 
 
 ## 13-10-2026 — Exp0 job 11681071 output audited; two GPU-specific failures

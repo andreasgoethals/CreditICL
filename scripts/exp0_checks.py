@@ -199,11 +199,7 @@ def check_data(rep: Report) -> None:
                 else:
                     info["target_range"] = [round(float(np.nanmin(y)), 4), round(float(np.nanmax(y)), 4)]
                 status = PASS
-                from src.eval.protocol import MAX_FEATURES
-
-                if X.shape[1] > MAX_FEATURES:
-                    info["note"] = (f"wider than {MAX_FEATURES}: every fit keeps the {MAX_FEATURES} columns "
-                                    "the univariate filter ranks highest on its fitted rows")
+                info["feature_budget"] = "all prediction-time eligible columns; no width cap"
                 if not np.isfinite(y).all():
                     status, info["note"] = WARN, f"{int((~np.isfinite(y)).sum())} non-finite targets"
                 rep.add("data", f"{track}/{name}", status, info)

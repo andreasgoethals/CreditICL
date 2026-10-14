@@ -136,6 +136,7 @@ def _cells(n_folds=5, **extra):
     return pd.DataFrame([{"dataset": "a", "model": "m", "seed": 0, "fold": f, "status": "ok",
                           "protocol": PROTOCOL, "context_cap": np.nan, "r2": 0.3,
                           "n_train": 100, "n_train_used": 100, "n_test": 25,
+                          "prep_features_in": 216, "prep_features_used": 216, "n_features_used": 216,
                           **extra} for f in range(n_folds)])
 
 
@@ -160,6 +161,9 @@ def test_benchmark_requires_every_fold_finite_uncapped_and_current():
     ({"n_train_used": float("nan")}, "row counts"),
     ({"info_row_cap": 1000}, "capped before"),
     ({"pred_nonfinite_frac": .01}, "predictions"),
+    ({"prep_features_used": 100, "n_features_used": 100}, "eligible column"),
+    ({"n_features_used": 100}, "eligible column"),
+    ({"n_features_used": float("nan")}, "eligible column"),
 ])
 def test_receipt_refuses_silent_data_reduction(change, match):
     from src.eval.benchmark_status import validate_cells
@@ -198,7 +202,9 @@ def test_benchmark_receipt_requires_both_domains_and_invalidates_changed_inputs(
     for domain, file in files.items():
         pd.DataFrame([{"dataset": wanted[domain][0], "model": "linear", "seed": 0, "fold": f,
                        "status": "ok", "r2": 0.5, "protocol": PROTOCOL,
-                       "n_train": 100, "n_train_used": 100, "n_test": 25} for f in range(5)]).to_csv(file, index=False)
+                       "n_train": 100, "n_train_used": 100, "n_test": 25,
+                       "prep_features_in": 216, "prep_features_used": 216,
+                       "n_features_used": 216} for f in range(5)]).to_csv(file, index=False)
     assert not B.complete(1, "lgd", 45)
     assert B.check(1, "lgd", 45, write=True)
     assert B.complete(1, "lgd", 45)
@@ -319,7 +325,7 @@ def test_a_debug_context_cap_reaches_the_model(monkeypatch):
         def fit(self, X, y, cat_indices=None):
             seen["cap"] = self.max_context_rows
             from src.eval.baselines import FitReport
-            return FitReport(model="fake", n_train_used=len(X))
+            return FitReport(model="fake", n_train_used=len(X), n_features=X.shape[1])
 
         def predict(self, X):
             return np.full(len(X), 0.5)

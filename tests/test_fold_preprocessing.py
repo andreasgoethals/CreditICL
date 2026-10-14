@@ -64,11 +64,11 @@ def test_the_cap_uses_the_univariate_filter_and_records_what_it_did():
     rng = np.random.default_rng(3)
     X = rng.normal(size=(300, 130))
     y = (X[:, 5] + X[:, 90] + rng.normal(size=300) > 0).astype(float)
-    prep, Xf, yf = P.fit_fold_preprocessing(X, y, [])
+    prep, Xf, yf = P.fit_fold_preprocessing(X, y, [], max_features=100)
     assert {5, 90} <= set(prep.keep.tolist())
-    assert prep.report["features_in"] == 130 and prep.report["features_used"] == P.MAX_FEATURES
+    assert prep.report["features_in"] == 130 and prep.report["features_used"] == 100
     assert prep.report["feature_selection"] == "univariate" and prep.report["features_selected_from"] == 130
-    assert Xf.shape == (len(yf), P.MAX_FEATURES)
+    assert Xf.shape == (len(yf), 100)
 
 
 def test_categorical_positions_follow_the_kept_columns():
@@ -76,7 +76,8 @@ def test_categorical_positions_follow_the_kept_columns():
     X = rng.normal(size=(300, 5))
     X[:, 1] = 1.0  # near-constant: goes
     X[:, 4] = rng.integers(0, 3, 300)
-    prep, _, _ = P.fit_fold_preprocessing(X, (rng.random(300) < 0.5).astype(float), [4], max_features=None)
+    prep, _, _ = P.fit_fold_preprocessing(X, (rng.random(300) < 0.5).astype(float), [4],
+                                         remove_near_constant=True)
     assert prep.keep.tolist() == [0, 2, 3, 4]
     assert prep.cat_indices == [3], "column 4 is now at position 3"
 
@@ -91,4 +92,4 @@ def test_a_lgd_target_is_scored_by_spearman_and_a_pd_one_by_auc():
 
 
 def test_the_protocol_is_bumped_for_the_new_preprocessing():
-    assert P.PROTOCOL == 6 and P.MAX_FEATURES == 100 and P.FEATURE_SELECTION == "univariate"
+    assert P.PROTOCOL == 7 and P.MAX_FEATURES is None

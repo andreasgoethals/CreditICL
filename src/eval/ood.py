@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -253,22 +254,38 @@ def list_ood_datasets(kind: str | None = None) -> list[OODDataset]:
     return [d for d in entries if kind is None or d.kind == kind]
 
 
+def _replace_cache(source: Path, destination: Path) -> None:
+    """Atomic publication, with bounded retries for Windows sharing/access locks.
+
+    Never unlink the previous cache to force a replacement. Non-Windows permission
+    failures and locks that outlast the retry window still raise normally.
+    """
+    for attempt in range(6):
+        try:
+            source.replace(destination)
+            return
+        except PermissionError as exc:
+            if getattr(exc, "winerror", None) not in (5, 32, 33) or attempt == 5:
+                raise
+            time.sleep(0.1 * 2 ** attempt)
+
+
 def fetch_ood_datasets(
     n_per_task: int = N_PER_TASK,
     *,
     force: bool = False,
     max_rows: int | None = None,
-    max_features: int = 500,
+    max_features: int | None = None,
 ) -> list[OODDataset]:
     """Download and cache the OOD suites. **Run on a login node only.**
 
-    Resolves each suite through the OpenML API, drops anything credit-like or too
-    large, takes the first `n_per_task` by task id (deterministic, not random, so the
+    Resolves each suite through the OpenML API, drops anything credit-like, takes
+    the first `n_per_task` by task id (deterministic, not random, so the
     selection is reproducible without a seed), and writes one `.npz` per dataset plus a
     manifest.
 
-    Eligible tables are cached without any row truncation. The feature-count
-    eligibility rule and missing-target exclusions remain explicit. Once a list
+    Eligible tables are cached without any row or feature truncation. An optional
+    feature-count eligibility filter must be explicitly requested. Once a list
     is pinned, refresh those same datasets and fail if one cannot be recovered.
     """
     log = get_logger()
@@ -385,7 +402,7 @@ def fetch_ood_datasets(
 
             if X_df is None or y_s is None or len(X_df) == 0:
                 continue
-            if X_df.shape[1] > max_features:
+            if max_features is not None and X_df.shape[1] > max_features:
                 log.info("[ood] SKIP %s — %d features exceeds the cap", ds.name, X_df.shape[1])
                 continue
             source_rows = len(X_df)
@@ -456,7 +473,7 @@ def fetch_ood_datasets(
                 )
             # Rename LAST, so a download killed halfway leaves a `.tmp` that no reader
             # picks up rather than a truncated `.npz` that looks complete.
-            tmp.replace(out)
+            _replace_cache(tmp, out)
             kept.append(entry)
             chosen_by_kind[kind] += 1
             seen_names.add(slug_name)
@@ -475,7 +492,7 @@ def fetch_ood_datasets(
     payload = {"version": OOD_VERSION, "suites": previous.get("suites", SUITES), "datasets": [asdict(d) for d in kept]}
     tmp = manifest_path().with_suffix(".json.tmp")
     tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    tmp.replace(manifest_path())
+    _replace_cache(tmp, manifest_path())
     log.info("[ood] wrote %s with %d datasets", manifest_path(), len(kept))
     return kept
 
