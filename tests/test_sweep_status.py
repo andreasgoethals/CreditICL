@@ -128,6 +128,9 @@ def test_finished_summary_cannot_hide_a_changed_training_implementation(tmp_path
 
 def test_resubmit_uses_the_requested_experiment_and_checks_readiness(monkeypatch):
     from src.utils import sweep_status, preflight
+    from src.utils import run_experiment
+
+    monkeypatch.setattr(run_experiment, "queued_job_names", lambda: set())
 
     monkeypatch.setattr(sweep_status, "arm_states", lambda *a: [_arm(0, PARTIAL)])
     calls = []

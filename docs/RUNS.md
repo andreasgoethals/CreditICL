@@ -28,8 +28,7 @@ Related, and deliberately separate:
 .CreditICL\Scripts\python.exe -m pytest -q
 ```
 
-And **on the login node**, because a run that cannot write where it thinks it can will
-silently reroute to `$VSC_DATA` and only fail once the 75 GiB quota is gone:
+And **on the login node**, to verify permanent storage before requesting compute. Unwritable storage now fails closed:
 
 ```bash
 python scripts/check_storage.py
@@ -167,6 +166,50 @@ The one thing to do differently.
 ---
 
 ## Runs
+
+## 14-10-2026 — Exp0 CPU 62311762 failed two path fixtures; GPU correctly blocked
+
+**Submitted** 14-10-2026 08:44 CEST | **job** 62311762 | **cluster** wICE `batch`, node `l33c20n2`
+**Commit** `2380e36` (log reports dirty checkout; cause not established) | **tfm-library pin**
+`de324efcca55be392feb0c01830b3b6ce364587f` | **GPUs** 0 | **walltime** 4h requested / 14m53s log interval
+
+### Configuration
+
+- `scripts/slurm/exp0_cpu.slurm`, 8 CPUs, 64 GB; `validate_experiment.py --phase cpu`.
+- Twelve stages: preprocess, portable tests, preflight and nine diagnostic sections.
+- Protocol 7, all rows and eligible features, five-fold checks on 21 credit and 50 pinned OOD tables.
+- TabPFN 9.1.0, TabICL 2.1.1 from commit `8f1aa2098c894ab91dba15209cf2002ba4be6c6c`, CatBoost 1.2.10,
+  torch 2.11.0+cu128. This job performed no production training or full model benchmark.
+- Before submission, the reset removed 310 generated files / 60.785 GB from both storage tiers,
+  including flat legacy `checkpoints/exp1_*`; the repeat dry run found zero generated files.
+  Source data and four released checkpoints were retained.
+
+### Results
+
+- **FAILED exit 1:** 11/12 stages passed. Unit stage: 1,326 passed, 2 failed, 7 skipped, 10 deselected
+  in 619.67s. Remaining stages completed; 135 dependency checks passed.
+- Failures: `test_notebook_outputs` assumed a shared big/small-output parent; `test_paths`
+  assumed a fresh OOD cache while the cluster retained the supported legacy cache.
+- Four architecture tests silently skipped because their local checkpoint glob missed project storage.
+- The subsequent GPU submission attempt at 09:08 was refused by the CPU receipt gate.
+- Evidence: downloaded `output CreditICL.zip`, 39 files, and the 14 October terminal transcript;
+  `experiment_0/logs/exp0_cpu_20261014_084405_j62311762.log`, attempt
+  `cpu_20261014T064418Z_j62311762_cc1e460d`. No GPU job or new Exp1–3 result appears in this upload.
+
+### Bugs and anomalies
+
+The two unit failures concern fixtures, not failed training. Independent follow-up confirmed
+additional production risks: large-value reduction overflow, incomplete borrower grouping,
+post-default/future fields, the no-macro rate confound, unequal TabPFN preprocessing,
+precision/equivalence mismatch, and repeated Mindwell working I/O on Lustre. These have separate
+code repairs and regression checks; a CPU fixture repair alone would not validate them.
+
+### Interpretation and next
+
+The guard saved an unnecessary GPU allocation. This upload proves preprocessing, package and
+data/split checks succeeded on wICE; it does not prove CUDA execution or full-table model capacity.
+After publishing the local repairs, rerun CPU validation, then GPU validation. Preserve this
+attempt for diagnosis; no fresh reset is needed. Only successful current receipts permit Exp1.
 
 ## 13-10-2026 — Exp0 CPU 62306531 submitted; legacy checkpoint cleanup gap confirmed
 

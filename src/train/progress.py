@@ -81,7 +81,7 @@ class ProgressConfig:
 
 #: Bumped when the measurement changes; a CSV of an older protocol is set aside, never appended to.
 #: 4 (30-09-2026): the benchmark's fold preprocessing on the context rows.
-PROGRESS_PROTOCOL = 6  # preserve OOD ranges and categorical metadata; reject infinities before clipping
+PROGRESS_PROTOCOL = 7  # monitoring also keeps borrowers disjoint between context and test
 
 
 class ProgressTracker:
@@ -172,7 +172,8 @@ class ProgressTracker:
         return entries
 
     # -- the measurement -----------------------------------------------------
-    def _split(self, key: str, y: np.ndarray, classification: bool) -> tuple[np.ndarray, np.ndarray]:
+    def _split(self, key: str, y: np.ndarray, classification: bool,
+               groups: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
         """`(context_idx, test_idx)` for one dataset: drawn once, from a seed of the dataset's
         NAME, so it is the same rows at every step and in every arm. Stratified for a class
         target, so the context always holds both classes."""
@@ -190,7 +191,16 @@ class ProgressTracker:
         strat = (y >= 0.5).astype(int) if classification else None
         if strat is not None and np.bincount(strat, minlength=2).min() < 4:
             strat = None
-        ctx, rest = train_test_split(index, train_size=ctx_n, random_state=seed, stratify=strat)
+        if groups is None:
+            ctx, rest = train_test_split(index, train_size=ctx_n, random_state=seed, stratify=strat)
+        else:
+            from src.eval.protocol import validation_split
+
+            ctx, rest = validation_split(y, "pd" if classification else "lgd",
+                                         fraction=0.5, seed=seed, groups=groups)
+            if len(ctx) > ctx_n:
+                ctx, _ = train_test_split(ctx, train_size=ctx_n, random_state=seed,
+                                          stratify=strat[ctx] if strat is not None else None)
         if len(rest) > test_n:
             rest_strat = strat[rest] if strat is not None else None
             rest, _ = train_test_split(rest, train_size=test_n, random_state=seed + 1, stratify=rest_strat)
@@ -238,7 +248,8 @@ class ProgressTracker:
 
     def _score(self, model, key: str, X: np.ndarray, y: np.ndarray, *, regression: bool,
                scale_target: bool = False, bounded_target: bool = True,
-               cat_indices: list[int] | None = None) -> dict[str, float]:
+               cat_indices: list[int] | None = None,
+               groups: np.ndarray | None = None) -> dict[str, float]:
         """Score one table with the CURRENT weights, in context. Pure numpy in, floats out."""
         # A NON-FINITE TARGET CANNOT BE SCORED, AND IS NOT THE SAME AS A BROKEN MODEL.
         # sklearn raises the same "Input contains NaN." for a NaN label and a NaN prediction,
@@ -250,7 +261,8 @@ class ProgressTracker:
         X, y = X[finite], y[finite]
         if len(y) < 32:
             return {"skipped_nonfinite_target": 1.0} if dropped else {}
-        ctx_idx, test_idx = self._split(key, y, classification=not regression)
+        groups = np.asarray(groups)[finite] if groups is not None else None
+        ctx_idx, test_idx = self._split(key, y, classification=not regression, groups=groups)
         Xc, yc, Xt, yt = X[ctx_idx], y[ctx_idx], X[test_idx], y[test_idx]
         if len(yt) < 8:
             return {}
@@ -337,7 +349,7 @@ class ProgressTracker:
                     for k, v in self._score(model, f"real/{slug}", np.asarray(Xr, np.float32),
                                             np.asarray(ds.y, np.float32),
                                             regression=self.task == "lgd",
-                                            cat_indices=cats).items():
+                                            cat_indices=cats, groups=getattr(ds, "groups", None)).items():
                         row[f"real__{short}__{k}"] = round(v, 6)
                 except Exception as exc:  # noqa: BLE001 — one dataset, one failure
                     errors.append(f"real/{short}: {type(exc).__name__}: {exc}")

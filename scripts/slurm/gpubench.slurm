@@ -3,8 +3,8 @@
 #  Run scripts/benchmark_gpu.py on whichever card SLURM gives us.
 #
 #  Submit it TWICE — the whole point is the comparison:
-#      bash scripts/slurm/submit.sh free pd scripts/slurm/benchmark.slurm
-#      bash scripts/slurm/submit.sh b200 pd scripts/slurm/benchmark.slurm
+#      sbatch --clusters=wice --partition=gpu_a100 scripts/slurm/gpubench.slurm
+#      sbatch --clusters=mindwell --partition=gpu_b200 scripts/slurm/gpubench.slurm
 #
 #  Then diff the two logs row by row. The reading is printed at the bottom of
 #  each: raw matmul differing means the card or the wheel; only the end-to-end
@@ -23,8 +23,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=30G
 #SBATCH --time=00:15:00
-#SBATCH --output=/dev/null
-#SBATCH --error=/dev/null
+#SBATCH --output=slurm-%x-%j.out
+#SBATCH --error=slurm-%x-%j.err
 #SBATCH --export=ALL
 # ONE task. This is a measurement, not a sweep.
 #SBATCH --array=0
@@ -35,7 +35,7 @@ REPO="${VSC_DATA}/CreditICL"
 cd "$REPO"
 source scripts/slurm/_activate_env.sh
 
-# Argument 1 is the config (as submit.sh passes one) — only its task is used.
+# Argument 1 is the config — only its task is used.
 CONFIG="${1:-config/Exp1_PD.yaml}"
 case "$CONFIG" in
     *_PD.yaml) TASK=pd ;;

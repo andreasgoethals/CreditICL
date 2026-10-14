@@ -13,7 +13,7 @@ What it reports, per prior:
 * **LGD** — how much mass sits at exactly 0 and exactly 1, how often either atom
   appears at all, the target's range, and how many distinct values it takes.
 * **PD** — the base-rate distribution: mean, percentiles, and what fraction of
-  tasks land under 5% and under 10% minority.
+  tasks have positive-class rates below 5% and 10%, plus a separately named minority-rate summary.
 * **both** — the ExtraTrees pseudo-R² distribution (how predictable the tasks
   are), the filter's rejection rate, feature counts and categorical cardinality.
 
@@ -65,6 +65,7 @@ def main() -> int:
 
     stats: list[dict] = []
     rates: list[float] = []
+    minority_rates: list[float] = []
     n_features: list[int] = []
     sources = {"base": 0, "credit": 0}
 
@@ -74,7 +75,8 @@ def main() -> int:
         n_features.append(t.n_features)
         stats.append(target_stats(t.y))
         if task == "pd":
-            rates.append(min(float(t.y.mean()), 1.0 - float(t.y.mean())))
+            rates.append(float(t.y.mean()))
+            minority_rates.append(min(rates[-1], 1.0 - rates[-1]))
 
         if (i + 1) % 100 == 0:
             print(f"  sampled {i + 1}/{args.n}", flush=True, file=sys.stderr)
@@ -110,6 +112,8 @@ def main() -> int:
             "p90": round(pct(rates, 90), 4),
             "frac_under_05": round(float(np.mean([r < 0.05 for r in rates])), 4),
             "frac_under_10": round(float(np.mean([r < 0.10 for r in rates])), 4),
+            "minority_mean": round(float(np.mean(minority_rates)), 4),
+            "minority_frac_under_05": round(float(np.mean(np.asarray(minority_rates) < .05)), 4),
         }
         report["real_data_reference"] = {
             "gmsc": 0.067,

@@ -228,6 +228,8 @@ class OODDataset:
     n_classes: int | None = None
     target_name: str | None = None
     source_rows: int | None = None
+    cache_file: str | None = None
+    source_suite: str | None = None
 
     @property
     def slug(self) -> str:
@@ -252,6 +254,14 @@ def list_ood_datasets(kind: str | None = None) -> list[OODDataset]:
     """The cached OOD datasets, optionally filtered to one kind."""
     entries = [OODDataset(**d) for d in load_manifest()["datasets"]]
     return [d for d in entries if kind is None or d.kind == kind]
+
+
+def cache_path(entry: OODDataset) -> Path:
+    relative = Path(entry.cache_file or f"{entry.slug}.npz")
+    root = ood_root()
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError("OOD cache file must stay within its cache root")
+    return root / relative
 
 
 def _replace_cache(source: Path, destination: Path) -> None:
@@ -303,12 +313,15 @@ def fetch_ood_datasets(
 
     root = ood_root()
     root.mkdir(parents=True, exist_ok=True)
+    from uuid import uuid4
+
+    generation = Path("generations") / uuid4().hex
     previous = json.loads(manifest_path().read_text(encoding="utf-8")) if manifest_path().is_file() else {}
     # Refresh the same pinned benchmark list, never replace a failed large dataset
     # with an easier new one while upgrading an old capped cache.
     pinned = {int(d["openml_id"]): d for d in previous.get("datasets", [])}
     existing = {d.openml_id: d for d in list_ood_datasets()
-                if (root / f"{d.slug}.npz").is_file()} if not force else {}
+                if cache_path(d).is_file()} if not force else {}
     kept: list[OODDataset] = list(existing.values())
 
     unavailable: list[str] = []
@@ -460,8 +473,12 @@ def fetch_ood_datasets(
                 n_rows=int(X_arr.shape[0]), n_features=int(X_arr.shape[1]),
                 n_classes=n_classes,
                 target_name=str(task.target_name), source_rows=source_rows,
+                source_suite=(pinned.get(int(ds.dataset_id), {}).get("source_suite")
+                              if pinned else suite_name),
             )
-            out = root / f"{entry.slug}.npz"
+            entry.cache_file = (generation / f"{entry.slug}.npz").as_posix()
+            out = cache_path(entry)
+            out.parent.mkdir(parents=True, exist_ok=True)
             tmp = out.with_suffix(".npz.tmp")
             # WRITE THROUGH AN OPEN HANDLE, not a path. Given a path whose name does not
             # end in `.npz`, `np.savez_compressed` silently APPENDS the extension — so
@@ -499,13 +516,15 @@ def fetch_ood_datasets(
 
 def load_ood_dataset(entry: OODDataset) -> tuple[np.ndarray, np.ndarray, list[int]]:
     """Load one cached OOD table. Never touches the network."""
-    path = ood_root() / f"{entry.slug}.npz"
+    path = cache_path(entry)
     if not path.is_file():
         raise FileNotFoundError(
             f"{path} is missing. Fetch the out-of-domain suites first, ON A LOGIN NODE "
             f"(compute nodes have no internet):\n    python -m src.utils.fetch_ood"
         )
-    with np.load(path) as z:
+    from src.utils.working_storage import local_input
+
+    with np.load(local_input(path)) as z:
         X, y, cat = z["X"], z["y"], [int(i) for i in z["cat_indices"]]
     # A cache written before the fetch dropped missing classification targets can still hold
     # `-1` labels (pandas `cat.codes` codes NaN as -1). A negative class index is finite, so it

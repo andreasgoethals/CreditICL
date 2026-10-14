@@ -254,6 +254,7 @@ class Telemetry:
         self.grad_every = int(grad_every or 0)
         self.path = Path(out_dir) / "telemetry.csv"
         self._rows, self._fields = _read_rows(self.path)
+        self._rewrite = False
         self._started = time.time()
         #: Recorded once and reported in the summary. Answers "what was this actually run on?",
         #: which no amount of later inspection can recover.
@@ -266,6 +267,7 @@ class Telemetry:
     def resume(self, step: int) -> None:
         """Keep the rows of earlier segments up to the step training continues from."""
         self._rows = _trim_rows(self._rows, step)
+        self._rewrite = True
 
     def due_hardware(self, step: int) -> bool:
         return bool(self.hardware_every) and step % self.hardware_every == 0
@@ -298,9 +300,9 @@ class Telemetry:
         return row
 
     def record(self, row: dict[str, Any]) -> None:
-        """Append a row and rewrite the CSV with the union of all columns seen.
+        """Append rows; rewrite only after resume or when new columns appear.
 
-        Rewritten rather than appended because columns can appear late — gradient rows and
+        A schema change needs a rewrite because columns can appear late — gradient rows and
         hardware rows carry different keys, and a ragged CSV misaligns silently in pandas,
         which is the worst way to lose a diagnostic.
         """
@@ -309,16 +311,22 @@ class Telemetry:
         self._fields.extend(new)
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("w", newline="", encoding="utf-8") as fh:
+            rewrite = bool(new) or self._rewrite or not self.path.exists()
+            with self.path.open("w" if rewrite else "a", newline="", encoding="utf-8") as fh:
                 writer = csv.DictWriter(fh, fieldnames=self._fields)
-                writer.writeheader()
-                writer.writerows(self._rows)
+                if rewrite:
+                    writer.writeheader()
+                    writer.writerows(self._rows)
+                else:
+                    writer.writerow(row)
+            self._rewrite = False
         except Exception as exc:  # noqa: BLE001
             # Deliberately not just OSError. A malformed path raises ValueError, a value the
             # csv module cannot serialise raises TypeError, and a full filesystem raises OSError
             # — and every one of them would otherwise end a three-day run to protect a
             # diagnostic file. The in-memory rows survive, so `summary()` still works.
             log.debug("could not write telemetry to %s: %s", self.path, exc)
+            self._rewrite = True
 
     def summary(self) -> str:
         """What the hardware did across the whole run, for the end of the log."""

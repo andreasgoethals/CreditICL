@@ -8,6 +8,16 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 14-10-2026
+
+- Local verification: 1,388 tests passed / 12 expected skips (11 VSC-only), all 11 notebooks / 119 figures passed, and dependency checks passed; rebuilt all 21 credit caches and verified finite full-table loan-default reductions plus a 759-feature released-model probe. Fresh VSC CPU then GPU validation remains required.
+- Audit Exp0 CPU 62311762: fix two storage-dependent test fixtures and resolve released weights through project storage so architecture checks actually run on VSC.
+- Prevent full-table numeric overflow; repair percentage/sentinel handling, group repeated borrowers, and exclude remaining outcome/future fields.
+- Preserve PD marginal rates in the no-macro ablation and generate outcomes before underwriting selection; align TabICL precision and tighten upstream equivalence checks.
+- Equalize released/continued TabPFN preprocessing, protect monitoring groups, report unresolved selection ties and qualify small-sample uncertainty.
+- Stage Mindwell working I/O on GPFS, publish checkpoints atomically, refuse unwritable permanent storage, and stop duplicate/cancelled/non-progressing continuations.
+- Protect benchmark/OOD publication and legacy cleanup, append telemetry efficiently, retain startup errors, and correct stale implementation/recipe/licence descriptions.
+
 ## 13-10-2026
 
 - Final verification of full-feature/reset fixes: 1,353 tests passed, 12 expected skips (10 VSC-only); released TabPFN/TabICL PD passed 2,986-column probes, both LGD models passed 601-column point/quantile probes; local reset audit found zero generated files.

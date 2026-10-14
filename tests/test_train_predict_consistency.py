@@ -72,12 +72,23 @@ def test_a_credit_table_reaches_the_model_as_upstreams_prediction_path_encodes_i
 
 
 @pytest.mark.parametrize("which", ["pd", "lgd"])
-def test_a_shifted_credit_table_is_standardised_on_its_context_as_prediction_does(pd_cfg, lgd_cfg, which):
+def test_a_shifted_credit_table_is_standardised_on_its_context_as_prediction_does(
+        pd_cfg, lgd_cfg, which, monkeypatch):
     """The statistics that scale a column come from the context rows alone, so a shifted query
     shows up as a query off-centre — which is what a real shifted table looks like to the model."""
     prior = copy.deepcopy((pd_cfg if which == "pd" else lgd_cfg)["prior"])
     prior["credit_fraction"] = 1.0
     prior["credit"]["shift"].update(shift_prob=1.0, kind_weights={"covariate": 1.0})
+    import src.prior.generator as generator
+    from tabicl._sklearn.preprocessing import PreprocessingPipeline, UniqueFeatureFilter
+    seen = []
+    real_view = generator.prediction_view
+
+    def recording_view(X, width, train_size):
+        seen.append((X.clone(), int(width), int(train_size)))
+        return real_view(X, width, train_size)
+
+    monkeypatch.setattr(generator, "prediction_view", recording_view)
     gen = TaskGenerator(prior, which, PriorRNG(5))
     checked = 0
     for _ in range(8):
@@ -86,9 +97,15 @@ def test_a_shifted_credit_table_is_standardised_on_its_context_as_prediction_doe
             continue
         d, ts = int(task.meta["d"]), int(task.meta["train_size"])
         ctx = task.X[:ts, :d].double()
-        # Centred on the context (the soft clip moves a clipped column's mean a little). With
-        # whole-table statistics the sorted column's context sat about 0.8 SD off centre.
-        assert ctx.mean(0).abs().max() < 0.15
+        # Compare the actual upstream transform fitted on context only. A soft
+        # clip can move a rare-category mean past 0.15, so near-zero means are
+        # not a valid oracle for this contract.
+        before, width, recorded_ts = seen[-1]
+        assert ts == recorded_ts
+        raw = before[:, :width].numpy().astype(np.float64)
+        cols = UniqueFeatureFilter().fit(raw[:ts]).transform(raw)
+        expected = PreprocessingPipeline(normalization_method="none", outlier_threshold=4.).fit(cols[:ts]).transform(cols)
+        np.testing.assert_allclose(task.X[:, :d].numpy(), expected, atol=1e-5)
         # Unit SD on the context, less wherever the soft clip compressed a column (a rare binary
         # level at +10 SD is pulled in to about +2.3 — at prediction too); never more.
         assert float(ctx.std(0, unbiased=False).max()) < 1.0 + 1e-3

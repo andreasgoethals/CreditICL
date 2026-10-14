@@ -44,15 +44,14 @@ REFS: dict[str, Ref] = {
                            "paper-evaluated", 0.25, "combined stage-1 graph and ExtraTrees rejection rate, regression"),
     "quantiles": Ref("999-quantile pinball head", "papers/2026/02_Qu_TabICLv2 §I; NanoTabICLv2(out_dim=999)",
                      "paper+code", 999, "represents a point mass exactly — atoms are representable"),
-    "max_cat_size": Ref("graph_scm cap 200 categories", "TabICL.txt GraphSCM(max_cat_size=200)",
-                        "code-supported", 200, "NanoTabICL uses 100"),
+    "max_cat_size": Ref("stage-1 categoricals: 2–9 levels", "TabICL.txt sample_categorical_sizes; PriorConfig",
+                        "code-supported", 9, "legacy converter flag limits the nominal max_cat_size=200"),
     "outlier_clamp": Ref("outlier clamp at 4σ", "TabICL.txt outlier_removing(threshold=4)",
                          "code-supported", None, "clamping is what manufactures the original prior's accidental atoms"),
-    # At pin 81c749b the TabICL dump holds these as classes (KumaraswamyWarping, CategoricalConverter);
-    # NanoTabICL — the implementation this project runs — keeps the original functions. Both checked.
+    # Verified at library pin de324ef; training uses the pinned upstream TabICL package.
     "kumaraswamy": Ref("Kumaraswamy warp a,b∈LogNum(0.2,5)",
                        "NanoTabICL.txt rand_kumaraswamy_act; TabICL.txt KumaraswamyWarping; §E.6",
-                       "code+paper", None, "the [0,1] shape family already in their prior — the same we use for LGD"),
+                       "code+paper", None, "legacy NumericalConverter returns the unwarped value as the dataset column"),
     "imbalance_source": Ref("prior imbalance via softmax b=log(w)",
                             "NanoTabICL.txt rand_converter; TabICL.txt CategoricalConverter; §E.6",
                             "paper-described", None, "graph_scm makes categorical y natively; the softmax bias sets imbalance"),
@@ -96,6 +95,10 @@ REFS: dict[str, Ref] = {
                          "code-supported", None, "discards informative missingness — a thin file is itself a risk signal"),
 
     # -- downstream credit evaluation (1.3/1.4, 2.3/2.4) ---------------------
+    "baesens_tabicl_pd": Ref("14 PD datasets: TabICL AUC 0.7517",
+                            "papers/2026/07_Baesens_et_al._Foundation_Models_for_Credit_Risk_Prediction_A_Game_Changer Table 4",
+                            "paper-evaluated", .7517,
+                            "five-fold HPO benchmark; different model/protocol, not a directly comparable target"),
     "tanna_resampling": Ref("strategy gap exceeds the inter-model gap (~0.03–0.05 AUC)", "papers/2026/05_Tanna_DataPresentation Table 2",
                             "paper-evaluated", None, "balanced sampling adds more AUC than the choice of TFM"),
     "tanna_zerorecall": Ref("default-threshold GBDTs collapse to 0% recall", "papers/2026/05_Tanna_DataPresentation Table 1",
@@ -157,6 +160,7 @@ REFS: dict[str, Ref] = {
 #: one axis. `literature_plots.credit_benchmark_landscape` draws them as the field's landscape — the
 #: caption states the protocol differs from ours, so they are context, not a scoreboard we sit on.
 CREDIT_BENCHMARKS: tuple[str, ...] = (
+    "baesens_tabicl_pd",
     "tanna_rf_hc", "tanna_tabicl_hc", "tanna_tabpfn_hc", "tanna_hc_ceiling",
     "creditg_tabpfn", "tanna_xgb_lc", "tanna_hybrid_lc",
 )

@@ -311,10 +311,28 @@ def measure(root: Path, protected: list[Path] | None = None) -> tuple[int, int]:
         return 0, 0
     prot = protected_paths() if protected is None else protected
     files = [
-        p for p in root.rglob("*")
+        p for p in _safe_tree(root)
         if p.is_file() and p.name not in KEEP and not _is_protected(p, prot)
     ]
     return len(files), sum(p.stat().st_size for p in files)
+
+
+def _safe_tree(root: Path) -> list[Path]:
+    """Validate the whole tree before deletion; never traverse links or junctions."""
+    for parent in (root, *root.parents):
+        if _linked(parent):
+            raise RuntimeError(f"Cleanup refuses a linked path: {parent}")
+    base = root.resolve()
+    found: list[Path] = []
+    pending = [root]
+    while pending:
+        for child in pending.pop().iterdir():
+            if _linked(child) or not child.resolve().is_relative_to(base):
+                raise RuntimeError(f"Cleanup refuses a linked/escaping path: {child}")
+            found.append(child)
+            if child.is_dir():
+                pending.append(child)
+    return found
 
 
 def wipe(root: Path, protected: list[Path] | None = None) -> int:
@@ -327,11 +345,12 @@ def wipe(root: Path, protected: list[Path] | None = None) -> int:
         return 0
     prot = protected_paths() if protected is None else protected
     removed = 0
-    for path in root.rglob("*"):
+    tree = _safe_tree(root)
+    for path in tree:
         if path.is_file() and path.name not in KEEP and not _is_protected(path, prot):
             path.unlink()
             removed += 1
-    for path in sorted((p for p in root.rglob("*") if p.is_dir()),
+    for path in sorted((p for p in tree if p.is_dir()),
                        key=lambda p: len(p.parts), reverse=True):
         if _is_protected(path, prot):
             continue
@@ -418,6 +437,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     print("\nDeleting:")
+    _require_idle_cluster()
+    # Validate every root before deleting the first file.
+    for root in targets:
+        if root.is_dir():
+            _safe_tree(root)
     for root in targets:
         print(f"  removed {wipe(root, prot):>6} files from {root}")
     print("\nClean.")

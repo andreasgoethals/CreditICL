@@ -14,19 +14,21 @@ import numpy as np
 
 from src.data.dataset_registry import canonical_slug
 
-FEATURE_POLICY = "application-pd_default-lgd_v2"
+FEATURE_POLICY = "application-pd_default-lgd_v3"
 
 # 29 September source-data audit, applied after the prediction-time decision on
 # 12 October. Exact source names, including categorical copies, are excluded.
 # Exclude both numerator and denominator: these are outcome-construction inputs,
 # not a separately verified exposure-at-default snapshot.
 EXCLUDED = {
+    ("pd", "0009.bank_status"): {"Current Loan Amount"},  # repaid-loan sentinel encodes the outcome
     ("pd", "0006.hackerearth"): {
         "total_rec_int", "total_rec_late_fee", "recoveries",
         "collection_recovery_fee", "last_week_pay",
     },
     ("lgd", "0005.base_modelisation"): {
         "numerateur", "denominateur", "C_flag_crc_clos_f", "annee_in_dft",
+        "DT_DECHEANCE_TERME", "topbaloispur", "topbaloispur_cor", "spm",
     },
     ("lgd", "0004.base_model"): {
         "FCLT_UnpaidInterest", "flag_clos", "duree_defaut", "DFLT_duree",
@@ -55,8 +57,13 @@ def prediction_features(task: str, dataset: str, X: np.ndarray, cat_indices: lis
     if excluded and (names is None or len(names) != X.shape[1]):
         raise ValueError(f"{task}/{dataset}: column names required for prediction-time exclusions")
     names = names if names is not None else [str(i) for i in range(X.shape[1])]
-    keep = [i for i, name in enumerate(names)
-            if name.removesuffix("__cat").casefold() not in excluded]
+    def eligible(name):
+        normalized = name.removesuffix("__cat").casefold()
+        future_macro = (task == "lgd" and canonical_slug(dataset) == "0005.base_modelisation"
+                        and normalized.startswith("py1_"))
+        return normalized not in excluded and not future_macro
+
+    keep = [i for i, name in enumerate(names) if eligible(name)]
     kept = set(keep)
     dropped = [name for i, name in enumerate(names) if i not in kept]
     if not keep:

@@ -1,6 +1,6 @@
 """Predictability filtering — TabICLv2's `should_filter`, plus a banded mode.
 
-Upstream (verified in `TabICL.txt`, `should_filter` in `prior/_genload.py`, and
+Upstream (verified in `TabICL.txt`, `should_filter` in `prior/_dataset.py`, and
 TabICLv2 Appendix E.14): fit an ExtraTreesRegressor with `n_estimators=25`,
 `bootstrap=True`, `oob_score=True`, `max_depth=6` on the **full** dataset; test
 whether the out-of-bag MSE beats predicting the mean, on at least 95% of 200

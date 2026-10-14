@@ -27,7 +27,7 @@ sweep:
 arms: # one set of overrides per arm (src/utils/config.py)
   scratch_tabicl: { architecture: tabicl, init.strategy: scratch, init.pretrained_path: null, train.optimizer: muon, train.lr: 8.0e-4, train.gradient_clipping: 10.0, train.warmup_proportion: 0.01, train.beta2: 0.95 } # Experiment 1's path
   finetune_tabicl: { architecture: tabicl, train.optimizer: muon, train.lr: 2.0e-5, train.weight_decay: 0.01, train.warmup_proportion: 0.01, train.gradient_clipping: 1.0 } # Experiment 2's TabICLv2 path (stage-3 optimiser; fixed 1024-row tasks)
-  finetune_tabpfn3: { architecture: tabpfn3, prior.encoding: raw, init.pretrained_path: checkpoints/tabpfn-v3-regressor-v3_default.ckpt, train.batch_size: 16, train.optimizer: adamw, train.lr: 1.0e-5, train.weight_decay: 1.0e-4, train.gradient_clipping: 1.0, progress.every_datasets: 3200 } # Experiment 2's TabPFN-3 path
+  finetune_tabpfn3: { architecture: tabpfn3, train.amp: true, prior.encoding: raw, init.pretrained_path: checkpoints/tabpfn-v3-regressor-v3_default.ckpt, train.batch_size: 16, train.optimizer: adamw, train.lr: 1.0e-5, train.weight_decay: 1.0e-4, train.gradient_clipping: 1.0, progress.every_datasets: 3200 } # Experiment 2's TabPFN-3 path
 
 # ----------------------------------------------------------------------------
 # THE PRIOR — Experiment 1's, unchanged (literature-grounded; docs/PRIORS.md)
@@ -52,7 +52,7 @@ prior:
     subgroup_size: 4 # upstream v2: the subgroup is the whole group, which shares its feature count
 
   base: # the UNMODIFIED TabICL prior — changing this changes the control arm
-    max_cat_size: 200 # upstream graph_scm: sample_categorical_sizes(max_cat_size=200)
+    max_cat_size: 200 # legacy upstream sampler effectively draws 2-9 levels
     category_frequency: balanced # how category counts are distributed
 
   credit: # OUR credit prior. Every range is from the credit-risk literature or deliberately wide; none is set from the evaluation data (docs/PRIORS.md)
@@ -137,7 +137,7 @@ train:
   cosine_lr_end: 1.0e-7 # floor of the schedule, upstream's
   l2sp_alpha: 0.0 # no pull toward the released weights (Real-TabPFN's L2-SP is a later ablation)
 
-  amp: true # mixed precision on GPU (TabPFN: float16 + GradScaler, as its fine-tuner)
+  amp: false # TabICLv2 stage scripts use float32; TabPFN arms explicitly enable float16 AMP
   num_workers: 12 # CPU workers generating (and, for TabPFN, preprocessing) the tasks; the SLURM script sets it from the allocation
   log_every: 20 # steps between log lines
   save_temp_every: 100 # rolling checkpoints; what a forced stop resumes from
@@ -176,6 +176,4 @@ eval:
   # (audit 30-09-2026): each pair sits on ONE side, so the holdout stays independent
   dev_datasets: [0007.lgd_lendingclub, 0004.base_model, 0005.base_modelisation, 0001.heloc] # used to choose the prior
   holdout_datasets: [0002.loss2, 0003.axa, 0006.lgd_freddie] # every dataset: the benchmark check measures a real slot's cost
-  metrics: [pinball, crps, coverage, boundary_mass, r2, rmse] # all computed in one run
   select_on: dev # dev | holdout — anything but `dev` here invalidates the experiment
-  ood_suites: all # which out-of-domain suites to score; see src/eval/ood.py SUITES

@@ -31,7 +31,7 @@ def development_ranking(df: pd.DataFrame, track: str, exp: str = "exp1",
     dev = cfg["eval"]["dev_datasets"]
     metric = metric or ("roc_auc" if track == "pd" else "r2")
     columns = ["configuration", "mean", "std", "training_seeds", "datasets", "metric"]
-    if not {"dataset", "model", "seed", "status", metric}.issubset(df):
+    if df is None or not {"dataset", "model", "seed", "status", metric}.issubset(df):
         return pd.DataFrame(columns=columns)
     part = df[df["dataset"].isin(dev)].copy()
     identity = part.get("info_run_name", pd.Series("", index=part.index)).fillna("")
@@ -70,7 +70,12 @@ def development_ranking(df: pd.DataFrame, track: str, exp: str = "exp1",
         rows.append({"configuration": configuration, "mean": per_training_seed.mean(),
                      "std": per_training_seed.std(ddof=1) if len(names) > 1 else 0.0,
                      "training_seeds": len(names), "datasets": len(dev), "metric": metric})
-    return pd.DataFrame(rows, columns=columns).sort_values("mean", ascending=False)
+    ranking = pd.DataFrame(rows, columns=columns).sort_values("mean", ascending=False)
+    if not ranking.empty:
+        best = ranking.iloc[0]
+        ranking["within_seed_spread_of_best"] = (
+            best["mean"] - ranking["mean"] <= np.maximum(float(best["std"]), ranking["std"]))
+    return ranking
 
 
 def main(argv=None) -> int:
@@ -90,7 +95,8 @@ def main(argv=None) -> int:
         return 1
     ranking = development_ranking(load_results(args.track), args.track)
     print(ranking.to_string(index=False))
-    print("Choose the prior from development results; review OOD retention and uncertainty before filling Exp2/3.")
+    print("Rows within the seed spread are unresolved ties, not established improvements. "
+          "Use development results only; review OOD retention before filling Exp3.")
     return 0
 
 

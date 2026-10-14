@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("torch", reason="torch not installed â€” run: pip install -e '.[dev]'")
+pytest.importorskip("torch", reason="torch not installed — run: pip install -e '.[dev]'")
 
 from pathlib import Path
 
@@ -365,12 +365,15 @@ def test_the_same_metrics_are_used_by_every_experiment():
     whole point of Exp2 vs Exp3 is a comparison."""
     from src.utils.config import load
 
+    # Metrics are computed centrally by the runner. The former YAML `metrics`
+    # list was ignored and did not describe all the scores actually returned.
     for track in ("LGD", "PD"):
-        metrics = {
-            exp: tuple(load(f"config/{exp}_{track}.yaml", allow_placeholders=True)["eval"]["metrics"])
-            for exp in ("Exp1", "Exp2", "Exp3")
-        }
-        assert len(set(metrics.values())) == 1, f"{track}: experiments disagree â€” {metrics}"
+        for exp in ("Exp0", "Exp1", "Exp2", "Exp3"):
+            evaluation = load(f"config/{exp}_{track}.yaml", allow_placeholders=True)["eval"]
+            assert "metrics" not in evaluation, "do not reintroduce a non-functional metric override"
+    from src.eval import runner, metrics
+    assert runner.pd_metrics is metrics.pd_metrics
+    assert runner.lgd_metrics is metrics.lgd_metrics
 
 
 def test_the_same_dev_holdout_split_is_used_by_every_experiment():
@@ -416,7 +419,7 @@ def test_the_progress_tracker_records_both_credit_and_out_of_domain():
 
 def test_nan_predictions_are_not_reported_as_constant_predictions():
     """`np.var` of an all-NaN array is NaN, which fails `> EPS` and lands in the CONSTANT
-    branch â€” so a numerical blow-up was reported as a modelling quirk. Three out-of-domain
+    branch — so a numerical blow-up was reported as a modelling quirk. Three out-of-domain
     datasets did exactly this on 14-08-2026."""
     import numpy as np
 
@@ -466,7 +469,7 @@ def test_checkpoint_round_trip_uses_the_architecture_that_saved_it(tmp_path, tas
     `load_our_checkpoint` hard-coded `NanoTabICLv2`. That was correct only while training also
     used Nano; once training moved to upstream `TabICL`, every parameter name mismatched and
     every `crediticl` cell in both evaluations died with "does not match the architecture in
-    its own config" â€” after the training had already finished. The round trip is the only
+    its own config" — after the training had already finished. The round trip is the only
     thing that catches it, because each half works perfectly on its own.
 
     Parametrised on `nanotabicl` because it needs nothing installed; the `tabicl` case is
@@ -503,7 +506,7 @@ def test_checkpoint_round_trip_uses_the_architecture_that_saved_it(tmp_path, tas
 
 @pytest.mark.parametrize("task", ["pd", "lgd"])
 def test_tabicl_round_trip(tmp_path, task):
-    """The architecture every real config uses â€” the exact case that broke on the cluster.
+    """The architecture every real config uses — the exact case that broke on the cluster.
 
     The save side calls the actual production builder: a copied implementation previously
     forced two classes on BOTH sides and concealed the real trainer's ten-class mismatch.
@@ -534,12 +537,12 @@ def test_tabicl_round_trip(tmp_path, task):
 
 
 def test_pd_head_is_tabiclv2s_own_ten_class_head():
-    """The architecture is TabICLv2's, unchanged â€” so the PD head is TEN wide, not two.
+    """The architecture is TabICLv2's, unchanged — so the PD head is TEN wide, not two.
 
     Every classifier stage script in the pinned dump passes `--max_classes 10`, and upstream's
     `_compute_batch_loss` slices `logits[..., :n_classes]` before cross-entropy: the head width
     is architecture, the class count is data. Building a 2-wide head made a
-    27,538,938-parameter model where TabICLv2's is 27,552,258 â€” a DIFFERENT NETWORK, which
+    27,538,938-parameter model where TabICLv2's is 27,552,258 — a DIFFERENT NETWORK, which
     voids the project's central claim to be testing only the prior, and left Exp2 unable to
     warm-start (4 head tensors mismatched on shape).
     """
@@ -559,8 +562,8 @@ def test_pd_head_is_tabiclv2s_own_ten_class_head():
 def test_trainer_does_not_narrow_the_head_to_the_priors_class_count():
     """`Trainer._build_model` used to do `mcfg.setdefault("max_classes", prior.n_classes)`.
 
-    That silently made the architecture a function of the prior â€” the one thing this project
-    varies â€” so an architecture difference could masquerade as a prior effect.
+    That silently made the architecture a function of the prior — the one thing this project
+    varies — so an architecture difference could masquerade as a prior effect.
     """
     src = (ROOT / "src" / "train" / "loop.py").read_text(encoding="utf-8")
     assert 'setdefault("max_classes"' not in src, (
@@ -573,7 +576,7 @@ def test_forward_width_follows_the_data_not_the_head():
 
     `TabICL.forward` returns exactly the classes present in `y_train`, not `max_classes`: a
     10-wide head with binary y returns 2 columns, with 5 classes it returns 5. So the
-    `logits[..., :n_classes]` slice â€” which upstream also does â€” is a NO-OP here, and there
+    `logits[..., :n_classes]` slice — which upstream also does — is a NO-OP here, and there
     was never any probability mass leaking to classes the data does not contain.
 
     The slice stays because upstream keeps it and it costs nothing. This test is what makes
@@ -616,7 +619,7 @@ def test_evaluation_row_cap_is_a_random_subsample_and_is_recorded():
     datasets are 2.4 GB and `0014.algorithmwatch` alone is 1.8 GB, which the loop then splits
     and imputes into several more copies.
 
-    Two things must hold. The cap is a SEEDED RANDOM subsample, never the head â€” taking the
+    Two things must hold. The cap is a SEEDED RANDOM subsample, never the head — taking the
     head of a sorted file once misread a base rate as 49.5% against a true 37.8%. And it is
     recorded in the row, so a capped number can never be mistaken for a full-data one.
     """
@@ -643,14 +646,14 @@ def test_no_config_caps_the_rows():
     """A row cap is a debugging hook of `scripts/evaluate.py`, never part of an experiment."""
     for cfg in (ROOT / "config").glob("Exp*.yaml"):
         assert "max_rows" not in cfg.read_text(encoding="utf-8"), (
-            f"{cfg.name} must not cap rows â€” that would silently shrink a real result"
+            f"{cfg.name} must not cap rows — that would silently shrink a real result"
         )
 
 
 def test_features_are_standardised_before_the_model_sees_them():
     """THE cause of the all-NaN LGD predictions, found by walking the network on a GPU.
 
-    `col_embedder.in_linear` â€” the FIRST layer â€” went non-finite with an output `absmax` of
+    `col_embedder.in_linear` — the FIRST layer — went non-finite with an output `absmax` of
     exactly 6.550e+04, which is float16's largest finite value. The inputs were raw currency
     amounts: `axa` 1.98 and `heloc` 820 worked, `loss2` 2.4e6, `base_modelisation` 8.1e7 and
     `base_model` 9.6e8 all overflowed. Upstream's `PreprocessingPipeline.fit` begins with
@@ -671,11 +674,11 @@ def test_features_are_standardised_before_the_model_sees_them():
     assert np.abs(sq).max() < 65504
     assert np.isfinite(sc[:, 3]).all(), "a constant column must survive, not become NaN"
 
-    # FITTED ON THE CONTEXT ONLY â€” query statistics are not ours to look at.
+    # FITTED ON THE CONTEXT ONLY — query statistics are not ours to look at.
     shifted = Xq + 5e8
     _, s_shifted = standardise_from_context(Xc, shifted)
     assert not np.allclose(s_shifted, sq), (
-        "shifting the query changed nothing, so the scaler is being fitted on the query too â€” "
+        "shifting the query changed nothing, so the scaler is being fitted on the query too — "
         "that is leakage"
     )
 
@@ -711,7 +714,7 @@ def test_scoring_goes_through_upstreams_wrapper_not_our_own_code():
 def test_the_progress_hook_scores_through_upstreams_wrapper_too():
     """Since 28-09-2026 the monitor puts the LIVE weights inside upstream's `TabICLClassifier` /
     `TabICLRegressor` (their `_load_model` is pointed at the in-memory model), so the curve and
-    the benchmark are one measurement at two sizes â€” not a hand-rolled forward pass that skipped
+    the benchmark are one measurement at two sizes — not a hand-rolled forward pass that skipped
     the outlier clip and the ensemble and fed the LGD model raw [0, 1] labels."""
     progress = (ROOT / "src" / "train" / "progress.py").read_text(encoding="utf-8")
     assert "TabICLClassifier" in progress and "TabICLRegressor" in progress
@@ -777,12 +780,12 @@ def test_all_tfm_wrappers_receive_the_same_context(monkeypatch, task, cap):
 def test_context_cap_lives_on_the_shared_base_class():
     """Both columns must be capped identically, or the cap becomes a handicap on one side.
 
-    The wrapper does not limit context â€” TabICL scales to a million rows â€” so it hands the model
+    The wrapper does not limit context — TabICL scales to a million rows — so it hands the model
     the whole training split: 47,089 rows on `heloc` against the <=1,024 we train on, 46x.
     Upstream avoids that with stages 2-3 at 10,240 and 60,000 rows; measured against a quadratic
     row-attention cost, a proportionate curriculum would run 307x our entire stage 1, because
     stage 1 is only 0.3 % of upstream's compute. So the evaluation is matched to the training
-    instead â€” for every model at once.
+    instead — for every model at once.
     """
     from src.eval.baselines import TabICLBaseline, TabPFNBaseline, _TFMBaseline
     from src.eval.crediticl_baseline import CreditICLBaseline
@@ -794,7 +797,7 @@ def test_context_cap_lives_on_the_shared_base_class():
 
 def test_context_cap_is_stratified_for_pd_and_recorded():
     """A 3 %-positive dataset cut uniformly to 1,024 rows can arrive with almost no defaults,
-    and then the model has nothing to learn the positive class from â€” Tanna et al. 2026 measure
+    and then the model has nothing to learn the positive class from — Tanna et al. 2026 measure
     balanced context at 3-4 AUC points on credit data, more than most model-family gaps."""
     m = build("tabiclv2", "pd", seed=0)
     m.max_context_rows = 200
@@ -807,7 +810,7 @@ def test_context_cap_is_stratified_for_pd_and_recorded():
     Xc, yc = m._cap_context(X, y)
 
     assert len(Xc) == 200 == len(yc)
-    assert yc.sum() >= 50, f"only {yc.sum():.0f} positives survived â€” not stratified"
+    assert yc.sum() >= 50, f"only {yc.sum():.0f} positives survived — not stratified"
     assert m.report.extra["context_cap"] == 200
     assert m.report.extra["n_context_full"] == 5000
 
@@ -855,7 +858,7 @@ def test_crediticl_refuses_the_released_checkpoint(tmp_path):
 
 
 def test_the_benchmark_reports_every_metric_a_credit_table_needs():
-    """AUC, Brier, ECE **and MCE**, F1, MCC, accuracy â€” plus fit and predict seconds."""
+    """AUC, Brier, ECE **and MCE**, F1, MCC, accuracy — plus fit and predict seconds."""
     import numpy as np
 
     from src.eval.metrics import pd_metrics

@@ -3,7 +3,7 @@
     python scripts/check_equivalence.py --config config/Exp1_PD.yaml --index 0 --steps 20 --device cuda
     python scripts/check_equivalence.py --config config/Exp1_PD.yaml --tiny --steps 5    # local, CPU
 
-Our `Trainer.train_step` and upstream's `Trainer.run_batch` (pinned dump, `src/tabicl/train/_run.py`)
+Our `Trainer.train_step` and the installed pinned upstream `Trainer.run_batch` (`tabicl/train/_run.py`)
 each take the identical batch — our prior's control arm, which is upstream's `GraphSCM` — starting
 from identical weights, with upstream's optimizer and scheduler built by upstream's own
 `configure_optimizer` / `get_scheduler`. After every step it prints both losses, both learning
@@ -12,10 +12,11 @@ rates and the largest parameter difference.
 WHAT PASSING MEANS. On CPU in float32 the two must agree to rounding (the same operations in the
 same order): any real difference in the update rule — optimizer, schedule, clipping, loss, the
 micro-batch split, the trimming of padded columns — shows up as a jump, usually in the first step.
-On a GPU with bf16 autocast they agree to bf16 rounding, and a small drift over steps is expected.
+The campaign compares float32 on CPU and GPU (loss tolerance 1e-4, parameter tolerance 1e-5).
+An explicitly requested bf16 diagnostic puts BOTH trainers in bf16 (1e-3/1e-4 tolerances).
 
-Upstream's module imports `wandb` and `transformers` at load time for logging and for schedules we
-do not use; neither is installed here, so both are stubbed (a stub raises if it is ever called).
+Upstream imports `wandb` and `transformers`. They are installed dependencies; the training-check
+loader isolates optional telemetry and does not send tracking data.
 Nothing is installed and nothing touches `tfm-library/`.
 """
 
@@ -73,7 +74,7 @@ def upstream_trainer(cfg: dict, model_kwargs: dict, state_dict: dict, device: st
     from tabicl.train._train_config import build_parser
 
     t = cfg["train"]
-    amp = bool(t.get("amp", True)) and device.startswith("cuda")
+    amp = bool(t.get("amp", False)) and device.startswith("cuda")
     args = [
         "--device", device, "--dtype", "bfloat16" if amp else "float32", "--amp", str(amp),
         "--max_steps", str(t["max_steps"]), "--batch_size", str(t["batch_size"]),
@@ -102,6 +103,12 @@ def upstream_trainer(cfg: dict, model_kwargs: dict, state_dict: dict, device: st
     up.raw_model = up.model
     up.configure_optimizer()
     up.configure_amp()
+    if amp:
+        # The pinned trainer treats every non-float16 dtype as float32, including
+        # the accepted string bfloat16. Compare like precision explicitly.
+        import torch
+        up.amp_ctx = torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+        up.scaler = torch.amp.GradScaler("cuda", enabled=False)
     return up
 
 
@@ -161,8 +168,8 @@ def main() -> int:
                 return 1
         ours.close()
 
-    exact = args.device == "cpu" and not (bool(cfg["train"].get("amp")) and args.device.startswith("cuda"))
-    tol_loss, tol_param = (1e-4, 1e-4) if exact else (5e-2, 5e-2)
+    exact = not (bool(cfg["train"].get("amp")) and args.device.startswith("cuda"))
+    tol_loss, tol_param = (1e-4, 1e-5) if exact else (1e-3, 1e-4)
     verdict = "PASS" if worst_loss <= tol_loss and worst_param <= tol_param else "FAIL"
     print(f"\n{verdict}: largest |dloss| {worst_loss:.2e} (tolerance {tol_loss:g}), largest |dparam| "
           f"{worst_param:.2e} (tolerance {tol_param:g}) over {args.steps} steps on {args.device}"

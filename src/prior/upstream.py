@@ -31,7 +31,8 @@ WHAT THIS MODULE GUARANTEES
   upstream's call, no code of ours in the path;
 * the **credit arms** are built on the same upstream sample, using upstream's own `Context`,
   `DatasetProperties`, `RandomDataset`, `sample_categorical_sizes`, `outlier_removing` and
-  `standard_scaling`, so the base half of a mixed prior is the same distribution as the control.
+  `standard_scaling`. Control slots in a mixed batch are identical to the control;
+  credit slots intentionally change converters, filtering, encoding and targets.
 
 That second point is the one that matters. Switching only the control would have made the
 control and the credit arms differ in TWO ways — the credit structure and the base

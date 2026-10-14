@@ -90,10 +90,11 @@ def build_estimator(task: str, model_path: str | Path, *, n_estimators: int, dev
     require_tabpfn_version()
     from tabpfn import TabPFNClassifier, TabPFNRegressor
     from tabpfn.constants import ModelVersion
+    from src.utils.working_storage import local_input
 
     cls = TabPFNClassifier if task == "pd" else TabPFNRegressor
     est = cls.create_default_for_version(
-        version=ModelVersion.V3, model_path=str(model_path), fit_mode="batched",
+        version=ModelVersion.V3, model_path=str(local_input(model_path)), fit_mode="batched",
         differentiable_input=False, n_estimators=int(n_estimators), device=device,
         ignore_pretraining_limits=True, random_state=int(seed),
         inference_config=dict(TABPFN_INFERENCE_CONFIG),
@@ -222,7 +223,7 @@ class TabPFNTrainer:
         # REFUSE A WRONG CONFIG BEFORE TOUCHING THE DISK: an arm that cannot run must not leave an
         # empty run folder behind (it did, 29-09-2026: `output CreditICL/_never_written`).
         tcfg = cfg.get("train", {}) or {}
-        if (cfg.get("prior") or {}).get("encoding", "raw") != "raw":
+        if (cfg.get("prior") or {}).get("encoding", "tabicl") != "raw":
             raise ValueError("TabPFN arms need prior.encoding: raw — TabPFN preprocesses the table "
                              "itself, so a table in TabICL's prediction encoding would be "
                              "preprocessed twice")
@@ -347,6 +348,10 @@ class TabPFNTrainer:
         })
         removed = prune_checkpoints(self.ckpt_dir, save_perm_every=self.save_perm_every,
                                     max_temp=self.max_temp_checkpoints)
+        from src.utils.working_storage import publish_checkpoint
+
+        publish_checkpoint(self.ckpt_dir, self.step, permanent_every=self.save_perm_every,
+                           final=self.step >= self.max_steps, stopped=bool(self._stop_requested))
         self.log.info("checkpoint saved at step %d -> %s%s", self.step, path.name,
                       f" (pruned {len(removed)} old temp checkpoints)" if removed else "")
 
@@ -496,6 +501,8 @@ class TabPFNTrainer:
     # -- the loop --------------------------------------------------------------------------
     def _install_stop_signals(self) -> None:
         def handler(signum, _frame):
+            if self._stop_requested == "SIGTERM":
+                return
             self._stop_requested = signal.Signals(signum).name
             self.log.warning("received %s — finishing the step, then saving and stopping",
                              self._stop_requested)

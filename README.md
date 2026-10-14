@@ -99,7 +99,8 @@ knowing:
 
 - **Data cache:** one parquet file per dataset + a `meta.json` written *last* as the completeness
   marker. Parquet (not `.npy`) so categorical indices survive — CatBoost and TabPFN need them.
-  Per-dataset recipes are shared with the sibling TabPFNCredit project; fix bugs in both.
+  Recipes originated in the sibling TabPFNCredit project. CreditICL's documented corrections
+  have dedicated regressions; unchanged columns are still compared with the sibling cache.
 - **Prior pools:** training can read datasets pre-generated once per variant
   (`prior_cache/<task>__original`, `…__credit_v1`) so a GPU never waits on CPU generation and the two
   sides differ only by design, not by draw. `--prior-source generate` builds live instead.
@@ -241,6 +242,10 @@ all in **[docs/VSC.md](docs/VSC.md)**.
 
 MIT — see [LICENSE](LICENSE). This covers *our code only*; datasets under `data/` carry their own,
 more restrictive terms.
+
+Released model weights retain their upstream licences. In particular, TabPFN-3 uses the
+[TabPFN-3 Non-Commercial License](https://huggingface.co/Prior-Labs/tabpfn_3/blob/main/LICENSE),
+which also applies to derivatives, including our continued-pretraining checkpoints.
 
 ---
 

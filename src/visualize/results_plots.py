@@ -72,10 +72,17 @@ def _read_frames(files: list[Any], protocol: int | None, context: int | None = N
     want = int(version.max()) if protocol is None and len(df) else protocol
     df = df[version.eq(want)].assign(protocol=want)
     if "status" in df and not df["status"].eq("ok").all():
-        raise ValueError("Benchmark contains failed or skipped cells; reporting a success-only average is refused")
+        import warnings
+        warnings.warn("Benchmark contains failed or skipped cells; comparisons are withheld", stacklevel=2)
+        return None
     if want is not None and want >= 6 and len(df):
         from src.eval.comparisons import require_balanced_cells
-        require_balanced_cells(df)
+        try:
+            require_balanced_cells(df)
+        except ValueError as exc:
+            import warnings
+            warnings.warn(f"Incomplete benchmark; comparisons are withheld: {exc}", stacklevel=2)
+            return None
     return df if len(df) else None
 
 
@@ -753,13 +760,15 @@ def results_summary(track: str, exp: str = "exp1") -> str:
         from src.eval.comparisons import paired_prior_effects
         holdout = _restrict(df, track, exp, "holdout") if roles else df
         lines += ["", "D. PAIRED HOLDOUT UNCERTAINTY (datasets are the sampling units)",
-                  "  Fold/seed means within each dataset; paired dataset bootstrap 95% CI.",
+                  "  Fold/seed means within each dataset; descriptive bootstrap interval (nominal 95%).",
+                  "  Small benchmark sets give unstable intervals; coverage is not guaranteed.",
                   "  Two-sided sign test; Holm correction across the comparisons below."]
         if not holdout.empty:
             for row in paired_prior_effects(holdout, metric).itertuples():
                 name = style.arm_name(row.configuration, track, seed=False)
                 lines.append(f"  {name}: {row.mean_difference:+.4f}, CI [{row.ci_low:+.4f}, "
-                             f"{row.ci_high:+.4f}], n={row.datasets} datasets, p(Holm)={row.p_holm:.4g}")
+                             f"{row.ci_high:+.4f}], n={row.datasets} datasets, p(Holm)={row.p_holm:.4g}, "
+                             f"minimum attainable unadjusted p={row.minimum_sign_p:.4g}")
     return "\n".join(lines)
 
 

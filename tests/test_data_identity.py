@@ -1,8 +1,8 @@
-"""The processed datasets are TabPFNCredit's, value for value (30-09-2026).
+"""Unchanged preprocessing stays identical to the sibling project's baseline.
 
 The per-dataset recipes were developed and validated in the sibling project
-`1. TabPFN/TabPFNCredit`; this project copies them and must feed the models the SAME arrays:
-the same numeric block, the same categorical codes, the same targets, the same column set.
+`1. TabPFN/TabPFNCredit`. Explicit CreditICL corrections have dedicated regressions;
+all other columns and targets must retain the baseline values.
 Where that project is on disk (a laptop), every dataset is compared; elsewhere (the cluster) the
 comparison is skipped and the storage round trip below still runs.
 """
@@ -67,19 +67,33 @@ def test_every_dataset_matches_tabpfncredit(task, dataset):
     n_num = N.shape[1] if N is not None else 0
     n_cat = C.shape[1] if C is not None else 0
     assert ds.X.shape == (len(y), n_num + n_cat), "the same column set"
-    assert ds.cat_indices == list(range(n_num, n_num + n_cat)), "the same categorical block"
+    converted = {"int_rate", "revol_util"} if (task, dataset) == ("lgd", "0007.lgd_lendingclub") else set()
+    expected_numeric = n_num + len(converted)
+    assert ds.cat_indices == list(range(expected_numeric, n_num + n_cat)), "only declared type corrections"
     rows = np.arange(len(y)) if ds.X.shape[1] < 500 else np.random.default_rng(0).choice(len(y), 5000, replace=False)
     if N is not None:
         expected = np.asarray(N[rows], np.float64)
-        actual = ds.X[rows, :n_num].astype(np.float64)
+        numeric_names = info["numerical_cols"]
+        actual = ds.X[rows][:, [ds.feature_names.index(name) for name in numeric_names]].astype(np.float64)
         comparable = np.ones(expected.shape, dtype=bool)
         # Explicit CreditICL recipe corrections; keep checking every other value.
         if dataset == "0003.vehicle_loan":
             for name in ("AVERAGE.ACCT.AGE", "CREDIT.HISTORY.LENGTH"):
-                comparable[:, ds.feature_names.index(name)] = False
+                comparable[:, numeric_names.index(name)] = False
+        if dataset == "0009.bank_status":
+            comparable[:, numeric_names.index("Credit Score")] = False  # old cache irreversibly clipped scores
+        if dataset == "0012.home_credit":
+            column = numeric_names.index("DAYS_EMPLOYED")
+            expected[:, column] = np.where(expected[:, column] == 365243, np.nan, expected[:, column])
         comparable &= (np.abs(expected) < 1e10) | np.isnan(expected)
         assert np.array_equal(expected[comparable], actual[comparable], equal_nan=True)
     if C is not None:
-        assert np.array_equal(np.asarray(C[rows], np.int64), ds.X[rows, n_num:].astype(np.int64))
+        for column, name in enumerate(info["categorical_cols"]):
+            if name in converted:
+                assert name in ds.feature_names[:expected_numeric]
+                continue  # numeric percentage semantics have separate source-recipe tests
+            stored = name + "__cat" if name in info["numerical_cols"] else name
+            actual = ds.X[rows, ds.feature_names.index(stored)].astype(np.int64)
+            assert np.array_equal(np.asarray(C[rows, column], np.int64), actual), name
     assert np.array_equal(y.astype(np.float32), ds.y, equal_nan=True), "the same target (at float32)"
     assert info["n_samples"] == ds.n_rows

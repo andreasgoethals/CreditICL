@@ -34,8 +34,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 #SBATCH --time=12:00:00
-#SBATCH --output=/dev/null
-#SBATCH --error=/dev/null
+#SBATCH --output=slurm-%x-%j.out
+#SBATCH --error=slurm-%x-%j.err
 #SBATCH --export=ALL
 #SBATCH --array=0-19
 

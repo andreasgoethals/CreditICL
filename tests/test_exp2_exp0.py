@@ -110,7 +110,7 @@ def test_the_main_benchmark_scores_both_models_and_the_reference_column():
 
 
 def test_wide_tables_keep_the_columns_most_associated_with_the_target():
-    """The cap keeps the columns with the strongest rank association with the target â€” whatever
+    """The cap keeps the columns with the strongest rank association with the target — whatever
     their unit: raw variance would keep the huge-unit noise first."""
     from src.eval.protocol import rank_columns
     MAX_FEATURES = 100  # explicit legacy feature-budget ablation, never the benchmark default

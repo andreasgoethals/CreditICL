@@ -273,14 +273,15 @@ def parse_credit_age(value):
 def _sanitize_numeric_values(
     df: pd.DataFrame, 
     num_cols: List[str],
-    clip_threshold: float = float(np.finfo(np.float32).max)
+    clip_threshold: float = 1e15
 ) -> pd.DataFrame:
     """
     Sanitize numeric columns to prevent numerical overflow.
     
     Operations:
     1. Replace infinity values (±inf) with NaN
-    2. Bound only values outside float32 representability; preserve finite source scales
+    2. Bound extreme values below the float32 reduction-overflow range. Representable
+       individual values can still overflow a mean or variance on a full table.
     
     This is DATA CLEANING, not statistical modeling, so it's safe to 
     apply before splitting (no leakage).
@@ -664,7 +665,7 @@ def preprocess_dataset_specific(
             num_cols = [c for c in num_cols if c in df.columns]
 
         elif dataset == "0009.bank_status":
-            df = df.dropna(how="all").reset_index(drop=True)
+            df = df.dropna(how="all")  # retain source row indices for borrower grouping
             df = df.drop(columns=[c for c in ["Loan ID", "Customer ID"] if c in df.columns], errors="ignore")
 
             if "Loan Status" in df.columns:
@@ -704,9 +705,13 @@ def preprocess_dataset_specific(
             df = df.dropna(subset=[target_col])
 
             if "Credit Score" in df.columns:
-                df["Credit Score"] = df["Credit Score"].clip(0, 1000)
+                # Fixed, label-independent cleaning assumption: repair the source's
+                # tenfold score pattern rather than collapsing every value to 1000.
+                score = pd.to_numeric(df["Credit Score"], errors="coerce")
+                score = score.where(score <= 1000, score / 10)
+                df["Credit Score"] = score.where(score.between(0, 1000))
             
-            logger.info("Applied bank_status-specific transformations: capping Credit Score")
+            logger.info("Applied bank_status-specific transformations: repairing score scale")
 
             cat_cols = (df.select_dtypes(include=["object", "category"])
                     .drop(columns=[target_col], errors="ignore").columns.tolist())
@@ -723,6 +728,12 @@ def preprocess_dataset_specific(
 
         elif dataset == "0011.loan_default":
             df = df.apply(pd.to_numeric, errors="coerce")
+            # These two anonymised columns reach 9e41 in the source. A
+            # float32 clip collapses their ordering and overflows TabICL's scaler.
+            # A fixed monotone transform retains both columns and every source row.
+            for col in ("f391", "f627"):
+                if col in df:
+                    df[col] = np.sign(df[col]) * np.log1p(df[col].abs())
             if "id" in df.columns:
                 df = df.drop(columns=["id"], errors="ignore")
 
@@ -740,6 +751,8 @@ def preprocess_dataset_specific(
         elif dataset == "0012.home_credit":
             if "SK_ID_CURR" in df.columns:
                 df = df.drop(columns=["SK_ID_CURR"], errors="ignore")
+            if "DAYS_EMPLOYED" in df:
+                df["DAYS_EMPLOYED"] = df["DAYS_EMPLOYED"].replace(365243, np.nan)
 
             target_col = "TARGET"
             if target_col not in df.columns:
@@ -986,6 +999,9 @@ def preprocess_dataset_specific(
                 raise ValueError("Expected 'lgd' in lgd_lendingclub dataset.")
             
             df = df.dropna(subset=[target_col])
+            for col in ("int_rate", "revol_util"):
+                if col in df:
+                    df[col] = pd.to_numeric(df[col].astype("string").str.rstrip("%"), errors="coerce")
             
             if "months_since_earliest" in df.columns:
                 df["months_since_earliest"] = df["months_since_earliest"].clip(0, 500)

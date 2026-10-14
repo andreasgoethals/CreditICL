@@ -8,7 +8,6 @@ reimplementation whose 390 names matched zero of the checkpoint's 347.
 
 from __future__ import annotations
 
-import glob
 import os
 
 import pytest
@@ -60,7 +59,8 @@ def test_our_model_matches_the_released_checkpoint_exactly(task, pattern):
     loads into the code that saved it. A name mismatch loads NOTHING and raises nothing — the
     model still runs and outputs partly random numbers — so this must be checked by name, not by
     whether `load_state_dict` threw."""
-    found = glob.glob(f"checkpoints/*tabicl*{pattern}*.ckpt")
+    from src.utils.paths import pretrained_dir
+    found = list(pretrained_dir().glob(f"*tabicl*{pattern}*.ckpt"))
     if not found:
         pytest.skip(f"no released {pattern} checkpoint in checkpoints/")
     obj = torch.load(found[0], map_location="cpu", weights_only=False)
@@ -82,7 +82,8 @@ def test_our_model_matches_the_released_checkpoint_exactly(task, pattern):
 def test_the_released_checkpoint_loads_strictly(task, pattern):
     """The end-to-end version of the test above: `strict=True` must succeed, because Exp2 sets
     `strict_load: true` precisely so a mismatch is a crash rather than a silent no-op."""
-    found = glob.glob(f"checkpoints/*tabicl*{pattern}*.ckpt")
+    from src.utils.paths import pretrained_dir
+    found = list(pretrained_dir().glob(f"*tabicl*{pattern}*.ckpt"))
     if not found:
         pytest.skip(f"no released {pattern} checkpoint in checkpoints/")
     obj = torch.load(found[0], map_location="cpu", weights_only=False)

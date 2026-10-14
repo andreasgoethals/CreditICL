@@ -135,6 +135,7 @@ def apply_underwriting_selection(
     cfg: dict,
     *,
     higher_is_risk: bool = True,
+    return_indices: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, dict]:
     """Drop the rows an underwriting screen would have rejected.
 
@@ -143,13 +144,13 @@ def apply_underwriting_selection(
     general-purpose prior produces that. It is NOT reject inference — it removes the rejected
     rows from the whole table, so context and query are truncated identically and the model
     is never asked to extrapolate across the acceptance boundary. That extrapolation is posed
-    separately by the `selection` shift kind (`shift.py`), which withholds the rejected region
-    from the context while keeping it in the query. Only the quantile-mode path calls this;
-    Both target modes call it (the mechanism mode only since 28-09-2026).
+    separately by the `selection` shift kind (`shift.py`), which partitions on
+    observed covariates without using labels. Both target modes call this screen.
     """
     drop = _per_table(rng, cfg, "selection_drop", 0.0)
     if drop <= 0.0 or X.shape[0] < 32:
-        return X, latent, {"selection_drop": 0.0}
+        result = (X, latent, {"selection_drop": 0.0})
+        return (*result, torch.arange(len(latent))) if return_indices else result
 
     drop = min(drop, 0.5)
     # Screen on a noisy version of the latent: policy is informed but imperfect.
@@ -162,7 +163,8 @@ def apply_underwriting_selection(
     n_keep = int(round(X.shape[0] * (1.0 - drop)))
     keep = torch.argsort(score)[:n_keep]  # reject the highest-risk applicants
     keep = keep[torch.argsort(keep)]  # restore row order; the model is not order-invariant across train/test
-    return X[keep], latent[keep], {"selection_drop": drop, "selection_sharpness": sharpness}
+    result = (X[keep], latent[keep], {"selection_drop": drop, "selection_sharpness": sharpness})
+    return (*result, keep) if return_indices else result
 
 
 def apply_informative_missingness(
@@ -279,12 +281,16 @@ def apply_pd_target(
         # Selection: the observed book holds only the approved applicants. Until 28-09-2026 this
         # branch returned before selection and before the label noise below, so Exp1's credit
         # tasks had neither although the config set both (docs/AGENTS_MEMORY.md, 28-09-2026).
-        X, latent, sel_meta = apply_underwriting_selection(
-            rng, X, latent, cfg.get("selection", {}), higher_is_risk=False)
-        meta.update(sel_meta)
         y, mech_meta = apply_pd_mechanism(rng, latent, cfg.get("mechanism", {}))
         period = mech_meta.pop("_period_factor", None)
         meta.update(mech_meta)
+        # Set applicant outcomes BEFORE screening. Re-ranking only accepted
+        # applicants otherwise resets their default rate and erases selection.
+        X, latent, sel_meta, keep = apply_underwriting_selection(
+            rng, X, latent, cfg.get("selection", {}), higher_is_risk=False, return_indices=True)
+        y = y[keep]
+        period = period[keep] if period is not None else None
+        meta.update(sel_meta)
         # The period factor as a column, with `macro_feature_prob`: macroeconomic variables are
         # explanatory variables in credit models (economic cycle dependency; Bellotti & Crook
         # 2012, as surveyed by Baesens et al. 2026). Otherwise it stays an unrecorded driver.
@@ -309,10 +315,6 @@ def apply_pd_target(
     latent, rule_meta = apply_threshold_rules(rng, X, y_latent, cfg.get("rules", {}))
     meta.update(rule_meta)
 
-    # 2. Selection: the observed book is only the approved applicants.
-    X, latent, sel_meta = apply_underwriting_selection(rng, X, latent, cfg.get("selection", {}))
-    meta.update(sel_meta)
-
     # 3. Signal dilution — applied to the LABEL-assigning latent only, so the
     #    features keep their distribution and only learnability changes.
     rho = float(cfg.get("signal_strength", 1.0))
@@ -324,10 +326,15 @@ def apply_pd_target(
     # 4. Base rate.
     br_lo, br_hi = cfg.get("base_rate_range", [0.01, 0.30])
     base_rate = rng.lognum(br_lo, br_hi)
-    if rng.boolean():
+    flipped = rng.boolean()
+    if flipped:
         z = -z  # randomise which tail is "default", as upstream permutes labels
     y = _quantile_cut(z, base_rate)
     meta["target_base_rate"] = base_rate
+    X, latent, sel_meta, keep = apply_underwriting_selection(
+        rng, X, latent, cfg.get("selection", {}), higher_is_risk=not flipped, return_indices=True)
+    z, y = z[keep], y[keep]
+    meta.update(sel_meta)
 
     # 5. Asymmetric label noise: cures (1->0) are far more common than
     #    unobserved-default relabelling (0->1).

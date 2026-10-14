@@ -62,7 +62,16 @@ five are copied verbatim from `scripts/train_v2_reg_stage1.sh`:
 | `train_frac_range` | `[0.3, 0.9]` | `--min_train_size 0.3 --max_train_size 0.9` |
 
 **Rows are 1,024 exactly, not a range** (`sample_seq_len` returns `max_seq_len` when no min is passed);
-only the train/test split varies. Two of these had drifted (`[512,1024]` rows, `[3,50]` features), both
+only the train/test split varies. With `base.implementation: upstream`, the upstream generator
+owns graph depth and control categories. `n_nodes_range`, `base.max_cat_size` and the
+`category_frequency` fields are only configurable in the small `transcribed` test backend;
+they do not override the production upstream generator. Keep the documented upstream values
+when using that backend.
+`credit.max_cat_size` and `credit.use_corrected_cat_sizes` do configure the production credit path.
+The benchmark metric set and pinned OOD inventory are fixed in the evaluation modules, rather
+than configurable through unused `eval.metrics` / `eval.ood_suites` fields. `beta2` is passed to
+Muon for upstream API fidelity but only affects its AdamW branch; our all-Muon group does not use it.
+Two of these had drifted (`[512,1024]` rows, `[3,50]` features), both
 making training *cheaper* — which is why nothing complained: a wrong setting that costs money gets
 found; one that saves money does not. `test_prior_shape_matches_upstream_stage_one` pins all five.
 
@@ -116,7 +125,10 @@ group, so upstream keeps `micro == batch_size_per_gp` (Exp1/Exp3: micro 4 = grou
 accumulation then runs `ceil(batch/micro)` passes and averages them — mathematically identical to one
 big batch, only speed/memory differ. A bigger GPU does not buy a bigger micro-batch.
 
-**`amp: true`** is a real ~2× speed-up (upstream uses it everywhere), and the attention backend is
+**TabICL uses `amp: false` (float32)**, matching the published stage-script dtype.
+The paper describes AMP, but its scripts explicitly request float32; our optional bf16 mode
+is a separate speed/precision choice, not the campaign default. TabPFN fine-tuning explicitly
+uses float16 autocast with GradScaler and retries overflow on the same batch. The attention backend is
 **pinned** (`src/models/backends.py`): PyTorch's cuDNN fused MHA graph raised on a B200 at batch 64
 under AMP, so it is excluded; flash, mem-efficient and math remain, and the run card logs which is used.
 
@@ -205,7 +217,11 @@ original prior and ours. The recipe is a nuisance parameter that must be good en
 continued-pretraining recipe** (30-09-2026; the stage-A search was dropped): TabICLv2's stage 3
 settings and TabPFN-Wide's settings applied to TabPFN-3. These are adaptations: our synthetic
 tables have 1,024 rows, not TabICLv2 stage 3's long contexts, and applying a paper's settings to
-a newer model does not establish that paper's results transfer. The recipes compared below are
+a newer model does not establish that paper's results transfer. TabICL continuation also
+keeps our context share 0.3–0.9 and group size 4, rather than stage 3's 0.79–0.81 and group size 1.
+TabPFN-Wide studied the v2 classifier, cross-entropy and 40–400 rows with feature preprocessing
+disabled during training. We use v3, 1,024 rows, its official feature pipeline, and the official
+CRPS+MSE regression objective for LGD. These are explicitly project adaptations. The recipes compared below are
 in the library or installed package (bold: the settings this project uses):
 
 | | TabPFN's own fine-tuner (tabpfn 9.1.0) | **TabPFN-Wide (Kolberg 2026) → TabPFN-3** | Real-TabPFN (Garg 2025) | TabICLv2 stage 2 / **stage 3 → TabICLv2** |

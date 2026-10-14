@@ -317,7 +317,8 @@ def test_current_benchmark_rejects_a_summary_from_different_training_code(tmp_pa
         "arm", "exp1bench_lgd_a0", arm=0, step=10, final=True, model="crediticl"))
     monkeypatch.setattr(discovery, "list_datasets", lambda task: ["credit"])
     monkeypatch.setattr(ood, "N_PER_TASK", 1)
-    monkeypatch.setattr(ood, "list_ood_datasets", lambda kind: [SimpleNamespace(name="ood", slug="ood", n_rows=125)])
+    monkeypatch.setattr(ood, "list_ood_datasets", lambda kind: [SimpleNamespace(
+        name="ood", slug="ood", n_rows=125, cache_file=None)])
     monkeypatch.setattr(ood, "manifest_path", lambda: tmp_path / "manifest.json")
     monkeypatch.setattr(ood, "ood_root", lambda: tmp_path)
     monkeypatch.setattr(paths, "find_processed_dir", lambda *a: tmp_path)

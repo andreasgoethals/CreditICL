@@ -67,7 +67,9 @@ def load_our_checkpoint(
     path = Path(path)
     if not path.is_file():
         raise FileNotFoundError(f"no checkpoint at {path}")
-    payload = torch.load(path, map_location=device, weights_only=False)
+    from src.utils.working_storage import local_input
+
+    payload = torch.load(local_input(path), map_location=device, weights_only=False)
 
     # `config` is upstream's slot for the TabICL kwargs; OUR resolved YAML lives in
     # `crediticl_config`. The fallback reads checkpoints written before 18-08-2026,
@@ -260,7 +262,9 @@ def checkpoint_metadata(path: str | Path) -> dict[str, Any]:
     `load_our_checkpoint` builds a network to verify the weights fit, which is right for the NaN
     diagnostic and pure waste when all that is wanted is a run name for a results row.
     """
-    payload = torch.load(Path(path), map_location="cpu", weights_only=False)
+    from src.utils.working_storage import local_input
+
+    payload = torch.load(local_input(path), map_location="cpu", weights_only=False)
     # `crediticl_config` is OURS; `config` alone is upstream's TabICL kwargs and is present in
     # the released download too, so it cannot tell the two apart.
     ours = "crediticl_config" in payload

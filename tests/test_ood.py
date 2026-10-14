@@ -148,7 +148,7 @@ def test_task_kind_is_read_from_the_task(task, expected):
     """THE FIX FOR A DATA-CORRUPTION BUG. Suites were listed under a kind, so every task
     inherited it. TabArena carries both, so `diamonds` (price), `houses` and
     `airfoil_self_noise` had their CONTINUOUS targets run through
-    `.astype("category").cat.codes` â€” thousands of arbitrary classes, cached as if valid."""
+    `.astype("category").cat.codes` — thousands of arbitrary classes, cached as if valid."""
     assert ood.task_kind(task) == expected
 
 
@@ -276,13 +276,13 @@ def test_round_trip(ood_cache):
 # codes a NaN classification target as -1. A negative class label is FINITE, so it slips past
 # every `np.isfinite` guard in the scorers and reaches `F.one_hot(y, max_classes)`, which aborts
 # on the GPU with a device-side assert (`idx_dim >= 0 && idx_dim < index_size`). That corrupts
-# the CUDA context and kills the whole run â€” on the CONTROL arm too, because the out-of-domain
+# the CUDA context and kills the whole run — on the CONTROL arm too, because the out-of-domain
 # eval is prior-independent, which is why credit_fraction=0 arms crashed as well.
 
 
 def test_missing_classification_targets_are_dropped_on_load(ood_cache):
     """A cache written before the fetch dropped unlabelled rows can still hold the -1 codes, so
-    the load boundary must strip them â€” this is what makes an EXISTING cluster cache safe without
+    the load boundary must strip them — this is what makes an EXISTING cluster cache safe without
     a re-fetch. The row was a missing target: unscoreable, so dropping it is the only right move."""
     root = ood_cache.ood_root()
     n = 200
@@ -461,7 +461,7 @@ def test_the_fetcher_does_not_pass_a_path_to_savez():
 
 def test_completeness_is_measured_over_kinds_not_suite_names(ood_cache):
     """REGRESSION. `complete` iterated SUITES (suite names) instead of KINDS, so every lookup
-    missed and it was ALWAYS False â€” the fetch warned "fewer than 25 for at least one task type"
+    missed and it was ALWAYS False — the fetch warned "fewer than 25 for at least one task type"
     while holding exactly 25 of each. A warning that cries wolf is a warning nobody reads."""
     import dataclasses
     import json as _json
@@ -489,14 +489,14 @@ def test_completeness_is_measured_over_kinds_not_suite_names(ood_cache):
 
 
 def test_our_own_datasets_are_excluded_before_the_quota_is_checked():
-    """ORDERING BUG, caught on the second real fetch. `heloc` â€” one of our LGD datasets â€” was
+    """ORDERING BUG, caught on the second real fetch. `heloc` — one of our LGD datasets — was
     skipped as "quota already full", so the credit filter never ran on it. It stayed out purely
     because classification happened to be full; with room to spare it would have been cached
     again and the log would still have looked clean."""
     text = pathlib.Path(ood.__file__).read_text(encoding="utf-8")
     block = text[text.index("def fetch_ood_datasets"):]
     # Match the STATEMENTS, not the prose. The first version of this test matched
-    # "quota already full", which also appears in the comment explaining the bug â€” so it
+    # "quota already full", which also appears in the comment explaining the bug — so it
     # located the comment and failed on a correct file.
     credit_at = block.index("if is_credit_like(ds.name):")
     quota_at = block.index("if not pinned and chosen_by_kind[kind] >= n_per_task:")

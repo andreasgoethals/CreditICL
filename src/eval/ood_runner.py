@@ -103,7 +103,7 @@ def evaluate_ood_dataset(entry: OODDataset, models: list[str], seed: int, cfg: O
     log = get_logger()
     is_clf = entry.kind == "classification"
     task = "pd" if is_clf else "lgd"
-    base = {"suite": "OpenML-CC18" if is_clf else "OpenML-CTR23", "kind": entry.kind,
+    base = {"suite": entry.source_suite or "pinned OpenML benchmark", "kind": entry.kind,
             "dataset": entry.name, "openml_id": entry.openml_id, "seed": seed,
             "protocol": PROTOCOL, "n_folds": cfg.n_folds, "context_cap": cfg.max_context_rows}
     try:

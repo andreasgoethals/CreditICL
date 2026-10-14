@@ -235,6 +235,8 @@ class Trainer:
         # Multi-GPU: torchrun sets RANK/WORLD_SIZE. Absent, this is a no-op and the
         # single-GPU path is byte-for-byte what it was.
         self.dist = dist.detect()
+        if self.dist.enabled:
+            raise ValueError("This campaign validates one GPU per arm; distributed training is not supported")
         self.device = device or dist.setup(self.dist)
         # Each rank must draw DIFFERENT datasets, or an N-GPU run silently sees the
         # same batch N times at 1/N the real diversity.
@@ -357,15 +359,14 @@ class Trainer:
             )
         self.scheduler = build_scheduler(self.optimizer, tcfg, self.max_steps)
 
-        self.amp = bool(tcfg.get("amp", True)) and self.device.startswith("cuda")
+        self.amp = bool(tcfg.get("amp", False)) and self.device.startswith("cuda")
         # Upstream's trainer enables TF32 for every float32 matmul and convolution
         # (`torch.backends.cuda.matmul.allow_tf32 = True`, `cudnn.allow_tf32 = True`).
         if self.device.startswith("cuda"):
             torch.backends.cuda.matmul.allow_tf32 = True
             torch.backends.cudnn.allow_tf32 = True
-        # bf16 autocast, which upstream supports (`--dtype bfloat16 --amp True`). Upstream
-        # enables the loss scaler only for a float16 path: bfloat16 has float32's range and
-        # needs none, so the scaler stays OFF here (it was on, harmlessly, until 28-09-2026).
+        # Optional bf16 is a project speed ablation. The upstream v2 scripts use
+        # float32, which is the scheduled recipe. bf16 does not need a loss scaler.
         self.scaler = torch.amp.GradScaler("cuda", enabled=False)
         self.amp_ctx = (
             torch.autocast(device_type="cuda", dtype=torch.bfloat16) if self.amp else nullcontext()
@@ -501,7 +502,7 @@ class Trainer:
             f"   (== their batch_size_per_gp)",
             f"  max_features      ours {str(pcfg.get('max_features')):>6}   upstream    100",
             f"  max rows          ours {str(rows[-1]) if rows else '?':>6}   upstream  1,024"
-            f"   (stage 1; stages 2-3 reach 60,000 — WE DO NOT RUN THEM)",
+            f"   (project table distribution; not the upstream long-context curriculum)",
             f"  max_steps         ours {self.max_steps:>6}   upstream 500,000"
             f"   <- we see ~{100 * self.max_steps * self.batch_size / 35_200_000:.2f}% of "
             f"their data",
@@ -810,12 +811,15 @@ class Trainer:
         def _request_stop(signum: int, _frame: Any) -> None:
             name = signal.Signals(signum).name
             if self._stop_requested:
-                self.log.warning("%s again — exiting NOW without saving", name)
-                raise SystemExit(143)
+                # Slurm can signal both the shell and its child; forwarding can
+                # deliver TERM twice. A duplicate must not interrupt the save.
+                if name == "SIGTERM":
+                    self._stop_requested = name
+                return
             self._stop_requested = name
             self.log.warning(
-                "%s received at step %s — finishing this step, saving, then exiting 0 so the "
-                "job can be requeued and resumed", name, self.step,
+                "%s received at step %s — finishing this step, saving, then stopping; "
+                "only a walltime SIGUSR1 permits automatic continuation", name, self.step,
             )
 
         # `getattr`, not `signal.SIGUSR1`: the attribute does not EXIST on Windows, so naming
@@ -1170,6 +1174,10 @@ class Trainer:
             save_perm_every=self.save_perm_every,
             max_temp=self.max_temp_checkpoints,
         )
+        from src.utils.working_storage import publish_checkpoint
+
+        publish_checkpoint(self.ckpt_dir, self.step, permanent_every=self.save_perm_every,
+                           final=self.step >= self.max_steps, stopped=bool(self._stop_requested))
         self.log.info(
             "checkpoint saved at step %d%s",
             self.step,

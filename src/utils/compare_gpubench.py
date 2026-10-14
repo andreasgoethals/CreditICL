@@ -93,7 +93,7 @@ def main(argv: list[str]) -> int:
         # answers "did the benchmark actually work?", which is the next question anyway.
         print("Only ONE result so far — this cannot answer the comparison question.\n"
               "Printing it alone so you can see the benchmark ran; submit the other card:\n"
-              "    bash scripts/slurm/submit.sh b200 pd scripts/slurm/benchmark.slurm\n",
+              "    sbatch --clusters=mindwell --partition=gpu_b200 scripts/slurm/gpubench.slurm\n",
               file=sys.stderr)
 
     width = max(len(r[0]) for r in runs) + 2

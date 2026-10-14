@@ -53,7 +53,7 @@ def _all_captions() -> dict[str, str]:
 
 
 def test_everything_generated_lives_under_output():
-    out = paths.outputs_dir()
+    roots = {paths.outputs_dir(), paths.big_outputs_dir()}
     for path in (
         paths.benchmark_dir(1, "pd"),
         paths.benchmark_dir(paths.REFERENCE, "ood"),
@@ -64,7 +64,7 @@ def test_everything_generated_lives_under_output():
         paths.all_results_path(),
         paths.captions_path(),
     ):
-        assert out in path.parents or path.parent == out, f"{path} is outside {out}"
+        assert any(root in path.parents for root in roots), f"{path} is outside {roots}"
 
 
 def test_no_superseded_output_directories_at_the_repo_root():

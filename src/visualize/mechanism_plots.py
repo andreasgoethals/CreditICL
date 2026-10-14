@@ -203,9 +203,9 @@ def correlated_defaults(config_path: str, n: int = 200, seed: int = 0):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=style.figsize(style.WIDTH_FULL, 0.42))
     bins = np.linspace(0, 0.4, 33)
     ax1.hist(r_indep, bins=bins, color=style.MUTED, alpha=0.7,
-             label=f"independent defaults, ρ = 0 (SD {r_indep.std():.3f})")
+             label=f"independent defaults, ρ = 0 (SD {r_indep.std(ddof=1):.3f})")
     ax1.hist(r_conf, bins=bins, color=style.CREDIT, alpha=0.7,
-             label=f"configured, ρ in [{rho_lo:g}, {rho_hi:g}] (SD {r_conf.std():.3f})")
+             label=f"configured, ρ in [{rho_lo:g}, {rho_hi:g}] (SD {r_conf.std(ddof=1):.3f})")
     ax1.axvline(0.15, color=style.INK, ls="--", lw=1.1, label="target rate 15%")
     ax1.set_xlabel("realised default rate per task")
     ax1.set_ylabel("number of tasks")
@@ -217,7 +217,7 @@ def correlated_defaults(config_path: str, n: int = 200, seed: int = 0):
     for r in rhos:
         ts = _generate(task, prior, max(30, n // 3), seed,
                        {**fixed, "credit.target.mechanism.rho_range": [r, r]})
-        sds.append(float(np.std([_base_rate(t) for t in ts])))
+        sds.append(float(np.std([_base_rate(t) for t in ts], ddof=1)))
     ax2.plot(rhos, sds, "o-", color=style.CREDIT, label="our prior at a fixed ρ")
     # The Basel IRB corporate asset-correlation cap sits on this exact axis and bounds the
     # configured range. External domain knowledge, so it draws amber and marked.

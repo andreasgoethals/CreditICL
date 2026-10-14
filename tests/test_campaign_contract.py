@@ -118,12 +118,12 @@ def test_credit_duration_parser(text, months):
     assert parse_credit_age(text) == months
 
 
-def test_large_finite_numeric_values_are_not_flattened():
+def test_large_numeric_values_within_safe_reduction_range_are_not_flattened():
     import pandas as pd
     from src.data.dataset_preprocessing import _sanitize_numeric_values
-    frame = pd.DataFrame({"x": [1e15, 2e15, np.inf]})
+    frame = pd.DataFrame({"x": [1e14, 2e14, np.inf]})
     result = _sanitize_numeric_values(frame, ["x"])
-    assert result.x.iloc[1] == 2e15 and result.x.iloc[0] == 1e15
+    assert result.x.iloc[1] == 2e14 and result.x.iloc[0] == 1e14
     assert np.isnan(result.x.iloc[2])
 
 

@@ -2,8 +2,7 @@
 # =============================================================================
 #  Run the NaN diagnosis ON A GPU, which is where the NaN actually happens.
 #
-#      bash scripts/slurm/submit.sh free lgd scripts/slurm/diagnose.slurm
-#      bash scripts/slurm/submit.sh b200 lgd scripts/slurm/diagnose.slurm
+#      sbatch --clusters=mindwell scripts/slurm/diagnose.slurm
 #
 #  WHY A JOB AND NOT A LOGIN NODE. Run on the login node, the same checkpoint and
 #  the same four datasets came back **completely finite** — including
@@ -20,8 +19,8 @@
 #  `flash` is not, the cause is named and the fix is one context manager.
 #
 #  Cheap: one task, one forward pass per dataset per backend, 15 minutes.
-#  Run it on `free` first — it costs nothing and the RTX 5000 Ada is a different
-#  architecture from the B200, which is itself worth knowing.
+#  The default is Mindwell's short interactive allocation. For the production
+#  B200, add --partition=gpu_b200 to the submission command.
 # =============================================================================
 
 #SBATCH --job-name=crediticl-diagnose
@@ -34,8 +33,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=30G
 #SBATCH --time=00:20:00
-#SBATCH --output=/dev/null
-#SBATCH --error=/dev/null
+#SBATCH --output=slurm-%x-%j.out
+#SBATCH --error=slurm-%x-%j.err
 #SBATCH --export=ALL
 #SBATCH --array=0
 

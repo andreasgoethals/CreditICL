@@ -198,7 +198,7 @@ prior×architecture interaction, so a prior change may need retuning — **log e
 and treat divergence as a reportable outcome, never tune it away silently.**
 
 **Seeds.** 3 per arm in Exp1 and Exp2, 2 in Exp3 (paired: a seed gives both arms the same base tasks
-and initial weights). Report mean ± spread; never rank arms on a gap smaller than the seed spread.
+and initial weights). Report mean ± spread; treat gaps smaller than the seed spread as unresolved ties (flagged by the selection report).
 
 **Two phases, and the order is a fact about the data.** Phase 1 (`pretrain_{pd,lgd}.slurm`) trains one
 checkpoint per saved step per arm; phase 2 (`benchmark.slurm`) scores every saved checkpoint — one array
@@ -228,6 +228,12 @@ credit datasets and the out-of-domain suites. The split is fixed:
 `hackerearth` and `base_modelisation` moved to development on 30-09-2026: the first holds 5,696 of
 `lendingclub`'s 9,578 loans, the second shares defaults with `base_model` (audit, §7 item 5), and a pair
 split across the line would let a choice made on development be tested on the same loans.
+
+The native `hackerearth.loan_status` label is retained. The 14-10-2026 review of the
+[challenge repository](https://github.com/HackerEarth-Challenges/machine-learning-challenge-1)
+did not establish whether 1 denotes default or repayment; correlations with recovery fields
+do not settle that definition. Report it as the supplied binary lending benchmark target,
+without claiming an independently verified default-event definition or reversing its labels.
 
 **Why a holdout at all, when every model trains on synthetic data?** Because choices are still made
 by looking at real-data results — which mix Exp3 runs, which checkpoint a curve is read at. A choice
@@ -289,8 +295,9 @@ R² ≈ 0.04–0.15 linear, 0.10–0.25 beta, 0.20–0.43 tree ensembles), not c
 | controlled base rate + Vasicek defaults | ~neutral | **improves** |
 
 Testing this table requires separate mechanism toggles and a valid crossed-target construction.
-The current Exp1/Exp2 configs change only the mixture fraction within each track, so cannot test
-it. Add controlled target-only, feature-only and generic-realism comparisons before attributing
+The main Exp1/Exp2 grids change only the mixture fraction within each track. Exp1's separate
+component removals test selected contributions, but do not supply this crossed-target design.
+Add controlled target-only, feature-only and generic-realism comparisons before attributing
 gains specifically to individual credit mechanisms; measure difficulty as well. Until then, a
 positive result supports only the full prior package under the tested budget and architecture.
 
@@ -301,7 +308,9 @@ is a hypothesis to test, not a conclusion borrowed from time-series adaptation. 
 the finding** — Exp2's `2.1`/`2.2` notebooks plot the credit-vs-out-of-domain curve directly.
 
 **5.4 Temporal splits.** Distribution-shift work motivates testing time and borrower/source groups,
-rather than generalising an i.i.d. result to deployment. Grouped five-fold splits are implemented for HELOC loans and base_model obligors. Temporal splits remain unimplemented; requesting temporal splitting raises an error. Feasibility depends on identifying
+rather than generalising an i.i.d. result to deployment. Grouped five-fold splits are implemented
+for HELOC loans, base_model obligors, base_modelisation clients and bank_status borrowers.
+Temporal splits remain unimplemented; requesting temporal splitting raises an error. Feasibility depends on identifying
 observation dates, label maturity and repeated borrowers in each source — see [§7](#7-open-decisions).
 
 ## 6. Risks
@@ -354,13 +363,14 @@ observation dates, label maturity and repeated borrowers in each source — see 
    comparison valid. On 12-10 Andreas chose application-time PD/default-time LGD. Known post-outcome
    fields and target components are now excluded, including categorical copies. Some workout
    amounts are conservatively excluded without a verified default-time snapshot. Acceleration date
-   (`DT_DECHEANCE_TERME`) is retained: it can be known at default and has not been proved future
-   information. The current `base_modelisation` cache reproduces the target from numerator/denominator
+   (`DT_DECHEANCE_TERME`) is now conservatively excluded: many source values postdate default.
+   Future `PY1_*` macro fields, workout flags and the client identifier are excluded too. The current `base_modelisation` cache reproduces the target from numerator/denominator
    within 0.001 on 49.2% of 594 rows, not the historical 57%. Source dictionaries and LGD target
    definitions remain necessary; weak univariate prediction does not certify absence of leakage.
 6. **Exp2's reported checkpoint** — resolved 30-09-2026: with no search there is no chosen checkpoint;
    the final one (10,000 steps, the recipes' own length) is the result, the others a learning curve.
    `eval.headline_step`, if a config sets it, is honoured by `results_plots.load_results`.
 7. **Full-row evaluation** — user decision 13-10-2026: no capped-context comparison. All eligible
-   rows participate in five-fold CV. Columns are still filtered/capped at 100 using fitted-fold
-   information only, identically for every model (§5). Full rows do not mean unfiltered raw columns.
+   rows participate in five-fold CV. Every prediction-time-eligible column is retained, including
+   inside TabPFN ensembles; there is no 100-feature benchmark cap. The 100-feature setting
+   describes synthetic training only. Source identifiers and known post-outcome fields remain excluded.

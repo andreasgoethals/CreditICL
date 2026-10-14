@@ -56,7 +56,7 @@ from src.data.discovery import list_datasets
 from src.utils.logging_setup import get_logger
 from src.utils.paths import find_processed_dir, find_raw_file, processed_write_dir
 
-CACHE_VERSION = 6  # repeated-record groups, corrected duration parsing and finite numeric preservation
+CACHE_VERSION = 7  # safe large magnitudes, numeric percentages, sentinels and borrower groups
 
 #: The categorical copy of a column a recipe lists as numeric AND categorical (TabPFNCredit feeds
 #: both: `N = X[num_cols]`, `C = X[cat_cols]`). The parquet needs unique names.
@@ -97,7 +97,8 @@ class DatasetMeta:
 #: everything and features and target can never drift out of alignment.
 TARGET_COLUMN = "__target__"
 GROUP_COLUMN = "__cv_group__"
-GROUP_SOURCES = {("lgd", "0001.heloc"): "REC", ("lgd", "0004.base_model"): "DFLT_SIREN"}
+GROUP_SOURCES = {("lgd", "0001.heloc"): "REC", ("lgd", "0004.base_model"): "DFLT_SIREN",
+                 ("pd", "0009.bank_status"): "Customer ID", ("lgd", "0005.base_modelisation"): "spm"}
 
 
 def stored_category(series: pd.Series) -> pd.Categorical:
@@ -325,7 +326,9 @@ def load_frame(task: str, dataset: str) -> tuple[pd.DataFrame, DatasetMeta]:
         )
     known = set(DatasetMeta.__dataclass_fields__)
     meta = DatasetMeta(**{k: v for k, v in meta_raw.items() if k in known})
-    return pd.read_parquet(d / "data.parquet"), meta
+    from src.utils.working_storage import local_input
+
+    return pd.read_parquet(local_input(d / "data.parquet")), meta
 
 
 @lru_cache(maxsize=4)

@@ -23,10 +23,10 @@ Staging is resolved in this order, so it can be overridden without editing code:
 ``$CREDITICL_STAGING_ROOT`` -> ``$CREDITPFN_STAGING_ROOT`` (shared lab default)
 -> ``$VSC_PROJECT_LUSTRE1/stg_00211`` -> the literal ``/lustre1/project/stg_00211``.
 
-`resolve_writable` exists because staging permissions have failed mid-run before
-(CreditPFN hit this on 2026-07-03 and lost a run's checkpoints). It probes with a
-real write and falls back to `$VSC_DATA` with a loud warning, because a completed
-run in the wrong place beats a crashed one.
+`resolve_writable` probes permanent storage before training and fails if it is
+unwritable. It never changes checkpoint location or restarts an arm implicitly.
+`working_storage` stages repeated reads and rolling checkpoint writes on GPFS
+on Mindwell, publishing permanent, stopped and final checkpoints atomically.
 """
 
 from __future__ import annotations
@@ -585,13 +585,14 @@ def ood_cache_dir() -> Path:
 
 
 def resolve_writable(preferred: Path, fallback: Path | None = None) -> Path:
-    """Return `preferred` if we can actually write there, else `fallback`.
+    """Return `preferred` if writable; otherwise fail before training.
 
     Probes with a real file create+delete. `mkdir` alone is not enough — a
     directory can exist and still be unwritable by this user, which is exactly
     the failure mode this guards against.
     """
-    fallback = fallback or (data_root() / PROJECT_NAME / "fallback")
+    # A different checkpoint directory would silently resume from step zero.
+    # Keep the argument for callers, but never choose an alternative implicitly.
     try:
         preferred.mkdir(parents=True, exist_ok=True)
         probe = preferred / ".write_probe"
@@ -599,14 +600,8 @@ def resolve_writable(preferred: Path, fallback: Path | None = None) -> Path:
         probe.unlink()
         return preferred
     except OSError as exc:
-        print(
-            f"WARNING: cannot write to {preferred} ({exc}).\n"
-            f"         Falling back to {fallback}. Copy results to staging afterwards, "
-            f"or $VSC_DATA will fill up (75 GiB quota).",
-            flush=True,
-        )
-        fallback.mkdir(parents=True, exist_ok=True)
-        return fallback
+        raise OSError(f"Checkpoint storage is not writable: {preferred}. "
+                      "Fix storage permissions/quota before resubmitting; no fallback was used.") from exc
 
 
 def touch_tree(path: Path) -> None:

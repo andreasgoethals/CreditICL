@@ -36,7 +36,7 @@ import torch.nn as nn
 
 # Parameters that stay trainable under every freeze setting: the target
 # embeddings and the output head. See the docstring for why.
-ALWAYS_TRAINABLE = ("y_embed_in", "y_embed_icl", "out_ln", "out_mlp", "row_ln", "row_cls_tokens",
+ALWAYS_TRAINABLE = ("y_embed_in", "y_embed_icl", "out_ln", "out_mlp",
                     "col_embedder.y_encoder", "icl_predictor.y_encoder", "icl_predictor.decoder")
 
 STRATEGIES = ("scratch", "full", "icl_only", "head_only")
@@ -112,6 +112,12 @@ def apply_freezing(model: nn.Module, strategy: str) -> dict[str, Any]:
     for sub in frozen:
         for p in sub.parameters():
             p.requires_grad = False
+    # The teaching fallback keeps these modules outside its block lists; they
+    # still belong to the frozen feature/row stages, as they do in upstream.
+    if strategy in ("icl_only", "head_only"):
+        for name, p in model.named_parameters():
+            if name.startswith(("x_embed.", "row_ln.", "row_cls_tokens")):
+                p.requires_grad = False
 
     # Re-enable the target-side parameters even if they sit inside a frozen stack.
     for name, p in model.named_parameters():
@@ -166,7 +172,9 @@ def load_pretrained(model: nn.Module, ckpt_path: str | Path, *, strict: bool = F
     would be invisible in the loss curve and would silently invalidate the whole
     comparison.
     """
-    payload = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    from src.utils.working_storage import local_input
+
+    payload = torch.load(local_input(ckpt_path), map_location="cpu", weights_only=False)
     state = payload.get("state_dict", payload)
     if not isinstance(state, dict):
         raise ValueError(f"{ckpt_path}: could not find a state dict in the checkpoint")

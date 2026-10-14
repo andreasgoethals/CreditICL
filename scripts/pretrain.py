@@ -139,9 +139,7 @@ def main() -> int:
         cfg_path, summary_path = paths.run_config_path(name), paths.run_summary_path(name)
         ckpt_dir = paths.run_checkpoints_dir(name)
         if paths.on_vsc():
-            # A staging directory left at mode 0500 once cost a run its checkpoints. Probe with
-            # a real write and fall back into the run folder, loudly, rather than crash.
-            ckpt_dir = paths.resolve_writable(ckpt_dir, fallback=out_dir / "checkpoints")
+            ckpt_dir = paths.resolve_writable(ckpt_dir)
     log_dir = out_dir / "logs"
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -167,13 +165,17 @@ def main() -> int:
     else:
         from src.train.loop import Trainer
 
-    trainer = Trainer(run, out_dir, device=args.device, ckpt_dir=ckpt_dir, log_dir=log_dir)
-    trainer.maybe_resume()
-    # Preserve the previous configuration when a resume is refused.
-    cfg_path.write_text(json.dumps(run, indent=2, default=str), encoding="utf-8")
-    summary = trainer.train()
+    from filelock import FileLock
+    from src.utils.working_storage import checkpoint_work_dir
 
-    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    # Lock the permanent run identity across nodes, before selecting a resume state.
+    with FileLock(str(out_dir / ".training.lock"), timeout=0):
+        ckpt_dir = checkpoint_work_dir(ckpt_dir)
+        trainer = Trainer(run, out_dir, device=args.device, ckpt_dir=ckpt_dir, log_dir=log_dir)
+        trainer.maybe_resume()
+        cfg_path.write_text(json.dumps(run, indent=2, default=str), encoding="utf-8")
+        summary = trainer.train()
+        summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps({"done": run["_run_name"], **summary}), flush=True)
 
     # EXIT 64 = "saved and stopped early, resume me". A walltime kill or an unannounced
@@ -184,10 +186,12 @@ def main() -> int:
     if not summary.get("completed", True):
         print(
             f"INCOMPLETE: stopped at step {summary.get('steps')} by "
-            f"{summary.get('stopped_by_signal')}. Exit 64 -> resubmit to resume.",
+            f"{summary.get('stopped_by_signal')}. "
+            + ("Walltime stop: eligible to resume." if summary.get('stopped_by_signal') == "SIGUSR1"
+               else "Cancellation/termination: no automatic resubmission."),
             flush=True,
         )
-        return 64
+        return 64 if summary.get("stopped_by_signal") == "SIGUSR1" else 143
     return 0
 
 

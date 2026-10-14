@@ -11,7 +11,7 @@
 #      sbatch --clusters=mindwell --export=ALL,EXP=1,TRACK=pd  scripts/slurm/benchmark.slurm
 #      sbatch --clusters=mindwell --export=ALL,EXP=1,TRACK=lgd scripts/slurm/benchmark.slurm
 #
-#  THE PROTOCOL (src/eval/protocol.py, version 6): 5-fold cross-validation on every real credit
+#  THE PROTOCOL (src/eval/protocol.py, version 7): 5-fold cross-validation on every real credit
 #  dataset and every out-of-domain suite; the WHOLE training pool as context, for every model;
 #  the PD threshold chosen to maximise F1 on a validation split of the training pool; every
 #  metric (ROC-AUC, PR-AUC, Brier, log-loss, ECE, F1, ... / R2, RMSE, CRPS, boundary mass, ...).
@@ -44,11 +44,12 @@
 # Full context is the expensive part: `0006.hackerearth` puts ~426,000 training rows in front of
 # ~106,000 test rows, five times, and PD scores each fold twice (validation pass, then the refit).
 #SBATCH --time=12:00:00
-#SBATCH --output=/dev/null
-#SBATCH --error=/dev/null
+#SBATCH --output=slurm-%x-%j.out
+#SBATCH --error=slurm-%x-%j.err
 #SBATCH --export=ALL
 #SBATCH --requeue
-# Exp1: 9 arms x 5 saved checkpoints + 4 reference models + 11 capped-context slots = 60, 0-59. Others:
+# The launcher computes the array from the current saved-checkpoint grid plus shared
+# reference models. No capped-context slots are scheduled. Other experiments:
 #     python -m src.eval.benchmark_status --exp N --track T --count
 # and pass --array=0-<count-1>%8. Indices past the last slot exit in seconds.
 #SBATCH --array=0-48%8
@@ -77,6 +78,9 @@ exec > "$LOG" 2>&1
 
 _log_exit() {
     rc=$?
+    if [[ "$rc" -eq 0 ]]; then
+        python -m src.utils.working_storage --cleanup-success || echo "WARNING: scratch retained; inspect cleanup error above"
+    fi
     echo "=========================================="
     if [[ "$rc" -eq 0 ]]; then echo "END status=OK - $(date)"
     else echo "END status=FAILED exit_code=${rc} - $(date)"; fi
@@ -121,6 +125,15 @@ echo "slot ${IDX}: kind=${SLOT_KIND} tag=${TAG} arm=${ARM} step=${STEP} model=${
 
 if [[ "$SLOT_KIND" == "none" ]]; then
     echo "index ${IDX} is past the last slot. Nothing to do."
+    exit 0
+fi
+
+# Hold the canonical slot lock across credit, OOD and receipt publication.
+# Reference slots share a tag across experiments; a second array must not overwrite them.
+mkdir -p "${OUTPUT_ROOT}/locks"
+exec 200>"${OUTPUT_ROOT}/locks/${TAG}.lock"
+if ! flock -n 200; then
+    echo "Slot ${TAG} is already running; no duplicate benchmark started."
     exit 0
 fi
 

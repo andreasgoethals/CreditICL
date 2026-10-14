@@ -776,7 +776,7 @@ def test_the_run_card_answers_the_questions_a_reader_would_ask():
         "group_size",            # the micro-batch constraint
         "UPSTREAM COMPARISON",   # every deviation, in one place
         "LEAKAGE CHECK",         # what is and is not trained on
-        "WE DO NOT RUN THEM",    # the single-stage scope limit
+        "not the upstream long-context curriculum",  # applies to scratch and continuation
     ):
         assert needed in card, f"the run card does not report {needed!r}"
     assert "_log_run_card()" in src, "the card must actually be called"

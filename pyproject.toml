@@ -47,7 +47,7 @@ dependencies = [
 
     # scikit-learn is NOT optional and NOT only for baselines: TabICL's prior
     # uses ExtraTreesRegressor for its predictability filter (see
-    # `should_filter` in TabICL's prior/_genload.py) and tree-based structural
+    # `should_filter` in TabICL's prior/_dataset.py) and tree-based structural
     # equations. Reproducing arm A requires it.
     "scikit-learn>=1.6,<2.0",
 

@@ -190,8 +190,9 @@ def execute(stage: Stage, log: Path, *, timeout: float) -> dict:
                     raise TimeoutError(f"{stage.name} exceeded its remaining time budget")
                 if stage.stop_run and not signalled:
                     from src.train.checkpoint import latest_checkpoint
+                    from src.utils.working_storage import checkpoint_work_dir
 
-                    checkpoint = latest_checkpoint(paths.run_checkpoints_dir(stage.stop_run))
+                    checkpoint = latest_checkpoint(checkpoint_work_dir(paths.run_checkpoints_dir(stage.stop_run)))
                     if checkpoint is not None:
                         proc.send_signal(signal.SIGUSR1)
                         signalled = True

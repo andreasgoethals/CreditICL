@@ -170,8 +170,9 @@ def test_benchmark_results_live_on_project_storage(paths):
         assert small.as_posix().startswith("/data/leuven/383/vsc38338/CreditICL/output CreditICL"), small
 
 
-def test_the_ood_cache_is_input_data_not_output(paths):
-    p = paths(VSC_DATA="/data/leuven/383/vsc38338", VSC_PROJECT_LUSTRE1="/lustre1/project")
+def test_the_ood_cache_is_input_data_not_output(paths, tmp_path):
+    # Never let an installed VSC cache decide the outcome of this unit test.
+    p = paths(VSC_DATA=str(tmp_path / "data"), CREDITICL_STAGING_ROOT=str(tmp_path / "project"))
     assert p.ood_cache_dir() == p.datasets_dir() / "ood"
     assert p.outputs_dir() not in p.ood_cache_dir().parents
     assert p.big_outputs_dir() not in p.ood_cache_dir().parents

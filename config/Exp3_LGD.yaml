@@ -47,7 +47,7 @@ prior:
     subgroup_size: 4 # upstream v2: the subgroup is the whole group, which shares its feature count
 
   base: # the UNMODIFIED TabICL prior — changing this changes the control arm
-    max_cat_size: 200 # upstream graph_scm: sample_categorical_sizes(max_cat_size=200)
+    max_cat_size: 200 # legacy upstream sampler effectively draws 2-9 levels
     category_frequency: balanced # how category counts are distributed
 
   credit: # OUR credit prior. Every range is from the credit-risk literature or deliberately wide; none is set from the evaluation data (docs/PRIORS.md)
@@ -129,7 +129,7 @@ train:
   cosine_amplitude_decay: 1.0 # how much each cycle shrinks
   cosine_lr_end: 1.0e-7 # floor of the schedule
 
-  amp: true # bf16 autocast on GPU; upstream supports it (--dtype bfloat16 --amp True), fp32 is its default
+  amp: false # TabICLv2 stage scripts use float32; TabPFN arms explicitly enable float16 AMP
   num_workers: 12 # CPU workers generating datasets
   log_every: 250 # steps between log lines
   save_temp_every: 250 # steps between rolling checkpoints; caps what a kill loses
@@ -167,6 +167,4 @@ eval:
   # (audit 30-09-2026): each pair sits on ONE side, so the holdout stays independent
   dev_datasets: [0007.lgd_lendingclub, 0004.base_model, 0005.base_modelisation, 0001.heloc] # used to choose the prior
   holdout_datasets: [0002.loss2, 0003.axa, 0006.lgd_freddie] # untouched until the end
-  metrics: [pinball, crps, coverage, boundary_mass, r2, rmse] # all computed in one run
   select_on: dev # dev | holdout — anything but `dev` here invalidates the experiment
-  ood_suites: all # which out-of-domain suites to score; see src/eval/ood.py SUITES

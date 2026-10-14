@@ -10,9 +10,13 @@ from pathlib import Path
 from src.utils import clean_run
 
 
-def test_lists_by_default_and_deletes_only_when_asked(isolated_output, capsys) -> None:
+def test_lists_by_default_and_deletes_only_when_asked(isolated_output, capsys, monkeypatch) -> None:
     """A listing you meant as a deletion costs one more command; the reverse costs the run."""
     from src.utils.paths import logs_dir
+    from src.utils import run_experiment
+
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
+    monkeypatch.setattr(run_experiment, "queued_job_names", lambda: set())
 
     logs_dir().mkdir(parents=True, exist_ok=True)
     victim = logs_dir() / "run.log"

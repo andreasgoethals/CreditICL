@@ -27,8 +27,8 @@ starving it. If 1 is already slow, the card or the wheel is wrong and no amount 
 
 Run it on BOTH cards and compare the same row:
 
-    bash scripts/slurm/submit.sh free  lgd scripts/slurm/benchmark.slurm
-    bash scripts/slurm/submit.sh b200  lgd scripts/slurm/benchmark.slurm
+    sbatch --clusters=wice --partition=gpu_a100 scripts/slurm/gpubench.slurm config/Exp1_LGD.yaml
+    sbatch --clusters=mindwell --partition=gpu_b200 scripts/slurm/gpubench.slurm config/Exp1_LGD.yaml
 """
 
 from __future__ import annotations

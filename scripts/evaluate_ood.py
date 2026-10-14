@@ -105,8 +105,10 @@ def main() -> int:
     out = benchmark_dir_for(owner_tag, "ood")
     out.mkdir(parents=True, exist_ok=True)
     suffix = f"_{args.tag}" if args.tag else ""
-    df.to_csv(out / f"ood_results{suffix}.csv", index=False)
-    summarise_ood(df).to_csv(out / f"ood_summary{suffix}.csv", index=False)
+    from src.utils.atomic_output import write_csv
+
+    write_csv(df, out / f"ood_results{suffix}.csv")
+    write_csv(summarise_ood(df), out / f"ood_summary{suffix}.csv")
 
     text = ood_text_summary(df, reference_model=args.reference)
     (out / f"ood_summary{suffix}.txt").write_text(text, encoding="utf-8")

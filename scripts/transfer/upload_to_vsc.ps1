@@ -21,7 +21,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$repo = Split-Path -Parent $PSScriptRoot
+$repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $remote = "$User@$VscHost"
 
 Write-Host "repo   : $repo"

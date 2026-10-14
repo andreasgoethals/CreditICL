@@ -19,8 +19,8 @@
 #SBATCH --cpus-per-task=24
 #SBATCH --mem=180G
 #SBATCH --time=24:00:00
-#SBATCH --output=/dev/null
-#SBATCH --error=/dev/null
+#SBATCH --output=slurm-%x-%j.out
+#SBATCH --error=slurm-%x-%j.err
 #SBATCH --export=ALL
 
 set -euo pipefail
@@ -39,6 +39,9 @@ exec > "$LOG" 2>&1
 
 _log_exit() {
     rc=$?
+    if [[ "$rc" -eq 0 ]]; then
+        python -m src.utils.working_storage --cleanup-success || echo "WARNING: scratch retained; inspect cleanup error above"
+    fi
     echo "=========================================="
     if [[ "$rc" -eq 0 ]]; then echo "END status=OK - $(date)"
     else echo "END status=FAILED exit_code=${rc} - $(date)"; fi

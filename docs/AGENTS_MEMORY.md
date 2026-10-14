@@ -42,6 +42,7 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 14-10-2026 | Exp0 CPU 62311762, wICE batch, commit `2380e36`, library `de324ef` | **FAILED exit 1, 14m53s; 11/12 stages PASS; 1,326 tests PASS, 2 FAIL, 7 SKIP, 10 deselected** | Both failures were test path assumptions; GPU submission was correctly blocked. All 21 credit / 50 OOD data checks and dependency checks passed. Reset removed 310 files / 60.785 GB, including legacy experiment checkpoints; second dry run found zero. New fixes require CPU then GPU validation, no further reset |
 | 13-10-2026 | Exp0 CPU 62306531, wICE, commit `91a568a` | **RUNNING 00:10:32 at 16:53; no completion supplied** | 1,703 current-output files/0.042 GB removed on both tiers; subsequent listing proves flat `checkpoints/exp1_*` survived. Environment audit passed (152 packages), 50 full-row OOD tables refreshed. Protocol 7/full-feature changes require a new CPU PASS before GPU validation; do not update or reset a running checkout |
 | 12-10-2026 | Exp0 checks 11681071, audited 13-10 from ZIP | **FAILED: 95 PASS, 2 FAIL, 1 WARN; both equivalence checks passed** | 21m01s log interval; PD TabPFN nonfinite scaled gradient; LGD TabPFN CPU bar-distribution buffers with CUDA logits. Input/package repairs succeeded. New single-job validation must pass before the corrected 48-run Exp1; preserve historical 90 |
 | 12-10-2026 | Preprocessing, job 62297440, wICE, after `57377b2` | **COMPLETED 0:0, 00:03:00** | VSC installed TabPFN 9.1.0; correct TabICL commit and CatBoost 1.2.10 confirmed. Preflight ran while caches were rebuilding (13 current, 8 stale) and correctly prevented GPU submission. Repeat full preflight after completion; do not resubmit preprocessing |
@@ -79,6 +80,34 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 [`RUNS.md`](RUNS.md).
 
 ## Dead ends
+
+### 14-10-2026 — Automatic approval blocked temporary notebook-output cleanup
+
+**Tried:** Remove only this session's 119 PDFs, 11 figure manifests and two generated summaries after notebook verification.
+**Result:** Both the bounded recursive command and the narrower individual-file command were rejected before execution.
+**Why:** Automatic approval returned only "blocked by policy"; this was not a filesystem error.
+**Instead:** Leave the untracked artifacts intact and give Andreas exact manual cleanup instructions; no other deletion route was attempted.
+
+### 14-10-2026 — Portable tests assumed the laptop storage layout
+
+**Tried:** Run the complete CPU suite on wICE after the fresh-output reset.
+**Result:** Notebook-output and OOD-path assertions failed; four released-weight tests skipped despite weights on project storage.
+**Why:** Fixtures assumed big/small storage shared a parent and ignored the live legacy OOD directory; weight tests used a local glob.
+**Instead:** Isolate the path fixtures and use the production weight resolver. CPU PASS must precede the GPU allocation.
+
+### 14-10-2026 — Full local regression run still encoded superseded data assumptions
+
+**Tried:** Full suite after preprocessing, grouping and storage repairs.
+**Result:** First run: 1,372 passed, 7 failed, 13 skipped; the next full run found one remaining stale metrics-key assertion (1,387 passed).
+**Why:** Fixtures expected old data values/config keys or inherited scheduler state; soft-clipped context means were treated as a centering oracle.
+**Instead:** Compare unchanged sibling columns by name, separately test corrected recipes, isolate the scheduler, and compare shifted tables directly with upstream preprocessing. Final full suite: 1,388 passed / 12 expected skips in 16m35s; all 11 notebooks passed. VSC CPU/GPU validation is still pending.
+
+### 14-10-2026 — Finite float32 values still overflowed full-table preprocessing
+
+**Tried:** Clip source values at float32's maximum, checking that each value was finite.
+**Result:** Loan-default columns f391/f627 still overflowed float32 mean/variance reductions.
+**Why:** Representability of individual values does not ensure safe reductions across a large table.
+**Instead:** Fixed signed-log transforms for those source columns, a conservative numeric bound, cache version 7, reduction regressions and a full-row Exp0 GPU probe.
 
 ### 13-10-2026 — Windows OOD manifest overwrite intermittently denied
 

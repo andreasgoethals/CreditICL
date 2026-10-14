@@ -238,7 +238,14 @@ def main(argv: list[str] | None = None) -> int:
         "scripts/slurm/pretrain_lgd.slurm" if track == "LGD"
         else "scripts/slurm/pretrain_pd.slurm"
     )
-    cmd = ["sbatch", "--clusters=mindwell", f"--export=ALL,EXP={experiment},VARIANT={variant or ''}",
+    from src.utils.run_experiment import queued_job_names
+    job_name = f"crediticl-exp{experiment}{variant or ''}-{track.lower()}"
+    queued = queued_job_names()
+    if job_name in queued or f"crediticl-{track.lower()}" in queued:
+        print(f"Already queued/running: {job_name}; no duplicate submission.")
+        return 0
+    cmd = ["sbatch", "--clusters=mindwell", f"--job-name={job_name}",
+           f"--export=ALL,EXP={experiment},VARIANT={variant or ''}",
            f"--array={spec}%{args.throttle}", script]
     print("\n$ " + " ".join(cmd))
     return subprocess.call(cmd)

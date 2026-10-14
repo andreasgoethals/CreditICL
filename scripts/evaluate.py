@@ -122,13 +122,15 @@ def main() -> int:
         out = benchmark_dir_for(stamp, task)
         out.mkdir(parents=True, exist_ok=True)
         res_path = out / f"results_{stamp}.csv"
-        df.to_csv(res_path, index=False)
+        from src.utils.atomic_output import write_csv
+
+        write_csv(df, res_path)
         log.info("wrote %s (%d rows)", res_path, len(df))
 
         summary = summarise(df, task)
         if not summary.empty:
             sum_path = out / f"summary_{stamp}.csv"
-            summary.to_csv(sum_path, index=False)
+            write_csv(summary, sum_path)
             log.info("wrote %s", sum_path)
             log.info("summary for %s:\n%s", task, summary.to_string(index=False))
 

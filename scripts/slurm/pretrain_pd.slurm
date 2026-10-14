@@ -24,8 +24,8 @@
 # costs nothing extra, but the backfill scheduler starts short jobs sooner — and the job is
 # resumable, so underestimating is cheap and overestimating is not.
 #SBATCH --time=12:00:00
-#SBATCH --output=/dev/null
-#SBATCH --error=/dev/null
+#SBATCH --output=slurm-%x-%j.out
+#SBATCH --error=slurm-%x-%j.err
 #SBATCH --export=ALL
 # THREE THINGS END A RUN EARLY on this cluster and none is a bug: the walltime, a node
 # failure, and an unannounced maintenance drain. --requeue lets Slurm put the task back in
@@ -65,6 +65,9 @@ exec > "$LOG" 2>&1
 
 _log_exit() {
     rc=$?
+    if [[ "$rc" -eq 0 || "$rc" -eq 64 ]]; then
+        python -m src.utils.working_storage --cleanup-success || echo "WARNING: scratch retained; inspect cleanup error above"
+    fi
     echo "=========================================="
     if   [[ "$rc" -eq 0  ]]; then echo "END status=OK - $(date)"
     elif [[ "$rc" -eq 64 ]]; then echo "END status=INCOMPLETE-RESUBMITTED - $(date)"
@@ -122,8 +125,10 @@ python -u scripts/pretrain.py \
     --num-workers "${WORKERS}" \
     --prior-source "${PRIOR_SOURCE:-generate}" &
 TRAIN_PID=$!
+CANCELLED=0
+SEGMENT=${CREDITICL_SEGMENT:-0}
 trap 'echo "SIGUSR1 -> forwarding to trainer $TRAIN_PID"; kill -USR1 "$TRAIN_PID" 2>/dev/null || true' USR1
-trap 'echo "SIGTERM -> forwarding to trainer $TRAIN_PID"; kill -TERM "$TRAIN_PID" 2>/dev/null || true' TERM
+trap 'CANCELLED=1; echo "SIGTERM -> forwarding to trainer $TRAIN_PID"; kill -TERM "$TRAIN_PID" 2>/dev/null || true' TERM
 
 # Two waits: the first returns as soon as a trapped signal arrives, the second lets the
 # trainer finish writing its checkpoint.
@@ -134,6 +139,8 @@ set -e
 
 # EXIT 64 = saved and stopped early. Resubmit THIS arm only; it resumes from the checkpoint.
 if [[ "$RC" -eq 64 ]]; then
+    [[ "$CANCELLED" -eq 0 ]] || exit 143
+    python -m src.utils.resume_guard "$CONFIG" "$SLURM_ARRAY_TASK_ID" "$SEGMENT" --limit "${CREDITICL_MAX_SEGMENTS:-32}"
     echo "Arm ${SLURM_ARRAY_TASK_ID} incomplete — resubmitting to resume."
     RESUME_TIME=()
     if (( LIMIT_S > 0 )); then RESUME_TIME=(--time="$(( (LIMIT_S + 59) / 60 ))"); fi
@@ -145,7 +152,7 @@ if [[ "$RC" -eq 64 ]]; then
     # costs nothing. (See the LGD script: an LGD wICE arm died on exactly this.)
     sbatch --clusters="${SLURM_CLUSTER_NAME:-mindwell}" \
            --job-name="crediticl-exp${EXP}${VARIANT}-pd" \
-           --export="ALL,EXP=${EXP},VARIANT=${VARIANT}" \
+           --export="ALL,EXP=${EXP},VARIANT=${VARIANT},CREDITICL_SEGMENT=$((SEGMENT + 1))" \
            "${RESUME_TIME[@]}" \
            --partition="${SLURM_JOB_PARTITION:-gpu_b200}" \
            --cpus-per-task="${SLURM_CPUS_PER_TASK}" \

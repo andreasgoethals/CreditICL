@@ -32,6 +32,24 @@ def test_cuda_stack_executes_and_backpropagates():
     assert torch.isfinite(loss) and torch.isfinite(x.grad).all()
 
 
+def test_cluster_working_storage_publishes_complete_checkpoint():
+    from src.utils import paths
+    from src.utils.working_storage import checkpoint_work_dir, local_input, publish_checkpoint, work_root
+    import uuid
+
+    permanent = paths.experiment_dir(0, big=True) / "storage_probe" / uuid.uuid4().hex
+    permanent.mkdir(parents=True)
+    source = permanent / "input.bin"
+    source.write_bytes(b"CreditICL input integrity")
+    assert local_input(source).read_bytes() == source.read_bytes()
+    work = checkpoint_work_dir(permanent)
+    if os.environ.get("SLURM_CLUSTER_NAME", "").lower() == "mindwell":
+        assert work_root() in work.parents and work != permanent
+    (work / "step-1.ckpt").write_bytes(b"complete checkpoint probe")
+    publish_checkpoint(work, 1, permanent_every=10, final=False, stopped=True)
+    assert (permanent / "step-1.ckpt").read_bytes() == b"complete checkpoint probe"
+
+
 def test_cuda_bfloat16_regression_retains_the_999_quantile_grid():
     from src.train.loop import pinball_loss
     pred = torch.ones(32, 999, dtype=torch.bfloat16, device="cuda", requires_grad=True)

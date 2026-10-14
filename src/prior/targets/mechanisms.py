@@ -440,8 +440,12 @@ def pd_vasicek(
         # realised rate still differs from the target rate, as a real sample does.
         z = torch.full((n,), float(rng.randn(1).item()))
 
-    asset = float(cfg.get("macro_scale", 1.0)) * math.sqrt(rho) * z + math.sqrt(1.0 - rho) * eps
-    threshold = float(_normal_icdf(torch.tensor([pd_rate])).item())
+    macro_scale = float(cfg.get("macro_scale", 1.0))
+    asset = macro_scale * math.sqrt(rho) * z + math.sqrt(1.0 - rho) * eps
+    # Removing the common factor must not also change the marginal default rate.
+    # At scale=0 this is exactly eps < Phi^-1(PD); scale=1 retains the original model.
+    asset_sd = math.sqrt(1.0 - rho + macro_scale ** 2 * rho)
+    threshold = asset_sd * float(_normal_icdf(torch.tensor([pd_rate])).item())
     y = (asset < threshold).float()
 
     realised = float(y.mean())

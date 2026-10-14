@@ -88,7 +88,10 @@ def paired_prior_effects(df: pd.DataFrame, metric: str, *, seed: int = 0,
         else:
             low = high = float("nan")  # one dataset cannot support across-dataset uncertainty
         rows.append({"configuration": name, "control": control, "mean_difference": delta.mean(),
-                     "ci_low": low, "ci_high": high, "datasets": len(delta), "p_value": p})
+                     "ci_low": low, "ci_high": high, "datasets": len(delta), "p_value": p,
+                     "interval_method": "descriptive paired-dataset percentile bootstrap (nominal 95%)",
+                     "small_sample": len(delta) < 10,
+                     "minimum_sign_p": min(1., 2. ** (1 - len(nonzero)))})
     result = pd.DataFrame(rows)
     if rows:
         result["p_holm"] = holm_adjust(result.p_value.tolist())

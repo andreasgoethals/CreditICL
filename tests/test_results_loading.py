@@ -97,5 +97,5 @@ def test_current_report_requires_the_whole_configured_matrix(tmp_path, monkeypat
     missing.write_bytes(saved)
     broken = pd.read_csv(missing).iloc[1:]
     broken.to_csv(missing, index=False)
-    with pytest.raises(ValueError, match="Incomplete"):
-        rp.load_results("pd")
+    with pytest.warns(UserWarning, match="Incomplete"):
+        assert rp.load_results("pd") is None

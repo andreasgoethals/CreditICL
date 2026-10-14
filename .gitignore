@@ -132,8 +132,10 @@ output CreditICL/*/runs/
 output CreditICL/*/benchmark/
 output CreditICL/*/checkpoints/
 output CreditICL/*/report/
+output CreditICL/*/storage_probe/
 output CreditICL/prior_cache/
 output CreditICL/logs/
+output CreditICL/locks/
 output CreditICL/adhoc/
 output CreditICL/**/*.ckpt
 output CreditICL/**/*.npy

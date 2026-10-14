@@ -303,8 +303,20 @@ def validation_split(y: np.ndarray, task: str, *, fraction: float = VALIDATION_F
     index = np.arange(len(y))
     if groups is not None:
         from sklearn.model_selection import GroupShuffleSplit
-        fit_idx, val_idx = next(GroupShuffleSplit(n_splits=1, test_size=fraction,
-                                                random_state=seed).split(index, y, groups))
+        # Choose among deterministic group-disjoint splits. Exact stratification
+        # is not always possible when an entire minority class belongs to one group.
+        candidates = list(GroupShuffleSplit(n_splits=32 if task == "pd" else 1,
+                                           test_size=fraction, random_state=seed).split(index, y, groups))
+        if task == "pd":
+            labels = np.asarray(y) >= 0.5
+            valid = [(a, b) for a, b in candidates
+                     if len(np.unique(labels[a])) == len(np.unique(labels[b])) == 2]
+            if not valid:
+                raise ValueError("No group-disjoint threshold split contains both classes")
+            candidates = sorted(valid, key=lambda pair: (
+                abs(float(labels[pair[1]].mean()) - float(labels.mean()))
+                + abs(len(pair[1]) / len(y) - fraction)))
+        fit_idx, val_idx = candidates[0]
         return np.sort(fit_idx), np.sort(val_idx)
     strat = (np.asarray(y) >= 0.5).astype(int) if task == "pd" else None
     if strat is not None and np.bincount(strat, minlength=2).min() < 2:

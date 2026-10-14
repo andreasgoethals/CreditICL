@@ -37,7 +37,18 @@ def training_fingerprint() -> str:
     files = [REPO_ROOT / "pyproject.toml"]
     for directory in ("src/models", "src/prior", "src/train"):
         files.extend((REPO_ROOT / directory).rglob("*.py"))
-    return _fingerprint(files)
+    implementation = _fingerprint(files)
+    # Resume is an update-rule contract, including the installed upstream code.
+    versions = {}
+    for name in ("torch", "tabicl", "tabpfn", "numpy", "scipy", "scikit-learn"):
+        try:
+            dist = metadata.distribution(name)
+            origin = json.loads(dist.read_text("direct_url.json") or "{}")
+            versions[name] = {"version": dist.version,
+                              "commit": origin.get("vcs_info", {}).get("commit_id")}
+        except metadata.PackageNotFoundError:
+            versions[name] = None
+    return hashlib.sha256((implementation + json.dumps(versions, sort_keys=True)).encode()).hexdigest()
 
 
 def _fingerprint(files: list[Path], *, planned_selection: bool = False) -> str:

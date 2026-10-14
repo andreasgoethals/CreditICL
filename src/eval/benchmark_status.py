@@ -4,7 +4,7 @@ from a SLURM array index to what that index scores.
 A CSV's existence is not completion. A receipt is written only after every requested
 dataset/model/seed/fold cell succeeds in both domains; changed inputs or results invalidate it.
 
-THE ARRAY (evaluation protocol 4, `src/eval/protocol.py`)
+THE ARRAY (evaluation protocol 7, `src/eval/protocol.py`)
 
     index = position x n_arms + arm     for every saved checkpoint of every arm, where
                                         position 0 is the FINAL step, then 2,500, 5,000, ...
@@ -94,7 +94,9 @@ def digest(path: Path) -> str:
 
 @lru_cache(maxsize=512)
 def _cached_digest(path: str, size: int, mtime_ns: int) -> str:
-    return digest(Path(path))
+    from src.utils.working_storage import local_input
+
+    return digest(local_input(path))
 
 
 def input_digest(path: Path) -> str:
@@ -180,6 +182,9 @@ def diagnostic_datasets(track: str) -> tuple[list[str], list[str]]:
                        by_size[len(by_size) // 2][0]})
 
     credit = choose([(n, int(metadata[n].get("n_rows", 0)), int(metadata[n].get("n_features", 0))) for n in names])
+    # Numerical-regression probe: these anonymised columns previously overflowed
+    # the model's float32 scaler, despite passing a simple isfinite input check.
+    credit = sorted(set(credit) | {n for n in names if n.split(".")[-1] == "loan_default"})
     ood = choose([(e.name, e.n_rows, e.n_features) for e in
                   list_ood_datasets("classification" if track == "pd" else "regression")])
     return credit, ood
@@ -228,7 +233,9 @@ def request(exp: int, track: str, index: int, seeds: tuple[int, ...] = (0,), n_f
     data["credit_inputs"] = credit_inputs
     data["credit_rows"] = credit_rows
     data["ood_rows"] = {e.name: int(e.n_rows) for e in list_ood_datasets(kind) if e.name in ood}
-    data["ood_inputs"] = {e.slug: input_digest(ood_root() / f"{e.slug}.npz")
+    from src.eval.ood import cache_path
+
+    data["ood_inputs"] = {e.slug: input_digest(cache_path(e))
                           for e in list_ood_datasets(kind) if e.name in ood}
     if slot.kind == "reference" and slot.model in ("tabiclv2", "tabpfn3"):
         from src.eval.baselines import TABICL_RELEASED, find_local_tabpfn_checkpoint

@@ -34,7 +34,7 @@ sweep:
 
 arms: # one set of overrides per arm; `sweep.arm` picks one per run (src/utils/config.py)
   tabicl:  { architecture: tabicl, train.optimizer: muon, train.lr: 2.0e-5, train.weight_decay: 0.01, train.warmup_proportion: 0.01, train.gradient_clipping: 1.0 } # TabICLv2's own continued pretraining: upstream stage 3 (tfm-library TabICL.txt scripts/train_v2_clf_stage3.sh: Muon, lr 2e-5, wd 0.01, 1 % warm-up, clip 1, 10k steps)
-  tabpfn3: { architecture: tabpfn3, prior.encoding: raw, init.pretrained_path: checkpoints/tabpfn-v3-classifier-v3_default.ckpt, train.batch_size: 16, train.optimizer: adamw, train.lr: 1.0e-5, train.weight_decay: 1.0e-4, train.warmup_proportion: 0.1, train.gradient_clipping: 1.0, progress.every_datasets: 8000 } # TabPFN-Wide's continued pretraining of released TabPFN on a synthetic prior (Kolberg et al. 2026, papers/2026/03_Kolberg: AdamW lr 1e-5, wd 1e-4, warm-up + cosine, clip 1, batch 16, 10k steps)
+  tabpfn3: { architecture: tabpfn3, train.amp: true, prior.encoding: raw, init.pretrained_path: checkpoints/tabpfn-v3-classifier-v3_default.ckpt, train.batch_size: 16, train.optimizer: adamw, train.lr: 1.0e-5, train.weight_decay: 1.0e-4, train.warmup_proportion: 0.1, train.gradient_clipping: 1.0, progress.every_datasets: 8000 } # TabPFN-Wide's continued pretraining of released TabPFN on a synthetic prior (Kolberg et al. 2026, papers/2026/03_Kolberg: AdamW lr 1e-5, wd 1e-4, warm-up + cosine, clip 1, batch 16, 10k steps)
 
 # ----------------------------------------------------------------------------
 # THE PRIOR — Experiment 1's, unchanged (literature-grounded; docs/PRIORS.md)
@@ -59,7 +59,7 @@ prior:
     subgroup_size: 4 # upstream v2: the subgroup is the whole group, which shares its feature count
 
   base: # the UNMODIFIED TabICL prior — changing this changes the control arm
-    max_cat_size: 200 # upstream graph_scm: sample_categorical_sizes(max_cat_size=200)
+    max_cat_size: 200 # legacy upstream sampler effectively draws 2-9 levels
     category_frequency: balanced # how category counts are distributed
 
   credit: # OUR credit prior. Every range is from the credit-risk literature or deliberately wide; none is set from the evaluation data (docs/PRIORS.md)
@@ -93,11 +93,11 @@ prior:
       col_fraction_range: [0.0, 1.0] # share of continuous columns given a tail, per table — wide
       strength_range: [0.25, 2.5] # skew of the monotone warp, per column — wide
 
-    shift: # context and predicted rows come from different populations (economic cycles, reject inference)
+    shift: # context and predicted rows come from different populations (economic cycles, covariate selection)
       shift_prob: 0.3 # share of datasets given a shift
-      kind_weights: { cohort: 1.0, covariate: 1.0, prior_prob: 1.0, selection: 1.0 } # time | feature range | base rate | reject inference
+      kind_weights: { cohort: 1.0, covariate: 1.0, prior_prob: 1.0, selection: 1.0 } # time | feature range | base rate | covariate selection
       prior_prob_ratio_range: [1.25, 4.0] # query default rate over the context's, log-uniform, either way: a 1-2 SD move of the Vasicek factor (docs/PRIORS.md)
-      selection_sharpness: 0.35 # reject-inference screen strength
+      selection_sharpness: 0.35 # covariate-selection screen strength
 
     missingness: # gaps in credit data are informative, not random (reject inference as a missing-data problem; Baesens et al. 2026)
       missing_prob: 0.5 # share of tables with any missing values — uninformative
@@ -148,7 +148,7 @@ train:
   cosine_lr_end: 1.0e-7 # floor of the schedule, upstream's
   l2sp_alpha: 0.0 # no pull toward the released weights (Real-TabPFN's L2-SP is a later ablation)
 
-  amp: true # mixed precision on GPU (TabPFN: float16 + GradScaler, as its fine-tuner)
+  amp: false # TabICLv2 stage scripts use float32; TabPFN arms explicitly enable float16 AMP
   num_workers: 12 # CPU workers generating (and, for TabPFN, preprocessing) the tasks; the SLURM script sets it from the allocation
   log_every: 100 # steps between log lines
   save_temp_every: 250 # rolling checkpoints; caps what a kill loses
@@ -188,6 +188,4 @@ eval:
   holdout_datasets: [0003.vehicle_loan, 0007.cobranded, 0009.bank_status,
                      0010.thomas, 0011.loan_default, 0012.home_credit, 0013.hmeq,
                      0014.algorithmwatch] # untouched until the end
-  metrics: [auc, ap, brier, logloss, ks, calibration_slope] # all computed in one run
   select_on: dev # dev | holdout — anything but `dev` here invalidates the experiment
-  ood_suites: all # which out-of-domain suites to score; see src/eval/ood.py SUITES

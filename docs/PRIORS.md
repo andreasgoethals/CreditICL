@@ -32,15 +32,17 @@ prior flag is identical. So a change to the prior affects both our tracks (PD, L
 
 ## 2. What the generator does
 
-`GraphSCM`, configured by `PriorConfig`. Per dataset: sample a **random causal graph** (2–32 nodes);
-put a **random function on every edge** from `{gp, generalized_gp, nn, tree, product, discretization,
-linear, flow}` — the mix of smooth and step-like is the point, since real tables are full of
-thresholds; keep only **some nodes as columns** (`subsample_feature_nodes`), so features correlate
-through unseen causes; assign **random importances**; make **some columns categorical** (up to 200
-levels); **warp** numeric columns with `KumaraswamyWarping` (min-max to [0,1], then `1-(1-x^a)^b`) —
-this flexible [0,1] shape is *already theirs*, and the same family we use for LGD's interior; then
-**clean up** (`outlier_removing(threshold=4)` → `standard_scaling`) and **maybe discard** the dataset
-(the filters; the regressor script notes ~25% of stage-1 datasets are filtered as unpredictable).
+`GraphSCM`, configured by `PriorConfig`, samples a causal graph, keeps a subset of nodes
+as features and uses the installed `RandomFunction` mixture: MLP, tree, discretization,
+linear, quadratic, GP, EM assignment and product. `sample_categorical_sizes` has nominal
+`max_cat_size=200`, but the original `use_corrected_cat_sizes=False` limits feature
+cardinalities to 2–9. Credit slots enable the corrected sampler and permit up to 500.
+
+The legacy `NumericalConverter._transform` returns `(transformed_value, original_value)`:
+the transformed value propagates through the graph, while the original becomes the dataset
+column. Thus its Kumaraswamy warp does not directly give the observed columns a [0,1] shape.
+Control tasks then use upstream cleanup and filtering. Stage 1 enables graph-unpredictability
+and ExtraTrees filtering; its triviality filter is disabled.
 
 `meta_sampling_mode='meta'` correlates hyperparameters *within* a dataset, so one dataset is
 coherently "smooth and narrow" and another "step-like and wide" rather than every dataset an average.
@@ -61,10 +63,10 @@ ours has them by construction at 0 and 1, meaning full recovery and total loss.*
 
 ## 4. The classification target
 
-`Reg2Cls` cuts a continuous latent into classes (`MulticlassAssigner`, `mode="rank"` or `"value"`).
-`balanced` is **False**, so nothing forces 50/50 — but nothing targets a *particular* rare rate
-either. **That is the gap we use:** no mechanism aims at the 6.7%–40% default rates of real PD data,
-and none represents a base rate as something with a cause.
+`GraphSCM` creates classification targets with `CategoricalConverter`; `Reg2Cls` and
+`MulticlassAssigner` belong to the older `SCMPrior` path. Categorical conversion can produce
+imbalance, but an exact frequency of rare binary tasks must be measured, not inferred from
+that older path. Our credit mechanism deliberately models a default rate and common shocks.
 
 > **Leave every `use_corrected_*` converter flag at its default.** `Converter._transform` carries a
 > known upstream bug (*"this is the wrong version, but it was used in the experiments"*); upstream
@@ -108,7 +110,7 @@ which `signal_share` is kept and the rest is risk no file records.
 | `signal_share_range` | 0.05 – 0.95 | **wide**: discrimination varies across portfolios and no value transfers |
 | `cohort` | 1 – 40 periods, Z ~ N(0, 1) | the Vasicek model's standard-normal factor; 40 periods as in Li, Zhang & Zhao (2020) |
 | `macro_feature_prob` | 0.5 | macroeconomic variables are explanatory variables in credit models (economic-cycle dependency; Bellotti & Crook 2012, surveyed in Baesens et al. 2026) — half the tables record the period factor as a column |
-| `selection` | reject 0 – 50 %, sharpness 0.3 – 1.0 | only approved applicants are observed (reject inference; Banasik & Crook 2007, surveyed in Baesens et al. 2026); acceptance rates are not published, so **wide** |
+| `selection` | reject 0 – 50 %, sharpness 0.3 – 1.0 | only approved applicants are observed (support truncation, motivated by selection literature; Banasik & Crook 2007, surveyed in Baesens et al. 2026); acceptance rates are not published, so **wide** |
 | `rules` | 0 – 3 cut-offs per table | hard underwriting cut-offs, **from Klein & Hoffart (2026), a position paper with no experiments — the most speculative mechanism, labelled so** |
 | `woe_prob` | 0.5 | scorecard-style monotone binning of the risk driver; practitioner convention, no rate published — **uninformative** |
 | label noise | **none** | asymmetric label noise (cures booked as non-default) was in the prior until 29-09-2026 with rates from nowhere; removed |
@@ -257,3 +259,9 @@ tuning to the evaluation tables. If the generator changes, repeat the affected E
 includes the graph prior missing from its same-version PyPI wheel. TabPFN-3 training uses
 `tabpfn==9.1.0`, including the upstream per-estimator regression-target loss correction.
 The package version does not change the explicitly selected TabPFN-3 model generation.
+
+The main comparison measures the entire configured credit-prior treatment, including its
+encoding, filtering and cardinality differences. It does not identify a target-only effect.
+The component study removes one named component from the 50% mixture at a time; it cannot
+by itself attribute every difference between the complete treatment and the upstream control.
+Library pin checked for this clarification: `de324efcca55be392feb0c01830b3b6ce364587f`.

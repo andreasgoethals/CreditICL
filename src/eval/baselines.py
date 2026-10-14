@@ -17,7 +17,7 @@ The five:
   model whose *prior* we modify, so its stock performance is the number our
   retrained versions have to be read against.
 
-EVERY MODEL GETS THE WHOLE TRAINING POOL (protocol 5, except explicit context ablations). Until
+EVERY MODEL GETS THE WHOLE TRAINING POOL (protocol 7, with all eligible features). Until
 28-09-2026 the foundation models were given at most 10,000 training rows (and the benchmark
 capped their context at 1,024). Full-size execution must pass Exp0 on the target hardware;
 there is no silent row cap or OOM subsampling. Every reference uses its library's DEFAULT
@@ -94,7 +94,9 @@ def _tabpfn_preprocessors(path: str, mtime_ns: int, size: int) -> tuple[dict, ..
     """Read only the checkpoint's preprocessing recipe; never cache its weight tensors."""
     import torch
 
-    payload = torch.load(path, map_location="cpu", weights_only=False)
+    from src.utils.working_storage import local_input
+
+    payload = torch.load(local_input(path), map_location="cpu", weights_only=False)
     configs = payload["inference_config"]["PREPROCESS_TRANSFORMS"]
     return tuple(dict(c) for c in configs)
 
@@ -113,7 +115,10 @@ def full_feature_tabpfn_config(path: str | Path, n_features: int) -> dict:
     for config in transforms:
         config["max_features_per_estimator"] = max(
             int(config["max_features_per_estimator"]), 4 * n_features + 16)
-    return {"SUBSAMPLE_SAMPLES": None, "PREPROCESS_TRANSFORMS": transforms}
+    # Training saves ENABLE_GPU_PREPROCESSING=False. Evaluation must override that
+    # training-only setting so released and continued weights use the same pipeline.
+    return {"SUBSAMPLE_SAMPLES": None, "PREPROCESS_TRANSFORMS": transforms,
+            "ENABLE_GPU_PREPROCESSING": True}
 
 
 def tabpfn_checkpoint_identity(path: str | Path) -> dict[str, Any]:
@@ -124,7 +129,9 @@ def tabpfn_checkpoint_identity(path: str | Path) -> dict[str, Any]:
     p = Path(path)
     key = (str(p.resolve()), p.stat().st_mtime_ns)
     if key not in _IDENTITY_CACHE:
-        payload = torch.load(p, map_location="cpu", weights_only=False)
+        from src.utils.working_storage import local_input
+
+        payload = torch.load(local_input(p), map_location="cpu", weights_only=False)
         ident = {}
         if payload.get("crediticl_run_name") is not None:
             ident = {"run_name": payload["crediticl_run_name"],
@@ -201,6 +208,12 @@ class Baseline:
 
         t0 = time.time()
         self._fit(Xf, yf, cat_indices)
+        estimator = getattr(self, "_model", None)
+        fitted_width = getattr(estimator, "n_features_in_", None)
+        if fitted_width is not None:
+            self.report.n_features = int(fitted_width)
+            if self.report.n_features != Xf.shape[1]:
+                raise ValueError(f"{self.name} fitted {self.report.n_features} of {Xf.shape[1]} input features")
         self.report.fit_seconds = round(time.time() - t0, 2)
         self._fitted = True
         log.info(
@@ -450,11 +463,12 @@ class TabPFNBaseline(_TFMBaseline):
             raise FileNotFoundError(f"No local TabPFN-3 {which} weights. "
                                     "Prepare the released weights before submitting a GPU job.")
         version = str(given or local)
+        from src.utils.working_storage import local_input
         self.report.extra["weights_source"] = "given checkpoint" if given else "local file"
         if given:
             self.report.extra.update(tabpfn_checkpoint_identity(given))
         common = dict(
-            model_path=version,
+            model_path=str(local_input(version)),
             device=device,
             random_state=self.seed,
             # Our largest tables exceed the documented envelope; without this the wrapper
@@ -543,6 +557,10 @@ class TabICLBaseline(_TFMBaseline):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self.report.extra["device"] = device
         extra = self._wrapper_kwargs()
+        if "model_path" in extra:
+            from src.utils.working_storage import local_input
+
+            extra["model_path"] = str(local_input(extra["model_path"]))
         if "n_estimators" in self.kwargs:
             extra["n_estimators"] = int(self.kwargs["n_estimators"])
 

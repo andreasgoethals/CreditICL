@@ -6,6 +6,10 @@ running on it; where the docs are silent this file says so. **Verify charge rate
 against the live docs before a large run.** The recovery procedure after *any* interruption is one
 command — [§4.4](#44-recovery-is-one-command).
 
+Job logs remain under `output CreditICL/`. A small `slurm-<name>-<job>.out/.err` in the
+submission directory now captures startup failures before that logging can be established
+(for example, an unwritable output directory). These fallback files are gitignored.
+
 ## Contents
 
 1. [Cost, and which partition to use](#1-cost-and-which-partition-to-use)
@@ -76,7 +80,7 @@ job reads from `$SLURM_CPUS_PER_TASK` so one script is correct on 8 cores and on
 
 | partition | max cores/GPU | max mem/GPU | suggested `--n_jobs` |
 |---|---|---|---|
-| `interactive` | 8 | ~60,000 MiB | — |
+| `interactive` | 8 | 32,000 MiB | — |
 | `gpu_b200` | **24** | 194,400 MiB | 20 (of 24) |
 | `gpu_a100` | 18 | 126,000 MiB | 16 (of 18) |
 | `gpu_h100` | 16 | 187,200 MiB | 14 (of 16) |
@@ -168,13 +172,21 @@ CSVs moved to staging with the checkpoints. Two reasons: `$VSC_DATA` is shared b
 Mindwell jobs keep frequent small writes off Lustre (the rule below), while a benchmark writes its CSV
 once, at the end. Downloading both halves (§10) gives every log, run record and benchmark score; the
 figures are drawn locally. `paths.resolve_writable()` probes staging with a real write at job start and
-falls back to `$VSC_DATA` with a loud warning (a sibling project lost checkpoints to unwritable staging).
+fails before training if project storage is unwritable; it never redirects checkpoint output.
+On Mindwell, `working_storage.py` copies repeated-read inputs once per job to GPFS. Rolling
+checkpoints stay there; permanent snapshots, interruption checkpoints and final checkpoints
+are copied atomically to project storage before completion is recorded. Successful jobs and
+saved walltime continuations release their job-specific scratch after verifying the latest
+checkpoint's permanent copy by hash; failed/cancelled jobs retain scratch for diagnosis.
+A hard node loss may
+lose work since the last published checkpoint; scratch is recoverable only while it still exists.
 
 **The Lustre-vs-GPFS rule, enforced:** wICE jobs must do I/O on **Lustre**, Mindwell jobs on
 **GPFS** — `$VSC_SCRATCH` already resolves to the right one, so *use `$VSC_SCRATCH`, never a hard-coded
 path*; non-complying jobs can be cancelled without notice. **Purge trap:** scratch deletes by *last
 access*, and `mv`/`rsync -t` carry an old atime — so **copy (not move) then `touch`**, and copy
-checkpoints you care about back to `$VSC_DATA` when a run finishes.
+checkpoints back to project storage. The copier refreshes access time and preserves modification
+time for input identity. Small logs and run summaries remain on `$VSC_DATA`.
 
 ## 6. The Python environment
 
@@ -263,7 +275,7 @@ Measured on B200, batch 64, micro-batch 4, the config's prior shape:
 
 | | value |
 |---|---|
-| B200 GPU-hour, all-in | ~30,625 credits (26,250 + ~4,375 for 24 cores) |
+| B200 GPU-hour | 26,250 GPU credits plus host CPU/memory charges; verify current Turin billing |
 | one Exp1 arm, 12,500 steps | ~5.5 GPU-h (0.63 steps/s, measured 24-09-2026 on the arms without the `banded` filter, which the redesign dropped) |
 | **Exp1, 24 arms/track (9 main + 15 component)** (45 until 28-09-2026) | measure the revised 48-run campaign in Exp0; the 24-09 run took ~1,354 GPU-h for 90 arms, its banded-filter arms 5-7x the rest |
 | one Exp3 arm, 200,000 steps | ~88 GPU-h at the same speed; 4 arms/track (control + Exp1's mix, 2 seeds) ≈ 700 GPU-h |
@@ -307,8 +319,8 @@ python -m src.utils.preflight --require-exp0-cpu && sbatch --clusters=mindwell s
 ```
 
 `update_env.sh` installs this project's requirements/extras and verifies all transitive dependencies
-and `pip check`. CPU and GPU jobs must use that same environment. Preprocessing cache v6 adds
-group identifiers and corrects numeric/age parsing. OOD cache v3 retains the same pinned dataset IDs
+and `pip check`. CPU and GPU jobs must use that same environment. Preprocessing cache v7 adds
+borrower groups, safe large-value transforms and percentage/sentinel corrections. OOD cache v3 retains the same pinned dataset IDs
 but restores full rows; a failed refresh cannot silently substitute another dataset.
 The CPU reservation is 4 hours (controller 3.8), GPU 24 hours (controller 23.5); these are limits,
 not runtime promises. No production array or automatic retry follows a failed validation.
