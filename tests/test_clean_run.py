@@ -5,7 +5,10 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+import pytest
 
 from src.utils import clean_run
 
@@ -218,3 +221,115 @@ def test_full_reset_refuses_active_jobs_even_for_legacy_only(isolated_output, mo
     with pytest.raises(RuntimeError, match="queued/running"):
         clean_run.reset_output(clean=True)
     assert path.exists()
+
+
+def _directory_alias(alias: Path, target: Path) -> None:
+    """Exercise real ancestor aliases on Windows and Linux, without admin privileges."""
+    if os.name == "nt":
+        import _winapi
+        _winapi.CreateJunction(str(target), str(alias))
+    else:
+        alias.symlink_to(target, target_is_directory=True)
+
+
+@pytest.fixture
+def aliased_projects(isolated_output, monkeypatch):
+    from src.utils import paths
+
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
+    monkeypatch.setattr("src.utils.run_experiment.queued_job_names", lambda: set())
+    projects = (paths.outputs_dir().parent, paths.big_outputs_dir().parent)
+    aliases = []
+    for index, project in enumerate(projects):
+        project.mkdir(parents=True)
+        alias = isolated_output / f"storage-alias-{index}"
+        _directory_alias(alias, project.parent)
+        aliases.append(alias / project.name)
+    monkeypatch.setattr(paths, "outputs_dir", lambda: aliases[0] / paths.OUTPUT_NAME)
+    monkeypatch.setattr(paths, "big_outputs_dir", lambda: aliases[1] / paths.OUTPUT_NAME)
+    return projects, aliases
+
+
+def test_full_reset_handles_vsc_ancestor_aliases_on_both_tiers(aliased_projects):
+    projects, aliases = aliased_projects
+    generated, protected = [], []
+    for project, alias in zip(projects, aliases):
+        assert alias != alias.resolve() == project.resolve()
+        for relative in ("slurm-crediticl-exp0-cpu-62313072.out",
+                         "output CreditICL/experiment_0/logs/checks.log",
+                         "output/old.log", "checkpoints/exp1_pd__s0/step-2.ckpt"):
+            item = project / relative
+            item.parent.mkdir(parents=True, exist_ok=True)
+            item.write_bytes(b"generated")
+            generated.append(item)
+        for relative in ("checkpoints/released.ckpt", "data/raw/input.csv",
+                         "slurm-otherproject-1234.out"):
+            item = project / relative
+            item.parent.mkdir(parents=True, exist_ok=True)
+            item.write_bytes(b"input")
+            protected.append(item)
+    assert clean_run.reset_output() == (len(generated), len(generated) * len(b"generated"))
+    assert all(p.exists() for p in generated)
+    clean_run.reset_output(clean=True)
+    assert all(not p.exists() for p in generated)
+    assert all(p.read_bytes() == b"input" for p in protected)
+    assert clean_run.reset_output() == (0, 0)
+
+
+def test_full_reset_counts_one_project_once_through_two_aliases(aliased_projects, monkeypatch):
+    from src.utils import paths
+
+    projects, _ = aliased_projects
+    monkeypatch.setattr(paths, "big_outputs_dir", lambda: projects[0] / paths.OUTPUT_NAME)
+    log = projects[0] / "slurm-crediticl-exp0-cpu-62313072.out"
+    log.write_bytes(b"log")
+    output = projects[0] / paths.OUTPUT_NAME / "checks.log"
+    output.parent.mkdir()
+    output.write_bytes(b"output")
+    assert clean_run.reset_output() == (2, 9)
+    assert clean_run.reset_output(clean=True) == (2, 9)
+    assert not log.exists() and not output.exists()
+
+
+@pytest.mark.parametrize("change", ["append", "replace"])
+def test_full_reset_still_refuses_changed_slurm_logs_with_ancestor_aliases(
+        aliased_projects, monkeypatch, change):
+    projects, _ = aliased_projects
+    log = projects[0] / "slurm-crediticl-exp0-cpu-62313072.out"
+    log.write_bytes(b"log")
+    other = projects[1] / "slurm-crediticl-exp0-gpu-11688276.err"
+    other.write_bytes(b"evidence")
+
+    def change_after_planning():
+        if change == "append":
+            with log.open("ab") as stream:
+                stream.write(b"still running")
+        else:
+            before = log.stat()
+            replacement = log.with_suffix(".replacement")
+            replacement.write_bytes(b"new")
+            os.utime(replacement, ns=(before.st_atime_ns, before.st_mtime_ns))
+            replacement.replace(log)
+            assert log.stat().st_ino != before.st_ino
+
+    monkeypatch.setattr(clean_run, "_require_idle_cluster", change_after_planning)
+    with pytest.raises(RuntimeError, match="Output changed since planning"):
+        clean_run.reset_output(clean=True)
+    assert log.exists() and other.read_bytes() == b"evidence"
+
+
+@pytest.mark.parametrize("linked_name", ["slurm-crediticl-exp0-cpu-62313072.out", "output CreditICL"])
+def test_full_reset_rejects_linked_outputs_beneath_allowed_ancestor_aliases(
+        aliased_projects, tmp_path, linked_name):
+    projects, _ = aliased_projects
+    outside = tmp_path / "outside-output"
+    outside.mkdir()
+    evidence = outside / "keep.txt"
+    evidence.write_bytes(b"keep")
+    _directory_alias(projects[0] / linked_name, outside)
+    other = projects[1] / "slurm-crediticl-exp0-gpu-11688276.err"
+    other.write_bytes(b"evidence")
+    with pytest.raises(RuntimeError, match="Unexpected"):
+        clean_run.reset_output(clean=True)
+    assert evidence.read_bytes() == b"keep"
+    assert other.read_bytes() == b"evidence"

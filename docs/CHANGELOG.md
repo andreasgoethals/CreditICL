@@ -10,6 +10,7 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 14-10-2026
 
+- Resolve cleanup project roots before planning: VSC mount aliases no longer falsely reject root Slurm logs or double-count them; retain link/change guards. Verification: 1,425 local tests passed / 17 expected skips, including six new filesystem regression cases.
 - Verify the final recovery changes: 1,419 local tests passed / 17 expected skips (15 mandatory on VSC), 21 credit-table partition audits and dependency checks passed; fresh VSC CPU/GPU validation still required.
 - Fix two Exp0 tests reading real failed receipts (CPU 62316841); retain the production gate and print failed-test names/log tails in the main validation log.
 - Fix first walltime continuation with `resumed_at: null`, reject changed/added/removed resume recipe settings, and stop GPU validation immediately after a mandatory CUDA failure.

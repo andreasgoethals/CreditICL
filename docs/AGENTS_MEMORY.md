@@ -84,6 +84,13 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 
 ## Dead ends
 
+### 14-10-2026 — Full reset rejected VSC's storage alias
+
+**Tried:** At 17:11 CEST, reset both output tiers after pulling `16a8fd4`, before submitting fresh Exp0 CPU validation.
+**Result:** Planned 186 files / 1.524 GB, then refused `slurm-crediticl-exp0-cpu-62313072.out`; no file deleted and no new job submitted.
+**Why:** Root Slurm logs retained `/data/...` as their containment root, while the final check resolved the file to `/vsc-hard-mounts/...`. Real ancestor-alias tests reproduced the refusal and duplicate counting.
+**Instead:** Canonicalize project parents before discovery and deduplicate them; still reject linked outputs, changed files and active jobs. Retry the same reset/CPU submission chain after updating the code.
+
 ### 14-10-2026 — A new split test leaked an imported mock into later OOD tests
 
 **Tried:** Run the full local suite after adding CPU checks for all five inner PD splits.

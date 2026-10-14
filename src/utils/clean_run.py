@@ -170,7 +170,11 @@ def reset_output(*, clean: bool = False) -> tuple[int, int]:
     current = (paths.outputs_dir(), paths.big_outputs_dir())
     if any(p.name != paths.OUTPUT_NAME or _linked(p) for p in current):
         raise RuntimeError(f"Unexpected or linked output roots: {current}")
-    projects = {p.parent for p in current}
+    # VSC's /data/... and /vsc-hard-mounts/... can name the same project.
+    # Plan from canonical parents so the later containment check compares like
+    # paths and aliased tiers cannot schedule a Slurm log for deletion twice.
+    # The output roots themselves and all descendants still reject links.
+    projects = {p.parent.resolve() for p in current}
     for project in sorted(projects):
         # Slurm opens these before the job redirects into the output tree. Keep
         # this narrowly scoped to this project's named jobs and numeric job IDs.

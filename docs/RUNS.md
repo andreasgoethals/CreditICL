@@ -167,6 +167,30 @@ The one thing to do differently.
 
 ## Runs
 
+## 14-10-2026 — 17:11 reset refused before a new Exp0 submission
+
+**Evidence:** Andreas's pasted login-node terminal output; `git pull --ff-only` advanced
+`6054c50` to `16a8fd4`. Environment activation succeeded. This was a cleanup attempt, not a
+compute job: the `&&` chain stopped before `sbatch`.
+
+`python -m src.utils.clean_run --reset-output --clean` planned **186 generated files / 1.524 GB**
+across `/vsc-hard-mounts/leuven-data/383/vsc38338/CreditICL/output CreditICL` and
+`/lustre1/project/stg_00211/CreditICL/output CreditICL`. It then refused the root Slurm log
+`/data/leuven/383/vsc38338/CreditICL/slurm-crediticl-exp0-cpu-62313072.out` during whole-plan
+validation, before any unlink. No new CPU/GPU allocation or training resulted.
+
+The root-log discovery stored an unresolved `/data/...` parent, but revalidation compared it
+against a file resolved through `/vsc-hard-mounts/...`. This was a false containment failure,
+not evidence of a concurrently changing log. Local tests using real filesystem directory aliases
+reproduced it and the related duplicate-log count when two tiers alias the same project.
+Resolve and deduplicate project parents before planning; keep active-job, input-overlap,
+linked-output and file-change refusals. After the fix is published, repeat the existing reset
+and CPU submission commands; GPU validation still follows a current CPU PASS.
+
+**Local verification:** 111 focused tests passed; full suite **1,425 passed / 17 expected skips**
+in 15m13s (15 VSC-only tests, absent notebook figures and an inapplicable missing-upstream path).
+All six new filesystem regression cases passed; no real output was deleted by these tests.
+
 ## 14-10-2026 — Exp0 CPU 62316841: two tests read the actual failed GPU receipt
 
 **Evidence:** Andreas's terminal attachment `fb75bab8-4986-42e0-8250-ef9d33060fbd/Pasted text.txt`
