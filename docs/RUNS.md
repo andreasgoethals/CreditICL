@@ -167,6 +167,86 @@ The one thing to do differently.
 
 ## Runs
 
+## 14-10-2026 — Exp0 CPU 62313072 passed; GPU 11688276 failed after 01:58:32
+
+**CPU:** submitted by 11:25 CEST, wICE, job `62313072`; PASS confirmed by 11:55 CEST.
+**GPU:** submitted by 11:55 CEST, Mindwell, job `11688276`; FAILED 1:0 after 01:58:32,
+confirmed by scheduler output supplied at 14:53 CEST.
+**Code identity:** GPU banner reports `57d36cd`, dirty checkout (uncommitted changes unspecified).
+The local checkout has the same HEAD and library pin `de324efcca55be392feb0c01830b3b6ce364587f`;
+the supplied GPU banner does not separately identify the remote submodule pin.
+
+### Configuration
+
+- CPU command: `sbatch --clusters=wice scripts/slurm/exp0_cpu.slurm`. Current script requests
+  8 CPUs, 64 GB and 4 hours; this transcript does not contain the allocation banner or elapsed time.
+- GPU command: `python -m src.utils.preflight --require-exp0-cpu && sbatch --clusters=mindwell scripts/slurm/exp0.slurm`.
+  GPU banner confirms one B200, 24 CPUs, 180 GB, node `r11g22`; Slurm confirms a 24-hour limit. Six short training/resume routes
+  and selected full-table benchmarks are validation work, not production Exp1 results.
+- Installed versions confirmed: TabPFN 9.1.0, TabICL 2.1.1 at
+  `8f1aa2098c894ab91dba15209cf2002ba4be6c6c`, CatBoost 1.2.10 and torch 2.11.0+cu128.
+
+### Results and evidence
+
+- All 135 dependency checks and `pip check` passed.
+- All 21 processed credit datasets are version 7; all 50 pinned OOD tables and all four
+  released model checkpoints are present.
+- CPU receipt `cpu_20261014T092548Z_j62313072_c6ec3745` passed `readiness("cpu")`:
+  every mandatory stage passed, with matching source, environment, inputs and artifact hashes.
+  The excerpt does not provide per-stage timings or the detailed pytest counts.
+- Slurm accepted GPU job `11688276`. Follow-up `sacct` reports the job and batch step
+  FAILED with exit 1:0 after 01:58:32, below the 1-day limit. The extern helper's
+  COMPLETED status does not establish successful GPU validation.
+- GPU attempt: `gpu_20261014T095557Z_j11688276_9801e7fc`; main log
+  `experiment_0/logs/exp0_gpu_20261014_115549_j11688276.log`, banner 11:55:57 and END 13:54:09 CEST.
+- **17 stages passed:** preflight; 11/11 mandatory VSC tests (zero skipped); environment; weights;
+  all six 10-update training/checkpoint/prediction smoke tests; both TabICL trainer equivalence
+  checks; PD scratch/continued TabICL stop at 101 and resume to 600; TabPFN PD stop at 101.
+- **Failure:** `resume-pd-2`, TabPFN PD, resumed step 101 at 13:51:14 then failed at the first
+  `GradScaler.step` -> Adam `_multi_tensor_adam` / `_foreach_lerp_` with CPU/CUDA tensor mismatch.
+  The LGD longer stop/resume runs and all full-table benchmarks were not reached.
+- Weights/checkpoint checks matched every tensor (TabICL PD 391/LGD 347; TabPFN PD 510/LGD 504)
+  and produced finite predictions. PD's one AMP retry and LGD's seven retries recovered and
+  passed; grep hits on `0 FAILED` are successful reports, not additional failures.
+- The Python module-loading warning did not prevent the venv, package audit or CUDA tests
+  from passing. It is not the cause identified by this traceback.
+- Confirmed allocation: approximately 1.976 B200 GPU-hours. The supplied `sam-balance` snapshot
+  does not establish credits charged for this particular job.
+- Evidence: Andreas's 14 October terminal attachment
+  `28e6c50f-a5ae-44c5-b6bf-dfd5c465d7bb/Pasted text.txt`, 14:53 scheduler follow-up, and
+  subsequently pasted main/child logs retrieved at 14:54–14:56 CEST.
+
+### Interpretation and next
+
+CPU validation passed for the submitted code/environment; GPU validation found a TabPFN
+resume bug. In installed TabPFN 9.1.0, `estimator_to_device` configures devices but cannot move
+an executor before one exists. `InferenceEngineBatchedNoPreprocessing._move_models_to_devices`
+moves the model at first fit. Our optimizer was restored earlier, while the parameters were
+still on CPU; PyTorch `Optimizer._process_value_according_to_param_policy` restores Adam moments
+to each parameter's current device. Moving the model later left those moments behind. Fresh
+training worked because Adam initialized its moments after the first forward; CPU resume
+tests worked because no device changed.
+
+The fix places the model on its training device **before optimizer construction**, following
+the installed `tabpfn.finetuning.finetuned_base.FinetunedTabPFNBase` training path. It preserves
+Adam's legitimate CPU scalar step counters. A local meta-device regression failed against the
+old implementation. Added real-weight PD/LGD stop/save/recreate/resume/update probes exercise
+optimizer moments, scheduler, scaler and task counters; the CUDA/AMP versions run in the early
+mandatory VSC stage, before the six longer validation arms. They are not skipped on VSC.
+
+Local verification: the old code failed the new device-placement regression; the fix passed
+all 18 targeted tests, including PD/LGD real-weight CPU resume and checkpoint prediction.
+The full suite then passed **1,391 tests / 15 skips / 505 warnings in 1,103.54 seconds**.
+Skipped: 13 VSC-only checks, one generated-figure check because the output was cleared, and
+one missing-upstream branch because upstream is installed. No notebook/visualization code
+changed. This verifies CPU behavior and the placement contract, not B200 execution.
+
+Keep the failed attempt's output. The code/test changes invalidate the old source-bound CPU
+receipt, so publish the fixes, pull them on VSC, rerun CPU validation and then GPU validation.
+Experiment 1 remains blocked until both receipts pass for that source. A CPU-only laptop cannot
+certify the actual CUDA fix; the next VSC attempt must establish that. No production reruns or
+further cleanup were submitted here.
+
 ## 14-10-2026 — Exp0 CPU 62311762 failed two path fixtures; GPU correctly blocked
 
 **Submitted** 14-10-2026 08:44 CEST | **job** 62311762 | **cluster** wICE `batch`, node `l33c20n2`

@@ -34,7 +34,7 @@ with no other context, and expect that to be the *only* record of the run — so
 Current campaign decision (13-10-2026): Andreas requested a fresh output reset, superseding the
 older preservation instructions below. Exp0 now requires CPU then GPU PASS receipts; the revised
 Exp1 has 48 runs including component tests. Historical run entries remain an audit trail, not
-reusable completion evidence. No new VSC job was submitted during this local repair.
+reusable completion evidence. VSC submissions are made by Andreas; the rows below record the supplied evidence.
 
 One row per cluster run worth remembering — which is most of them, because *"have we already tried
 that configuration?"* is the question this table exists to answer. The **full** write-up of each
@@ -42,6 +42,8 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 14-10-2026 | Exp0 GPU 11688276, Mindwell B200, commit `57d36cd` dirty, after CPU 62313072 | **FAILED 1:0, 01:58:32; 17 stages passed, `resume-pd-2` failed** | All six smoke tests, both equivalence checks, 11 mandatory CUDA tests and both TabICL PD stop/resumes passed. TabPFN PD restored CPU Adam moments before its first CUDA forward; first resumed update crashed. Place model before optimizer creation, add early PD/LGD CUDA resume probes, rerun CPU then GPU for changed source; no full-table benchmarks reached |
+| 14-10-2026 | Exp0 CPU 62313072, wICE | **PASS confirmed by readiness check at 11:55 CEST** | Receipt `cpu_20261014T092548Z_j62313072_c6ec3745`; all mandatory stages/artifacts current. All 21 credit caches v7, all 50 OOD tables present, four released weights present, 135 dependency checks passed. Detailed test counts and elapsed time not supplied |
 | 14-10-2026 | Exp0 CPU 62311762, wICE batch, commit `2380e36`, library `de324ef` | **FAILED exit 1, 14m53s; 11/12 stages PASS; 1,326 tests PASS, 2 FAIL, 7 SKIP, 10 deselected** | Both failures were test path assumptions; GPU submission was correctly blocked. All 21 credit / 50 OOD data checks and dependency checks passed. Reset removed 310 files / 60.785 GB, including legacy experiment checkpoints; second dry run found zero. New fixes require CPU then GPU validation, no further reset |
 | 13-10-2026 | Exp0 CPU 62306531, wICE, commit `91a568a` | **RUNNING 00:10:32 at 16:53; no completion supplied** | 1,703 current-output files/0.042 GB removed on both tiers; subsequent listing proves flat `checkpoints/exp1_*` survived. Environment audit passed (152 packages), 50 full-row OOD tables refreshed. Protocol 7/full-feature changes require a new CPU PASS before GPU validation; do not update or reset a running checkout |
 | 12-10-2026 | Exp0 checks 11681071, audited 13-10 from ZIP | **FAILED: 95 PASS, 2 FAIL, 1 WARN; both equivalence checks passed** | 21m01s log interval; PD TabPFN nonfinite scaled gradient; LGD TabPFN CPU bar-distribution buffers with CUDA logits. Input/package repairs succeeded. New single-job validation must pass before the corrected 48-run Exp1; preserve historical 90 |
@@ -80,6 +82,13 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 [`RUNS.md`](RUNS.md).
 
 ## Dead ends
+
+### 14-10-2026 — GPU validation 11688276 failed after CPU validation passed
+
+**Tried:** Run GPU validation after CPU 62313072's verified PASS, including stop/resume of all six training routes.
+**Result:** Job 11688276 failed after 01:58:32 on TabPFN PD's first update after restoring step 101; 17 preceding stages passed.
+**Why:** The unfitted TabPFN estimator kept parameters on CPU during Adam state restoration; its first forward moved parameters to CUDA, leaving moments on CPU. CPU-only resume tests could not expose this mismatch.
+**Instead:** Move the model before building AdamW, matching the installed TabPFN fine-tuner; cover placement locally and real PD/LGD AMP save/resume early in mandatory VSC tests. Preserve failed-attempt logs; new source requires fresh CPU/GPU receipts.
 
 ### 14-10-2026 — Automatic approval blocked temporary notebook-output cleanup
 

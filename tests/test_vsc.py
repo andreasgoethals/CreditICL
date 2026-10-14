@@ -32,6 +32,21 @@ def test_cuda_stack_executes_and_backpropagates():
     assert torch.isfinite(loss) and torch.isfinite(x.grad).all()
 
 
+@pytest.mark.parametrize("task", ["pd", "lgd"])
+def test_tabpfn_cuda_checkpoint_resume_before_long_training(tmp_path, task):
+    """Catch misplaced restored Adam moments before the 600-step validation arms."""
+    import tempfile
+    from pathlib import Path
+
+    from src.utils.working_storage import work_root
+    from test_tabpfn_resume import assert_real_checkpoint_resume
+
+    root = work_root() or tmp_path
+    root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f"resume-{task}-", dir=root) as directory:
+        assert_real_checkpoint_resume(Path(directory), task, "cuda")
+
+
 def test_cluster_working_storage_publishes_complete_checkpoint():
     from src.utils import paths
     from src.utils.working_storage import checkpoint_work_dir, local_input, publish_checkpoint, work_root

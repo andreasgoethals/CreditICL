@@ -10,6 +10,7 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 14-10-2026
 
+- Fix TabPFN resume device placement from GPU job 11688276; add local checkpoint/device regressions and early mandatory PD/LGD CUDA resume probes (1,391 local tests passed, 15 expected skips).
 - Local verification: 1,388 tests passed / 12 expected skips (11 VSC-only), all 11 notebooks / 119 figures passed, and dependency checks passed; rebuilt all 21 credit caches and verified finite full-table loan-default reductions plus a 759-feature released-model probe. Fresh VSC CPU then GPU validation remains required.
 - Audit Exp0 CPU 62311762: fix two storage-dependent test fixtures and resolve released weights through project storage so architecture checks actually run on VSC.
 - Prevent full-table numeric overflow; repair percentage/sentinel handling, group repeated borrowers, and exclude remaining outcome/future fields.

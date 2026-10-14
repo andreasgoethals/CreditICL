@@ -274,7 +274,11 @@ class TabPFNTrainer:
 
         self.est = build_estimator(self.task, self.weights_path, n_estimators=self.n_estimators,
                                    device=self.device, seed=self.seed)
-        self.model = self.est.models_[0]
+        # Upstream initialization leaves weights on CPU until the first fit.
+        # Place them before AdamW is built/restored, as TabPFN's fine-tuner does:
+        # load_state_dict casts moments to the parameters' CURRENT device.
+        # A later forward moves parameters but would strand those moments on CPU.
+        self.model = self.est.models_[0].to(self.device)
         self.model.train()
         n_params = sum(p.numel() for p in self.model.parameters())
         self.log.info("TabPFN-3 %s: %s parameters, %d members per forward, AMP %s",
