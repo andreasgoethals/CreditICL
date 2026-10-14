@@ -1,3 +1,28 @@
+import pytest
+
+
+@pytest.mark.parametrize("bad_value", [float("nan"), float("inf")])
+def test_pd_nonfinite_predictions_mark_the_monitoring_dataset_failed(tmp_path, monkeypatch, bad_value):
+    from types import SimpleNamespace
+
+    import numpy as np
+    import torch
+
+    from src.train.progress import ProgressConfig, ProgressTracker
+
+    tracker = ProgressTracker(ProgressConfig(context_rows=16, max_test_rows=16), "pd", "run", tmp_path)
+    dataset = SimpleNamespace(X=np.ones((64, 2), dtype=np.float32),
+                              y=np.tile([0., 1.], 32))
+    monkeypatch.setattr(tracker, "_real_datasets", lambda: [("unit.example", dataset)])
+    monkeypatch.setattr(tracker, "_ood_datasets", lambda: [])
+    monkeypatch.setattr(tracker, "_fit_predict", lambda model, Xc, yc, Xt, **kwargs:
+                        {"prob": np.full(len(Xt), bad_value)})
+    model = torch.nn.Linear(2, 1)
+    row = tracker.record(model, step=1, datasets_seen=4, train_loss=.5, elapsed_s=1.)
+    assert row.get("n_errors") == 1
+    assert "example" in row["error"] and "Non-finite predictions" in row["error"]
+    assert "real__example__roc_auc" not in row
+    assert model.training  # recording a failure still restores the model for training
 
 
 def test_one_failing_dataset_does_not_discard_the_others(monkeypatch, tmp_path):

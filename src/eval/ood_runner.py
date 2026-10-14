@@ -23,7 +23,7 @@ import pandas as pd
 
 from src.eval.ood import OODDataset, list_ood_datasets, load_ood_dataset, ood_status
 from src.eval.protocol import N_FOLDS, PROTOCOL, VALIDATION_FRACTION, cv_folds
-from src.eval.runner import prepare_fold, score_fold
+from src.eval.runner import _release_memory, prepare_fold, score_fold
 from src.utils.logging_setup import get_logger, log_section
 
 
@@ -36,8 +36,7 @@ class OODEvalConfig:
     val_fraction: float = VALIDATION_FRACTION
     kinds: list[str] = field(default_factory=lambda: ["classification", "regression"])
     datasets: list[str] | None = None  # explicit subset for diagnostic probes; never a row cap
-    #: Row cap per dataset. `None` — the protocol: every cached row (the cache itself stops at
-    #: 50,000 per dataset, `ood.fetch`). Until 28-09-2026: 10,000.
+    #: Row cap per dataset. `None` — the protocol: every row of the full-table cache.
     max_rows: int | None = None
     max_context_rows: int | None = None
     #: CC18 contains multiclass tasks, but every baseline here is binary (they were
@@ -149,6 +148,8 @@ def evaluate_ood_dataset(entry: OODDataset, models: list[str], seed: int, cfg: O
             except Exception as exc:  # noqa: BLE001 — one cell must not kill the sweep
                 row["error"] = f"{type(exc).__name__}: {exc}"
                 log.warning("[ood] FAILED %s / %s fold %d: %s", entry.name, model_name, fold, row["error"])
+            finally:
+                _release_memory()
             rows.append(row)
     return rows
 

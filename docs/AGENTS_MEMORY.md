@@ -42,6 +42,7 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 14-10-2026 | Exp0 CPU 62316841, wICE batch, node m28c27n1, commit `6054c50` dirty | **FAILED; 11/12 stages PASS; 1,368 tests PASS, 2 FAIL, 3 SKIP, 13 deselected; 16m20s log interval** | Two legacy readiness tests patched only `experiment_dir` and read the actual failed GPU receipt through `outputs_dir`. Reproduced locally with a failed outer receipt, then both passed using isolated output roots. Production gate correctly blocked GPU. Fresh CPU then GPU required after these source changes |
 | 14-10-2026 | Exp0 GPU 11688276, Mindwell B200, commit `57d36cd` dirty, after CPU 62313072 | **FAILED 1:0, 01:58:32; 17 stages passed, `resume-pd-2` failed** | All six smoke tests, both equivalence checks, 11 mandatory CUDA tests and both TabICL PD stop/resumes passed. TabPFN PD restored CPU Adam moments before its first CUDA forward; first resumed update crashed. Place model before optimizer creation, add early PD/LGD CUDA resume probes, rerun CPU then GPU for changed source; no full-table benchmarks reached |
 | 14-10-2026 | Exp0 CPU 62313072, wICE | **PASS confirmed by readiness check at 11:55 CEST** | Receipt `cpu_20261014T092548Z_j62313072_c6ec3745`; all mandatory stages/artifacts current. All 21 credit caches v7, all 50 OOD tables present, four released weights present, 135 dependency checks passed. Detailed test counts and elapsed time not supplied |
 | 14-10-2026 | Exp0 CPU 62311762, wICE batch, commit `2380e36`, library `de324ef` | **FAILED exit 1, 14m53s; 11/12 stages PASS; 1,326 tests PASS, 2 FAIL, 7 SKIP, 10 deselected** | Both failures were test path assumptions; GPU submission was correctly blocked. All 21 credit / 50 OOD data checks and dependency checks passed. Reset removed 310 files / 60.785 GB, including legacy experiment checkpoints; second dry run found zero. New fixes require CPU then GPU validation, no further reset |
@@ -82,6 +83,20 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 [`RUNS.md`](RUNS.md).
 
 ## Dead ends
+
+### 14-10-2026 — A new split test leaked an imported mock into later OOD tests
+
+**Tried:** Run the full local suite after adding CPU checks for all five inner PD splits.
+**Result:** Three later OOD tests saw an empty dataset list, although all 70 OOD tests passed alone.
+**Why:** The new fixture first imported `ood_runner` while its source module's dataset-list function was mocked, retaining that alias after teardown.
+**Instead:** Import and patch both bindings through `monkeypatch` so both are restored; the combined 72-test reproduction passed. Final full suite after all fixes: 1,419 passed / 17 expected skips in 15m50s.
+
+### 14-10-2026 — CPU tests depended on real validation output
+
+**Tried:** CPU job 62316841 after the TabPFN resume fix; legacy readiness tests mocked only `experiment_dir`.
+**Result:** Two assertions failed; 1,368 tests and all 11 other validation stages passed. Unit stage took 703.39 seconds.
+**Why:** The modern canonical receipt uses `outputs_dir`; VSC had a failed GPU receipt there, whereas the local checkout did not. The production refusal was correct, but the fixtures were not isolated.
+**Instead:** Isolate both output tiers in those tests. Reproduce with an existing failed outer receipt; both now pass. Keep mandatory modern receipts and run CPU before GPU.
 
 ### 14-10-2026 — GPU validation 11688276 failed after CPU validation passed
 

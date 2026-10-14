@@ -65,9 +65,14 @@ def test_complete_manifest_covers_all_routes_budgets_and_benchmarks():
     assert sum(s.name.startswith("receipt-") for s in stages) == 14
     assert stages[0].name == "preflight"
     phases = [s.phase for s in stages]
-    assert phases == sorted(phases, key=("diagnostics", "training", "benchmark").index)
+    assert phases == sorted(phases, key=("diagnostics", "capacity", "training", "benchmark").index)
     assert all("--max-rows" not in s.command for s in stages)
     assert all("sbatch" not in s.command for s in stages)
+    capacity = [s for s in stages if s.phase == "capacity"]
+    assert len(capacity) == 2 * 4 * 3  # two tasks, four references, credit/OOD/receipt
+    assert all("--checkpoint" not in s.command for s in capacity)
+    assert all("--max-context-rows" not in s.command for s in capacity)
+    assert len({s.name for s in stages}) == len(stages)  # no repeated benchmark work
 
 
 @pytest.mark.parametrize("skipped,mandatory,ok", [(0, True, True), (1, True, False), (1, False, True)])
@@ -136,6 +141,54 @@ def test_failed_diagnostic_blocks_training_and_cannot_reuse_older_pass(monkeypat
     receipt = json.loads(v.receipt_path().read_text())
     assert receipt["status"] == "FAILED" and receipt["attempt"] != "old"
     assert not v.readiness()[0].ok
+    from src.utils.preflight import experiment_zero_checks
+    assert not experiment_zero_checks(include_runs=False)[0].ok
+
+
+@pytest.mark.parametrize("name, phase, cause", [
+    ("vsc", "diagnostics", "CUDA resume failed"),
+    ("credit-pd-4", "capacity", "full-table capacity failed"),
+])
+def test_mandatory_gpu_failure_stops_dependent_work_and_prints_cause(
+        monkeypatch, isolated_output, capsys, name, phase, cause):
+    fake_campaign(monkeypatch, isolated_output)
+    stages = [v.Stage("preflight", ()), v.Stage(name, (), phase=phase),
+              v.Stage("train-pd", (), phase="training")]
+    monkeypatch.setattr(v, "plan", lambda phase="gpu": stages)
+    # Update the CPU receipt to the mocked manifest before testing the GPU phase.
+    assert v.run_validation(phase="cpu") == 0
+    ran = []
+
+    def execute(stage, log, **kwargs):
+        ran.append(stage.name)
+        if stage.name == name:
+            log.parent.mkdir(parents=True, exist_ok=True)
+            log.write_text(f"Traceback\nRuntimeError: {cause}\n", encoding="utf-8")
+            raise RuntimeError("exit=1")
+        return {}
+
+    monkeypatch.setattr(v, "execute", execute)
+    assert v.run_validation(phase="gpu") == 1
+    assert ran == ["preflight", name]
+    receipt = json.loads(v.receipt_path().read_text())
+    failed = receipt["stages"][-1]
+    assert failed["seconds"] >= 0 and cause in failed["log_tail"]
+    assert cause in capsys.readouterr().out
+
+
+def test_failure_details_include_failed_tests_and_bound_large_logs(tmp_path):
+    log, junit = tmp_path / "unit.log", tmp_path / "unit.xml"
+    log.write_text("older output\n" * 2000 + "last failure\n", encoding="utf-8")
+    junit.write_text('<testsuites><testsuite><testcase classname="tests.test_x" name="test_bad">'
+                     '<failure message="no"/></testcase></testsuite></testsuites>')
+    stage = v.Stage("unit", (), junit=str(junit))
+    details = v.failure_details(stage, log)
+    assert details["failed_tests"] == ["tests.test_x::test_bad"]
+    assert details["log_tail"].endswith("last failure")
+    assert len(details["log_tail"]) <= 8000 and len(details["log_tail"].splitlines()) <= 40
+    log.unlink()
+    junit.write_text("incomplete")
+    assert v.failure_details(stage, log) == {"log": str(log)}
 
 
 def test_gpu_refuses_to_start_without_a_current_cpu_pass(monkeypatch, isolated_output):

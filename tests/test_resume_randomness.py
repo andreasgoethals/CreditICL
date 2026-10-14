@@ -2,10 +2,33 @@
 import random
 
 import numpy as np
+import pytest
 import torch
 
 from src.train.checkpoint import load_checkpoint, save_checkpoint
 from src.train.random_state import capture, restore
+
+
+@pytest.mark.parametrize("raises", [False, True])
+def test_cpu_prior_seeding_never_reseeds_cuda_and_restores_cpu_state(monkeypatch, raises):
+    from src.prior.upstream import seeded
+
+    def forbidden(*args):
+        raise AssertionError("CPU prior generation changed the model's CUDA RNG")
+
+    monkeypatch.setattr(torch.cuda, "manual_seed_all", forbidden)
+    before = torch.get_rng_state().clone()
+    draws = []
+    for _ in range(2):
+        try:
+            with seeded(123):
+                draws.append(torch.rand(8))
+                if raises:
+                    raise ValueError("invalid prior candidate")
+        except ValueError:
+            pass
+        torch.testing.assert_close(torch.get_rng_state(), before, rtol=0, atol=0)
+    torch.testing.assert_close(draws[0], draws[1], rtol=0, atol=0)
 
 
 def test_rng_round_trip_survives_weights_only_serialization(tmp_path):

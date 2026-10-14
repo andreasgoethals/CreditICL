@@ -50,7 +50,7 @@ def plan(phase: str = "gpu") -> list[Stage]:
     stages = [Stage("preflight", (py, "-m", "src.utils.preflight"))]
     suites = (
         ("unit", ("tests", "-m", "not vsc"), True),
-        ("vsc", ("tests/test_vsc.py", "--run-vsc"), False),
+        ("vsc", ("tests/test_vsc.py", "--run-vsc", "-x"), False),
     )
     if phase == "cpu":
         stages.insert(0, Stage("preprocess", (py, "scripts/preprocess.py", "--task", "both")))
@@ -95,17 +95,20 @@ def plan(phase: str = "gpu") -> list[Stage]:
                 common += ("--checkpoint", str(checkpoint))
             if slot.context is not None:
                 common += ("--max-context-rows", str(slot.context))
+            # Establish full-table capacity with the released/reference models
+            # before spending hours on the six longer diagnostic training runs.
+            # These are the same required benchmark cells, executed once.
+            scoring_phase = "capacity" if slot.kind == "reference" else "benchmark"
             stages.extend([
                 Stage(f"credit-{track}-{index}", (py, "scripts/evaluate.py", "--task", track,
-                      "--datasets", datasets, *common), "benchmark"),
+                      "--datasets", datasets, *common), scoring_phase),
                 Stage(f"ood-{track}-{index}", (py, "scripts/evaluate_ood.py", "--kinds",
                       "classification" if track == "pd" else "regression", "--datasets", ",".join(ood_names),
-                      *common), "benchmark"),
+                      *common), scoring_phase),
                 Stage(f"receipt-{track}-{index}", (py, "-m", "src.eval.benchmark_status", "--exp", "0",
-                      "--track", track, "--index", str(index), "--write"), "benchmark"),
+                      "--track", track, "--index", str(index), "--write"), scoring_phase),
             ])
-    # Run all diagnostics before spending time on the six longer runs or benchmarks.
-    return sorted(stages, key=lambda s: ("diagnostics", "training", "benchmark").index(s.phase))
+    return sorted(stages, key=lambda s: ("diagnostics", "capacity", "training", "benchmark").index(s.phase))
 
 
 def receipt_path(phase: str = "gpu") -> Path:
@@ -161,6 +164,34 @@ def check_junit(path: Path, *, mandatory: bool) -> dict:
     if not counts["tests"] or counts["failures"] or counts["errors"] or (mandatory and counts["skipped"]):
         raise ValueError(f"Incomplete/failed test coverage: {counts}")
     return counts
+
+
+def failure_details(stage: Stage, log: Path) -> dict:
+    """Keep the cause in the main job log as well as the individual stage log.
+
+    Read only a bounded tail, even when a library has printed millions of lines.
+    Missing/malformed diagnostic files must never hide the original exception.
+    """
+    details = {"log": str(log)}
+    try:
+        with log.open("rb") as stream:
+            stream.seek(0, os.SEEK_END)
+            stream.seek(max(0, stream.tell() - 16384))
+            tail = stream.read().decode("utf-8", errors="replace")
+        details["log_tail"] = "\n".join(tail.splitlines()[-40:])[-8000:]
+    except OSError:
+        pass
+    if stage.junit:
+        try:
+            root = ET.parse(stage.junit).getroot()
+            details["failed_tests"] = [
+                f"{case.get('classname', '')}::{case.get('name', '')}"
+                for case in root.iter("testcase")
+                if case.find("failure") is not None or case.find("error") is not None
+            ][:20]
+        except (OSError, ET.ParseError):
+            pass
+    return details
 
 
 def kill_process_tree(proc: subprocess.Popen) -> None:
@@ -342,17 +373,23 @@ def run_validation(*, hours: float = 23.5, phase: str = "gpu") -> int:
                         raise RuntimeError("Diagnostics failed; longer training/benchmark stages were not started")
                     print(f"[Experiment 0] START {stage.name}", flush=True)
                     row = {"name": stage.name, "status": "PASS"}
+                    log = paths.experiment_dir(0) / "logs" / f"{stage.name}.log"
+                    started = time.monotonic()
                     try:
-                        row.update(execute(stage, paths.experiment_dir(0) / "logs" / f"{stage.name}.log",
+                        row.update(execute(stage, log,
                                            timeout=max(0, deadline - time.monotonic())))
                     except Exception as exc:
-                        row.update(status="FAIL", error=f"{type(exc).__name__}: {exc}")
+                        row.update(status="FAIL", error=f"{type(exc).__name__}: {exc}",
+                                   seconds=round(time.monotonic() - started, 2),
+                                   **failure_details(stage, log))
                     saved["stages"].append(row)
                     if phase == "cpu" and stage.name == "preflight" and row["status"] == "PASS":
                         saved["inputs"] = input_inventory()
                     publish()
-                    print(f"[Experiment 0] {row}", flush=True)
-                    if row["status"] == "FAIL" and (stage.name in ("preflight", "preprocess") or stage.phase != "diagnostics"):
+                    print(f"[Experiment 0] { {k: value for k, value in row.items() if k != 'log_tail'} }", flush=True)
+                    if row.get("log_tail"):
+                        print(f"[Experiment 0] Last lines of {stage.name}:\n{row['log_tail']}", flush=True)
+                    if row["status"] == "FAIL" and (stage.name in ("preflight", "preprocess", "vsc") or stage.phase != "diagnostics"):
                         raise RuntimeError(f"Stopping after {stage.name}; dependent work cannot be validated")
                 if any(s["status"] != "PASS" for s in saved["stages"]):
                     raise RuntimeError("One or more validation stages failed")
@@ -367,6 +404,8 @@ def run_validation(*, hours: float = 23.5, phase: str = "gpu") -> int:
                 saved.update(status="FAILED", error=f"{type(exc).__name__}: {exc}")
             finally:
                 publish()
+            if saved.get("error"):
+                print(f"[Experiment 0] {saved['error']}", flush=True)
             print(f"Experiment 0 {saved['status']}: {pointer}", flush=True)
             return 0 if saved["status"] == "PASS" else 1
 

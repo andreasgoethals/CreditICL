@@ -723,13 +723,16 @@ class Trainer:
                     loss, extra = self._loss_for(Xi, yi, int(ts))
                 if not torch.isfinite(loss):
                     raise FloatingPointError(f"Non-finite training loss at step {self.step}")
-                self.scaler.scale(loss / n_micro).backward()
+                # Weight by task count, including a shorter final micro-batch.
+                # Equal weighting of passes would over-weight those last tasks.
+                weight = Xi.shape[0] / X.shape[0]
+                self.scaler.scale(loss * weight).backward()
                 # detach() before float(): torch warns that converting a tensor
                 # still attached to the graph can behave unexpectedly, and we only
                 # want the number for logging.
-                totals["loss"] += float(loss.detach()) / n_micro
+                totals["loss"] += float(loss.detach()) * weight
                 for k, v in extra.items():
-                    totals[k] = totals.get(k, 0.0) + v / n_micro
+                    totals[k] = totals.get(k, 0.0) + v * weight
             except torch.cuda.OutOfMemoryError as exc:
                 self.optimizer.zero_grad(set_to_none=True)
                 torch.cuda.empty_cache()

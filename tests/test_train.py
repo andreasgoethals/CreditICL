@@ -677,16 +677,32 @@ def test_batch_and_features_match_upstream():
         )
 
 
-def test_micro_batch_size_is_a_speed_knob_only():
-    """Gradient accumulation averages `loss / n_micro` per pass, so the update is identical
-    whatever the micro-batch is. That is what makes it safe to set from the hardware — and it
-    must stay true, or a B200 run and an A100 run would not be comparable."""
+@pytest.mark.parametrize("micro", [1, 2, 3])
+def test_micro_batch_size_is_a_speed_knob_only(tmp_path, lgd_cfg, monkeypatch, micro):
+    """An uneven final pass must still give every task the same gradient weight."""
+    from collections import defaultdict
+
+    lgd_cfg["train"].update(batch_size=3, micro_batch_size=micro, gradient_clipping=0)
+    lgd_cfg["prior"]["grouping"]["group_size"] = 1
+    trainer = Trainer(lgd_cfg, tmp_path, device="cpu")
+    parameter = next(trainer.model.parameters())
+    value = parameter.detach().flatten()[0].item()
+    captured = []
+    monkeypatch.setattr(trainer, "_loss_for", lambda X, y, split:
+                        (parameter.flatten()[0] * y.mean(), {"mean_target": float(y.mean())}))
+    monkeypatch.setattr(trainer.optimizer, "step", lambda *a, **kw:
+                        captured.append(parameter.grad.detach().clone()))
+    trainer._phase = defaultdict(float)
+    try:
+        result = trainer.train_step((torch.ones(3, 8, 2),
+                                     torch.tensor([0., 0., 1.]).view(3, 1).expand(3, 8), 4))
+        assert captured[0].flatten()[0].item() == pytest.approx(1 / 3)
+        assert result["loss"] == pytest.approx(value / 3, abs=1e-8)
+        assert result["mean_target"] == pytest.approx(1 / 3)
+        assert trainer.datasets_seen == 3
+    finally:
+        trainer.close()
     root = Path(__file__).resolve().parents[1]
-    src = (root / "src" / "train" / "loop.py").read_text(encoding="utf-8")
-    assert "self.scaler.scale(loss / n_micro).backward()" in src, (
-        "the per-micro-batch loss must be divided by n_micro, or the effective learning rate "
-        "would scale with the micro-batch and the knob would change results"
-    )
     # and the override must reach the trainer
     entry = (root / "scripts" / "pretrain.py").read_text(encoding="utf-8")
     assert '"--micro-batch-size"' in entry

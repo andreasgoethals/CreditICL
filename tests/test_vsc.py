@@ -32,6 +32,19 @@ def test_cuda_stack_executes_and_backpropagates():
     assert torch.isfinite(loss) and torch.isfinite(x.grad).all()
 
 
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_prior_sampling_preserves_the_training_cuda_rng(device):
+    from src.prior.upstream import seeded
+
+    before = torch.cuda.get_rng_state().clone()
+    draws = []
+    for _ in range(2):
+        with seeded(123, device):
+            draws.append(torch.rand(8, device=device))
+        torch.testing.assert_close(torch.cuda.get_rng_state(), before, rtol=0, atol=0)
+    torch.testing.assert_close(draws[0], draws[1], rtol=0, atol=0)
+
+
 @pytest.mark.parametrize("task", ["pd", "lgd"])
 def test_tabpfn_cuda_checkpoint_resume_before_long_training(tmp_path, task):
     """Catch misplaced restored Adam moments before the 600-step validation arms."""

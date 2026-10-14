@@ -167,6 +167,59 @@ The one thing to do differently.
 
 ## Runs
 
+## 14-10-2026 — Exp0 CPU 62316841: two tests read the actual failed GPU receipt
+
+**Evidence:** Andreas's terminal attachment `fb75bab8-4986-42e0-8250-ef9d33060fbd/Pasted text.txt`
+and the main/child logs pasted at 15:55 CEST. No new GPU job was submitted: readiness blocked it.
+**Identity:** `6054c50`, dirty checkout (unspecified local changes), wICE/batch, node `m28c27n1`.
+Local library pin `de324efcca55be392feb0c01830b3b6ce364587f`; the remote banner does not record its pin.
+
+### Configuration and results
+
+- CPU allocation banner: 20 CPUs and 65,536 MiB. The committed script requests 8 CPUs;
+  the supplied banner is authoritative for this allocation. No training hyperparameters were exercised as production runs.
+- Attempt `cpu_20261014T132749Z_j62316841_2e5d7c50`; main log
+  `experiment_0/logs/exp0_cpu_20261014_152728_j62316841.log`.
+  Banner 15:27:49, END 15:44:09 CEST: 16m20s log interval, not a supplied scheduler elapsed time.
+- TabPFN 9.1.0, TabICL 2.1.1 at `8f1aa2098c894ab91dba15209cf2002ba4be6c6c`,
+  CatBoost 1.2.10, torch 2.11.0+cu128: all package checks passed, including 135 dependency versions and `pip check`.
+- **11/12 stages passed:** preprocessing, preflight, benchmark partitions, configurations, data,
+  determinism, OOD cache, orchestration, paths, prior and storage. Unit tests failed.
+- Unit stage: **1,368 passed, 2 failed, 3 skipped, 13 deselected, 411 warnings in 703.39s**.
+  Skips were the unavailable sibling TabPFNCredit checkout, absent generated figures, and
+  the unavailable-upstream error path when upstream is installed. CUDA checks were deselected on CPU.
+- Failing tests: `test_package_change_invalidates_successful_exp0_checks` and
+  `test_partial_or_stale_exp0_checks_cannot_unlock_paid_training`.
+
+### Diagnosis and next
+
+Both fixtures created a temporary legacy `checks.json`, but only redirected `experiment_dir`.
+The modern canonical receipt uses `outputs_dir`, so the tests read the real failed GPU receipt
+from job 11688276 instead of their fixture. An isolated local reproduction with that outer failed
+receipt produced the same two assertion failures. Using the existing fixture that isolates both
+output tiers made the same reproduction pass (2/2). No production readiness check was bypassed.
+
+This CPU failure is not evidence of another model failure, and does not validate the earlier GPU
+resume fix. New local regressions cover restart settings, first walltime continuation, prior/model
+random-state separation, uneven micro-batches, OOD fold memory release and inner PD validation
+splits. Mandatory GPU tests include real PD/LGD TabPFN resume and CUDA random-state isolation;
+the main job log now prints stage error tails and failing test names. Nonfinite PD monitoring
+predictions now count as dataset errors, matching LGD, so the validation gate detects them;
+the monitor itself still catches the error and allows training to continue.
+
+The real-data partition audit passed all 21 local credit tables (five outer folds and the
+inner PD threshold splits). Local dependency checks passed for 123 versions plus `pip check`.
+The final complete local suite passed **1,419 tests, 17 skipped, 508 warnings in 950.81s**:
+15 VSC-only checks, the absent-figures check, and the unavailable-upstream error case were skipped.
+Critical static checks and `git diff --check` passed. No notebook or visualization code changed.
+The 50-table OOD cache and CUDA are unavailable locally; their real checks remain mandatory on VSC.
+Exp0 retains 12 CPU and 66 GPU stages; the existing full-table reference probes now precede
+the longer training runs to detect capacity failures sooner.
+
+At Andreas's request, after diagnosis and local verification, clear generated output on both
+storage tiers and start a fresh CPU Exp0 followed by GPU Exp0. Keep datasets and released weights.
+No cluster job, remote deletion, commit or push was performed in this debugging session.
+
 ## 14-10-2026 — Exp0 CPU 62313072 passed; GPU 11688276 failed after 01:58:32
 
 **CPU:** submitted by 11:25 CEST, wICE, job `62313072`; PASS confirmed by 11:55 CEST.

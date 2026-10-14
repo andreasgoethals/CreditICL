@@ -100,17 +100,20 @@ def test_package_inventory_excludes_install_credentials_and_paths(monkeypatch):
     assert "some-model" in env.environment_changes(snapshot, changed)[0]
 
 
-def test_package_change_invalidates_successful_exp0_checks(tmp_path, monkeypatch):
+def test_package_change_invalidates_successful_exp0_checks(isolated_output, monkeypatch):
     from src.utils import paths, preflight
     snapshot = {"python": "3.12.3", "platform": "linux", "packages": {"numpy": {"version": "2.5.1"}}}
     monkeypatch.setattr(env, "environment_snapshot", lambda: snapshot)
     monkeypatch.setattr(preflight, "source_fingerprint", lambda: "code")
-    monkeypatch.setattr(paths, "experiment_dir", lambda *a: tmp_path)
-    (tmp_path / "report").mkdir()
-    (tmp_path / "logs").mkdir()
-    (tmp_path / "logs" / "exp0_checks_1.log").write_text(
+    # Both the legacy report and the modern receipt must live in the fixture.
+    # Patching experiment_dir alone leaves receipt_path reading the real failed
+    # GPU attempt on VSC and makes this legacy-report test depend on old runs.
+    root = paths.experiment_dir(0)
+    (root / "report").mkdir(parents=True)
+    (root / "logs").mkdir()
+    (root / "logs" / "exp0_checks_1.log").write_text(
         "equivalence PD exit code: 0\nequivalence LGD exit code: 0\nEND status=OK\n")
-    (tmp_path / "report" / "checks.json").write_text(json.dumps({
+    (root / "report" / "checks.json").write_text(json.dumps({
         "source_fingerprint": "code", "environment": snapshot,
         "environment_fingerprint": env.environment_fingerprint(snapshot),
         "rows": [{"check": c, "status": "PASS"} for c in preflight.CHECK_SECTIONS]}))

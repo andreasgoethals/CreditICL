@@ -10,6 +10,13 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 14-10-2026
 
+- Verify the final recovery changes: 1,419 local tests passed / 17 expected skips (15 mandatory on VSC), 21 credit-table partition audits and dependency checks passed; fresh VSC CPU/GPU validation still required.
+- Fix two Exp0 tests reading real failed receipts (CPU 62316841); retain the production gate and print failed-test names/log tails in the main validation log.
+- Fix first walltime continuation with `resumed_at: null`, reject changed/added/removed resume recipe settings, and stop GPU validation immediately after a mandatory CUDA failure.
+- Isolate prior RNG seeding from the trainer's CUDA stream, weight uneven micro-batches by task count, release OOD fold models, and validate inner PD splits on CPU; add regressions and mandatory CUDA RNG probes.
+- Count nonfinite PD monitoring predictions as dataset errors so Experiment 0 cannot overlook them; retain nonfatal monitoring during training.
+- Include this project's root Slurm output/error files in the explicit full reset; preserve other projects' files and released weights.
+- Run Exp0's existing full-table reference probes before the six longer diagnostic training runs, catching capacity failures earlier without adding benchmark work.
 - Fix TabPFN resume device placement from GPU job 11688276; add local checkpoint/device regressions and early mandatory PD/LGD CUDA resume probes (1,391 local tests passed, 15 expected skips).
 - Local verification: 1,388 tests passed / 12 expected skips (11 VSC-only), all 11 notebooks / 119 figures passed, and dependency checks passed; rebuilt all 21 credit caches and verified finite full-table loan-default reductions plus a 759-feature released-model probe. Fresh VSC CPU then GPU validation remains required.
 - Audit Exp0 CPU 62311762: fix two storage-dependent test fixtures and resolve released weights through project storage so architecture checks actually run on VSC.

@@ -172,6 +172,16 @@ def reset_output(*, clean: bool = False) -> tuple[int, int]:
         raise RuntimeError(f"Unexpected or linked output roots: {current}")
     projects = {p.parent for p in current}
     for project in sorted(projects):
+        # Slurm opens these before the job redirects into the output tree. Keep
+        # this narrowly scoped to this project's named jobs and numeric job IDs.
+        if project.is_dir():
+            for item in project.iterdir():
+                if not re.fullmatch(r"slurm-(?:crediticl|cicl)-[A-Za-z0-9_-]+-\d+(?:_\d+)?\.(?:out|err)", item.name):
+                    continue
+                if _linked(item) or not item.is_file() or not item.resolve().is_relative_to(project.resolve()):
+                    raise RuntimeError(f"Unexpected Slurm output path: {item}")
+                info = item.stat()
+                files.append((item, project, (info.st_size, info.st_mtime_ns, info.st_ino)))
         for name in (paths.OUTPUT_NAME, "output", "outputCreditICL", "output_CreditICL"):
             candidates.append((project / name, False))
         # Before the output-tree migration, generated runs and released downloads

@@ -202,14 +202,28 @@ def test_resume_rejects_a_changed_training_recipe(change):
         validate_resume_config(old, new)
 
 
-def test_partial_or_stale_exp0_checks_cannot_unlock_paid_training(tmp_path, monkeypatch):
+@pytest.mark.parametrize("key,value", [("cautious_weight_decay", True), ("l2sp_alpha", .1),
+                                      ("num_quantiles", 99), ("regression_loss_weights", {"mse": 1.0})])
+@pytest.mark.parametrize("operation", ["add", "remove", "change"])
+def test_resume_rejects_new_removed_or_changed_training_options(key, value, operation):
+    from src.train.checkpoint import validate_resume_config
+
+    old, new = {"train": {}}, {"train": {key: value}}
+    if operation == "remove":
+        old, new = new, old
+    elif operation == "change":
+        old["train"][key] = False if isinstance(value, bool) else 0
+    with pytest.raises(ValueError, match=f"train.{key}"):
+        validate_resume_config(old, new)
+
+
+def test_partial_or_stale_exp0_checks_cannot_unlock_paid_training(isolated_output, monkeypatch):
     from src.utils import paths
     from src.utils.environment import environment_fingerprint
 
-    root = tmp_path / "experiment_0"
+    root = paths.experiment_dir(0)
     (root / "report").mkdir(parents=True)
     (root / "logs").mkdir()
-    monkeypatch.setattr(paths, "experiment_dir", lambda *a: root)
     monkeypatch.setattr(preflight, "source_fingerprint", lambda: "current")
     (root / "report" / "checks.json").write_text(json.dumps({
         "source_fingerprint": "current", "rows": [{"check": "env", "status": "PASS"}]}))

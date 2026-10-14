@@ -61,6 +61,34 @@ def test_full_million_rows_are_used_exactly_once_as_test_rows():
     assert np.all(counts == 1)
 
 
+@pytest.mark.parametrize("broken", [False, True])
+def test_cpu_exp0_validates_the_actual_inner_threshold_splits(monkeypatch, broken):
+    from scripts.exp0_checks import Report, check_benchmark
+    from src.eval import protocol
+
+    X, y = np.ones((100, 2)), np.arange(100) % 2
+    monkeypatch.setattr("src.data.discovery.list_datasets", lambda task: ["table"] if task == "pd" else [])
+    monkeypatch.setattr("src.eval.runner.load_arrays", lambda *a: (X, y, [], {}))
+    # Import the runner before patching its source module: a first import inside
+    # check_benchmark would otherwise retain this test's temporary empty list.
+    monkeypatch.setattr("src.eval.ood_runner.list_ood_datasets", lambda: [])
+    monkeypatch.setattr("src.eval.ood.list_ood_datasets", lambda: [])
+    original = protocol.validation_split
+    seeds = []
+
+    def split(*args, **kwargs):
+        seeds.append(kwargs["seed"])
+        if broken:
+            raise ValueError("No group-disjoint threshold split contains both classes")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(protocol, "validation_split", split)
+    report = Report()
+    check_benchmark(report)
+    assert report.failed == int(broken)
+    assert seeds == ([0] if broken else list(range(5)))
+
+
 @pytest.mark.parametrize("task", ["pd", "lgd"])
 def test_repeated_entities_never_cross_outer_or_inner_split(task):
     from src.eval.protocol import cv_folds, validation_split

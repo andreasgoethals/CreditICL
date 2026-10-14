@@ -552,7 +552,7 @@ def _checkpoint_round_trip(rep: Report, track: str, run: dict, trainer: Any, ckp
 def check_benchmark(rep: Report) -> None:
     """CPU validation of every table and every fold; real GPU scoring is a later stage."""
     from src.data.discovery import list_datasets
-    from src.eval.protocol import cv_folds
+    from src.eval.protocol import cv_folds, validation_split
     from src.eval.runner import load_arrays
     from src.eval.ood import list_ood_datasets
     from src.eval.ood_runner import _prepare, OODEvalConfig
@@ -562,13 +562,22 @@ def check_benchmark(rep: Report) -> None:
             raise ValueError("Misaligned rows or non-finite targets/infinite features")
         seen = np.zeros(len(y), dtype=np.uint8)
         folds = cv_folds(y, task, groups=groups)
-        for train, test in folds:
+        for fold, (train, test) in enumerate(folds):
             if len(train) + len(test) != len(y) or np.intersect1d(train, test).size:
                 raise ValueError("Invalid train/test partition")
             if groups is not None and np.intersect1d(groups[train], groups[test]).size:
                 raise ValueError("An entity appears on both sides of a fold")
             if task == "pd" and (len(np.unique(y[train])) != 2 or len(np.unique(y[test])) != 2):
                 raise ValueError("A classification fold is missing a class")
+            if task == "pd":
+                train_groups = groups[train] if groups is not None else None
+                fit, val = validation_split(y[train], task, seed=fold,
+                                            groups=train_groups)
+                if (len(fit) + len(val) != len(train) or np.intersect1d(fit, val).size
+                        or len(np.unique(y[train][fit])) != 2 or len(np.unique(y[train][val])) != 2):
+                    raise ValueError("Invalid threshold-validation partition or missing class")
+                if train_groups is not None and np.intersect1d(train_groups[fit], train_groups[val]).size:
+                    raise ValueError("An entity crosses the threshold-validation split")
             seen[test] += 1
         if len(folds) != 5 or not np.all(seen == 1):
             raise ValueError("Five-fold CV did not test every row exactly once")

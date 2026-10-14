@@ -21,11 +21,8 @@ That is the same contract the training loop uses, which is deliberate: if evalua
 built the episode differently from training, the model would be scored on a task it was
 never trained for and every number would be quietly wrong.
 
-CONTEXT SIZE IS A REAL LEVER, NOT AN IMPLEMENTATION DETAIL. Tanna et al. 2026 found that
-on credit data the *context construction* explains more variance in AUC than the choice
-of model family, with balanced sampling worth 3-4 AUC points over uniform. So the context
-is capped and sampled explicitly here, and every choice is recorded in the result row —
-never left implicit.
+The publication benchmark uses every training-fold row and every eligible feature.
+An explicit context cap is available for diagnostic calls and recorded in the result row.
 """
 
 from __future__ import annotations
@@ -38,12 +35,6 @@ import torch
 
 from src.eval.baselines import TabICLBaseline
 from src.utils.logging_setup import get_logger
-
-#: Rows of context to give the model. TabICLv2 trains on 512-1024-row tables, so a
-#: context far outside that range is out-of-distribution for it regardless of how much
-#: memory we have.
-DEFAULT_CONTEXT_ROWS = 1024
-
 
 def load_our_checkpoint(
     path: str | Path, device: str = "cpu"

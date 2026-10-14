@@ -181,7 +181,10 @@ def test_full_reset_includes_legacy_runs_and_names_on_both_tiers(isolated_output
                          "output_CreditICL/experiment_1/progress.csv",
                          "checkpoints/exp1_pd__mechanism-rho_range=[0.03,0.12]__s2/step-12500.ckpt",
                          "checkpoints/exp1_lgd__s0/step-12500.ckpt",
-                         "checkpoints/debug_pd/step-3.ckpt"):
+                         "checkpoints/debug_pd/step-3.ckpt",
+                         "slurm-crediticl-exp0-cpu-62316841.out",
+                         "slurm-crediticl-exp0-gpu-11688276.err",
+                         "slurm-cicl-preprocess-1234.out"):
             p = project / relative
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_bytes(b"generated")
@@ -189,7 +192,8 @@ def test_full_reset_includes_legacy_runs_and_names_on_both_tiers(isolated_output
         for relative in ("checkpoints/tabicl-classifier-v2-20260212.ckpt",
                          "checkpoints/tabpfn-v3-regressor-v3_default.ckpt",
                          "checkpoints/released_bundle/weights.ckpt",
-                         "data/raw/input.csv", "prior_cache/ood/table.npz"):
+                         "data/raw/input.csv", "prior_cache/ood/table.npz",
+                         "slurm-otherproject-1234.out", "slurm-crediticl-not-a-job.out"):
             p = project / relative
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_bytes(b"input")
@@ -199,6 +203,7 @@ def test_full_reset_includes_legacy_runs_and_names_on_both_tiers(isolated_output
     clean_run.reset_output(clean=True)
     assert all(not p.exists() for p in generated)
     assert all(p.read_bytes() == b"input" for p in protected)
+    assert clean_run.reset_output() == (0, 0)
 
 
 def test_full_reset_refuses_active_jobs_even_for_legacy_only(isolated_output, monkeypatch):

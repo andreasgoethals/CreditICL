@@ -91,7 +91,7 @@ def require() -> None:
 
 
 @contextlib.contextmanager
-def seeded(seed: int):
+def seeded(seed: int, device: str = "cpu"):
     """Make upstream's sampler reproducible under OUR seed, without disturbing the process.
 
     `GraphSCM` and everything under `graph_lib` draw from torch's GLOBAL generator — they take
@@ -104,8 +104,8 @@ def seeded(seed: int):
     `choice`, `uniform` and `permutation` — six of its modules import numpy — so seeding torch
     alone leaves the sample non-reproducible. Measured: same torch seed, different data.
 
-    Both global states are snapshotted and restored, so nothing outside this block is
-    disturbed: `fork_rng` for torch, an explicit get/set for numpy.
+    CPU sampling must not reseed CUDA: the GPU's dropout stream belongs to the
+    trainer. Explicit CUDA sampling forks only the requested device as well.
     """
     import numpy as np
 
@@ -113,9 +113,14 @@ def seeded(seed: int):
     # `np.random.standard_cauchy` / `randint` / `choice` / `uniform` / `permutation`, which read
     # the legacy global state. Seeding a `np.random.Generator` would leave them untouched.
     np_state = np.random.get_state()  # noqa: NPY002
+    target = torch.device(device)
+    devices = ([target.index if target.index is not None else torch.cuda.current_device()]
+               if target.type == "cuda" else [])
     try:
-        with torch.random.fork_rng(devices=[], enabled=True):
-            torch.manual_seed(seed)
+        with torch.random.fork_rng(devices=devices, enabled=True):
+            torch.random.default_generator.manual_seed(seed)
+            for index in devices:
+                torch.cuda.default_generators[index].manual_seed(seed)
             np.random.seed(seed % (2**32))  # noqa: NPY002
             yield
     finally:
@@ -150,7 +155,7 @@ def sample_control(
     require()
     from tabicl.prior._graph_scm import GraphSCM
 
-    with seeded(seed) if seed is not None else contextlib.nullcontext():
+    with seeded(seed, device) if seed is not None else contextlib.nullcontext():
         return _call_graph_scm(
             GraphSCM, regression, seq_len, num_features, max_features, num_classes,
             config if config is not None else prior_config(), device,
@@ -199,7 +204,7 @@ def sample_base_latent(
     require()
     if config is None:
         config = prior_config({"use_corrected_cat_sizes": use_corrected_cat_sizes})
-    with seeded(seed) if seed is not None else contextlib.nullcontext():
+    with seeded(seed, device) if seed is not None else contextlib.nullcontext():
         return _sample_base_latent(seq_len, num_features, device, config, max_cat_size)
 
 

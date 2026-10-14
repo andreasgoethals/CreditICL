@@ -357,6 +357,22 @@ def test_ood_eval_scores_both_kinds(ood_cache):
     assert not any(c.startswith("boundary_mass") for c in reg.dropna(axis=1, how="all").columns)
 
 
+@pytest.mark.parametrize("fails", [False, True])
+def test_ood_releases_fold_memory_after_success_or_failure(ood_cache, monkeypatch, fails):
+    from src.eval import ood_runner as runner
+
+    entry = ood_cache.list_ood_datasets("regression")[0]
+    released = []
+    monkeypatch.setattr(runner, "_release_memory", lambda: released.append(True))
+    if fails:
+        def broken_model(*args, **kwargs):
+            raise RuntimeError("model failed")
+        monkeypatch.setattr(runner, "score_fold", broken_model)
+    rows = runner.evaluate_ood_dataset(entry, ["linear"], 0, runner.OODEvalConfig())
+    assert len(rows) == len(released) == 5
+    assert {row["status"] for row in rows} == {"failed" if fails else "ok"}
+
+
 def test_classification_and_regression_are_never_pooled(ood_cache):
     """A mean of ROC-AUC and R^2 is not a number."""
     from src.eval.ood_runner import OODEvalConfig, run_ood, summarise_ood

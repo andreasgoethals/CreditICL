@@ -133,6 +133,18 @@ def test_no_cancelled_empty_or_unbounded_auto_continuation(patch, segment):
     require_progress(summary, 0)
 
 
+@pytest.mark.parametrize("resumed_at", [None, 0, 40])
+def test_first_and_later_walltime_stops_can_continue(resumed_at):
+    from src.utils.resume_guard import require_progress
+
+    # Both trainers write JSON null before their first checkpoint resume.
+    require_progress({"completed": False, "stopped_by_signal": "SIGUSR1",
+                      "steps": 60, "resumed_at": resumed_at}, 0)
+    with pytest.raises(ValueError, match="No automatic continuation"):
+        require_progress({"completed": False, "stopped_by_signal": "SIGUSR1",
+                          "steps": resumed_at or 0, "resumed_at": resumed_at}, 0)
+
+
 def test_linked_cleanup_refuses_before_deleting_other_files(tmp_path, monkeypatch):
     from src.utils import clean_run
     root = tmp_path / "output"

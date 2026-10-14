@@ -44,15 +44,17 @@ def validate_resume_config(old: dict[str, Any], current: dict[str, Any]) -> None
     may change for recovery. Extending the schedule is warned about by the trainer.
     """
     changed = []
+    missing = object()
     for key in ("task", "seed", "architecture", "model", "init", "prior"):
-        if key in old and old[key] != current.get(key):
+        if old.get(key, missing) != current.get(key, missing):
             changed.append(key)
     old_train, new_train = old.get("train", {}), current.get("train", {})
     for key in ("batch_size", "optimizer", "lr", "weight_decay", "beta1", "beta2", "momentum",
                 "scheduler", "warmup_proportion", "gradient_clipping", "l2sp_alpha", "loss_weights",
                 "cosine_num_cycles", "cosine_amplitude_decay", "cosine_lr_end", "n_estimators", "amp",
-                "regression_loss_weights", "activation_checkpointing", "dtype"):
-        if key in old_train and old_train[key] != new_train.get(key):
+                "regression_loss_weights", "activation_checkpointing", "dtype",
+                "cautious_weight_decay", "num_quantiles"):
+        if old_train.get(key, missing) != new_train.get(key, missing):
             changed.append(f"train.{key}")
     if changed:
         raise ValueError("Resume configuration CHANGED: " + ", ".join(changed)

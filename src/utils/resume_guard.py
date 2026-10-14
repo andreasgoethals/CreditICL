@@ -9,7 +9,7 @@ def require_progress(summary: dict, segment: int, limit: int = 32) -> None:
     if segment < 0 or limit < 1 or segment >= limit:
         raise ValueError(f"Automatic continuation limit reached ({segment}/{limit}); inspect the run")
     if (summary.get("completed") or summary.get("stopped_by_signal") != "SIGUSR1"
-            or int(summary.get("steps", 0)) <= int(summary.get("resumed_at", 0))):
+            or int(summary.get("steps", 0)) <= int(summary.get("resumed_at") or 0)):
         raise ValueError("No automatic continuation: cancellation, completed run, or no progress")
 
 

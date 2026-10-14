@@ -303,8 +303,9 @@ class ProgressTracker:
 
             prob = np.asarray(pred["prob"], dtype=float)
             if not np.isfinite(prob).all():
-                return {"pred_nonfinite_frac": round(float(np.mean(~np.isfinite(prob))), 6),
-                        "n_dropped_nonfinite_target": float(dropped)}
+                # record() catches this per dataset and writes n_errors, which
+                # Experiment 0 requires to be zero before it can pass.
+                raise ValueError(f"Non-finite predictions ({np.mean(~np.isfinite(prob)):.1%} of PD queries)")
             m = pd_metrics(yt, prob)
         out_m = {k: float(v) for k, v in m.items()
                  if isinstance(v, (int, float, np.floating, np.integer)) and not isinstance(v, bool)}
