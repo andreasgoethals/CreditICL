@@ -23,7 +23,8 @@ capped their context at 1,024). Full-size execution must pass Exp0 on the target
 there is no silent row cap or OOM subsampling. Every reference uses its library's DEFAULT
 settings except the explicit full-row/full-feature policy — CatBoost's 1,000 iterations with
 its automatic learning rate, TabPFN-3's and TabICLv2's own ensemble sizes. TabPFN's per-member
-feature budget is enlarged to retain all inputs. This comparison does not match HPO budgets.
+feature budget is enlarged to retain all inputs. TabICL runs its full ensemble sequentially,
+with bounded transfers and scratch-disk offloading. This comparison does not match HPO budgets.
 """
 
 from __future__ import annotations
@@ -553,6 +554,7 @@ class TabICLBaseline(_TFMBaseline):
 
     def _fit(self, X: np.ndarray, y: np.ndarray, cat_indices: list[int]) -> None:
         import torch
+        from src.eval.tabicl_memory import install
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self.report.extra["device"] = device
@@ -563,6 +565,8 @@ class TabICLBaseline(_TFMBaseline):
             extra["model_path"] = str(local_input(extra["model_path"]))
         if "n_estimators" in self.kwargs:
             extra["n_estimators"] = int(self.kwargs["n_estimators"])
+        # Batch size controls concurrent members, not the number of members.
+        extra["batch_size"] = 1
 
         if self.task == "pd":
             from tabicl import TabICLClassifier
@@ -574,11 +578,17 @@ class TabICLBaseline(_TFMBaseline):
 
             self._model = TabICLRegressor(device=device, random_state=self.seed, **extra)
             self._model.fit(X, y)
+        install(self._model)
+        self.report.extra.update(ensemble_batch_size=1, n_estimators=self._model.n_estimators,
+                                 inference_storage="bounded-gpu-disk")
 
     def _predict(self, X: np.ndarray) -> np.ndarray:
-        if self.task == "pd":
-            return self._model.predict_proba(X)[:, 1]
-        return self._regression_output(self._model.predict(X))
+        from src.eval.tabicl_memory import prediction_storage
+
+        with prediction_storage(self._model):
+            if self.task == "pd":
+                return self._model.predict_proba(X)[:, 1]
+            return self._regression_output(self._model.predict(X))
 
     def predict_quantiles(self, X: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
         """TabICL's predictive distribution (`TabICLRegressor.predict(output_type="quantiles")`)
@@ -586,8 +596,10 @@ class TabICLBaseline(_TFMBaseline):
         if self.task == "pd":
             return None
         from src.eval.protocol import QUANTILE_LEVELS
+        from src.eval.tabicl_memory import prediction_storage
 
-        q = self._model.predict(X, output_type="quantiles", alphas=[float(a) for a in QUANTILE_LEVELS])
+        with prediction_storage(self._model):
+            q = self._model.predict(X, output_type="quantiles", alphas=[float(a) for a in QUANTILE_LEVELS])
         return self._regression_output(np.asarray(q, dtype=float)), QUANTILE_LEVELS
 
 

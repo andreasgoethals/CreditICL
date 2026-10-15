@@ -125,6 +125,13 @@ def test_released_models_retain_wide_inputs(model_name, task, width):
     assert_released_full_width(model_name, task, width)
 
 
+@pytest.mark.parametrize("task", ["pd", "lgd"])
+def test_tabicl_disk_offload_preserves_full_ensemble_predictions(task):
+    from test_tabicl_memory import assert_released_memory_equivalence
+
+    assert_released_memory_equivalence(task, device="cuda", force_disk=True)
+
+
 def test_storage_tiers_handle_spaces_and_atomic_writes():
     import json
     import tempfile

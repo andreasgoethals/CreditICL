@@ -167,6 +167,124 @@ The one thing to do differently.
 
 ## Runs
 
+## 14-10-2026 — Exp0 CPU 62319803 passed; GPU 11689448 exhausted host RAM in the full-width benchmark
+
+**Evidence:** `Downloads/output CreditICL.zip`, modified 18:47:19 CEST, SHA-256
+`a7e2e882e9881ed2f29a6326841265d0b84024d6a087225bc4981f58647bcbd0`.
+ZIP CRC passed; 73 files / 927,899 uncompressed bytes. Read directly without extracting or
+deleting previous evidence. It contains the small output tier, not the benchmark CSVs or
+checkpoint binaries on project storage. Finite fold metrics below are verified from logs,
+not an audit of final prediction arrays or a completed benchmark receipt.
+
+### Identity and configuration
+
+- Both banners record `351d948`, dirty checkout. Their executable fingerprint
+  `5bb68e06e4a5c55cfc08867e4a86e8111405cdd7d90189e2add291fb05dd856f`
+  matched the clean local checkout before this audit's changes. Unspecified dirty files
+  therefore do not establish a code mismatch or explain the failure.
+- Both environments: TabPFN 9.1.0, TabICL 2.1.1 at
+  `8f1aa2098c894ab91dba15209cf2002ba4be6c6c`, CatBoost 1.2.10, torch 2.11.0+cu128.
+  All 135 dependency checks and `pip check` passed. Environment fingerprint:
+  `d4ed1fbe1397c0063fc12abffcb338fddd8038f21decb20c8c84accaf0bf0454`.
+- CPU/GPU input inventories match. The GPU receipt binds to the exact CPU receipt;
+  all 22 CPU artifact hashes match the downloaded bytes.
+- Local read-only library pin: `de324efcca55be392feb0c01830b3b6ce364587f`.
+  Official code evidence: `tfm-library/repositories/TabICL.txt`, symbols
+  `InferenceManager._resolve_offload_mode`, `InferenceManager._allocate_output_buffer`,
+  `ColEmbedding._inference_without_feature_group`, plus the installed pinned source.
+  The library's newer cgroup-aware helper is absent from the installed commit; merely
+  reading/updating the library does not update the installed inference implementation.
+
+### CPU 62319803 — PASS
+
+- wICE/batch, `m28c22n1`, allocation banner 20 CPUs / 65,536 MiB.
+  Attempt `cpu_20261014T154239Z_j62319803_27c8e2cf`.
+  Main log 17:42:39–17:58:41 CEST: **16m02s**, not a supplied scheduler elapsed time.
+- All 12 stages passed. Unit JUnit: 1,407 tests, **1,404 passed / 3 skipped**, zero
+  failures/errors. Unit stage 687.05s. Skips: unavailable sibling TabPFNCredit,
+  absent generated figures, and an inapplicable missing-upstream error path.
+- All 21 credit datasets and 50 OOD tables validated. Benchmark split checks passed
+  71 assertions; configurations 10, data 21, determinism 7, OOD 1, orchestration 4,
+  paths 6, prior 6, storage 3. This is validation of inputs and CPU behavior, not
+  evidence that every full-table GPU prediction fits the allocation.
+
+### GPU 11689448 — FAILED during capacity validation
+
+- Mindwell/gpu_b200, `r11g22`, one B200, 24 CPUs / 184,320 MiB host RAM.
+  Attempt `gpu_20261014T160518Z_j11689448_8352ce02`.
+  Main log 18:05:17–18:46:26 CEST: **41m09s**. Accounting supplied later at 19:37 CEST
+  gives **41m32s**, approximately **0.692 GPU-hours allocated**, state `OUT_OF_MEMORY`,
+  exit `0:125`, requested RAM `180G`, batch MaxRSS **188,735,484 KiB (~180 GiB)**.
+  The `.err` supplied at 19:38 confirms one `oom_kill` in the batch step at 18:46:26.
+  Actual charged credits have not been supplied.
+- First **12 stages passed**: preflight; all **15 mandatory CUDA tests** with zero skips;
+  environment and weights; all six ten-step training/checkpoint-to-prediction probes;
+  both 20-step upstream training-equivalence checks.
+- Real CUDA TabPFN PD and LGD checkpoint resume passed. This verifies the earlier
+  Adam CPU/CUDA placement fix on the short probes. The six 600-step stop/resume runs
+  were not reached. No production Experiment 1 training ran in this attempt.
+- Equivalence maximum loss/parameter differences: PD 4.71e-6 / 3.18e-6;
+  LGD 2.44e-7 / 1.97e-6. All smoke checkpoint tensors matched and predictions were finite.
+- Stage `credit-pd-3` (released TabICL) exited **-9, SIGKILL**, after 718.06s. No Python
+  traceback. The ZIP alone did not identify the external killer. The later `sacct`
+  and `.err` evidence confirms Slurm host-memory exhaustion, rather than a CUDA exception.
+- Five folds each finished with finite metrics on `0006.hackerearth`: 532,428 rows,
+  30 eligible features, AUC .8445/.8447/.8475/.8477/.8464; and `0009.bank_status`:
+  100,000 rows, 15 eligible features, AUC .6403/.6423/.6454/.6488/.6346.
+  All training-fold rows were used. Removed columns were outcome/future-information exclusions.
+- The next table, `0011.loan_default`, has 105,471 rows / 759 features. Its first inner
+  PD fit used **67,500/67,500 rows x 759 features** (18.2s). Last logged activity was
+  18:46:00, before prediction finished. `0014.algorithmwatch` (158,700 x 2,986) and
+  all later capacity/training/benchmark stages were not reached.
+
+### Diagnosis and next
+
+The pinned TabICL manager sees total available node RAM rather than the Slurm limit;
+the previous wrapper did not configure disk offloading. In addition, the classifier's
+feature-shuffle shortcut calls `repeat` on the whole embedding tensor, defeating disk
+backing even for a one-member batch. These are confirmed memory hazards; the later
+scheduler accounting independently confirms that the job exceeded its host RAM limit.
+
+The project adapter now keeps all eight ensemble members but executes them one at a
+time, bounds column transfers, uses GPU or temporary disk storage, rejects whole-output
+CPU/swap fallback and avoids the redundant single-member embedding copy. Linux disk
+blocks are reserved before mmap writes to catch quota failures as exceptions. Mindwell
+uses its job GPFS directory; temporary files are scoped to each prediction. No model
+weights, preprocessing, benchmark row/feature policy, folds or ensemble count changed.
+Released and trained TabICL share the adapter. No dependency or library files were edited.
+
+Local tests compare PD probabilities and LGD mean/quantiles against all eight released
+ensemble members and exercise real mmap writes, allocation failures, quota errors and
+cleanup. Two new mandatory CUDA probes force disk offloading before the large-table
+checks. Full-size behavior still requires a fresh CPU PASS followed by GPU PASS with
+this changed source. Experiment 1 remains blocked. After the OOM diagnosis, Andreas
+authorized removing stale Exp0 GPU output and rerunning. The GPU-only reset removes
+recognized GPU attempts, results/checkpoints and logs across both output tiers and
+their identified GPFS job directories, while preserving CPU records and permanent inputs.
+It lists by default and refuses deletion while CreditICL jobs are queued/running.
+
+**Local verification after the audit:** full suite **1,429 passed / 32 skipped**, 508 warnings,
+923.18s. Thirteen skips were Bash missing from this tool shell's PATH; rerunning all three
+affected modules with the already-installed Git Bash on PATH gave **127 passed / 1 expected
+figure skip**, covering all thirteen. Thus **1,442 distinct local tests passed**, with 17
+VSC-only tests and two expected non-GPU skips (absent figures and the missing-upstream path
+when upstream is installed). The final GPU-allocation retry/periodic-flush adjustment also
+passed all **17 memory regression cases**. Real CUDA forced-disk tests and the full-size
+benchmark have not run on the revised code. No package installation, cluster submission,
+commit, push, or deletion of real output occurred during this audit.
+
+**Authorized cleanup after diagnosis:** the local GPU reset found zero generated files
+in the repository output tree. The downloaded ZIP was then rewritten atomically to remove
+its 34 GPU files, preserving all 39 remaining files (including every CPU record) byte-for-byte;
+CRC and retained-content hashes were verified before replacing it. Its new SHA-256 is
+`bd163a3cb5bbf70dd5f8e1f954964acc6e9d7afb8877dcbf4d1dcb378e5b4f47`.
+The original archive hash above describes the evidence before this user-authorized cleanup.
+No VSC deletion or new submission has been executed locally; the VSC cleanup is supplied
+as `python -m src.utils.clean_run --reset-exp0-gpu --clean` after publishing/pulling the fix.
+Final local verification with Git Bash on PATH: **1,458 passed / 19 skipped**, 508 warnings,
+935.43s. Skips: 17 VSC-only checks, absent generated figures and the inapplicable missing-upstream
+path. All 22 preserved CPU artifact hashes were rechecked against the original CPU receipt.
+
 ## 14-10-2026 — 17:11 reset refused before a new Exp0 submission
 
 **Evidence:** Andreas's pasted login-node terminal output; `git pull --ff-only` advanced

@@ -42,6 +42,8 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 14-10-2026 | Exp0 GPU 11689448, Mindwell B200/r11g22, commit `351d948` dirty | **OUT_OF_MEMORY, 0:125, 41m32s; 12 stages PASS** | Accounting/stderr supplied at 19:37–19:38 confirm host RAM OOM: MaxRSS 188,735,484 KiB against 180G, one oom_kill. All 15 CUDA checks, six smoke routes and both equivalence checks passed; full-table TabICL completed two datasets then died on 105,471 rows/759 features. Local GPU/disk memory fix needs fresh CPU then GPU validation; no Exp1 launch |
+| 14-10-2026 | Exp0 CPU 62319803, wICE batch/m28c22n1, commit `351d948` dirty | **PASS: 12/12 stages, 1,404 tests PASS/3 SKIP; 16m02s log interval** | 21 credit and 50 OOD tables checked, package requirements passed, all 22 receipt artifact hashes verified from ZIP. CPU/GPU source and input fingerprints match. Subsequent inference-code changes require fresh CPU and GPU validation |
 | 14-10-2026 | Exp0 CPU 62316841, wICE batch, node m28c27n1, commit `6054c50` dirty | **FAILED; 11/12 stages PASS; 1,368 tests PASS, 2 FAIL, 3 SKIP, 13 deselected; 16m20s log interval** | Two legacy readiness tests patched only `experiment_dir` and read the actual failed GPU receipt through `outputs_dir`. Reproduced locally with a failed outer receipt, then both passed using isolated output roots. Production gate correctly blocked GPU. Fresh CPU then GPU required after these source changes |
 | 14-10-2026 | Exp0 GPU 11688276, Mindwell B200, commit `57d36cd` dirty, after CPU 62313072 | **FAILED 1:0, 01:58:32; 17 stages passed, `resume-pd-2` failed** | All six smoke tests, both equivalence checks, 11 mandatory CUDA tests and both TabICL PD stop/resumes passed. TabPFN PD restored CPU Adam moments before its first CUDA forward; first resumed update crashed. Place model before optimizer creation, add early PD/LGD CUDA resume probes, rerun CPU then GPU for changed source; no full-table benchmarks reached |
 | 14-10-2026 | Exp0 CPU 62313072, wICE | **PASS confirmed by readiness check at 11:55 CEST** | Receipt `cpu_20261014T092548Z_j62313072_c6ec3745`; all mandatory stages/artifacts current. All 21 credit caches v7, all 50 OOD tables present, four released weights present, 135 dependency checks passed. Detailed test counts and elapsed time not supplied |
@@ -83,6 +85,13 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 [`RUNS.md`](RUNS.md).
 
 ## Dead ends
+
+### 14-10-2026 — Full-row, full-width TabICL inference exceeded the tested resource envelope
+
+**Tried:** GPU job 11689448 after CPU 62319803 passed; released TabICL on the selected full-table PD benchmarks, before the six longer diagnostic training runs.
+**Result:** Five folds each completed for hackerearth (532,428 rows) and bank_status (100,000); loan_default prediction was killed after fitting 67,500 rows x 759 features. Later accounting/stderr confirmed OUT_OF_MEMORY at 41m32s, 188,735,484 KiB MaxRSS, one oom_kill.
+**Why:** Host RAM reached the 180G allocation. Confirmed unsafe paths in pinned TabICL: node-level RAM estimation, no configured disk offload, and `ColEmbedding._inference_without_feature_group` copying the complete embedding with `repeat` even for one member.
+**Instead:** Keep every row/feature/member, execute members sequentially, bound column transfers, preserve disk-backed embeddings and refuse CPU/swap fallback. Reserve disk blocks before writes on Linux and test real disk offload on CUDA. Andreas subsequently authorized removing stale GPU output; use `clean_run --reset-exp0-gpu --clean`, preserving CPU records. Changed code still requires fresh CPU/GPU receipts.
 
 ### 14-10-2026 — Full reset rejected VSC's storage alias
 

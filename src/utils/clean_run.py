@@ -9,11 +9,14 @@
     python -m src.utils.clean_run --clean --processed       ...and the data/processed cache
     python -m src.utils.clean_run --experiment 0 --clean --checkpoints   only experiment_0
     python -m src.utils.clean_run --reset-output --clean    ALL generated output on both tiers
+    python -m src.utils.clean_run --reset-exp0-gpu --clean  GPU validation attempts only
 
 Clears the `output CreditICL/` tree (`src/utils/paths.py`) on BOTH storage tiers: the small
 half on `$VSC_DATA` (logs, run records, benchmark scores, figures) and, when asked, the big
 half on project storage (checkpoints, prior pools). Off-cluster both tiers are one folder.
 `--experiment N` limits all of it to `experiment_N/`.
+`--reset-exp0-gpu` preserves CPU validation and removes GPU attempts on both tiers,
+their job logs and any matching job directories under the configured GPFS scratch.
 
 LISTS BY DEFAULT. The two mistakes are not symmetric: a listing you meant as a deletion costs one
 more command, and a deletion you meant as a listing costs the run.
@@ -235,29 +238,125 @@ def reset_output(*, clean: bool = False) -> tuple[int, int]:
     total = sum(info[0] for _, _, info in files)
     print(f"Full reset: {len(files)} generated files, {total / 1e9:.3f} GB, including trained checkpoints.")
     if clean:
-        _require_idle_cluster()
-        for item, root, before in files:
-            info = item.stat()
-            if (any(_linked(p) for p in (item, *item.parents) if p == root or root in p.parents)
-                    or not item.resolve().is_relative_to(root)
-                    or (info.st_size, info.st_mtime_ns, info.st_ino) != before):
-                raise RuntimeError(f"Output changed since planning; reset refused: {item}")
-        for item, _, _ in files:
-            item.unlink()
-        for directory in sorted(directories, key=lambda p: len(p.parts), reverse=True):
-            if _linked(directory) or not any(directory.resolve().is_relative_to(root) for root in roots_seen):
-                raise RuntimeError(f"Output directory changed or escaped its root: {directory}")
-            if not any(directory.iterdir()):
-                try:
-                    directory.rmdir()
-                except PermissionError:
-                    # Explorer can mark ordinary output directories read-only.
-                    # On Windows that attribute prevents rmdir even when empty.
-                    attributes = getattr(directory.stat(), "st_file_attributes", 0)
-                    if os.name != "nt" or not attributes & stat.FILE_ATTRIBUTE_READONLY:
-                        raise
-                    directory.chmod(stat.S_IWRITE)
-                    directory.rmdir()
+        _apply_reset_plan(files, directories, roots_seen)
+    return len(files), total
+
+
+def _apply_reset_plan(files: list, directories: list[Path], roots_seen: set[Path]) -> None:
+    """Validate every planned file and directory before deleting the first file."""
+    _require_idle_cluster()
+    for item, root, before in files:
+        info = item.stat()
+        if (any(_linked(p) for p in (item, *item.parents) if p == root or root in p.parents)
+                or not item.resolve().is_relative_to(root)
+                or (info.st_size, info.st_mtime_ns, info.st_ino) != before):
+            raise RuntimeError(f"Output changed since planning; reset refused: {item}")
+    for directory in directories:
+        if _linked(directory) or not any(directory.resolve().is_relative_to(root) for root in roots_seen):
+            raise RuntimeError(f"Output directory changed or escaped its root: {directory}")
+    for item, _, _ in files:
+        item.unlink()
+    for directory in sorted(set(directories), key=lambda p: len(p.parts), reverse=True):
+        if not any(directory.iterdir()):
+            try:
+                directory.rmdir()
+            except PermissionError:
+                # Explorer can mark ordinary output directories read-only.
+                attributes = getattr(directory.stat(), "st_file_attributes", 0)
+                if os.name != "nt" or not attributes & stat.FILE_ATTRIBUTE_READONLY:
+                    raise
+                directory.chmod(stat.S_IWRITE)
+                directory.rmdir()
+
+
+def reset_exp0_gpu(*, clean: bool = False) -> tuple[int, int]:
+    """Remove only identifiable GPU validation output; preserve CPU records and inputs.
+
+    Scratch job IDs come from the fixed GPU attempt/log names, never from a path
+    stored in a receipt. Custom work-root overrides and unidentified jobs survive.
+    """
+    current = (paths.outputs_dir(), paths.big_outputs_dir())
+    if any(p.name != paths.OUTPUT_NAME or _linked(p) for p in current):
+        raise RuntimeError(f"Unexpected or linked output roots: {current}")
+    projects = {p.parent.resolve() for p in current}
+    candidates: dict[Path, Path] = {}
+    jobs: set[str] = set()
+
+    def check_path(item: Path, anchor: Path) -> None:
+        if item == anchor or not item.is_relative_to(anchor):
+            raise RuntimeError(f"GPU output escaped its project: {item}")
+        if (any(_linked(p) for p in (item, *item.parents) if p != anchor and anchor in p.parents)
+                or not item.resolve().is_relative_to(anchor)):
+            raise RuntimeError(f"Linked or escaping GPU output: {item}")
+
+    def children(folder: Path, anchor: Path) -> list[Path]:
+        check_path(folder, anchor)
+        if not folder.exists():
+            return []
+        if not folder.is_dir():
+            raise RuntimeError(f"Expected GPU output directory: {folder}")
+        return sorted(folder.iterdir())
+
+    for project in sorted(projects):
+        if not project.is_dir():
+            continue
+        for item in project.iterdir():
+            match = re.fullmatch(r"slurm-(?:crediticl|cicl)-exp0-gpu-(\d+)\.(?:out|err)", item.name)
+            if match:
+                candidates[item] = project
+                jobs.add(match[1])
+        for name in (paths.OUTPUT_NAME, "output", "outputCreditICL", "output_CreditICL"):
+            exp = project / name / "experiment_0"
+            for item in children(exp / "validation", project):
+                match = re.fullmatch(r"gpu_\d{8}T\d{6}Z_j(\d+)_[0-9a-f]{8}", item.name)
+                if match:
+                    candidates[item] = project
+                    jobs.add(match[1])
+            for item in children(exp / "logs", project):
+                match = re.fullmatch(r"exp0_gpu_\d{8}_\d{6}_j(\d+)\.log", item.name)
+                if match:
+                    candidates[item] = project
+                    jobs.add(match[1])
+            for item in children(exp / "report", project):
+                if item.name in {"validation.json", "validation.json.tmp"}:
+                    candidates[item] = project
+
+    scratch = os.environ.get("VSC_SCRATCH_GPFS1") or os.environ.get("VSC_SCRATCH")
+    if scratch and paths.on_vsc():
+        scratch_root = Path(scratch).resolve()
+        base = scratch_root / paths.PROJECT_NAME / "jobs"
+        check_path(base, scratch_root)
+        for job in sorted(jobs):
+            candidates[base / job] = scratch_root
+
+    inputs = [paths.datasets_dir(), paths.ood_cache_dir(), paths.pretrained_dir()]
+    if os.environ.get("CREDITICL_TABPFN_DIR"):
+        inputs.append(Path(os.environ["CREDITICL_TABPFN_DIR"]))
+    files, directories, anchors = [], [], set()
+    for item, anchor in sorted(candidates.items()):
+        check_path(item, anchor)
+        if not item.exists():
+            continue
+        if any(p.resolve().is_relative_to(item) or item.is_relative_to(p.resolve()) for p in inputs):
+            raise RuntimeError(f"Input data or released weights overlap GPU output: {item}")
+        anchors.add(anchor)
+        print(f"GPU reset target: {item}")
+        tree = [item, *_safe_tree(item)] if item.is_dir() else [item]
+        for path in tree:
+            if path.is_dir():
+                directories.append(path)
+            elif path.is_file():
+                if path.name not in KEEP:
+                    info = path.stat()
+                    files.append((path, anchor, (info.st_size, info.st_mtime_ns, info.st_ino)))
+            else:
+                raise RuntimeError(f"Unexpected GPU output type: {path}")
+    total = sum(info[0] for _, _, info in files)
+    print(f"GPU reset: {len(files)} generated files, {total / 1e9:.3f} GB.")
+    if jobs and paths.on_vsc() and not scratch:
+        print("No scratch location configured; only the two permanent output tiers were checked.")
+    if clean:
+        _apply_reset_plan(files, directories, anchors)
     return len(files), total
 
 
@@ -380,6 +479,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--clean", action="store_true", help="actually delete; default lists only")
     parser.add_argument("--reset-output", action="store_true",
                         help="fresh campaign: ALL generated output on both tiers, including trained checkpoints and validation attempts")
+    parser.add_argument("--reset-exp0-gpu", action="store_true",
+                        help="GPU validation attempts, checkpoints/results, logs and matching scratch jobs; preserve CPU output")
     parser.add_argument("--stale", action="store_true",
                         help="only failed job logs and generated figures/summaries; preserve all "
                              "checkpoints, successful/unfinished logs, results and caches")
@@ -394,11 +495,14 @@ def main(argv: list[str] | None = None) -> int:
                              "from them and trains nothing. Never touches the released weights.")
     args = parser.parse_args(argv)
 
-    if args.reset_output:
+    if args.reset_output or args.reset_exp0_gpu:
         if args.stale or args.experiment is not None or args.processed or args.prior_cache or args.checkpoints:
-            parser.error("--reset-output is a complete output scope; combine only with --clean")
+            parser.error("reset options define their own output scope; combine only with --clean")
+        if args.reset_output and args.reset_exp0_gpu:
+            parser.error("choose either --reset-output or --reset-exp0-gpu")
         try:
-            reset_output(clean=args.clean)
+            reset = reset_exp0_gpu if args.reset_exp0_gpu else reset_output
+            reset(clean=args.clean)
         except (OSError, RuntimeError) as exc:
             print(f"Reset refused: {exc}")
             return 1

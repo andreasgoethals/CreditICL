@@ -10,6 +10,10 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 14-10-2026
 
+- Verify the final memory fix and GPU-only reset: full suite 1,458 passed / 19 expected skips (17 VSC-only), 935.43s; remove 34 stale GPU files from the downloaded ZIP while preserving 39 other files byte-for-byte.
+- Add an explicit GPU-only Exp0 reset across both output tiers and identified GPFS jobs; preserve CPU evidence, inputs and other experiments, with active-job/path/change guards.
+- Audit Exp0 CPU 62319803 (PASS) and GPU 11689448 (confirmed 180G host RAM OOM, 41m32s); bound TabICL ensemble/transfer memory, use GPFS disk offload without whole-tensor copies or CPU/swap fallback, and add prediction-equivalence/storage tests plus mandatory CUDA disk probes.
+- Verify 1,442 distinct local tests across the full suite and Bash-enabled shell rerun; 17 new memory regressions pass, 17 mandatory CUDA tests await VSC, and two other skips are expected. Preserve the downloaded evidence; no new production run is authorized by local tests alone.
 - Resolve cleanup project roots before planning: VSC mount aliases no longer falsely reject root Slurm logs or double-count them; retain link/change guards. Verification: 1,425 local tests passed / 17 expected skips, including six new filesystem regression cases.
 - Verify the final recovery changes: 1,419 local tests passed / 17 expected skips (15 mandatory on VSC), 21 credit-table partition audits and dependency checks passed; fresh VSC CPU/GPU validation still required.
 - Fix two Exp0 tests reading real failed receipts (CPU 62316841); retain the production gate and print failed-test names/log tails in the main validation log.

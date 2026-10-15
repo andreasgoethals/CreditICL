@@ -727,16 +727,22 @@ def test_the_progress_hook_scores_through_upstreams_wrapper_too():
 def test_all_tfm_wrappers_receive_the_same_context(monkeypatch, task, cap):
     """Check the rows actually passed to each estimator, including TabPFN's capped slot."""
     import sys
+    from contextlib import nullcontext
     from types import SimpleNamespace
 
     from src.eval import baselines
     from src.eval.runner import _fit_predict
+    from src.eval import tabicl_memory
+
+    # This fake estimator measures row selection, not the real model's storage.
+    monkeypatch.setattr(tabicl_memory, "install", lambda estimator: None)
+    monkeypatch.setattr(tabicl_memory, "prediction_storage", lambda estimator: nullcontext())
 
     seen = {}
 
     class Estimator:
         def __init__(self, **kwargs):
-            pass
+            self.n_estimators = kwargs.get("n_estimators", 8)
 
         def fit(self, X, y):
             seen[name] = (X.copy(), y.copy())
