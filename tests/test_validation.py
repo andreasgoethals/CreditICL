@@ -222,11 +222,49 @@ def test_failure_details_include_failed_tests_and_bound_large_logs(tmp_path):
     stage = v.Stage("unit", (), junit=str(junit))
     details = v.failure_details(stage, log)
     assert details["failed_tests"] == ["tests.test_x::test_bad"]
+    assert details["test_failures"] == [{"test": "tests.test_x::test_bad", "message": "no"}]
     assert details["log_tail"].endswith("last failure")
     assert len(details["log_tail"]) <= 8000 and len(details["log_tail"].splitlines()) <= 40
     log.unlink()
     junit.write_text("incomplete")
     assert v.failure_details(stage, log) == {"log": str(log)}
+
+
+def test_test_assertion_survives_a_tail_full_of_warnings(monkeypatch, isolated_output, capsys):
+    fake_campaign(monkeypatch, isolated_output)
+    junit = v.receipt_path().parent / "vsc.xml"
+    stages = [v.Stage("preflight", ()), v.Stage("vsc", (), junit=str(junit))]
+    monkeypatch.setattr(v, "plan", lambda phase="gpu": stages)
+    assert v.run_validation(phase="cpu") == 0
+
+    def execute(stage, log, **kwargs):
+        if stage.name == "vsc":
+            log.parent.mkdir(parents=True, exist_ok=True)
+            log.write_text("DeprecationWarning: unrelated warning\n" * 1000, encoding="utf-8")
+            junit.write_text('<testsuites><testsuite><testcase classname="tests.test_vsc" name="precision">'
+                             '<failure message="prediction mismatch"/></testcase></testsuite></testsuites>')
+            raise RuntimeError("exit=1")
+        return {}
+
+    monkeypatch.setattr(v, "execute", execute)
+    assert v.run_validation(phase="gpu") == 1
+    assert "prediction mismatch" in capsys.readouterr().out
+    status = v.readiness("gpu")[0]
+    assert not status.ok
+    assert "Failed stage: vsc" in status.detail
+    assert "tests.test_vsc::precision" in status.detail
+    assert "vsc.log" in status.detail
+
+
+def test_test_assertions_are_bounded_even_with_many_large_failures(tmp_path):
+    junit, log = tmp_path / "vsc.xml", tmp_path / "vsc.log"
+    junit.write_text('<testsuites><testsuite>' + ''.join(
+        f'<testcase name="test_{i}"><error>{"error " * 1000}</error></testcase>'
+        for i in range(30)) + '</testsuite></testsuites>')
+    details = v.failure_details(v.Stage("vsc", (), junit=str(junit)), log)
+    assert len(details["failed_tests"]) == 20
+    assert len(details["test_failures"]) == 3
+    assert all(len(f["message"]) == 2000 for f in details["test_failures"])
 
 
 def test_gpu_refuses_to_start_without_a_current_cpu_pass(monkeypatch, isolated_output):

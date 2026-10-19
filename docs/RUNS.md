@@ -167,6 +167,117 @@ The one thing to do differently.
 
 ## Runs
 
+## 19-10-2026 — Exp0 GPU 11714993 — early streaming equivalence failure
+
+**Job** 11714993, Mindwell `gpu_b200`, node r11g17, one NVIDIA B200 (183,359 MiB).
+**Commit** `b351325` (`dirty=YES` in log); executable fingerprint
+`6f2f530d982a95f9c03b352a44de80e2ede28b1c84952587fa544744f9350857`.
+**tfm-library pin** `de324efcca55be392feb0c01830b3b6ce364587f` in the matching local source.
+Main log 13:57:03–13:59:21 CEST (**2m18s**); allocation log began 13:56:37.
+The archive establishes exit 1, not a live scheduler state or billing total.
+
+### Configuration
+
+- `scripts/slurm/exp0.slurm`: 24 CPU cores, 180 GiB RAM, one B200, 24-hour request.
+- TabPFN 9.1.0, TabICL 2.1.1 at `8f1aa2098c894ab91dba15209cf2002ba4be6c6c`,
+  CatBoost 1.2.10, torch 2.11.0+cu128; 135 requirement checks and pip check passed.
+- Same input inventory/environment as CPU 62369106; GPU's CPU receipt hash matches exactly.
+- Validation has 66 stages; its mandatory CUDA suite uses `-x` before long training.
+  The failing probe uses released TabICL PD weights, all eight ensemble members,
+  32 context rows plus eight queries, 2,986 features, seed 11 and deterministic probe data.
+  This diagnostic is not a five-fold production benchmark.
+
+### Results
+
+- Preflight passed; CUDA suite: **16 passed, 1 failed** in 123.43s (stage 128.03s).
+- Passed: CUDA/backprop, RNG preservation, TabPFN PD/LGD checkpoint resume, storage,
+  regression loss/quantiles, AMP retry, offline inputs, both model families at full
+  PD/LGD widths and TabICL PD/LGD disk-offload equivalence.
+- Failed: `test_tabicl_streaming_preserves_full_width_ensemble_predictions[pd-2986]`.
+  Three of 16 probabilities exceeded unchanged `rtol=0.002, atol=0.0002`;
+  maximum absolute discrepancy **0.00238492**, relative discrepancy **0.00992643**.
+- No six-arm 600-step stop/resume runs, full-table capacity benchmarks or production
+  experiments started. Process-tree host RSS sampled at 4.25 GiB; no OOM in this evidence.
+- Attempt: `gpu_20261019T115703Z_j11714993_1f9c1620`, log `logs/vsc.log`;
+  canonical `experiment_0/report/validation.json` correctly says FAILED.
+
+### Bugs and anomalies
+
+The local streaming code widened the column AMP result to `X.dtype` (float32)
+before row attention. Upstream `InferenceManager.__call__` returns the computation
+result directly for a single GPU batch, retaining half precision; buffer dtype is
+not a universal compute rule. Changing that boundary changes CLS-token rounding,
+normalization and residual arithmetic. Source checked in installed pinned TabICL
+and `tfm-library/repositories/TabICL.txt`, symbols `InferenceManager.__call__`,
+`InferenceManager._run_forward`, `RowInteraction._inference_forward`.
+
+Explicit CPU FP16/BF16 tests reproduced six boundary failures (binary, regression,
+many-class); the affine cases already retained float32 naturally. Removing the
+conversion makes all eight new cases pass, with the original numeric tolerance.
+A separate released-weight CPU FP16 probe (101 features, eight members) reduced
+max probability difference from 0.0007531047 to 0.000371635; it is not a B200 replay.
+All 39 focused memory/streaming tests pass. Exact B200 confirmation is still required.
+
+Final local verification used unchanged executable fingerprint
+`4da9e67eb78b4e1a753b6fa8fe5580fb37b86c956df114db9e8879dab4677d8e`.
+The complete suite ran in 2,841.61s: **1,605 passed, 27 skipped, one failure**.
+That failure was the setup-script guard's Git Bash subprocess exceeding its
+20-second deadline, not a failing guard assertion. The unchanged case passed alone
+in 2.61s; its entire environment module subsequently passed **16/16 in 1.97s**.
+The exact timeout cause is unconfirmed; no checks or deadlines were weakened.
+The skips are 26 VSC-only tests and the PDF-size check after local output cleanup.
+All 115 focused validation/environment/readiness tests also passed before the full
+run. A released-weight CPU FP16 check with eight-member stock batching versus
+one-member streaming passed the original tolerance at 101 features. These checks
+do not replace the full-width B200 probe. The archive SHA-256 remained unchanged.
+
+The Python module-load warning did not prevent the venv or CUDA checks from passing.
+Deprecation warnings obscured the assertion in the main log tail; reporting now
+preserves bounded JUnit assertion text and readiness names the failed stage/test/log.
+
+### Interpretation and next
+
+The validation gate stopped early as designed; this was not another day-long run.
+There is a confirmed precision bug, but no local CUDA device with which to claim the
+recorded GPU discrepancy is fully resolved. Keep the strict full-width test and all
+rows/features/five-fold benchmark settings. Publish fixes, reset failed GPU output
+with the guarded utility (the archive is preserved), rerun CPU then GPU with fixed
+source and environment. Production stays blocked until both receipts pass.
+
+## 19-10-2026 — Exp0 CPU 62369106 — all 13 stages passed
+
+**Job** 62369106, wICE `batch`, node l33c22n2; log reports 20 CPU cores and 65,536 MiB.
+**Commit** `b351325`, executable source `6f2f530d982a95f9c03b352a44de80e2ede28b1c84952587fa544744f9350857`,
+same library pin as the GPU entry above. Main log 13:10:23–13:45:33 CEST (**35m10s**).
+
+### Configuration and results
+
+- CPU validation, protocol/cache v8, 21 credit datasets and 25+25 native OOD tasks;
+  full input/weight inventory and dependencies passed. No trained arms in this phase.
+- **13/13 stages passed**: preprocess 85s, preflight 3s, unit 805s, benchmark 152s,
+  configs 2s, data 154s, determinism 60s, OOD 1s, orchestration 31s, paths 1s,
+  prior 99s, storage 3s, notebooks 693s.
+- Pytest: **1,575 passed, 2 skipped**, 26 GPU tests deselected. The skips concern
+  absent sibling TabPFNCredit data and no PDFs before notebooks execute.
+- **11/11 notebooks executed, 125 figures**. These include empty-result placeholders;
+  notebook success is not evidence of completed Experiment 1–3 results.
+- Notebook process-tree RSS sampled up to 39.20 GiB within the 64 GiB request.
+- Attempt `cpu_20261019T111023Z_j62369106_5e8158f1`; all **23 artifact hashes verified**.
+
+### Bugs, interpretation and next
+
+No failing CPU stages or new data/package errors in this archive. CPU-default AMP
+was off, so these passes did not cover the precision issue exposed by the GPU.
+The new explicit AMP regressions now run in this phase. Source/test changes require
+renewed validation; no package reinstall or dataset deletion is indicated.
+
+**Evidence for both jobs:** `Downloads/output CreditICL.zip`, modified 19-10-2026
+14:03:40, 2,615,060 bytes, SHA-256
+`be35eae7f31ca5d8ae1b797470c63bb6ab01d1004ba22815f4017381619ef317`.
+All 217 ZIP entries pass CRC checks. Inspected in place; nothing extracted, reset
+or deleted. GPU preflight artifact hash also matches; the failed test's log/XML
+are retained in the archive, not falsely certified as successful artifacts.
+
 ## 19-10-2026 — Follow-up download of GPU 11692660: incomplete validation despite an OK shell footer
 
 **Evidence:** `Downloads/output CreditICL.zip`, downloaded 19-10-2026 09:05:57 CEST,

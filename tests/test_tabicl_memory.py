@@ -174,17 +174,36 @@ def assert_released_memory_equivalence(task, *, device="cpu", force_disk=False, 
         torch.testing.assert_close(bounded.model_.state_dict()[key], value, rtol=0, atol=0)
     predict = (lambda m: m.predict_proba(X[32:])) if task == "pd" else (
         lambda m: m.predict(X[32:], output_type=["mean", "quantiles"], alphas=[.1, .5, .9]))
-    expected = predict(stock)
-    with prediction_storage(bounded):
-        if force_disk:
-            bounded.inference_config_.COL_CONFIG.update({"offload": "disk"})
-            bounded.model_.col_embedder.inference_mgr.transfer_mb = .01  # multiple actual disk writes
-        actual = predict(bounded)
+    dtypes, hooks = {}, []
+    for name, estimator in (("upstream", stock), ("bounded", bounded)):
+        for stage in ("row_interactor", "icl_predictor"):
+            key = f"{name}/{stage}"
+            dtypes[key] = set()
+
+            def record(module, args, key=key):
+                dtypes[key].add(str(args[0].dtype))
+
+            hooks.append(getattr(estimator.model_, stage).register_forward_pre_hook(record))
+    try:
+        expected = predict(stock)
+        with prediction_storage(bounded):
+            if force_disk:
+                bounded.inference_config_.COL_CONFIG.update({"offload": "disk"})
+                bounded.model_.col_embedder.inference_mgr.transfer_mb = .01  # multiple actual disk writes
+            actual = predict(bounded)
+    finally:
+        for hook in hooks:
+            hook.remove()
+    diagnostic = (f"task={task}, device={device}, width={width}, classes={classes}, "
+                  f"stream={force_stream}, disk={force_disk}, "
+                  f"amp={stock.inference_config_.COL_CONFIG['use_amp']}, "
+                  f"boundary_dtypes={dtypes}")
     if task == "pd":
-        np.testing.assert_allclose(actual, expected, rtol=2e-3, atol=2e-4)
+        np.testing.assert_allclose(actual, expected, rtol=2e-3, atol=2e-4, err_msg=diagnostic)
     else:
         for output in ("mean", "quantiles"):
-            np.testing.assert_allclose(actual[output], expected[output], rtol=2e-3, atol=2e-4)
+            np.testing.assert_allclose(actual[output], expected[output], rtol=2e-3, atol=2e-4,
+                                       err_msg=f"{diagnostic}, output={output}")
 
 
 @pytest.mark.parametrize("task", ["pd", "lgd"])

@@ -223,6 +223,15 @@ def failure_details(stage: Stage, log: Path) -> dict:
                 for case in root.iter("testcase")
                 if case.find("failure") is not None or case.find("error") is not None
             ][:20]
+            # Pytest warning summaries can fill the entire log tail. Preserve
+            # the assertion itself so the main Slurm log still gives the cause.
+            details["test_failures"] = [
+                {"test": f"{case.get('classname', '')}::{case.get('name', '')}",
+                 "message": (failure.get("message") or failure.text or "No failure detail")[:2000]}
+                for case in root.iter("testcase")
+                for failure in list(case)
+                if failure.tag in ("failure", "error")
+            ][:3]
         except (OSError, ET.ParseError):
             pass
     return details
@@ -450,8 +459,18 @@ def readiness(phase: str = "gpu") -> list:
                           "After the current allocation ends, resubmit the same GPU script; "
                           "keep the CPU receipt, code, packages and inputs unchanged.")]
         if saved.get("status") != "PASS":
+            failed = [s for s in saved.get("stages", []) if s.get("status") == "FAIL"]
+            cause = ""
+            if failed:
+                first = failed[0]
+                tests = ", ".join(first.get("failed_tests", [])[:3])
+                cause = f". Failed stage: {first.get('name', '?')}"
+                if tests:
+                    cause += f"; failed tests: {tests}"
+                if first.get("log"):
+                    cause += f"; log: {first['log']}"
             raise ValueError(f"Recorded Experiment 0 status: {saved.get('status', 'missing')}; "
-                             "this is not a live scheduler check")
+                             f"this is not a live scheduler check{cause}")
         with attempt_scope(saved["attempt"]):
             if saved.get("source_fingerprint") != source_fingerprint():
                 raise ValueError("Code/config/tests changed since Experiment 0")
@@ -545,7 +564,9 @@ def run_validation(*, hours: float = 23.5, phase: str = "gpu", resume: bool = Fa
                     if phase == "cpu" and stage.name == "preflight" and row["status"] == "PASS":
                         saved["inputs"] = input_inventory()
                     publish()
-                    print(f"[Experiment 0] { {k: value for k, value in row.items() if k not in ('log_tail', 'artifacts')} }", flush=True)
+                    print(f"[Experiment 0] { {k: value for k, value in row.items() if k not in ('log_tail', 'artifacts', 'test_failures')} }", flush=True)
+                    for failure in row.get("test_failures", []):
+                        print(f"[Experiment 0] {failure['test']}:\n{failure['message']}", flush=True)
                     if row.get("log_tail"):
                         print(f"[Experiment 0] Last lines of {stage.name}:\n{row['log_tail']}", flush=True)
                     if row["status"] == "FAIL" and (stage.name in ("preflight", "preprocess", "vsc") or stage.phase != "diagnostics"):

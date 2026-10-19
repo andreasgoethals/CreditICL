@@ -61,6 +61,51 @@ def test_many_class_streaming_averages_radix_hidden_states_before_row_attention(
     torch.testing.assert_close(actual, expected, rtol=2e-5, atol=2e-6)
 
 
+@pytest.mark.parametrize("amp_dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("classes,affine", [(2, False), (0, False), (11, False), (0, True)])
+def test_streaming_preserves_upstream_mixed_precision_boundaries(amp_dtype, classes, affine):
+    """Reproduce the GPU-only dtype drift on CPU, including regression/radix paths.
+
+    CPU defaults disable AMP, so the ordinary equivalence tests did not exercise
+    this boundary. Explicit autocast uses the real upstream layers locally.
+    """
+    model = small_model(classes=min(classes, 3), affine=affine,
+                        grouping=False if affine else "same")
+    X, y = inputs(classes)
+    config = InferenceConfig()
+    for cfg in (config.COL_CONFIG, config.ROW_CONFIG, config.ICL_CONFIG):
+        cfg.update(dict(device="cpu", use_amp=True))
+    row_dtypes, icl_dtypes = [], []
+
+    def record_row(module, args):
+        row_dtypes.append(args[0].dtype)
+
+    def record_icl(module, args):
+        icl_dtypes.append(args[0].dtype)
+
+    row_hook = model.row_interactor.register_forward_pre_hook(record_row)
+    icl_hook = model.icl_predictor.register_forward_pre_hook(record_icl)
+    previous = torch.get_autocast_dtype("cpu")
+    try:
+        torch.set_autocast_dtype("cpu", amp_dtype)
+        with torch.inference_mode():
+            expected = model(X, y, inference_config=config)
+            expected_row, expected_icl = row_dtypes.pop(), icl_dtypes.pop()
+            stream.install_streaming(model)
+            model._crediticl_stream_bytes = 0
+            model._crediticl_work_bytes = 3500  # many blocks, including the train/test boundary
+            actual = model(X, y, inference_config=config)
+        assert len(row_dtypes) > 1
+        assert set(row_dtypes) == {expected_row}
+        assert icl_dtypes == [expected_icl]
+        assert torch.isfinite(actual).all()
+        torch.testing.assert_close(actual, expected, rtol=2e-3, atol=2e-4)
+    finally:
+        torch.set_autocast_dtype("cpu", previous)
+        row_hook.remove()
+        icl_hook.remove()
+
+
 @pytest.mark.parametrize("fail_stage", ["context", "rows"])
 def test_allocator_retry_reduces_only_work_blocks_not_data(monkeypatch, fail_stage):
     model = small_model()

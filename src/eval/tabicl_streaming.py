@@ -147,9 +147,11 @@ def streaming_representations(model, X, y, config, *, work_bytes=WORK_BYTES):
                     return values * col.ln_w(col.out_w(hidden)) + col.ln_b(col.out_b(hidden))
                 return hidden
             emb = col.inference_mgr._run_forward(embed, {})
-            # The manager's original full buffer has the input dtype (float32),
-            # including when column attention computed in AMP. Preserve it.
-            emb = F.pad(emb.to(X.dtype).transpose(1, 2), (0, 0, row.num_cls, 0))
+            # Preserve the column computation's dtype. Upstream's single-batch
+            # inference returns the AMP result directly; widening it to the raw
+            # input dtype changes CLS-token rounding, layer norms and residuals
+            # in row attention. A storage buffer's dtype is not a compute policy.
+            emb = F.pad(emb.transpose(1, 2), (0, 0, row.num_cls, 0))
             return row(emb, mgr_config=config.ROW_CONFIG)
 
         try:

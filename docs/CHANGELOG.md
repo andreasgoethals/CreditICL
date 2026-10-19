@@ -10,6 +10,9 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 19-10-2026
 
+- Verify the precision fix: 1,605 passed / 27 skipped in the full run, plus one 20-second Git Bash timeout; all 16 environment tests passed unchanged on follow-up. Executable fingerprint remained `4da9e67`; B200 validation remains required.
+- Diagnose GPU 11714993: preserve TabICL's column-computation dtype before streamed row attention; add eight explicit FP16/BF16 regressions without relaxing equivalence tolerances. Surface failed tests/assertions in readiness and main job logs.
+- Verify the new VSC archive: CPU 62369106 passed 13 stages, 1,575 tests and all 11 notebooks; GPU 11714993 stopped at wide-table streaming equivalence after 16 CUDA passes. Preserve the ZIP; production remains blocked pending corrected CPU/GPU validation.
 - Final review verification: 1,597 tests passed / 26 VSC-only skips in 914.60s; all 11 notebooks executed (125 figures). Reset 140 local generated files and 11 embedded notebook outputs; SHA-256 confirms all 71 input/weight files and executable source unchanged.
 - Audit the 19 October review: retain native multiclass OOD tasks (including streamed many-class TabICL), fix tied-score PD calibration, outcome-driven missingness, component RNG coupling, selection/reporting/data edge cases and latent GPU L2-SP placement; use protocol/cache v8.
 - Move diagnostics to `src/validation` and pipeline tools into their packages; keep four main experiment Python entry points, execute notebooks in CPU Exp0, and extend guarded full resets to notebook outputs and known root output ZIPs.

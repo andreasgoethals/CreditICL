@@ -36,7 +36,11 @@ older preservation instructions below. Exp0 now requires CPU then GPU PASS recei
 Exp1 has 48 runs including component tests. Historical run entries remain an audit trail, not
 reusable completion evidence. VSC submissions are made by Andreas; the rows below record the supplied evidence.
 
-Local readiness (19-10-2026, after the review): source `6f2f530d982a95f9c03b352a44de80e2ede28b1c84952587fa544744f9350857`, library `de324ef`.
+Latest VSC evidence (19-10-2026, 14:03 download): CPU 62369106 passed; GPU 11714993 failed its first wide streaming equivalence test after 16 passes. A local mixed-precision reproduction exposed an unintended float32 conversion before row attention. Corrected source needs new CPU/GPU receipts; the downloaded ZIP is preserved. Do not retry the old FAILED receipt with `--resume`: use guarded GPU-only reset, then CPU and GPU scripts on the corrected source.
+
+Local verification after the precision fix: fingerprint `4da9e67eb78b4e1a753b6fa8fe5580fb37b86c956df114db9e8879dab4677d8e` unchanged throughout. Full suite: 1,605 passed, 27 skipped, one Git Bash subprocess timed out at 20s (47m21s total). That test passed unchanged alone and all 16 environment tests then passed in 1.97s; the timeout's cause is unconfirmed. The skips are 26 mandatory VSC tests and one PDF check after local output cleanup. Do not describe the full invocation as green or infer a B200 PASS from these local checks.
+
+Earlier local readiness (19-10-2026, before this GPU finding): source `6f2f530d982a95f9c03b352a44de80e2ede28b1c84952587fa544744f9350857`, library `de324ef`.
 Full suite: 1,597 PASS / 26 VSC-only SKIP in 15m14s; notebooks: 11/11, 125 figures. The authorized local reset then removed 140 generated files and cleared 11 notebooks' outputs, with zero generated files remaining. All 71 input/weight files (3,294,397,860 bytes) and executable source were hash-verified unchanged. No CreditICL output ZIP remained in Downloads; the unrelated JEVPFN archive was untouched. Publish the complete moved/new-file change set before VSC cleanup and fresh CPU (13 stages) then GPU (66 stages) Exp0. Local CPU tests are not a VSC PASS receipt.
 
 One row per cluster run worth remembering — which is most of them, because *"have we already tried
@@ -45,6 +49,8 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 19-10-2026 | Exp0 GPU 11714993, Mindwell B200/r11g17, `b351325` | **FAILED exit 1; 16 CUDA tests PASS, 1 FAIL; 2m18s main-log interval** | PD 2,986-feature streaming predictions differed from stock by up to 0.00238492 (3/16 probabilities outside tolerance). No long training or capacity stages started. Local AMP reproduction confirms a float32 boundary conversion; remove it, retain tolerance, revalidate on B200 |
+| 19-10-2026 | Exp0 CPU 62369106, wICE batch/l33c22n2, `b351325` | **PASS: 13/13 stages, 1,575 tests PASS/2 SKIP, 11/11 notebooks, 125 figures; 35m10s log interval** | All 23 CPU artifact hashes match; GPU binds this exact receipt and input inventory. All 21 caches v8 and 50 OOD tables present. Subsequent precision/test changes require a new CPU receipt |
 | 19-10-2026 | Follow-up of GPU 11692660 and VSC checkout | **CANCELLED by 2538338 after 22:36:01; batch 0:15, 22:36:10** | ZIP still has schema-2 RUNNING / 12 of 66 stages and a false OK footer. All 22 CPU hashes match; no new model errors. VSC remains `cf0e539` / fingerprint `adf308f...`; 16-10 fixes remain unpublished locally. Add signal-aware status/tests, publish fixes, then clean CPU/GPU validation; do not resume the old slow code |
 | 16-10-2026 | Exp0 GPU 11692660, Mindwell B200/r11g22, `cf0e539` dirty; started 15-10 | **RUNNING at 09:01, 22h20m/24h; 12/66 stages PASS; cannot finish at observed pace** | All 17 CUDA tests, six smoke routes and both equivalence checks passed. Released TabICL passed five folds on 759-feature loan_default; 2,986-feature algorithmwatch took 13h34 for fold 0, fold 1 still predicting. Current benchmark writes results only at stage end; validation has no continuation. Keep evidence, address runtime/persistence/logging before rerun; Exp1 blocked |
 | 15-10-2026 | Exp0 CPU 62324362, wICE batch/l33c20n3, `cf0e539` dirty; audited 16-10 | **PASS: 12/12 stages, 1,437 passed / 3 skipped / 17 CUDA deselected; 16m31s log interval** | All 22 artifact hashes verified from ZIP; executable fingerprint matches local checkout and GPU, environment/inputs match, GPU binds exact CPU receipt. This is valid for the audited source; future executable fixes require renewed receipts |
@@ -91,6 +97,20 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 [`RUNS.md`](RUNS.md).
 
 ## Dead ends
+
+### 19-10-2026 — one local Git Bash deadline during the full suite
+
+**Tried:** Ran the complete suite with fixed source, one BLAS/OpenMP thread and Git Bash available.
+**Result:** 1,605 passed / 27 skipped; the setup-script guard test timed out in `subprocess.communicate` after 20s. Full run took 47m21s.
+**Why:** A Bash subprocess exceeded its deadline; its exact cause was not established. The unchanged case passed alone (2.61s) and its entire 16-test environment module passed afterwards (1.97s).
+**Instead:** Retain the guard, assertion and deadline; report the first-run timeout transparently, keep the corrected source fixed, and require fresh VSC CPU/GPU receipts.
+
+### 19-10-2026 — CPU defaults did not exercise streaming mixed precision
+
+**Tried:** Validated streamed TabICL on CPU with its automatic precision defaults, then submitted GPU 11714993.
+**Result:** Sixteen CUDA tests passed; wide PD equivalence failed after two minutes, maximum probability difference 0.00238492.
+**Why:** CPU auto disables AMP; streaming forcibly widened AMP column output to float32, unlike upstream's direct return. Explicit FP16/BF16 CPU probes reproduce the boundary mismatch in six cases; this does not yet prove the entire B200 discrepancy resolved.
+**Instead:** Preserve the computation dtype, add binary/regression/radix/affine mixed-precision tests and diagnostic dtype reporting, keep the original GPU tolerance, and obtain new CPU/GPU receipts before production.
 
 ### 19-10-2026 — do not change caches or source during final verification
 
