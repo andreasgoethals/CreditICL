@@ -23,10 +23,11 @@ def source_fingerprint() -> str:
     from src.utils.paths import REPO_ROOT
 
     files = [REPO_ROOT / "pyproject.toml"]
-    for directory in ("src/data", "src/eval", "src/models", "src/prior", "src/train", "src/utils",
+    for directory in ("src/data", "src/eval", "src/models", "src/prior", "src/train", "src/utils", "src/validation", "src/visualize",
                       "config", "scripts", "tests"):
         files.extend(p for p in (REPO_ROOT / directory).rglob("*")
                      if p.is_file() and p.suffix in (".py", ".yaml", ".slurm", ".sh"))
+    files.extend((REPO_ROOT / "notebooks").rglob("*.ipynb"))
     return _fingerprint(files, planned_selection=True)
 
 
@@ -60,6 +61,10 @@ def _fingerprint(files: list[Path], *, planned_selection: bool = False) -> str:
         digest.update(b"\0")
         # Git converts line endings between Windows and Linux.
         text = path.read_text(encoding="utf-8")
+        if path.suffix == ".ipynb":
+            # Executing notebooks changes outputs/metadata, never the tested cell sources.
+            nb = json.loads(text)
+            text = json.dumps([(c["cell_type"], "".join(c["source"])) for c in nb["cells"]], ensure_ascii=False)
         if planned_selection and path.relative_to(REPO_ROOT).as_posix() in (
                 "config/Exp3_PD.yaml", "config/Exp3_LGD.yaml"):
             # Exp3 deliberately chooses between the already-tested 50% and 100%
@@ -195,7 +200,7 @@ def run_checks(*, dependencies_only: bool = False) -> list[Check]:
 
 def experiment_zero_checks(*, include_runs: bool = True) -> list[Check]:
     """The paid experiment launcher requires completed validation for this code."""
-    from src.utils.validation import readiness, receipt_path
+    from src.validation.campaign import readiness, receipt_path
 
     if include_runs or receipt_path().is_file():
         return readiness()
@@ -237,7 +242,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     rows = run_checks(dependencies_only=args.dependencies_only)
     if args.require_exp0_cpu:
-        from src.utils.validation import readiness
+        from src.validation.campaign import readiness
         rows.extend(readiness("cpu"))
     if args.require_exp0 or args.require_exp0_checks:
         rows.extend(experiment_zero_checks(include_runs=args.require_exp0))
@@ -245,7 +250,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[{'PASS' if row.ok else 'FAIL'}] {row.name}: {row.detail}")
     failed = [r for r in rows if not r.ok]
     if failed:
-        print(f"\nSTOP: {len(failed)} prerequisite(s) failed. Do not submit GPU jobs.")
+        print(f"\nSTOP: {len(failed)} prerequisite(s) failed. Do not launch Experiments 1-3. "
+              "Follow the failed checks above before submitting or continuing validation.")
         if any(r.name in ("tabpfn", "tabicl", "catboost", "all project requirements",
                           "pip check (whole environment)", "VSC CUDA torch") for r in failed):
             print("Environment repair, on the login node in the project venv: "
@@ -255,7 +261,7 @@ def main(argv: list[str] | None = None) -> int:
         if any(r.name.startswith("OOD") for r in failed):
             print("Inspect the existing OOD cache: python -m src.utils.fetch_ood --status. "
                   "Fetch only if missing, on the login node: python -m src.utils.fetch_ood")
-        if any(r.name.startswith("Exp0") for r in failed):
+        if any(r.name.startswith(("Exp0", "Experiment 0")) for r in failed):
             print("Finish Experiment 0 with the current code before launching Experiments 1-3.")
         return 1
     print("\nPrerequisites passed. This does not replace Experiment 0's GPU validation.")

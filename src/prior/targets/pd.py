@@ -18,36 +18,8 @@ So this module **reshapes an existing distribution** rather than adding a missin
 mechanism. That is a cleaner intervention, and it means the arm-A base-rate
 distribution is itself a reportable measurement.
 
-MEASURED BASE RATES in data/raw/pd/ (2026-08-05): GMSC 6.7%, Home Credit 8.1%,
-HMEQ 20.0%, Taiwan 22.1% — i.e. roughly 6-22%, not the 1-5% often assumed. The
-default `base_rate_range` brackets that with a little tail on each side.
-
-FIVE COMPONENTS, each independently gated so they can be attributed separately.
-
-1. **Base rate** — cut the latent at its (1 - pi) empirical quantile, so the
-   positive rate is exactly pi. Direction is randomised, matching upstream's
-   label permutation.
-
-2. **Signal dilution** — noise is mixed into the latent used to *assign labels*,
-   while the features still reflect the clean latent. That lowers the achievable
-   AUC smoothly, which is how you reach credit's 0.70-0.85 regime without
-   crippling the task. Diluting what the *model sees* instead would change the
-   feature distribution too, confounding the two effects.
-
-3. **Asymmetric label noise** — defaults that cure get booked as non-default far
-   more often than the reverse. Symmetric flipping misses that asymmetry, which
-   is exactly the part that biases a PD model.
-
-4. **Threshold rules** — Klein & Hoffart 2026's charge is that a statistical
-   prior can only fuzzily approximate a hard ``if amount >= 5000`` rule, and
-   credit data is shaped by underwriting cutoffs and Basel/IFRS9 thresholds. This
-   adds sharp axis-aligned and conjunctive rules to the latent. Note this follows
-   from a *position* paper with no experiments, so it is the most speculative
-   component here.
-
-5. **Underwriting selection and informative missingness** — you only observe
-   approved applicants (support truncation), and a thin file is itself a risk
-   signal, so missingness is MNAR and target-linked rather than MCAR.
+The base-rate parameter describes applicants before selection. Realised accepted-book rates
+can differ; invalid single-class tables are rejected and redrawn without fabricating labels.
 """
 
 from __future__ import annotations
@@ -170,13 +142,12 @@ def apply_underwriting_selection(
 def apply_informative_missingness(
     rng: PriorRNG,
     X: torch.Tensor,
-    y: torch.Tensor,
     cfg: dict,
     max_features: int,
     fit_rows: int | None = None,
     fill: str = "mean",
 ) -> tuple[torch.Tensor, dict]:
-    """MNAR missingness whose rate depends on the target, plus optional indicators.
+    """Missingness driven by a shared borrower propensity, never the realised outcome.
 
     `fill="mean"` fills a gap as TabICL's wrapper does (the observed context mean); `fill="nan"`
     leaves it missing, for a model that handles missing values itself (TabPFN).
@@ -196,18 +167,29 @@ def apply_informative_missingness(
 
     n_cols = max(1, int(round(frac_cols * X.shape[1])))
     cols = rng.randperm(X.shape[1])[:n_cols]
-    coupling = cfg.get("missing_target_coupling_range", cfg.get("missing_target_coupling", 1.0))
-    # A `[lo, hi]` range draws the strength per table: in real data it runs from none to
-    # strong (hmeq: whether DEBTINC is missing alone gives an AUC of 0.78).
+    coupling = cfg.get("missing_risk_coupling_range", cfg.get("missing_risk_coupling", 1.0))
+    # A broad synthetic dependence strength, not calibrated to benchmark outcomes.
     beta = float(rng.uniform(float(coupling[0]), float(coupling[1]))) if isinstance(coupling, (list, tuple)) else float(coupling)
     add_indicators = bool(cfg.get("missing_indicators", True))
 
+    # A noisy covariate score can be associated with risk through the shared features.
+    # No y argument: flipping outcome noise cannot change the missing-value mask.
+    from .mechanisms import _normal_icdf, _uniform_from_latent
+
+    z = torch.nan_to_num(X.float())
+    z = (z - z.mean(0)) / z.std(0).clamp_min(1e-6)
+    direction = rng.randn(z.shape[1])
+    score = _normal_icdf(_uniform_from_latent(z @ direction))
+    propensity = 0.5 * score + (0.75 ** 0.5) * rng.randn(len(X))
+    # One borrower-level draw shared by all columns: adding columns cannot provide
+    # an ever-growing set of independent votes for the same hidden target.
+    row_uniform = rng.rand(len(X))
     X = X.clone()
     indicators = []
     for j in cols.tolist():
         target_rate = rng.uniform(rate_lo, rate_hi)
         # Logit intercept chosen so the marginal missing rate hits target_rate.
-        signed = 2.0 * y - 1.0
+        signed = propensity
         if not 0 < target_rate < 1:
             raise ValueError("missing_rate_range must be inside (0, 1)")
         lower, upper = -40.0 - abs(beta), 40.0 + abs(beta)
@@ -218,7 +200,7 @@ def apply_informative_missingness(
             else:
                 upper = intercept
         logits = beta * signed + (lower + upper) / 2
-        mask = rng.rand_like(logits) < torch.sigmoid(logits)
+        mask = row_uniform < torch.sigmoid(logits)
         if mask.all() or not mask.any():
             continue
         # Impute with the observed mean, as TabICLv2 does at inference — of the CONTEXT rows
@@ -301,12 +283,9 @@ def apply_pd_target(
             meta["macro_feature"] = True
         y, noise_meta = apply_label_noise(rng, y, cfg)
         meta.update(noise_meta)
-        # SAME GUARD AS THE QUANTILE PATH BELOW: the model and the loss need two classes. Rescue
-        # a single-class draw by quantile-cutting the scored latent to a floor base rate.
-        if float(y.sum()) < 2 or float(y.sum()) > y.numel() - 2:
-            zc = (latent - latent.mean()) / (latent.std() + 1e-8)
-            y = _quantile_cut(-zc, 3.0 / max(y.numel(), 1))
-            meta["mechanism_single_class_rescued"] = True
+        # Invalid single-class tables are rejected by TaskGenerator, never relabelled.
+        meta["applicant_base_rate"] = mech_meta["realised_base_rate"]
+        meta["accepted_base_rate"] = float(y.mean())
         meta["mode"] = "mechanism"
         meta["realised_base_rate"] = float(y.mean())
         return X, y.float(), meta
@@ -340,10 +319,6 @@ def apply_pd_target(
     #    unobserved-default relabelling (0->1).
     y, noise_meta = apply_label_noise(rng, y, cfg)
     meta.update(noise_meta)
-
-    # Guard: the model and the loss both need two classes present.
-    if float(y.sum()) < 2 or float(y.sum()) > y.numel() - 2:
-        y = _quantile_cut(z, max(base_rate, 3.0 / max(y.numel(), 1)))
 
     # 6. Informative missingness USED TO BE APPLIED HERE, from `credit.target.missingness`.
     # It moved to `TaskGenerator._sample_candidate` on 25-08-2026 so that BOTH tracks get it:

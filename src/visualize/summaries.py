@@ -472,12 +472,17 @@ def realism_summary(loaded: dict[str, Any], real: dict[str, Any], task: str) -> 
         return "\n".join(lines)
 
     lines.append(f"Distance from {len(reals)} real datasets (total variation, 0 = identical).")
-    lines.append("Each task's target on [0, 1] first: min-max scaled where it is not (the original")
-    lines.append("prior's is standardised). Lower is better.")
+    lines.append("Only loss-fraction targets on [0, 1] are comparable; standardized controls are omitted.")
+    lines.append("Lower is better. This is a descriptive comparison, not a selection criterion.")
     lines.append("")
     rows = []
     for name, tasks in loaded.items():
-        pooled = np.concatenate([_unit_target(t.y) for t in tasks])
+        if task == "lgd" and any(getattr(t, "source", None) == "base" for t in tasks):
+            continue
+        try:
+            pooled = np.concatenate([_unit_target(t.y) for t in tasks])
+        except ValueError:
+            continue
         per = {r: distribution_distance(pooled, y) for r, y in reals.items()}
         best_name = min(per, key=per.get)
         worst_name = max(per, key=per.get)
@@ -488,6 +493,8 @@ def realism_summary(loaded: dict[str, Any], real: dict[str, Any], task: str) -> 
     for name, mean_d, best, bname, worst, wname in rows:
         lines.append(f"  {name:<16} {mean_d:6.3f}   {bname:<16} {best:6.3f}   {wname:<16} {worst:6.3f}")
     lines.append("")
+    if not rows:
+        return "\n".join(lines + ["No comparable loss-fraction targets."])
     winner, best_mean = rows[0][0], rows[0][1]
     lines.append(f"Closest to real data: {winner} (mean {best_mean:.3f}).")
     lines.append(

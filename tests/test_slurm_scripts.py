@@ -33,7 +33,7 @@ def _accepted_flags(script: Path) -> set[str]:
 
 
 def _invocations() -> list[tuple[Path, str, set[str], int]]:
-    """Every `python scripts/<name>.py …` call in the SLURM layer, with the flags it passes."""
+    """Python experiment entry points and `-m src.*` utilities in the Slurm layer."""
     found: list[tuple[Path, str, set[str], int]] = []
     for job in JOB_SCRIPTS:
         raw = job.read_text(encoding="utf-8")
@@ -43,11 +43,14 @@ def _invocations() -> list[tuple[Path, str, set[str], int]]:
             stripped = line.strip()
             if stripped.startswith("#") or "python " not in stripped:
                 continue
-            m = re.search(r"python\s+(scripts/[a-z_]+\.py)(.*)", stripped)
+            m = re.search(r"python\s+(?:-u\s+)?(scripts/[a-z_]+\.py|-m\s+src\.[a-z_.]+)(.*)", stripped)
             if not m:
                 continue
             flags = set(re.findall(r"(--[a-z0-9-]+)", m.group(2)))
-            found.append((job, m.group(1), flags, lineno))
+            target = m.group(1)
+            if target.startswith("-m "):
+                target = target[3:].strip().replace(".", "/") + ".py"
+            found.append((job, target, flags, lineno))
     return found
 
 
@@ -146,19 +149,66 @@ def test_every_job_script_is_valid_bash():
         assert result.returncode == 0, f"{job.name} does not parse:\n{result.stderr}"
 
 
+@pytest.mark.parametrize("phase", ["cpu", "gpu"])
 @pytest.mark.parametrize("code", [0, 1, 64])
-def test_exp0_propagates_validation_exit_status(code):
+def test_exp0_propagates_validation_exit_status(code, phase):
     import shutil
     import subprocess
 
     bash = shutil.which("bash")
     if bash is None:
         pytest.skip("no bash on this machine")
-    launcher = (SLURM / "exp0.slurm").read_text(encoding="utf-8")
-    tail = launcher[launcher.index("python -u scripts/validate_experiment.py"):]
-    result = subprocess.run([bash, "-s"], input=f"python() {{ return {code}; }}\n" + tail,
+    helper = (SLURM / "_exp0_job.sh").read_text(encoding="utf-8")
+    stub = f'python() {{ if [[ "$*" == *--cleanup-success* ]]; then echo CLEANUP; else return {code}; fi; }}\n'
+    result = subprocess.run([bash, "-s"], input=f"set -euo pipefail\nEXP0_PHASE={phase}\n" + helper + stub
+                            + f"run_exp0_validation --phase {phase}\n",
                             capture_output=True, text=True, timeout=30)
     assert result.returncode == code
+    assert f"END status={ {0: 'OK', 1: 'FAILED', 64: 'DEFERRED'}[code]}" in result.stdout
+    assert ("CLEANUP" in result.stdout) == (code == 0 and phase == "gpu")
+
+
+@pytest.mark.parametrize("phase", ["cpu", "gpu"])
+@pytest.mark.parametrize("sig,code", [("TERM", 143), ("INT", 130), ("HUP", 129)])
+@pytest.mark.parametrize("during_child", [False, True])
+def test_exp0_signal_never_reports_success_or_cleans_scratch(phase, sig, code, during_child):
+    import shutil
+    import subprocess
+
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("no bash on this machine")
+    helper = (SLURM / "_exp0_job.sh").read_text(encoding="utf-8")
+    # Send a real signal only to this test's bash process, not pytest or VSC.
+    if during_child:
+        tail = ("python() {\n"
+                " if [[ \"$*\" == *--cleanup-success* ]]; then echo CLEANUP; return 0; fi\n"
+                " trap 'echo CHILD_STOPPED; exit 64' TERM\n"
+                f" kill -{sig} \"$$\"\n"
+                " while true; do sleep .01; done\n}\n"
+                f"run_exp0_validation --phase {phase}\n")
+    else:
+        tail = f'python() {{ echo CLEANUP; }}\nkill -{sig} "$$"\n'
+    result = subprocess.run([bash, "-s"], input=f"set -euo pipefail\nEXP0_PHASE={phase}\n" + helper + tail,
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode == code, result.stdout + result.stderr
+    assert f"END status=INTERRUPTED signal={sig}" in result.stdout
+    assert "status=OK" not in result.stdout and "CLEANUP" not in result.stdout
+    if during_child:
+        assert "CHILD_STOPPED" in result.stdout
+
+
+def test_exp0_early_zero_exit_is_not_validation_success():
+    import shutil
+    import subprocess
+
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("no bash on this machine")
+    helper = (SLURM / "_exp0_job.sh").read_text(encoding="utf-8")
+    result = subprocess.run([bash, "-s"], input="set -euo pipefail\nEXP0_PHASE=gpu\n" + helper + "exit 0\n",
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode == 1 and "END status=FAILED" in result.stdout
 
 
 
@@ -412,9 +462,17 @@ def test_exp0_runs_every_check_and_the_equivalence_on_the_production_gpu():
     assert d["clusters"] == "mindwell" and d["partition"] == "gpu_b200"
     assert int(d["cpus-per-task"]) <= GPU_B200_MAX_CORES
     text = (SLURM / "exp0.slurm").read_text(encoding="utf-8")
-    assert "python -u scripts/validate_experiment.py" in text
+    assert "run_exp0_validation --phase gpu --resume" in text
     assert "sbatch " not in "\n".join(line for line in text.splitlines() if not line.startswith("#"))
     assert "EXP=0" in text
+
+
+@pytest.mark.parametrize("phase,script", [("cpu", "exp0_cpu.slurm"), ("gpu", "exp0.slurm")])
+def test_exp0_both_launchers_use_tested_signal_lifecycle(phase, script):
+    text = (SLURM / script).read_text(encoding="utf-8")
+    assert f"EXP0_PHASE={phase}" in text
+    assert 'source "${VSC_DATA}/CreditICL/scripts/slurm/_exp0_job.sh"' in text
+    assert f"run_exp0_validation --phase {phase}" in text
 
 
 def test_exp0_configs_cover_every_training_path():

@@ -149,7 +149,7 @@ def test_accelerator_without_job_scratch_uses_big_output_not_system_tmp(tmp_path
     assert not folder.exists()
 
 
-def assert_released_memory_equivalence(task, *, device="cpu", force_disk=False):
+def assert_released_memory_equivalence(task, *, device="cpu", force_disk=False, force_stream=False, width=7, classes=2):
     """Real released weights + every ensemble member, reused by mandatory GPU tests."""
     from tabicl import TabICLClassifier, TabICLRegressor
     from src.eval.baselines import TABICL_RELEASED
@@ -160,12 +160,15 @@ def assert_released_memory_equivalence(task, *, device="cpu", force_disk=False):
     kwargs = dict(device=device, random_state=11, allow_auto_download=False,
                   model_path=str(local_input(find_pretrained(f"checkpoints/{TABICL_RELEASED[task]}"))))
     rng = np.random.default_rng(51)
-    X = rng.normal(size=(40, 7)).astype(np.float32)
-    y = np.arange(32) % 2 if task == "pd" else rng.random(32)
+    X = rng.normal(size=(40, width)).astype(np.float32)
+    y = np.arange(32) % classes if task == "pd" else rng.random(32)
     stock = cls(**kwargs).fit(X[:32], y)
     bounded = cls(**kwargs, batch_size=1).fit(X[:32], y)
     install(bounded)
     install(bounded)  # no duplicate hooks/managers on a repeated installation
+    if force_stream:
+        bounded.model_._crediticl_stream_bytes = 0
+        bounded.model_._crediticl_work_bytes = (width + 4) * 128 * 4 * 7  # blocks cross train/test
     assert bounded.n_estimators == stock.n_estimators == 8
     for key, value in stock.model_.state_dict().items():
         torch.testing.assert_close(bounded.model_.state_dict()[key], value, rtol=0, atol=0)
@@ -187,6 +190,28 @@ def assert_released_memory_equivalence(task, *, device="cpu", force_disk=False):
 @pytest.mark.parametrize("task", ["pd", "lgd"])
 def test_full_ensemble_predictions_match_upstream(task):
     assert_released_memory_equivalence(task)
+
+
+@pytest.mark.parametrize("task", ["pd", "lgd"])
+def test_streaming_full_ensemble_predictions_match_upstream(task):
+    assert_released_memory_equivalence(task, force_stream=True)
+
+
+@pytest.mark.parametrize("classes", [3, 11])
+def test_streaming_multiclass_matches_upstream(classes):
+    assert_released_memory_equivalence("pd", force_stream=True, classes=classes)
+
+
+def test_memory_messages_reach_the_run_log(tmp_path):
+    from src.eval.tabicl_memory import LOG
+    from src.utils.logging_setup import setup_logging, close_logging
+
+    _, _, logfile = setup_logging("memory", tmp_path, to_file=True, console=False)
+    try:
+        LOG.info("offload diagnostic visible")
+    finally:
+        close_logging()
+    assert "offload diagnostic visible" in logfile.read_text(encoding="utf-8")
 
 
 def test_single_member_shuffle_does_not_copy_the_full_embedding(monkeypatch):

@@ -1,6 +1,6 @@
 """Put two `benchmark_gpu.py` JSON files side by side and say which layer differs.
 
-    python -m src.utils.compare_gpubench output CreditICL/logs/gpubench_*.json
+    python -m src.validation.compare_gpu output CreditICL/logs/gpubench_*.json
 
 The comparison is the measurement. One card's numbers alone cannot say whether 0.5 steps/s is
 bad — only that the same work ran 12x faster elsewhere can, which is why the benchmark is

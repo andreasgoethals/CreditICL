@@ -70,11 +70,18 @@ def development_ranking(df: pd.DataFrame, track: str, exp: str = "exp1",
         rows.append({"configuration": configuration, "mean": per_training_seed.mean(),
                      "std": per_training_seed.std(ddof=1) if len(names) > 1 else 0.0,
                      "training_seeds": len(names), "datasets": len(dev), "metric": metric})
-    ranking = pd.DataFrame(rows, columns=columns).sort_values("mean", ascending=False)
+    from src.eval.metrics import higher_is_better
+
+    higher = higher_is_better(metric)
+    ranking = pd.DataFrame(rows, columns=columns).sort_values("mean", ascending=not higher)
     if not ranking.empty:
-        best = ranking.iloc[0]
-        ranking["within_seed_spread_of_best"] = (
-            best["mean"] - ranking["mean"] <= np.maximum(float(best["std"]), ranking["std"]))
+        candidates = ranking.configuration.str.startswith(f"{exp}_{track}__")
+        ranking["within_seed_spread_of_best"] = False
+        if candidates.any():
+            best = ranking.loc[candidates].iloc[0]
+            distance = (best["mean"] - ranking["mean"]) * (1 if higher else -1)
+            ranking["within_seed_spread_of_best"] = candidates & (
+                distance <= np.maximum(float(best["std"]), ranking["std"]))
     return ranking
 
 
@@ -83,7 +90,7 @@ def main(argv=None) -> int:
     ap.add_argument("--track", choices=("pd", "lgd"), required=True)
     args = ap.parse_args(argv)
     from src.eval.benchmark_status import complete, n_slots, slot_for
-    from src.visualize.results_plots import load_results
+    from src.eval.results import load_results
 
     # Selection reads the FINAL checkpoints and the reference models; earlier checkpoints are
     # the learning curve, not a candidate.

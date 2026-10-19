@@ -83,14 +83,14 @@ checkpoint plus a shared reference column (released TabICLv2, TabPFN-3, CatBoost
 
 ## The four code pipelines
 
-Each lives in `src/`, is driven by a thin runnable in `scripts/`, and writes under `output CreditICL/`
+Each lives in `src/` and writes under `output CreditICL/`. Main experiment entry points live in `scripts/`; diagnostics and maintenance run as Python modules
 (one folder per experiment; small files on the backed-up tier, checkpoints on project storage under
 the same layout) — the code picks the tier automatically (`output CreditICL/README.md`).
 
 | # | pipeline | code | run it with | produces |
 |---|---|---|---|---|
-| 1 | data | `src/data/` | `scripts/preprocess.py` | the processed-dataset cache |
-| 2 | prior | `src/prior/` | `scripts/generate_prior.py` / `measure_prior.py` | the synthetic task stream + reports |
+| 1 | data | `src/data/` | `python -m src.data.preprocess` | the processed-dataset cache |
+| 2 | prior | `src/prior/` | `python -m src.prior.generate` / `src.prior.measure` | the synthetic task stream + reports |
 | 3 | training | `src/train/` | `scripts/pretrain.py` | permanent and resumable checkpoints per arm |
 | 4 | eval | `src/eval/` | `scripts/evaluate.py` | scores on the 21 real datasets + out-of-domain suites |
 
@@ -127,7 +127,7 @@ are documented once, in [docs/TEMPLATE.md](docs/TEMPLATE.md).
 CreditICL/
 ├── config/            flat YAML, one per experiment: Exp{1,2,3}_{PD,LGD}.yaml
 ├── data/              raw/pd (14) · raw/lgd (7) · processed cache          [gitignored]
-├── checkpoints/       released weights; September checkpoints remain here  [gitignored]
+├── checkpoints/       released upstream weights                         [gitignored]
 ├── docs/              the eight files below, each with inbound links
 │   ├── EXPERIMENTAL_DESIGN.md   what the three experiments ask, and how they can fail
 │   ├── PRIORS.md                how the credit prior is built
@@ -139,7 +139,7 @@ CreditICL/
 │   └── TEMPLATE.md              the layout this project started from
 ├── notebooks/         0. General · 1. Experiment 1 · 2. Experiment 2 — one story (see its README)
 ├── output CreditICL/  everything generated: figures/ reference/ experiment_0..3/  [mostly gitignored]
-├── scripts/           every runnable; calls into src/ · slurm/ holds the SLURM jobs
+├── scripts/           four main experiment entry points · slurm/ holds the Slurm jobs
 ├── src/               data/ prior/ train/ eval/ models/ visualize/ utils/
 └── tfm-library/       PINNED SUBMODULE — READ-ONLY (one exception)
 ```
@@ -220,6 +220,16 @@ The older pool-building launchers refuse submission. Experiment 0 uses selected 
 full-feature tables and wide-input model probes (2,986 PD / 601 LGD columns); the complete five-fold credit/OOD benchmark runs
 in Experiments 1–3. Every eligible column is retained; the synthetic training width is not an
 inference limit. The GPU validation job requires the updated CPU job's PASS receipt first.
+
+Freeze code, configuration, dependencies and inputs from the CPU submission through GPU
+completion. The GPU script resumes the same verified campaign on resubmission; it saves every
+finished benchmark fold immediately and reuses completed stages. `DEFERRED` (exit 64) means the
+allocation ended: resubmit `scripts/slurm/exp0.slurm` without pulling, resetting or rerunning CPU.
+`FAILED` requires inspecting the reported error. A two-hour limit per benchmark cell stops an
+unacceptably slow probe early; it never reduces rows, columns, folds or ensemble members. Large
+TabICL inputs use upstream column-attention caches and bounded row blocks to avoid materializing
+the full rows × features × embedding array. Exp0 checks prediction equivalence on CUDA before
+running the full-table capacity probes. The 24-hour allocation is a limit, not a completion estimate.
 
 The local venv is for development and analysis only; **do not copy it to VSC**. The cluster's own
 environment, GPU/partition choice, credit costs, storage rule and the checkpoint/resume mechanism are

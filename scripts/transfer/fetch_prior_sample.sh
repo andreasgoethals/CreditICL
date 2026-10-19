@@ -96,7 +96,7 @@ done
 cat <<'EOF'
 Done. Check what you have:
 
-    python scripts/generate_prior.py --config config/Exp1_LGD.yaml --status
+    python -m src.prior.generate --config config/Exp1_LGD.yaml --status
 
 Then open notebooks/prior_visualisation.ipynb — it discovers whatever is present.
 EOF

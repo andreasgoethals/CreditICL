@@ -347,6 +347,7 @@ class Trainer:
         )
 
         self.model = self.model.to(self.device)
+        self._l2sp_ref = {name: value.to(self.device) for name, value in self._l2sp_ref.items()}
         # build_optimizer BEFORE wrapping: it splits parameters by shape for Muon, and
         # DDP's `module.` prefix would not change shapes but the unwrapped model is the
         # clearer thing to hand it.
@@ -650,7 +651,7 @@ class Trainer:
                 # `max(y_train) + 1` here — the fine-tuning module's convention
                 # (`_finetune._compute_batch_loss`), not pretraining's — so Exp1 optimised a
                 # 2-way softmax where TabICLv2 optimises a 10-way one. The equivalence check
-                # (`scripts/check_equivalence.py`) found it: identical weights, different loss.
+                # (`src/validation/equivalence.py`) found it: identical weights, different loss.
                 flat = pred.flatten(end_dim=-2)
                 true = y_test.long().flatten()
                 loss = F.cross_entropy(flat, true)
@@ -751,10 +752,7 @@ class Trainer:
         # clipped is the norm of the whole gradient.
         if self.l2sp_alpha > 0:
             totals["l2sp"] = self._apply_l2sp()
-        torch.nn.utils.clip_grad_norm_(
-            [p for p in self.model.parameters() if p.requires_grad],
-            self.grad_clip if self.grad_clip > 0 else float("inf"), error_if_nonfinite=True,
-        )
+
 
         # HERE and nowhere else: gradients exist, are unscaled (so the numbers are the real
         # ones rather than AMP's scaled copies), and have not been zeroed yet. One line later
@@ -775,18 +773,24 @@ class Trainer:
                 ),
             )
 
+        t_clip = time.perf_counter()
+        torch.nn.utils.clip_grad_norm_(
+            [p for p in self.model.parameters() if p.requires_grad],
+            self.grad_clip if self.grad_clip > 0 else float("inf"), error_if_nonfinite=True,
+        )
+
         # Telemetry is measured separately because `nvidia-smi` is a subprocess, and on a node
         # with 24 GPUs it enumerates all of them — a plausible reason a B200 node would be
         # slower here than a 2-GPU one, and cheap to rule in or out.
         t_opt = time.perf_counter()
-        self._phase["telemetry"] += t_opt - t_telem
+        self._phase["telemetry"] += t_clip - t_telem
 
         self.scaler.step(self.optimizer)
         self.scaler.update()
         self.optimizer.zero_grad(set_to_none=True)
         self.scheduler.step()
         self._phase["optimizer"] += time.perf_counter() - t_opt
-        self._phase["step_tail"] += (t_telem - t_tail)
+        self._phase["step_tail"] += (t_telem - t_tail) + (t_opt - t_clip)
 
         self.datasets_seen += int(X.shape[0])
         return totals

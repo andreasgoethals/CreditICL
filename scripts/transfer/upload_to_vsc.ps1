@@ -44,7 +44,7 @@ if ($DryRun) {
 #   checkpoints  - TabPFN/TabICL weights, needed by the eval pipeline.
 # NOT uploaded:
 #   prior_cache  - generated ON the cluster; 4-5 GB per variant, pointless to ship
-#   data/processed - rebuilt from raw in minutes by scripts/preprocess.py
+#   data/processed - rebuilt from raw in minutes by python -m src.data.preprocess
 #   the venv     - VSC needs its own per-architecture build
 $targets = @(
     @{ Local = "data\raw"; Remote = "$Staging/data/"; Label = "raw datasets (irreplaceable)" },

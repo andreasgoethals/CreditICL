@@ -36,12 +36,18 @@ older preservation instructions below. Exp0 now requires CPU then GPU PASS recei
 Exp1 has 48 runs including component tests. Historical run entries remain an audit trail, not
 reusable completion evidence. VSC submissions are made by Andreas; the rows below record the supplied evidence.
 
+Local readiness (19-10-2026, after the review): source `6f2f530d982a95f9c03b352a44de80e2ede28b1c84952587fa544744f9350857`, library `de324ef`.
+Full suite: 1,597 PASS / 26 VSC-only SKIP in 15m14s; notebooks: 11/11, 125 figures. The authorized local reset then removed 140 generated files and cleared 11 notebooks' outputs, with zero generated files remaining. All 71 input/weight files (3,294,397,860 bytes) and executable source were hash-verified unchanged. No CreditICL output ZIP remained in Downloads; the unrelated JEVPFN archive was untouched. Publish the complete moved/new-file change set before VSC cleanup and fresh CPU (13 stages) then GPU (66 stages) Exp0. Local CPU tests are not a VSC PASS receipt.
+
 One row per cluster run worth remembering — which is most of them, because *"have we already tried
 that configuration?"* is the question this table exists to answer. The **full** write-up of each
 one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 19-10-2026 | Follow-up of GPU 11692660 and VSC checkout | **CANCELLED by 2538338 after 22:36:01; batch 0:15, 22:36:10** | ZIP still has schema-2 RUNNING / 12 of 66 stages and a false OK footer. All 22 CPU hashes match; no new model errors. VSC remains `cf0e539` / fingerprint `adf308f...`; 16-10 fixes remain unpublished locally. Add signal-aware status/tests, publish fixes, then clean CPU/GPU validation; do not resume the old slow code |
+| 16-10-2026 | Exp0 GPU 11692660, Mindwell B200/r11g22, `cf0e539` dirty; started 15-10 | **RUNNING at 09:01, 22h20m/24h; 12/66 stages PASS; cannot finish at observed pace** | All 17 CUDA tests, six smoke routes and both equivalence checks passed. Released TabICL passed five folds on 759-feature loan_default; 2,986-feature algorithmwatch took 13h34 for fold 0, fold 1 still predicting. Current benchmark writes results only at stage end; validation has no continuation. Keep evidence, address runtime/persistence/logging before rerun; Exp1 blocked |
+| 15-10-2026 | Exp0 CPU 62324362, wICE batch/l33c20n3, `cf0e539` dirty; audited 16-10 | **PASS: 12/12 stages, 1,437 passed / 3 skipped / 17 CUDA deselected; 16m31s log interval** | All 22 artifact hashes verified from ZIP; executable fingerprint matches local checkout and GPU, environment/inputs match, GPU binds exact CPU receipt. This is valid for the audited source; future executable fixes require renewed receipts |
 | 14-10-2026 | Exp0 GPU 11689448, Mindwell B200/r11g22, commit `351d948` dirty | **OUT_OF_MEMORY, 0:125, 41m32s; 12 stages PASS** | Accounting/stderr supplied at 19:37–19:38 confirm host RAM OOM: MaxRSS 188,735,484 KiB against 180G, one oom_kill. All 15 CUDA checks, six smoke routes and both equivalence checks passed; full-table TabICL completed two datasets then died on 105,471 rows/759 features. Local GPU/disk memory fix needs fresh CPU then GPU validation; no Exp1 launch |
 | 14-10-2026 | Exp0 CPU 62319803, wICE batch/m28c22n1, commit `351d948` dirty | **PASS: 12/12 stages, 1,404 tests PASS/3 SKIP; 16m02s log interval** | 21 credit and 50 OOD tables checked, package requirements passed, all 22 receipt artifact hashes verified from ZIP. CPU/GPU source and input fingerprints match. Subsequent inference-code changes require fresh CPU and GPU validation |
 | 14-10-2026 | Exp0 CPU 62316841, wICE batch, node m28c27n1, commit `6054c50` dirty | **FAILED; 11/12 stages PASS; 1,368 tests PASS, 2 FAIL, 3 SKIP, 13 deselected; 16m20s log interval** | Two legacy readiness tests patched only `experiment_dir` and read the actual failed GPU receipt through `outputs_dir`. Reproduced locally with a failed outer receipt, then both passed using isolated output roots. Production gate correctly blocked GPU. Fresh CPU then GPU required after these source changes |
@@ -85,6 +91,48 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 [`RUNS.md`](RUNS.md).
 
 ## Dead ends
+
+### 19-10-2026 — do not change caches or source during final verification
+
+**Tried:** Ran the broad suite while completing review fixes and rebuilding notebook data caches.
+**Result:** 1,572 passed, 15 failed, 27 skipped in 24m43s; this was not a valid final verification.
+**Why:** Tests observed changing cache/source identities; other failures exposed old protocol/path fixtures, a real-scheduler fixture, an invalid upstream affine/grouping combination and a missing summary protocol label.
+**Instead:** Finish preprocessing and corrections first; execute notebooks and the final test suite sequentially with fixed source and one BLAS/OpenMP thread.
+
+### 19-10-2026 — native multiclass must exercise the streaming path
+
+**Tried:** Native 3/11-class OOD wrappers plus forced streaming with released weights.
+**Result:** Ordinary wrappers passed; the 11-class streamed path raised an unsupported mixed-radix error.
+**Why:** The earlier streaming implementation covered binary/regression only; removing OOD binarisation exposed the missing path before VSC submission.
+**Instead:** Use upstream digit decomposition/caches, average hidden states before affine/row attention, and test small/released CPU plus mandatory GPU equivalence; include trained-checkpoint multiclass probes in all PD smoke routes.
+
+### 19-10-2026 — review changes invalidate earlier local and VSC receipts
+
+**Tried:** Assess each Claude finding against the pinned code and actual analysis paths.
+**Result:** Confirmed reporting/prior/edge-case defects; empirical shortcut percentages were not independently reproduced. Selection-induced class imbalance is intentional; primary AUC/R² selection need not change.
+**Why:** Earlier tests did not cover native multiclass streaming or final OOD/ablation reporting. Broadening numeric prior ranges did not undo earlier benchmark-guided mechanism design.
+**Instead:** Use protocol/cache v8, independent component RNGs and transparent provenance; run both fresh Exp0 phases on the same frozen source after publishing all moved/new files. Do not reuse pre-review PASS receipts.
+
+### 19-10-2026 — Cancelled validation printed a successful shell footer
+
+**Tried:** Interpreting the latest downloaded output and the VSC preflight failure.
+**Result:** `END status=OK` contradicted a RUNNING receipt; sacct confirms cancellation after 22h36m, batch signal 15.
+**Why:** The old EXIT trap trusted `$?` without a validator-completion flag or signal forwarding. VSC still ran the old fingerprint; the 16-10 fixes were uncommitted locally.
+**Instead:** Forward signals, require successful validator completion for OK/cleanup, publish interrupted progress, test real shell signals, and label stored RUNNING separately from scheduler status. Publish reviewed fixes before one clean CPU/GPU campaign.
+
+### 16-10-2026 — Restarted result files must retain their byte identity
+
+**Tried:** Persist benchmark rows using JSON with recursively sorted keys, then recreate the CSV on restart.
+**Result:** End-to-end CLI tests preserved the scores and avoided repeat predictions, but changed CSV column order.
+**Why:** Sorted metric keys changed pandas' column order, invalidating hash-based benchmark receipts.
+**Instead:** Preserve journal insertion order; both credit and OOD CLI restart tests require identical CSV bytes and no repeated model calls.
+
+### 16-10-2026 — Memory-safe inference was not sufficient for a one-day validation allocation
+
+**Tried:** GPU 11692660, the bounded GPU/disk adapter and the complete 66-stage Exp0 GPU plan in one 24-hour job.
+**Result:** The earlier 759-feature OOM did not recur, but algorithmwatch's first full-width fold took 13h34; still in stage 13 after 22h20. No new numerical error or crash was observed at 09:01.
+**Why:** Large-table prediction dominates, while the validation budget assumes all stages fit in one day. Completed benchmark cells are not saved until stage completion and the validator has no continuation. The offload logger is also disconnected from run logging; exact compute/I/O attribution remains unmeasured.
+**Instead:** Preserve logs; recommend cancelling the infeasible attempt. The 16-10 fix streams upstream ISAB context into bounded row blocks, journals every completed fold, resumes verified Exp0 stages, connects memory logs and enforces a two-hour cell guard. Fresh CPU/GPU validation is required; B200 speed is still unmeasured. Keep full rows/features/folds; DEFERRED is continuation, never PASS. See RUNS.md for evidence and deadlines.
 
 ### 14-10-2026 — Full-row, full-width TabICL inference exceeded the tested resource envelope
 

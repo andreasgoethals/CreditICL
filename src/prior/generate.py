@@ -1,14 +1,14 @@
 """PIPELINE 2 — generate a pool of synthetic datasets and write it to disk.
 
     # one shard (what an array task runs)
-    python scripts/generate_prior.py --config config/Exp1_LGD.yaml --variant original \
+    python -m src.prior.generate --config config/Exp1_LGD.yaml --variant original \
         --shard 0 --n-shards 20
 
     # everything, serially (fine locally, slow on a cluster)
-    python scripts/generate_prior.py --config config/Exp1_LGD.yaml --variant original --all
+    python -m src.prior.generate --config config/Exp1_LGD.yaml --variant original --all
 
     # check what exists
-    python scripts/generate_prior.py --config config/Exp1_LGD.yaml --status
+    python -m src.prior.generate --config config/Exp1_LGD.yaml --status
 
 VARIANTS. `--variant original` forces `credit_fraction=0` and generates the
 unmodified TabICL prior — the pool EVERY arm shares. `--variant credit_v1` forces
@@ -29,7 +29,7 @@ import os
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 

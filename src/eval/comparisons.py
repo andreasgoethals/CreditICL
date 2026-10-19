@@ -47,7 +47,7 @@ def holm_adjust(p_values: list[float]) -> list[float]:
 
 
 def paired_prior_effects(df: pd.DataFrame, metric: str, *, seed: int = 0,
-                        repetitions: int = 10_000) -> pd.DataFrame:
+                        repetitions: int = 10_000, pairs: dict[str, str] | None = None) -> pd.DataFrame:
     """Each mixture versus its matching 0% control, separately per architecture.
 
     Average folds and training seeds *within* each dataset, then bootstrap paired
@@ -58,24 +58,32 @@ def paired_prior_effects(df: pd.DataFrame, metric: str, *, seed: int = 0,
     from scipy.stats import binomtest
 
     require_balanced_cells(df)
-    if repetitions < 1 or metric not in df or not np.isfinite(df[metric]).all():
-        raise ValueError("Finite scores and a positive bootstrap count are required")
     part = df.assign(identity=identities(df))
     part["configuration"] = part.identity.str.replace(r"__s\d+$", "", regex=True)
+    if pairs is None:
+        pairs = {name: re.sub(r"credit_fraction=[0-9p.]+", "credit_fraction=0", name)
+                 for name in part.configuration.unique()
+                 if (match := re.search(r"credit_fraction=([0-9p.]+)", name))
+                 and float(match.group(1).replace("p", ".")) > 0}
+    involved = set(pairs) | set(pairs.values())
+    # Point-only references cannot supply CRPS; they are not participants in a
+    # contrast between our distributional models and must not veto that metric.
+    part = part[part.configuration.isin(involved)]
+    if repetitions < 1 or metric not in part or not np.isfinite(part[metric]).all():
+        raise ValueError("Finite scores and a positive bootstrap count are required")
     cells = part.groupby(["configuration", "identity", "dataset"])[metric].mean()
     scores = cells.groupby(level=[0, 2]).mean().unstack("dataset")
     rng = np.random.default_rng(seed)
     rows = []
     for name in scores.index:
-        match = re.search(r"credit_fraction=([0-9p.]+)", name)
-        if match is None or float(match.group(1).replace("p", ".")) == 0:
+        if name not in pairs:
             continue
-        control = re.sub(r"credit_fraction=[0-9p.]+", "credit_fraction=0", name)
+        control = pairs[name]
         if control not in scores.index:
-            continue
+            raise ValueError(f"Missing comparison control {control} for {name}")
         treatment_seeds = set(part.loc[part.configuration.eq(name), "identity"].str.extract(r"__s(\d+)$")[0])
         control_seeds = set(part.loc[part.configuration.eq(control), "identity"].str.extract(r"__s(\d+)$")[0])
-        if treatment_seeds != control_seeds:
+        if control.startswith("exp") and treatment_seeds != control_seeds:
             raise ValueError(f"Unmatched training seeds for {name}")
         delta = (scores.loc[name] - scores.loc[control]).to_numpy(dtype=float)
         if not np.isfinite(delta).all():
@@ -96,3 +104,20 @@ def paired_prior_effects(df: pd.DataFrame, metric: str, *, seed: int = 0,
     if rows:
         result["p_holm"] = holm_adjust(result.p_value.tolist())
     return result
+
+
+def paired_ablation_effects(df: pd.DataFrame, metric: str, track: str,
+                            **kwargs) -> pd.DataFrame:
+    """Every component removal versus the full 50% prior, matched by training seed."""
+    names = identities(df).str.replace(r"__s\d+$", "", regex=True)
+    pairs = {name: f"exp1_{track}__prior-credit_fraction=0p5"
+             for name in names.unique() if name.startswith(f"exp1ablations_{track}__")}
+    return paired_prior_effects(df, metric, pairs=pairs, **kwargs)
+
+
+def paired_reference_effects(df: pd.DataFrame, metric: str, **kwargs) -> pd.DataFrame:
+    """Final checkpoint minus its released architecture; datasets remain the paired units."""
+    names = identities(df).str.replace(r"__s\d+$", "", regex=True)
+    pairs = {name: "tabpfn3" if "tabpfn3" in name else "tabiclv2"
+             for name in names.unique() if name.startswith("exp")}
+    return paired_prior_effects(df, metric, pairs=pairs, **kwargs)

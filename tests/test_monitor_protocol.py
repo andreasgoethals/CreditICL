@@ -101,3 +101,42 @@ def test_ood_monitor_preserves_loader_categories(tmp_path, monkeypatch):
     tracker.record(torch.nn.Linear(2, 1), step=0, datasets_seen=0, train_loss=0.0, elapsed_s=0.0)
     assert observed["cat_indices"] == [1]
     assert observed["bounded_target"] is False
+
+
+def test_native_multiclass_monitor_preserves_labels_probabilities_and_metrics(tmp_path, monkeypatch):
+    import torch
+
+    tracker = ProgressTracker(ProgressConfig(context_rows=24, max_test_rows=18), "pd", "test", tmp_path)
+    monkeypatch.setattr(tracker, "_real_datasets", lambda: [])
+    monkeypatch.setattr(tracker, "_ood_datasets", lambda: [SimpleNamespace(name="native")])
+    y = np.resize([10, 20, 50], 60)
+    X = np.column_stack([np.arange(60) % 3, np.arange(60)])
+    monkeypatch.setattr("src.eval.ood.load_ood_dataset", lambda entry: (X, y, []))
+    observed = {}
+
+    class Wrapper:
+        def fit(self, Xc, yc):
+            observed["labels"] = np.unique(yc)
+            self.classes_ = np.unique(yc)
+        def predict_proba(self, Xt):
+            return np.full((len(Xt), 3), 1/3)
+
+    monkeypatch.setattr(tracker, "_wrapper", lambda *a: Wrapper())
+    row = tracker.record(torch.nn.Linear(2, 1), step=0, datasets_seen=0, train_loss=0., elapsed_s=0.)
+    assert np.array_equal(observed["labels"], [0, 1, 2])
+    assert row.get("n_errors", 0) == 0
+    assert row["ood__native__n_classes"] == 3
+    assert row["ood__native__log_loss"] == pytest.approx(np.log(3), abs=1e-6)
+    assert row["ood__native__roc_auc"] == .5
+
+
+def test_multiclass_monitor_retains_rare_classes_without_overlap(tmp_path):
+    tracker = ProgressTracker(ProgressConfig(context_rows=32, max_test_rows=32), "pd", "test", tmp_path)
+    y = np.array([0] * 10_000 + [1] * 5 + [2] * 5)
+    context, test = tracker._split("native", y, True)
+    assert len(context) == len(test) == 32
+    assert not set(context) & set(test)
+    assert set(y[context]) == set(y[test]) == {0, 1, 2}
+    again = ProgressTracker(tracker.cfg, "pd", "again", tmp_path / "other")
+    c2, t2 = again._split("native", y, True)
+    assert np.array_equal(context, c2) and np.array_equal(test, t2)

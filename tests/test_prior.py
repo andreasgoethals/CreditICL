@@ -414,18 +414,29 @@ def test_the_credit_arms_share_the_control_s_base_distribution(track):
     assert task.meta["d"] <= 12 and other.meta["d"] <= 12
 
 
-def test_upstream_absence_is_a_loud_error_not_a_silent_fallback():
+def test_upstream_absence_is_a_loud_error_not_a_silent_fallback(monkeypatch):
     """The PyPI wheel and the v2.1.1 tag both omit `graph_lib`. If someone installs one of
     them, the run must stop with the install command — not quietly train on a transcription
     and report it as TabICLv2's prior."""
+    import builtins
     from src.prior import upstream
 
-    ok, why = upstream.availability()
-    if ok:
-        import pytest as _pytest
+    real_import = builtins.__import__
 
-        _pytest.skip("upstream is installed here; the error path is covered by the message")
+    def missing_graph(name, *args, **kwargs):
+        if name == "tabicl.prior._graph_scm":
+            raise ImportError("missing graph_scm in installed package")
+        return real_import(name, *args, **kwargs)
+
+    # Exercise a broken installation even on machines with the correct package;
+    # bypass the availability cache without changing its real cached result.
+    monkeypatch.setattr(builtins, "__import__", missing_graph)
+    monkeypatch.setattr(upstream, "availability", upstream.availability.__wrapped__)
+    ok, why = upstream.availability()
+    assert not ok
     assert "git+https://github.com/soda-inria/tabicl.git" in why
+    with pytest.raises(ImportError, match="upstream TabICLv2 prior unavailable"):
+        upstream.sample_control(regression=False, seq_len=32, num_features=4, max_features=4)
 
 
 def test_a_skewed_boundary_mass_reaches_the_largest_real_atom_with_a_small_median():

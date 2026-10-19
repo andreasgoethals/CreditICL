@@ -74,7 +74,7 @@ echo "   pool total  : $N_DATASETS datasets"
 echo "   node        : $(hostname)   cores=${SLURM_CPUS_PER_TASK:-?}"
 echo "=========================================================="
 
-python scripts/generate_prior.py \
+python -m src.prior.generate \
     --config "$CFG" \
     --variant "$VARIANT" \
     --shard "${SLURM_ARRAY_TASK_ID:-0}" \

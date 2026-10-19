@@ -1,6 +1,6 @@
 #!/bin/bash -l
 # =============================================================================
-#  Run scripts/benchmark_gpu.py on whichever card SLURM gives us.
+#  Run src/validation/benchmark_gpu.py on whichever card SLURM gives us.
 #
 #  Submit it TWICE — the whole point is the comparison:
 #      sbatch --clusters=wice --partition=gpu_a100 scripts/slurm/gpubench.slurm
@@ -61,12 +61,12 @@ echo "=============================================================="
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv || true
 echo
 
-python scripts/benchmark_gpu.py \
+python -m src.validation.benchmark_gpu \
     --task "$TASK" \
     --json "${LOGDIR}/gpubench_${SLURM_JOB_PARTITION:-unknown}_${SLURM_JOB_ID}.json"
 
 echo
 echo "compare the two cards with:"
 echo "  ls ${LOGDIR}/gpubench_*.json"
-echo "  python -m src.utils.compare_gpubench ${LOGDIR}/gpubench_*.json"
+echo "  python -m src.validation.compare_gpu ${LOGDIR}/gpubench_*.json"
 echo "finished: $(date -Is)"

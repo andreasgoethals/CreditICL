@@ -26,11 +26,11 @@ from src.train.loop import Trainer
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _trainer(cfg, tmp_path, **train_overrides):
+def _trainer(cfg, tmp_path, device="cpu", **train_overrides):
     cfg = copy.deepcopy(cfg)
     cfg.setdefault("train", {}).update(train_overrides)
     return Trainer(
-        cfg, tmp_path / "out", device="cpu", ckpt_dir=tmp_path / "ck", log_dir=tmp_path / "logs"
+        cfg, tmp_path / "out", device=device, ckpt_dir=tmp_path / "ck", log_dir=tmp_path / "logs"
     )
 
 
@@ -58,6 +58,10 @@ def test_off_by_default_and_costs_nothing(lgd_cfg, tmp_path):
 def test_the_gradient_added_is_exactly_alpha_times_the_drift(lgd_cfg, tmp_path, monkeypatch):
     """d/dw of (alpha/2)||w - w0||^2 is alpha * (w - w0). Written straight onto `.grad`, so
     this checks the arithmetic rather than trusting autograd on a term we never build."""
+    assert_l2sp_device_and_gradient(lgd_cfg, tmp_path, monkeypatch)
+
+
+def assert_l2sp_device_and_gradient(lgd_cfg, tmp_path, monkeypatch, device="cpu"):
     # Patch the name AS `loop` sees it: `from .adapt import load_pretrained` binds a second
     # reference, so patching `adapt.load_pretrained` would leave the trainer's copy intact.
     from src.train import loop as loop_mod
@@ -68,12 +72,13 @@ def test_the_gradient_added_is_exactly_alpha_times_the_drift(lgd_cfg, tmp_path, 
     (tmp_path / "fake.ckpt").write_bytes(b"not read: load_pretrained is patched")
     cfg["init"] = {"strategy": "full", "pretrained_path": str(tmp_path / "fake.ckpt")}
     alpha = 0.003
-    t = _trainer(cfg, tmp_path, l2sp_alpha=alpha)
+    t = _trainer(cfg, tmp_path, device=device, l2sp_alpha=alpha)
 
     assert t._l2sp_ref, "the reference must be captured for a warm start"
     # Move every weight by a known amount and give it a zero gradient to add onto.
     for name, param in t.model.named_parameters():
         if name in t._l2sp_ref:
+            assert t._l2sp_ref[name].device == param.device
             with torch.no_grad():
                 param.add_(0.5)
             param.grad = torch.zeros_like(param)
@@ -89,6 +94,7 @@ def test_the_gradient_added_is_exactly_alpha_times_the_drift(lgd_cfg, tmp_path, 
         n += param.numel()
     # Omega = (alpha/2) * sum(0.5^2) over every element that moved.
     assert penalty == pytest.approx(0.5 * alpha * n * 0.25, rel=1e-5)
+    t.close()
 
 
 def test_the_penalty_is_applied_once_per_step_not_once_per_pass():

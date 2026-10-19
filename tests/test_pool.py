@@ -157,7 +157,7 @@ def test_control_arm_needs_no_credit_pool(pool_env, tiny_prior):
 
 def test_missing_pool_raises_with_the_fix_in_the_message(pool_env, tiny_prior):
     pool = pool_env
-    with pytest.raises(FileNotFoundError, match="generate_prior.py"):
+    with pytest.raises(FileNotFoundError, match="src.prior.generate"):
         pool.PoolReader("lgd", "does_not_exist")
 
 

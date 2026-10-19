@@ -21,13 +21,13 @@ And it is the early-warning system for the out-of-domain question. If general
 performance falls while credit performance rises, that trade-off shows up here, mid-run,
 rather than after every arm has finished.
 
-HOW IT MEASURES (protocol 3, 28-09-2026). Exactly the way the benchmark does, minus the size:
+HOW IT MEASURES (monitor protocol 8, 19-10-2026). The benchmark's model wrappers on smaller fixed splits:
 the CURRENT weights are put inside upstream's own `TabICLClassifier` / `TabICLRegressor` — the
 same preprocessing, 8-member ensemble and decoding that score the final checkpoints — and each
 dataset is scored on ONE FIXED split (same rows at every step, in every arm), so a curve moves
 only because the weights did. Every metric the benchmark reports without a tuned threshold is
 recorded: for PD ROC-AUC, PR-AUC, Brier, log-loss, ECE, KS, calibration slope and the hard-label
-family at the base-rate threshold; for LGD R², RMSE, MAE, CRPS, pinball, coverage and the
+family at threshold 0.5; native multiclass OOD metrics retain every class; for LGD R², RMSE, MAE, CRPS, pinball, coverage and the
 boundary masses. The first row is written at step 0, before any training, so every arm's curve
 starts from the same untrained model.
 
@@ -81,7 +81,30 @@ class ProgressConfig:
 
 #: Bumped when the measurement changes; a CSV of an older protocol is set aside, never appended to.
 #: 4 (30-09-2026): the benchmark's fold preprocessing on the context rows.
-PROGRESS_PROTOCOL = 7  # monitoring also keeps borrowers disjoint between context and test
+PROGRESS_PROTOCOL = 8  # native multiclass OOD; grouped credit splits remain disjoint
+
+
+def _multiclass_monitor_split(y, context_size, test_size, seed):
+    """Fixed cheap monitoring subsets that retain even rare native classes on both sides.
+
+    Reserve one row per class for each side, then sample the remaining budget.
+    This is a diagnostic subsample only; the final benchmark uses every row.
+    """
+    rng = np.random.default_rng(seed)
+    classes, counts = np.unique(y, return_counts=True)
+    if counts.min() < 2 or min(context_size, test_size) < len(classes):
+        raise ValueError("Monitoring budget cannot retain every native class on both sides")
+    context, test = [], []
+    for label in classes:
+        first, second = rng.choice(np.flatnonzero(y == label), size=2, replace=False)
+        context.append(first)
+        test.append(second)
+    remaining = np.setdiff1d(np.arange(len(y)), context + test)
+    remaining = rng.permutation(remaining)
+    extra_context = context_size - len(classes)
+    context.extend(remaining[:extra_context])
+    test.extend(remaining[extra_context:extra_context + test_size - len(classes)])
+    return np.sort(context), np.sort(test)
 
 
 class ProgressTracker:
@@ -188,6 +211,11 @@ class ProgressTracker:
         test_n = min(self.cfg.max_test_rows, n - ctx_n)
         seed = int(zlib.crc32(f"{self.cfg.seed}:{key}".encode()) % (2**31))
         index = np.arange(n)
+        if classification and len(np.unique(y)) > 2:
+            if groups is not None:
+                raise ValueError("Grouped multiclass monitoring requires a group-aware native split")
+            self._splits[key] = _multiclass_monitor_split(y, ctx_n, test_n, seed)
+            return self._splits[key]
         strat = (y >= 0.5).astype(int) if classification else None
         if strat is not None and np.bincount(strat, minlength=2).min() < 4:
             strat = None
@@ -229,7 +257,7 @@ class ProgressTracker:
                      regression: bool, cat_indices: list[int] | None = None,
                      bounded_target: bool = True) -> dict[str, np.ndarray]:
         """The CURRENT weights on one table: `{"point", "quantiles"}` for a continuous target,
-        `{"prob"}` (P(class 1)) for a binary one. Upstream's TabICL wrapper; `TabPFNProgressTracker`
+        `{"prob"}` (P(class 1) for binary, the native matrix for multiclass). `TabPFNProgressTracker`
         overrides this for TabPFN-3 and leaves everything else — data, split, metrics — shared."""
         import torch
 
@@ -243,8 +271,9 @@ class ProgressTracker:
                                   alphas=[float(a) for a in QUANTILE_LEVELS])
                 return {"point": np.asarray(out["mean"]), "quantiles": np.asarray(out["quantiles"])}
             prob = np.asarray(est.predict_proba(Xt), dtype=float)
-            # Column of class 1: the wrapper's LabelEncoder sorts the labels.
-            return {"prob": prob[:, list(est.classes_).index(1)]}
+            if not np.array_equal(est.classes_, np.arange(len(est.classes_))):
+                raise ValueError("Monitoring labels must be encoded 0..K-1")
+            return {"prob": prob[:, 1] if len(est.classes_) == 2 else prob}
 
     def _score(self, model, key: str, X: np.ndarray, y: np.ndarray, *, regression: bool,
                scale_target: bool = False, bounded_target: bool = True,
@@ -274,9 +303,8 @@ class ProgressTracker:
 
         if not regression and len(np.unique(yt)) < 2:
             return {}
-        # THE BENCHMARK'S FOLD PREPROCESSING, learned on the context rows (`protocol.
-        # fit_fold_preprocessing`: near-constant columns, outlier rows, the column cap, winsorising),
-        # so a monitor curve and a benchmark number describe the same table.
+        # The benchmark's preprocessing, fitted only on context rows. The current
+        # protocol preserves all eligible features and fitted rows.
         from src.eval.protocol import fit_fold_preprocessing
 
         prep, Xc, yc = fit_fold_preprocessing(Xc, yc, list(cat_indices or []))
@@ -299,14 +327,14 @@ class ProgressTracker:
 
                 m = {k: v for k, v in m.items() if not k.startswith(BOUNDARY_KEYS)}
         else:
-            from src.eval.metrics import pd_metrics
+            from src.eval.metrics import multiclass_metrics, pd_metrics
 
             prob = np.asarray(pred["prob"], dtype=float)
             if not np.isfinite(prob).all():
                 # record() catches this per dataset and writes n_errors, which
                 # Experiment 0 requires to be zero before it can pass.
                 raise ValueError(f"Non-finite predictions ({np.mean(~np.isfinite(prob)):.1%} of PD queries)")
-            m = pd_metrics(yt, prob)
+            m = multiclass_metrics(yt, prob) if len(np.unique(yc)) > 2 else pd_metrics(yt, prob)
         out_m = {k: float(v) for k, v in m.items()
                  if isinstance(v, (int, float, np.floating, np.integer)) and not isinstance(v, bool)}
         if dropped:
@@ -360,8 +388,8 @@ class ProgressTracker:
             for entry in self._ood_datasets():
                 try:
                     Xo, yo, cats = load_ood_dataset(entry)
-                    if self.task == "pd" and len(np.unique(yo)) > 2:
-                        yo = (yo == np.bincount(yo.astype(int)).argmax()).astype(np.float32)
+                    if self.task == "pd":
+                        _, yo = np.unique(yo, return_inverse=True)
                     for k, v in self._score(model, f"ood/{entry.name}", np.asarray(Xo, np.float32),
                                             np.asarray(yo, np.float32), regression=self.task == "lgd",
                                             scale_target=self.task == "lgd",

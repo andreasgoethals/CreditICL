@@ -327,6 +327,33 @@ def recall_at_top_k(y_true: np.ndarray, p: np.ndarray, k_frac: float) -> float:
     return float(y_true[top].sum() / n_pos)
 
 
+def higher_is_better(metric: str) -> bool:
+    """Direction for selection and paired reporting, independent of plotting code."""
+    return metric in {"roc_auc", "pr_auc", "r2", "accuracy", "balanced_accuracy", "f1_macro",
+                      "f1_tuned", "spearman", "kendall", "gini", "brier_skill_score", "ap"}
+
+
+def multiclass_metrics(y_true: np.ndarray, probabilities: np.ndarray) -> dict[str, float]:
+    """Native multiclass retention: proper log loss, macro OVR AUC and argmax metrics."""
+    from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, log_loss, roc_auc_score
+
+    y = np.asarray(y_true, dtype=int)
+    p = np.asarray(probabilities, dtype=float)
+    if (p.ndim != 2 or p.shape[0] != len(y) or p.shape[1] < 3
+            or not np.isfinite(p).all() or (p < 0).any()
+            or not np.allclose(p.sum(axis=1), 1, atol=1e-5)):
+        raise ValueError("Invalid multiclass probability matrix")
+    labels = np.arange(p.shape[1])
+    predicted = p.argmax(axis=1)
+    return {"n_test": len(y), "n_classes": len(labels),
+            "roc_auc": float(roc_auc_score(y, p, multi_class="ovr", average="macro", labels=labels)),
+            "log_loss": float(log_loss(y, p, labels=labels)),
+            "accuracy": float(accuracy_score(y, predicted)),
+            "balanced_accuracy": float(balanced_accuracy_score(y, predicted)),
+            "f1_macro": float(f1_score(y, predicted, average="macro")),
+            "brier": float(np.mean(np.sum((p - np.eye(len(labels))[y]) ** 2, axis=1)))}
+
+
 def pd_metrics(y_true: np.ndarray, p: np.ndarray, *, decision_base_rate: float | None = None) -> dict[str, float]:
     """Everything we report for a PD prediction."""
     from sklearn.metrics import (

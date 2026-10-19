@@ -98,7 +98,7 @@ def apply_freezing(model: nn.Module, strategy: str) -> dict[str, Any]:
     constructs its rotary-embedding frequencies (`row_interactor.tf_row.rope.freqs`) with
     `requires_grad=False`; until 28-09-2026 this function first set every parameter trainable,
     so Experiment 1 learned the RoPE frequencies that TabICLv2 keeps constant. The equivalence
-    check against upstream's trainer (`scripts/check_equivalence.py`) found it: that one tensor
+    check against upstream's trainer (`src/validation/equivalence.py`) found it: that one tensor
     was the only parameter whose updates differed.
     """
     fixed_by_architecture = getattr(model, "_crediticl_fixed_params", None)

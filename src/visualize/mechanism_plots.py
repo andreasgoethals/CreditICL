@@ -377,53 +377,31 @@ def shift_kinds(config_path: str, n: int = 40, seed: int = 0):
 
 
 def informative_missingness(task: str, n_rows: int = 4000, seed: int = 0):
-    """The missing rate depends on the outcome (MNAR) — a thin file is itself a risk signal.
-
-    Applies the real `apply_informative_missingness` to a controlled (X, y) at two couplings — none,
-    and 1, the strongest the configs draw (`missing_target_coupling_range`) — and reads the missing
-    rate back off the was-missing indicator columns it appends.
-    """
-    torch.manual_seed(seed)
-    X = torch.randn(n_rows, 6)
-    if task == "pd":
-        y = (torch.rand(n_rows) < 0.2).float()
-    else:
-        y = torch.rand(n_rows).float()
-
+    """Missingness versus a known covariate score; no realised outcome enters the mask."""
+    generator = torch.Generator().manual_seed(seed)
+    # Shared feature variation makes the dependence interpretable in this controlled probe.
+    score = torch.randn(n_rows, generator=generator)
+    X = score[:, None].expand(-1, 6).clone()
     style.apply()
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.44))
-    for beta, color, label in [(0.0, style.MUTED, "completely at random (coupling 0)"),
-                               (1.0, style.CREDIT, "tied to the outcome (coupling 1)")]:
-        rng = PriorRNG(seed)
+    for beta, color, label in [(0.0, style.MUTED, "covariate-independent (coupling 0)"),
+                               (1.0, style.CREDIT, "covariate-dependent (coupling 1)")]:
         Xn, meta = apply_informative_missingness(
-            rng, X.clone(), y,
+            PriorRNG(seed), X.clone(),
             {"missing_col_fraction": 1.0, "missing_rate_range": [0.20, 0.20],
-             "missing_target_coupling": beta, "missing_indicators": True},
-            max_features=100,
-        )
+             "missing_risk_coupling": beta, "missing_indicators": True}, max_features=100)
         n_ind = int(meta["missing_indicators"])
-        if n_ind == 0:
+        if not n_ind:
             continue
-        miss = Xn[:, 6:6 + n_ind].numpy().mean(axis=1)  # per-row was-missing fraction
-        if task == "pd":
-            yv = y.numpy()
-            rates = [float(miss[yv == 0].mean()), float(miss[yv == 1].mean())]
-            ax.plot([0, 1], rates, "o-", color=color, label=label, markersize=6)
-            ax.set_xticks([0, 1]); ax.set_xticklabels(["non-default (y = 0)", "default (y = 1)"])
-            ax.set_xlim(-0.25, 1.25)
-            ax.set_xlabel("outcome of the row")
-        else:
-            yv = y.numpy()
-            edges = np.quantile(yv, np.linspace(0, 1, 7))
-            centers = 0.5 * (edges[:-1] + edges[1:])
-            rates = [float(miss[(yv >= lo) & (yv <= hi)].mean()) for lo, hi in zip(edges[:-1], edges[1:])]
-            ax.plot(centers, rates, "o-", color=color, label=label, markersize=5)
-            ax.set_xlabel("LGD outcome")
+        missing = Xn[:, 6:6 + n_ind].numpy().mean(axis=1)
+        values = score.numpy()
+        groups = np.array_split(np.argsort(values), 6)
+        ax.plot([values[g].mean() for g in groups], [missing[g].mean() for g in groups],
+                "o-", color=color, label=label, markersize=5)
+    ax.set_xlabel("covariate score (sextile means)")
     ax.set_ylabel("share of values missing")
     ax.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(1.0, decimals=0))
     ax.set_ylim(bottom=0)
-    if task != "pd":
-        ax.set_xlabel("LGD outcome (sextile midpoints)")
     style.legend_below(ax, ncol=2)
     return fig
 

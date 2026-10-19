@@ -71,6 +71,13 @@ class PriorRNG:
     def seed(self) -> int:
         return self._seed
 
+    def fork(self, component: str) -> PriorRNG:
+        """A stable component stream, unaffected by draws consumed by other mechanisms."""
+        import hashlib
+
+        seed = int.from_bytes(hashlib.blake2b(f"{self.seed}:{component}".encode(), digest_size=8).digest(), "big")
+        return PriorRNG(seed % (2**63 - 1))
+
     # -- state, for checkpointing -------------------------------------------
     def state_dict(self) -> dict[str, Any]:
         return {"seed": self._seed, "np": self.np.bit_generator.state, "torch": self.torch.get_state()}

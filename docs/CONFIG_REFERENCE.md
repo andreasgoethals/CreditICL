@@ -198,7 +198,7 @@ wide). Monotone, so every split a tree could make — and the dependence on the 
 
 **`prior.credit.missingness`** — gaps in a `missing_prob` share of tables, in a
 `missing_col_fraction_range` share of the columns, `missing_rate_range` missing each, their chance
-coupled to the target with a strength drawn from `missing_target_coupling_range` (all wide: the
+coupled to the target with a strength drawn from `missing_risk_coupling_range` (all wide: the
 literature says gaps are informative, not how often). Filled with the context mean under the `tabicl`
 encoding, left NaN under `raw`; `missing_indicators: true` is refused, since TabICL's prediction path
 adds no indicator.

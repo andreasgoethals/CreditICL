@@ -1,8 +1,8 @@
 """Find WHERE a trained checkpoint starts producing non-finite values.
 
-    python scripts/diagnose_nan.py
-    python scripts/diagnose_nan.py --datasets 0005.base_modelisation
-    python scripts/diagnose_nan.py --task pd --checkpoint <path>
+    python -m src.validation.diagnose_nan
+    python -m src.validation.diagnose_nan --datasets 0005.base_modelisation
+    python -m src.validation.diagnose_nan --task pd --checkpoint <path>
 
 WHAT IT FOUND, AND WHY IT IS KEPT
 
@@ -46,7 +46,7 @@ for _var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS",
              "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
     os.environ.setdefault(_var, os.environ.get("CREDITICL_DIAG_THREADS", "4"))
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 

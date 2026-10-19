@@ -423,7 +423,13 @@ def pd_vasicek(
 
     # Idiosyncratic part: the latent, mapped to a standard normal through its ranks
     # so the Vasicek algebra is on the right scale.
-    eps = _normal_icdf(_uniform_from_latent(y_latent))
+    # Mid-ranks collapse all tied scores onto one normal quantile and reduce the
+    # variance. Randomised PIT spreads each tied group over its CDF interval;
+    # borrower noise within a scorecard bin is independent of row order.
+    _, inverse, counts = torch.unique(y_latent, sorted=True, return_inverse=True, return_counts=True)
+    lower = (counts.cumsum(0) - counts).float()
+    u = (lower[inverse] + rng.rand(n) * counts[inverse]) / n
+    eps = _normal_icdf(u)
     # SIGNAL SHARE (added 28-09-2026): the share of the idiosyncratic variance the FEATURES
     # explain. At 1.0 — the only value before — eps IS the feature latent, so within one cohort
     # default is a deterministic threshold on the features: Exp1's credit tables scored a median
@@ -543,9 +549,7 @@ def apply_pd_mechanism(
     # Handed back (and popped by `apply_pd_target`) so the period can become a column.
     meta["_period_factor"] = shock
 
-    # A single-class Vasicek draw is unlearnable, but it must NOT crash the run: raising here
-    # escaped the dataloader and killed 6 PD mechanism arms on 26-08-2026 (job 11529827). The
-    # caller (`apply_pd_target`) rescues it with the same quantile-cut the quantile-mode path
-    # already applies, so report it and return rather than raising.
+    # Return the actual labels. TaskGenerator rejects/redraws invalid tables with a
+    # bounded retry budget; creating extra positives would change the mechanism.
     meta["single_class"] = bool(float(y.mean()) in (0.0, 1.0))
     return y, meta

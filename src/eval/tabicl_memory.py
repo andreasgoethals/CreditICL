@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from copy import deepcopy
-import logging
 import os
+import time
 from pathlib import Path
 import tempfile
 
@@ -18,8 +18,9 @@ import torch
 from tabicl._model.inference import InferenceManager, OffloadMode
 
 from src.utils.working_storage import work_root
+from src.utils.logging_setup import get_logger
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger()
 
 
 class _RetryOnDisk(RuntimeError):
@@ -38,18 +39,19 @@ class BoundedInferenceManager(InferenceManager):
     transfer_mb = 1024
 
     def __call__(self, *args, **kwargs):
+        started = time.monotonic()
         try:
-            return super().__call__(*args, **kwargs)
-        except _RetryOnDisk:
-            # Re-enter with DISK selected, so upstream's copy loop also uses
-            # periodic disk flushing. Returning a DiskTensor to its GPU branch
-            # would skip those flushes and accumulate dirty pages in host RAM.
-            previous = self.offload_mode
-            self.offload_mode = OffloadMode.DISK
             try:
                 return super().__call__(*args, **kwargs)
-            finally:
-                self.offload_mode = previous
+            except _RetryOnDisk:
+                previous = self.offload_mode
+                self.offload_mode = OffloadMode.DISK
+                try:
+                    return super().__call__(*args, **kwargs)
+                finally:
+                    self.offload_mode = previous
+        finally:
+            LOG.info("TabICL %s completed/returned after %.2fs", self.enc_name, time.monotonic() - started)
 
     def estimate_safe_batch_size(self, seq_len, include_inputs=True, in_dim=None, max_bs=50000):
         free, batch = super().estimate_safe_batch_size(seq_len, include_inputs=include_inputs,
@@ -130,6 +132,9 @@ def install(estimator) -> None:
         if isinstance(manager, InferenceManager):
             module.inference_mgr = BoundedInferenceManager(manager.enc_name, manager.out_dim, manager.out_no_seq)
     model.col_embedder.register_forward_pre_hook(_single_member_embeddings, with_kwargs=True)
+    from src.eval.tabicl_streaming import install_streaming
+
+    install_streaming(model)
 
 
 @contextmanager

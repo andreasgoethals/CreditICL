@@ -1,6 +1,7 @@
 """CPU and GPU Experiment 0 jobs, and a fail-closed production gate.
 
-Every invocation gets its own output namespace. A killed/failed invocation leaves
+Fresh invocations get their own namespace; explicit continuation reuses only
+byte-verified stages from the same campaign. A killed/failed invocation leaves
 RUNNING/FAILED, never a stale PASS from an earlier job. The receipt binds tests,
 code, configuration, packages, input data, weights and output artifacts.
 """
@@ -23,8 +24,40 @@ from pathlib import Path
 from src.utils import paths
 from src.utils.config import expand_with_seeds, load, run_name
 
-SCHEMA = 2
+SCHEMA = 3
 ATTEMPT_ENV = "CREDITICL_EXP0_ATTEMPT"
+
+
+class ValidationDeferred(TimeoutError):
+    """Allocation ended; continue the same immutable campaign in another job."""
+
+
+@contextmanager
+def interruption_signals():
+    """Publish an incomplete receipt on a catchable allocation termination.
+
+    execute() unwinds through its process-tree cleanup before the receipt is
+    published. SIGKILL cannot be caught; a leftover RUNNING receipt never passes
+    readiness and still requires verified artifacts before continuation.
+    """
+    received = False
+
+    def interrupt(signum, _frame):
+        nonlocal received
+        if not received:
+            received = True
+            raise ValidationDeferred(f"{signal.Signals(signum).name} received; validation interrupted, not passed")
+
+    previous = {}
+    try:
+        for name in ("SIGTERM", "SIGINT", "SIGHUP"):
+            sig = getattr(signal, name, None)
+            if sig is not None:
+                previous[sig] = signal.signal(sig, interrupt)
+        yield
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
 
 
 @dataclass(frozen=True)
@@ -53,7 +86,7 @@ def plan(phase: str = "gpu") -> list[Stage]:
         ("vsc", ("tests/test_vsc.py", "--run-vsc", "-x"), False),
     )
     if phase == "cpu":
-        stages.insert(0, Stage("preprocess", (py, "scripts/preprocess.py", "--task", "both")))
+        stages.insert(0, Stage("preprocess", (py, "-m", "src.data.preprocess", "--task", "both")))
     for name, args, cpu in (suites[:1] if phase == "cpu" else suites[1:]):
         junit = str(report / f"{name}.xml")
         stages.append(Stage(name, (py, "-m", "pytest", "-q", *args, f"--junitxml={junit}"),
@@ -62,9 +95,10 @@ def plan(phase: str = "gpu") -> list[Stage]:
     sections = CHECK_SECTIONS - {"train"} - gpu_sections if phase == "cpu" else gpu_sections
     for section in sorted(sections):
         folder = report / section
-        stages.append(Stage(f"check-{section}", (py, "scripts/exp0_checks.py", "--only", section,
+        stages.append(Stage(f"check-{section}", (py, "-m", "src.validation.checks", "--only", section,
                                                  "--out", str(folder)), report=str(folder / "checks.json")))
     if phase == "cpu":
+        stages.append(Stage("notebooks", (py, "-m", "src.utils.run_notebooks", "--workers", "2"), cpu=True))
         return stages
     for track in paths.TASKS:
         config = f"config/Exp0_{track.upper()}.yaml"
@@ -72,10 +106,10 @@ def plan(phase: str = "gpu") -> list[Stage]:
         for run in runs:
             folder = report / f"train-{track}-{run['arm']}"
             stages.append(Stage(f"smoke-{track}-{run['arm']}",
-                                (py, "scripts/exp0_checks.py", "--only", "train", "--track", track,
+                                (py, "-m", "src.validation.checks", "--only", "train", "--track", track,
                                  "--arm", run["arm"], "--out", str(folder)),
                                 report=str(folder / "checks.json")))
-        stages.append(Stage(f"equivalence-{track}", (py, "scripts/check_equivalence.py", "--config",
+        stages.append(Stage(f"equivalence-{track}", (py, "-m", "src.validation.equivalence", "--config",
                             f"config/Exp1_{track.upper()}.yaml", "--index", "0", "--steps", "20",
                             "--device", "cuda")))
         for index, run in enumerate(runs):
@@ -205,20 +239,51 @@ def kill_process_tree(proc: subprocess.Popen) -> None:
 
 def execute(stage: Stage, log: Path, *, timeout: float) -> dict:
     """Bounded child processes isolate poisoned CUDA contexts and worker leaks."""
+    from src.eval.progress import DEADLINE_ENV, PROGRESS_ENV, atomic_json
+
+    if timeout <= 0:
+        raise ValidationDeferred("Allocation budget exhausted before the next stage")
+
     env = dict(os.environ, PYTHONHASHSEED="0", PYTHONUNBUFFERED="1")
+    progress = None
+    if any(Path(arg).name in ("evaluate.py", "evaluate_ood.py") for arg in stage.command):
+        progress = log.parent.parent / "report" / "timing" / f"{stage.name}.json"
+        atomic_json(progress, dict(cell=None, started=None, completed=0))
+        env[PROGRESS_ENV] = str(progress)
+        env[DEADLINE_ENV] = str(time.time() + timeout)
+    else:
+        env.pop(PROGRESS_ENV, None)
+        env.pop(DEADLINE_ENV, None)
     if stage.cpu:
         env["CUDA_VISIBLE_DEVICES"] = ""
         env.pop(ATTEMPT_ENV, None)  # portable tests use their own temporary output fixtures
     started = time.monotonic()
+    last_heartbeat = started
     signalled = False
     log.parent.mkdir(parents=True, exist_ok=True)
-    with log.open("w", encoding="utf-8") as fh:
+    with log.open("a", encoding="utf-8") as fh:
+        fh.write(f"\n[allocation {os.environ.get('SLURM_JOB_ID', 'local')}] {datetime.now(UTC).isoformat()}\n")
+        fh.flush()
         proc = subprocess.Popen(stage.command, cwd=paths.REPO_ROOT, env=env, stdout=fh,
                                 stderr=subprocess.STDOUT, start_new_session=(os.name == "posix"))
         try:
             while proc.poll() is None:
                 if time.monotonic() - started > timeout:
-                    raise TimeoutError(f"{stage.name} exceeded its remaining time budget")
+                    raise ValidationDeferred(f"{stage.name}: allocation budget exhausted; completed folds remain saved")
+                if progress:
+                    status = json.loads(progress.read_text(encoding="utf-8"))
+                    if status.get("started") and time.time() - status["started"] > 2 * 3600:
+                        raise RuntimeError(f"{stage.name}: cell {status['cell']} exceeded the two-hour Exp0 guard; "
+                                           "stop and inspect performance before another allocation")
+                if time.monotonic() - last_heartbeat >= 60:
+                    import psutil
+
+                    with suppress(psutil.Error):
+                        process = psutil.Process(proc.pid)
+                        rss = sum(p.memory_info().rss for p in [process, *process.children(recursive=True)])
+                        print(f"[Experiment 0] {stage.name}: running {(time.monotonic()-started)/60:.1f} min; "
+                              f"process-tree RSS {rss / 2**30:.2f} GiB", flush=True)
+                    last_heartbeat = time.monotonic()
                 if stage.stop_run and not signalled:
                     from src.train.checkpoint import latest_checkpoint
                     from src.utils.working_storage import checkpoint_work_dir
@@ -227,12 +292,17 @@ def execute(stage: Stage, log: Path, *, timeout: float) -> dict:
                     if checkpoint is not None:
                         proc.send_signal(signal.SIGUSR1)
                         signalled = True
+                elif stage.phase == "training" and not signalled and timeout - (time.monotonic() - started) < 120:
+                    proc.send_signal(signal.SIGUSR1)
+                    signalled = True
                 time.sleep(1)
             rc = proc.returncode
         finally:
             # Even a crashed parent can leave DataLoader workers behind on the GPU node.
             kill_process_tree(proc)
     expected = 64 if stage.stop_run else 0
+    if rc == 64 and not stage.stop_run and (progress is not None or stage.name.startswith("resume-")):
+        raise ValidationDeferred(f"{stage.name}: saved progress; next allocation can continue")
     if rc != expected or (stage.stop_run and not signalled):
         raise RuntimeError(f"{stage.name}: exit={rc}, expected={expected}; read {log}")
     detail = {"seconds": round(time.monotonic() - started, 2), "log": str(log)}
@@ -248,6 +318,60 @@ def execute(stage: Stage, log: Path, *, timeout: float) -> dict:
         if not saved.get("rows") or saved.get("failed") != 0 or any(r["status"] == "FAIL" for r in saved["rows"]):
             raise ValueError(f"Failed or empty check report: {stage.report}")
     return detail
+
+
+def stage_artifacts(stage, log):
+    """Immutable evidence for one finished stage, safe to reuse on continuation."""
+    from src.eval.benchmark_status import digest, receipt_path as benchmark_receipt
+
+    files = [log, *(Path(p) for p in (stage.junit, stage.report) if p)]
+    command = stage.command
+    if "--tag" in command:
+        tag = command[command.index("--tag") + 1]
+        if "scripts/evaluate.py" in command:
+            task = command[command.index("--task") + 1]
+            output = paths.benchmark_dir_for(tag, task) / f"results_{tag}.csv"
+        else:
+            output = paths.benchmark_dir_for(tag, "ood") / f"ood_results_{tag}.csv"
+        files.extend([output, output.with_suffix(".progress.json")])
+    if stage.name.startswith("receipt-"):
+        from src.eval.benchmark_status import slot_for
+        _, track, index = stage.name.split("-")
+        files.append(benchmark_receipt(slot_for(0, track, int(index)).tag))
+    if stage.name.startswith("resume-"):
+        _, track, index = stage.name.split("-")
+        run = expand_with_seeds(load(f"config/Exp0_{track.upper()}.yaml"))[int(index)]
+        name = run_name(run)
+        files.extend(paths.run_dir(name) / f for f in ("config.json", "summary.json", "progress.csv",
+                                                      "weights.csv", "telemetry.csv"))
+        files.append(paths.run_checkpoints_dir(name) / f"step-{run['train']['max_steps']}.ckpt")
+    return {str(p.resolve()): digest(p) for p in files if p.is_file()}
+
+
+def verify_continuation(saved, phase):
+    """Refuse stale, failed or modified evidence; never silently start over."""
+    from src.eval.benchmark_status import input_digest
+    from src.utils.environment import environment_fingerprint
+    from src.utils.preflight import source_fingerprint
+
+    if saved.get("schema") != SCHEMA or saved.get("phase") != phase:
+        raise ValueError("Old validation format; start a fresh CPU/GPU campaign")
+    if saved.get("status") not in ("DEFERRED", "RUNNING", "PASS"):
+        raise ValueError("Validation failed; inspect its error before starting a fresh campaign")
+    if saved.get("source_fingerprint") != source_fingerprint() or saved.get("environment_fingerprint") != environment_fingerprint():
+        raise ValueError("Code/config/tests/packages changed; a fresh CPU/GPU campaign is required")
+    if saved.get("inputs") != input_inventory():
+        raise ValueError("Inputs changed; cannot continue this campaign")
+    if phase == "gpu" and saved.get("cpu_receipt") != input_digest(receipt_path("cpu")):
+        raise ValueError("CPU receipt changed; cannot continue this campaign")
+    expected = [stage.name for stage in plan(phase)]
+    finished = saved.get("stages", [])
+    if [s["name"] for s in finished] != expected[:len(finished)] or any(s["status"] != "PASS" for s in finished):
+        raise ValueError("Invalid completed-stage prefix")
+    for stage in finished:
+        artifacts = stage.get("artifacts")
+        if artifacts is None or any(input_digest(Path(p)) != h for p, h in artifacts.items()):
+            raise ValueError(f"Completed stage evidence changed: {stage['name']}")
 
 
 def collect_artifacts(stages: list[Stage], phase: str = "gpu") -> dict[str, str]:
@@ -307,13 +431,27 @@ def readiness(phase: str = "gpu") -> list:
     from src.utils.preflight import Check, source_fingerprint
 
     try:
+        saved = json.loads(receipt_path(phase).read_text(encoding="utf-8"))
+        if saved.get("schema") != SCHEMA:
+            raise ValueError(f"Stored {phase} receipt {saved.get('attempt', '?')} uses old validation format "
+                             f"{saved.get('schema')}; current format is {SCHEMA}. "
+                             "Its recorded status is not a live scheduler status or validation of the current code")
         if phase == "gpu":
             cpu = readiness("cpu")
             if not cpu[0].ok:
                 raise ValueError(cpu[0].detail)
-        saved = json.loads(receipt_path(phase).read_text(encoding="utf-8"))
-        if saved.get("schema") != SCHEMA or saved.get("status") != "PASS":
-            raise ValueError(f"Latest Experiment 0 status: {saved.get('status', 'missing')}")
+        if phase == "gpu" and saved.get("status") in ("RUNNING", "DEFERRED"):
+            with attempt_scope(saved["attempt"]):
+                verify_continuation(saved, phase)
+            job = saved.get("allocations", [{}])[-1].get("job", "unknown")
+            return [Check("Experiment 0 gpu", False,
+                          f"Recorded {saved['status']}: {len(saved['stages'])}/{len(plan(phase))} stages saved. "
+                          f"This is not a live scheduler check; check sacct for allocation {job}. "
+                          "After the current allocation ends, resubmit the same GPU script; "
+                          "keep the CPU receipt, code, packages and inputs unchanged.")]
+        if saved.get("status") != "PASS":
+            raise ValueError(f"Recorded Experiment 0 status: {saved.get('status', 'missing')}; "
+                             "this is not a live scheduler check")
         with attempt_scope(saved["attempt"]):
             if saved.get("source_fingerprint") != source_fingerprint():
                 raise ValueError("Code/config/tests changed since Experiment 0")
@@ -335,7 +473,7 @@ def readiness(phase: str = "gpu") -> list:
         return [Check(f"Experiment 0 {phase}", False, f"{exc}. Run the CPU job, then the GPU job, for the current code.")]
 
 
-def run_validation(*, hours: float = 23.5, phase: str = "gpu") -> int:
+def run_validation(*, hours: float = 23.5, phase: str = "gpu", resume: bool = False) -> int:
     from filelock import FileLock
 
     from src.utils.environment import environment_fingerprint
@@ -345,11 +483,26 @@ def run_validation(*, hours: float = 23.5, phase: str = "gpu") -> int:
         raise RuntimeError("Submit an Experiment 0 Slurm script; validation requires a Linux Slurm allocation")
     pointer = receipt_path(phase)
     pointer.parent.mkdir(parents=True, exist_ok=True)
-    with FileLock(str(receipt_path().with_suffix(".lock")), timeout=0):
-        attempt = phase + "_" + datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + f"_j{os.environ['SLURM_JOB_ID']}_{uuid.uuid4().hex[:8]}"
+    with FileLock(str(receipt_path().with_suffix(".lock")), timeout=0), interruption_signals():
+        previous = json.loads(pointer.read_text(encoding="utf-8")) if resume and pointer.exists() else None
+        attempt = previous["attempt"] if previous else (
+            phase + "_" + datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + f"_j{os.environ['SLURM_JOB_ID']}_{uuid.uuid4().hex[:8]}")
         with attempt_scope(attempt):
-            saved = {"schema": SCHEMA, "phase": phase, "status": "RUNNING", "attempt": attempt, "stages": [],
-                     "source_fingerprint": source_fingerprint(), "environment_fingerprint": environment_fingerprint()}
+            if previous:
+                try:
+                    verify_continuation(previous, phase)
+                except (ValueError, KeyError, OSError) as exc:
+                    print(f"Experiment 0 continuation REFUSED: {exc}", flush=True)
+                    return 1
+                if previous["status"] == "PASS":
+                    checks = readiness(phase)
+                    print(checks[0].detail, flush=True)
+                    return 0 if checks[0].ok else 1
+            saved = previous or {"schema": SCHEMA, "phase": phase, "attempt": attempt, "stages": [],
+                                  "source_fingerprint": source_fingerprint(), "environment_fingerprint": environment_fingerprint()}
+            saved.update(status="RUNNING")
+            saved.pop("error", None)
+            saved.setdefault("allocations", []).append(dict(job=os.environ["SLURM_JOB_ID"], started=datetime.now(UTC).isoformat()))
             history = paths.experiment_dir(0) / "report" / "validation.json"
 
             def publish():
@@ -369,6 +522,9 @@ def run_validation(*, hours: float = 23.5, phase: str = "gpu") -> int:
                 if phase == "gpu":
                     saved["inputs"] = input_inventory()
                 for stage in stages:
+                    if any(s["name"] == stage.name for s in saved["stages"]):
+                        print(f"[Experiment 0] REUSE {stage.name}: verified completed stage", flush=True)
+                        continue
                     if any(s["status"] == "FAIL" for s in saved["stages"]) and stage.phase != "diagnostics":
                         raise RuntimeError("Diagnostics failed; longer training/benchmark stages were not started")
                     print(f"[Experiment 0] START {stage.name}", flush=True)
@@ -378,6 +534,9 @@ def run_validation(*, hours: float = 23.5, phase: str = "gpu") -> int:
                     try:
                         row.update(execute(stage, log,
                                            timeout=max(0, deadline - time.monotonic())))
+                        row["artifacts"] = stage_artifacts(stage, log)
+                    except ValidationDeferred:
+                        raise
                     except Exception as exc:
                         row.update(status="FAIL", error=f"{type(exc).__name__}: {exc}",
                                    seconds=round(time.monotonic() - started, 2),
@@ -386,7 +545,7 @@ def run_validation(*, hours: float = 23.5, phase: str = "gpu") -> int:
                     if phase == "cpu" and stage.name == "preflight" and row["status"] == "PASS":
                         saved["inputs"] = input_inventory()
                     publish()
-                    print(f"[Experiment 0] { {k: value for k, value in row.items() if k != 'log_tail'} }", flush=True)
+                    print(f"[Experiment 0] { {k: value for k, value in row.items() if k not in ('log_tail', 'artifacts')} }", flush=True)
                     if row.get("log_tail"):
                         print(f"[Experiment 0] Last lines of {stage.name}:\n{row['log_tail']}", flush=True)
                     if row["status"] == "FAIL" and (stage.name in ("preflight", "preprocess", "vsc") or stage.phase != "diagnostics"):
@@ -400,6 +559,8 @@ def run_validation(*, hours: float = 23.5, phase: str = "gpu") -> int:
                 # Exp0 probes only selected tables; never publish these partial
                 # reference results into the production benchmark namespace.
                 saved["status"] = "PASS"
+            except ValidationDeferred as exc:
+                saved.update(status="DEFERRED", error=str(exc))
             except Exception as exc:
                 saved.update(status="FAILED", error=f"{type(exc).__name__}: {exc}")
             finally:
@@ -407,7 +568,7 @@ def run_validation(*, hours: float = 23.5, phase: str = "gpu") -> int:
             if saved.get("error"):
                 print(f"[Experiment 0] {saved['error']}", flush=True)
             print(f"Experiment 0 {saved['status']}: {pointer}", flush=True)
-            return 0 if saved["status"] == "PASS" else 1
+            return 0 if saved["status"] == "PASS" else (64 if saved["status"] == "DEFERRED" else 1)
 
 
 def main(argv=None) -> int:
@@ -415,9 +576,10 @@ def main(argv=None) -> int:
     ap.add_argument("--plan", action="store_true", help="print stages without executing or writing")
     ap.add_argument("--phase", choices=("cpu", "gpu"), required=True)
     ap.add_argument("--hours", type=float, default=None)
+    ap.add_argument("--resume", action="store_true", help="continue the same verified campaign after walltime")
     args = ap.parse_args(argv)
     if args.plan:
         for stage in plan(args.phase):
             print(f"{stage.phase:12} {stage.name}")
         return 0
-    return run_validation(phase=args.phase, hours=args.hours or (3.8 if args.phase == "cpu" else 23.5))
+    return run_validation(phase=args.phase, hours=args.hours or (3.8 if args.phase == "cpu" else 23.5), resume=args.resume)

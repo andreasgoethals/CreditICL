@@ -4,13 +4,13 @@ Run this BEFORE any real submission. It is also the pre-flight step inside the
 SLURM scripts, so a broken environment costs seconds instead of a queue wait
 plus a dead array.
 
-    python -m src.utils.smoke_test --task lgd --steps 2
-    python -m src.utils.smoke_test --task pd  --steps 2 --report
+    python -m src.validation.smoke --task lgd --steps 2
+    python -m src.validation.smoke --task pd  --steps 2 --report
 
 `--report` also prints what the prior actually produced: boundary mass for LGD,
 base rate for PD, plus the filter's rejection statistics. That is the quickest
 way to see whether the credit path is doing what it claims. It is a smaller
-version of scripts/measure_prior.py.
+version of src/prior/measure.py.
 
 Tables are tiny, so this is safe on a login node and free on the `interactive`
 partition. It DOES use the GPU, AMP and a multi-worker DataLoader when a GPU is
@@ -27,7 +27,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 

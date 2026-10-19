@@ -128,13 +128,9 @@ def test_realism_ranking_orders_variants_best_first():
     assert labels[0] == "credit prior", f"expected the closer prior first, got {labels}"
 
 
-def test_realism_rescales_a_standardised_target_instead_of_clipping_it():
-    """Clipping the original prior's standard-scaled target to [0, 1] turned every negative value
-    into an exact 0 — a boundary atom the prior does not have. Min-max scaling keeps the shape."""
-    y = np.linspace(-2.0, 2.0, 101)
-    unit = e1._unit_target(y)
-    assert unit.min() == 0.0 and unit.max() == 1.0
-    assert np.mean(unit == 0.0) < 0.02, "a clip would put half the rows on 0"
+def test_realism_rejects_standardised_targets_without_a_loss_fraction_scale():
+    with pytest.raises(ValueError, match="unbounded"):
+        e1._unit_target(np.linspace(-2.0, 2.0, 101))
     already = np.array([0.0, 0.3, 1.0])
     assert np.array_equal(e1._unit_target(already), already)
 

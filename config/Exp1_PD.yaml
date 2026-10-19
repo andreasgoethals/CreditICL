@@ -54,7 +54,7 @@ prior:
     max_cat_size: 200 # legacy upstream sampler effectively draws 2-9 levels
     category_frequency: balanced # how category counts are distributed
 
-  credit: # OUR credit prior. Every range is from the credit-risk literature or deliberately wide; none is set from the evaluation data (docs/PRIORS.md)
+  credit: # OUR credit prior. Literature-motivated ranges; earlier benchmark inspection influenced the structure (docs/PRIORS.md)
     use_corrected_cat_sizes: true # upstream opt-in sampler; legacy sampler never exceeds 9 levels
     max_cat_size: 500 # credit has state, region, product codes — high cardinality
     category_frequency: balanced # as the control
@@ -95,7 +95,7 @@ prior:
       missing_prob: 0.5 # share of tables with any missing values — uninformative
       missing_col_fraction_range: [0.05, 1.0] # share of columns with gaps, per table — wide
       missing_rate_range: [0.01, 0.5] # how much is missing in those columns — wide
-      missing_target_coupling_range: [0.0, 1.0] # how strongly a gap depends on default, per table — wide
+      missing_risk_coupling_range: [0.0, 1.0] # how strongly a gap depends on borrower covariates, per table — wide
       missing_indicators: false # TabICL's prediction path adds none; the signal lives in the filled value
 
     noise_features:
@@ -166,7 +166,7 @@ logging:
   log_grad_every: 250 # steps between per-block gradient-norm reports; 0 disables
 
 # ----------------------------------------------------------------------------
-# EVALUATION — frozen before any prior tuning
+# EVALUATION — fixed for this rerun; historical benchmark exposure is disclosed in docs/PRIORS.md
 # ----------------------------------------------------------------------------
 eval:
   data_dir: data/raw/pd # where the real datasets live
@@ -175,5 +175,5 @@ eval:
   dev_datasets: [0001.gmsc, 0004.lendingclub, 0006.hackerearth, 0002.taiwan_creditcard, 0008.german, 0005.myhom] # used to choose the prior
   holdout_datasets: [0003.vehicle_loan, 0007.cobranded, 0009.bank_status,
                      0010.thomas, 0011.loan_default, 0012.home_credit, 0013.hmeq,
-                     0014.algorithmwatch] # untouched until the end
+                     0014.algorithmwatch] # excluded from selection in this rerun; previously inspected
   select_on: dev # dev | holdout — anything but `dev` here invalidates the experiment

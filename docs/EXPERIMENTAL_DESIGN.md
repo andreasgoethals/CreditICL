@@ -99,11 +99,12 @@ a *family* over boundary mass and base rate, not a single shape — else it over
 All share the same real datasets and the same frozen evaluation ([§5](#5-evaluation)).
 `credit_fraction` is the master switch throughout: the share of each batch drawn from our
 credit-targeted path, the rest from the unmodified TabICL prior; `0.0` is the control. **The credit
-prior is the same in every experiment and every number in it comes from the credit-risk literature or
-is deliberately wide — none from the evaluation datasets** ([PRIORS.md](PRIORS.md) §5). A
-development change on 28-09-2026 calibrated the prior to all 21 evaluation datasets, including
-holdout; it was removed on 29-09. That change postdates the completed September campaign and
-must not be attributed to its 90 checkpoints.
+prior is the same in every experiment.** Current ranges use literature and broad assumptions
+([PRIORS.md](PRIORS.md) §5), but mechanism design was informed by these benchmark datasets.
+The designated holdout was previously inspected. Removing the 28-09 numerical calibration on
+29-09 does not undo that design exposure; external confirmation requires new data. That short-lived
+calibration change postdates the September campaign and must not be attributed to its checkpoints.
+
 
 | | **Exp0 — does it run?** | **Exp1 — does the prior help, all else equal?** | **Exp2 — is it useful for the real models?** | **Exp3 — run long** |
 |---|---|---|---|---|
@@ -132,11 +133,21 @@ reproducing upstream's full multi-stage, long-context training curriculum.
 
 The component study was accepted on 13-10-2026: five removals at the fixed 50% mixture,
 three paired seeds each, in `Exp1_{PD,LGD}_ablations.yaml`. Remove separately (1) the macroeconomic
-term in the target, (2) the dependence of missingness on the target (retain missing values),
+term in the target, (2) the dependence of missingness on borrower covariates (retain missing values),
 (3) context/query shifts, (4) the marginal tail warp, and (5) the credit categorical ceiling
 (restore the upstream categorical sampler, whose legacy effective ceiling is nine). Architecture, optimizer and task budget stay fixed. These are
 predeclared mechanism comparisons against the main 50% arm, not candidates selected on holdout
 performance. Only final ablation checkpoints are scored; main arms supply the learning curves.
+Random streams for targets, marginals, noise, shifts, row order and missingness are independent.
+Removing a postprocessing component therefore does not advance unrelated random draws. The
+categorical-ceiling removal changes the upstream sampled graph distribution and is a distributional
+ablation; it does not promise identical latent graphs or labels. Selection can alter realised class
+rates legitimately; the advertised PD range describes applicants, not accepted books.
+
+Selection remains predeclared development ROC-AUC (PD) and R² (LGD). Log-loss and LGD
+boundary-mass/CRPS comparisons are secondary hypothesis tests, reported alongside those primary
+metrics rather than used to change the winning mixture after seeing results.
+
 This adds 15 runs per track to the nine main runs, 48 in total. Component groups follow the
 controlled-ablation principle in `tfm-library/papers/text/2026/05_Bouadi_et_al._Shaping_the_Prior_How_Synthetic_Task_Distributions_Determine_Tabular_Foundation_Model_Quality.txt`;
 that paper studies general classification, not the credit-risk mechanisms here.

@@ -1,12 +1,13 @@
 """Execution and provenance tests for the GPU Experiment 0 gate."""
 import json
 import os
+import signal
 import sys
 
 import pytest
 
 from src.utils import paths
-from src.utils import validation as v
+from src.validation import campaign as v
 
 
 def test_attempt_isolates_both_tiers_and_reference_without_touching_exp1(isolated_output):
@@ -100,6 +101,43 @@ def test_timeout_terminates_child(tmp_path):
     stage = v.Stage("timeout", (sys.executable, "-c", "import time; time.sleep(60)"))
     with pytest.raises(TimeoutError):
         v.execute(stage, tmp_path / "timeout.log", timeout=.1)
+
+
+def test_interruption_cleans_up_running_child(tmp_path, monkeypatch):
+    processes = []
+    popen = v.subprocess.Popen
+
+    def launch(*args, **kwargs):
+        processes.append(popen(*args, **kwargs))
+        return processes[-1]
+
+    def interrupt(_seconds):
+        signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+
+    monkeypatch.setattr(v.subprocess, "Popen", launch)
+    monkeypatch.setattr(v.time, "sleep", interrupt)
+    previous = signal.getsignal(signal.SIGTERM)
+    stage = v.Stage("interrupted", (sys.executable, "-c", "import time; time.sleep(60)"))
+    with pytest.raises(v.ValidationDeferred, match="SIGTERM"), v.interruption_signals():
+        v.execute(stage, tmp_path / "interrupted.log", timeout=30)
+    assert len(processes) == 1 and processes[0].poll() is not None
+    assert signal.getsignal(signal.SIGTERM) == previous
+
+
+def test_slow_benchmark_cell_fails_early_instead_of_repeating_allocation(tmp_path):
+    script = tmp_path / "evaluate.py"
+    script.write_text("import os,time\nfrom src.eval.progress import atomic_json,PROGRESS_ENV\n"
+                      "atomic_json(os.environ[PROGRESS_ENV],dict(cell='wide fold',started=time.time()-7201))\n"
+                      "time.sleep(60)\n")
+    stage = v.Stage("credit-pd-3", (sys.executable, str(script)), phase="capacity")
+    with pytest.raises(RuntimeError, match="two-hour"):
+        v.execute(stage, tmp_path / "logs" / "slow.log", timeout=30)
+
+
+def test_expired_allocation_does_not_launch_a_new_process(monkeypatch, tmp_path):
+    monkeypatch.setattr(v.subprocess, "Popen", lambda *a, **k: pytest.fail("launched after deadline"))
+    with pytest.raises(v.ValidationDeferred):
+        v.execute(v.Stage("unused", ()), tmp_path / "log", timeout=0)
 
 
 def fake_campaign(monkeypatch, isolated_output):
@@ -208,6 +246,120 @@ def test_rerunning_cpu_invalidates_the_older_gpu_pass(monkeypatch, isolated_outp
     assert not v.readiness()[0].ok
 
 
+@pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGINT])
+def test_signal_publishes_incomplete_receipt_and_preserves_completed_stages(monkeypatch, isolated_output, sig):
+    fake_campaign(monkeypatch, isolated_output)
+    previous = signal.getsignal(sig)
+    original = v.execute
+
+    def interrupt(stage, log, **kwargs):
+        if stage.name == "check":
+            signal.getsignal(sig)(sig, None)
+        return original(stage, log, **kwargs)
+
+    monkeypatch.setattr(v, "execute", interrupt)
+    assert v.run_validation() == 64
+    saved = json.loads(v.receipt_path().read_text())
+    assert saved["status"] == "DEFERRED"
+    assert signal.Signals(sig).name in saved["error"]
+    assert [s["name"] for s in saved["stages"]] == ["preflight"]
+    assert not v.readiness()[0].ok
+    assert signal.getsignal(sig) == previous
+    monkeypatch.setattr(v, "execute", original)
+    assert v.run_validation(resume=True) == 0
+    assert json.loads(v.receipt_path().read_text())["attempt"] == saved["attempt"]
+
+
+def test_old_running_receipt_is_identified_as_old_evidence_not_a_live_job(isolated_output):
+    v.write_json(v.receipt_path(), {"schema": 2, "phase": "gpu", "status": "RUNNING",
+                                  "attempt": "gpu_20261015T084304Z_j11692660_c29a3510"})
+    row = v.readiness()[0]
+    assert not row.ok
+    assert "11692660" in row.detail and "old validation format" in row.detail
+    assert "not a live scheduler status" in row.detail
+
+
+def test_preflight_does_not_forbid_the_validation_continuation_it_recommends(monkeypatch, capsys):
+    from src.utils import preflight
+
+    monkeypatch.setattr(preflight, "run_checks", lambda **kw: [])
+    monkeypatch.setattr(preflight, "experiment_zero_checks", lambda **kw: [
+        preflight.Check("Experiment 0 gpu", False, "DEFERRED: resubmit the same GPU script")])
+    assert preflight.main(["--require-exp0"]) == 1
+    text = capsys.readouterr().out
+    assert "resubmit the same GPU script" in text
+    assert "Do not launch Experiments 1-3" in text
+    assert "Do not submit GPU jobs" not in text
+
+
+@pytest.mark.parametrize("hard_kill", [False, True])
+def test_walltime_continues_same_campaign_and_reuses_verified_stages(monkeypatch, isolated_output, hard_kill):
+    fake_campaign(monkeypatch, isolated_output)
+    ran, pause = [], [True]
+
+    def execute(stage, log, **kwargs):
+        ran.append(stage.name)
+        if stage.name == "check" and pause[0]:
+            pause[0] = False
+            raise v.ValidationDeferred("allocation ended")
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text(f"passed {stage.name}")
+        return {}
+
+    monkeypatch.setattr(v, "execute", execute)
+    assert v.run_validation() == 64
+    previous = json.loads(v.receipt_path().read_text())
+    assert previous["status"] == "DEFERRED" and len(previous["stages"]) == 1
+    assert not v.readiness()[0].ok
+    assert "resubmit the same GPU script" in v.readiness()[0].detail
+    if hard_kill:
+        # Slurm SIGKILL can prevent the final DEFERRED publication. The last
+        # atomic RUNNING receipt still has the same verified completed prefix.
+        previous["status"] = "RUNNING"
+        v.write_json(v.receipt_path(), previous)
+    assert v.run_validation(resume=True) == 0
+    current = json.loads(v.receipt_path().read_text())
+    assert current["attempt"] == previous["attempt"]
+    assert len(current["allocations"]) == 2
+    assert ran == ["preflight", "check", "check", "train"]
+    assert v.readiness()[0].ok
+    assert v.run_validation(resume=True) == 0
+    assert ran == ["preflight", "check", "check", "train"]
+
+
+@pytest.mark.parametrize("change", ["source", "environment", "inputs", "cpu", "artifact", "failed"])
+def test_continuation_refuses_changed_campaign_without_spending_compute(monkeypatch, isolated_output, change):
+    fake_campaign(monkeypatch, isolated_output)
+
+    def execute(stage, log, **kwargs):
+        if stage.name == "check":
+            raise v.ValidationDeferred("walltime")
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text("completed")
+        return {}
+
+    monkeypatch.setattr(v, "execute", execute)
+    assert v.run_validation() == 64
+    saved = json.loads(v.receipt_path().read_text())
+    if change == "source":
+        monkeypatch.setattr("src.utils.preflight.source_fingerprint", lambda: "changed")
+    elif change == "environment":
+        monkeypatch.setattr("src.utils.environment.environment_fingerprint", lambda: "changed")
+    elif change == "inputs":
+        monkeypatch.setattr(v, "input_inventory", lambda: {})
+    elif change == "cpu":
+        v.receipt_path("cpu").write_text("changed")
+    elif change == "artifact":
+        from pathlib import Path
+        Path(next(iter(saved["stages"][0]["artifacts"]))).write_text("changed")
+    else:
+        saved["status"] = "FAILED"
+        v.write_json(v.receipt_path(), saved)
+    monkeypatch.setattr(v, "execute", lambda *a, **k: pytest.fail("spent compute on stale campaign"))
+    assert v.run_validation(resume=True) == 1
+    assert json.loads(v.receipt_path().read_text())["attempt"] == saved["attempt"]
+
+
 @pytest.mark.parametrize("changed", ["nothing", "artifact", "input", "source", "environment", "stage", "running"])
 def test_readiness_requires_current_complete_evidence(monkeypatch, isolated_output, changed):
     import src.utils.environment as environment
@@ -245,7 +397,7 @@ def test_diagnostic_pass_cannot_overwrite_production_reference(monkeypatch, isol
 
 
 def test_download_verifier_reports_failed_and_unrun_stages(tmp_path):
-    from src.utils.exp0_verify import FAIL, verify
+    from src.validation.verify import FAIL, verify
 
     v.write_json(tmp_path / "experiment_0/report/validation.json", {
         "schema": v.SCHEMA, "attempt": "failed_attempt", "status": "FAILED",
@@ -255,6 +407,21 @@ def test_download_verifier_reports_failed_and_unrun_stages(tmp_path):
     result = verify(tmp_path)
     assert any(status == FAIL and "missing package" in detail for status, _, detail in result.items)
     assert any(status == FAIL and what == "GPU Experiment 0" for status, what, _ in result.items)
+
+
+def test_download_verifier_never_trusts_success_footer_over_incomplete_receipt(tmp_path):
+    from src.validation.verify import FAIL, WARN, verify
+
+    v.write_json(tmp_path / "experiment_0/report/validation.json", {
+        "schema": v.SCHEMA, "attempt": "interrupted_attempt", "status": "RUNNING",
+        "stages": [{"name": "preflight", "status": "PASS"}],
+    })
+    log = tmp_path / "experiment_0/logs/exp0_gpu_old.log"
+    log.parent.mkdir(parents=True)
+    log.write_text("END status=OK\n")
+    result = verify(tmp_path)
+    assert any(status == FAIL and what == "GPU Experiment 0" for status, what, _ in result.items)
+    assert any(status == WARN and "not a live scheduler check" in detail for status, _, detail in result.items)
 
 
 def test_invalid_manifest_replaces_old_pass_with_failed_receipt(monkeypatch, isolated_output):
@@ -285,7 +452,7 @@ def test_exp1_default_plan_includes_main_and_component_runs(monkeypatch, isolate
 def test_cluster_planner_check_accepts_exp3_before_and_after_selection(monkeypatch, selected):
     from types import SimpleNamespace
 
-    from scripts.exp0_checks import Report, check_orchestration
+    from src.validation.checks import Report, check_orchestration
 
     monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/tool")
     monkeypatch.setattr("src.utils.run_experiment.unconfigured_tracks",
@@ -295,7 +462,7 @@ def test_cluster_planner_check_accepts_exp3_before_and_after_selection(monkeypat
         blocked = command[-1] == "3" and not selected
         return SimpleNamespace(returncode=int(blocked), stdout="NOT CONFIGURED YET" if blocked else "ready")
 
-    monkeypatch.setattr("scripts.exp0_checks.subprocess.run", run)
+    monkeypatch.setattr("src.validation.checks.subprocess.run", run)
     report = Report()
     check_orchestration(report)
     assert len(report.rows) == 4 and report.failed == 0

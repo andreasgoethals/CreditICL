@@ -186,6 +186,17 @@ class Baseline:
         """(quantiles (n, L), levels (L,)) if the model gives a distribution."""
         return None
 
+    def _classification_output(self, probabilities: np.ndarray) -> np.ndarray:
+        """Preserve native class probabilities; the credit binary API stays one-dimensional."""
+        probabilities = np.asarray(probabilities)
+        classes = np.asarray(self._model.classes_)
+        expected = np.arange(len(classes))
+        if not np.array_equal(classes, expected):
+            raise ValueError(f"Classification labels must be encoded 0..K-1, got {classes}")
+        if probabilities.ndim != 2 or probabilities.shape[1] != len(classes):
+            raise ValueError("Probability columns do not match fitted classes")
+        return probabilities[:, 1] if len(classes) == 2 else probabilities
+
     def _regression_output(self, values: np.ndarray) -> np.ndarray:
         """Credit losses are bounded; generic OOD regression is not."""
         values = np.asarray(values)
@@ -336,7 +347,7 @@ class LinearBaseline(Baseline):
         if self.task == "pd":
             self.name = "logistic"
             self.report.model = "logistic"
-            self._model = LogisticRegression(max_iter=2000, random_state=self.seed).fit(Xs, (y >= 0.5).astype(int))
+            self._model = LogisticRegression(max_iter=2000, random_state=self.seed).fit(Xs, y.astype(int))
         else:
             self._model = Ridge(alpha=1.0, random_state=self.seed).fit(Xs, y)
 
@@ -344,7 +355,7 @@ class LinearBaseline(Baseline):
         Xi, _ = self._impute(X, self._impute_stats)
         Xs = self._scaler.transform(Xi)
         if self.task == "pd":
-            return self._model.predict_proba(Xs)[:, 1]
+            return self._classification_output(self._model.predict_proba(Xs))
         # Clip to [0,1]: LGD is a fraction, and an unclipped linear model
         # routinely predicts outside it. Reported via info_raw_pred_out_of_unit
         # before clipping so the raw behaviour stays visible.
@@ -380,7 +391,7 @@ class CatBoostBaseline(Baseline):
                 common[key] = self.kwargs[key]
         if self.task == "pd":
             self._model = CatBoostClassifier(**common)
-            self._model.fit(X, (y >= 0.5).astype(int), cat_features=self._cat_indices)
+            self._model.fit(X, y.astype(int), cat_features=self._cat_indices)
         else:
             self._model = CatBoostRegressor(**common)
             self._model.fit(X, y, cat_features=self._cat_indices)
@@ -406,7 +417,7 @@ class CatBoostBaseline(Baseline):
     def _predict(self, X: np.ndarray) -> np.ndarray:
         X = self._categorical_input(X)
         if self.task == "pd":
-            return self._model.predict_proba(X)[:, 1]
+            return self._classification_output(self._model.predict_proba(X))
         return self._regression_output(self._model.predict(X))
 
 
@@ -486,7 +497,7 @@ class TabPFNBaseline(_TFMBaseline):
 
         if self.task == "pd":
             self._model = TabPFNClassifier(**common)
-            self._model.fit(X, (y >= 0.5).astype(int))
+            self._model.fit(X, y.astype(int))
         else:
             self._model = TabPFNRegressor(**common)
             self._model.fit(X, y)
@@ -499,7 +510,7 @@ class TabPFNBaseline(_TFMBaseline):
 
     def _predict(self, X: np.ndarray) -> np.ndarray:
         if self.task == "pd":
-            return self._model.predict_proba(X)[:, 1]
+            return self._classification_output(self._model.predict_proba(X))
         return self._regression_output(self._model.predict(X))
 
     def predict_quantiles(self, X: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
@@ -572,7 +583,7 @@ class TabICLBaseline(_TFMBaseline):
             from tabicl import TabICLClassifier
 
             self._model = TabICLClassifier(device=device, random_state=self.seed, **extra)
-            self._model.fit(X, (y >= 0.5).astype(int))
+            self._model.fit(X, y.astype(int))
         else:
             from tabicl import TabICLRegressor
 
@@ -580,14 +591,14 @@ class TabICLBaseline(_TFMBaseline):
             self._model.fit(X, y)
         install(self._model)
         self.report.extra.update(ensemble_batch_size=1, n_estimators=self._model.n_estimators,
-                                 inference_storage="bounded-gpu-disk")
+                                 inference_storage="streamed-context/bounded-gpu-disk")
 
     def _predict(self, X: np.ndarray) -> np.ndarray:
         from src.eval.tabicl_memory import prediction_storage
 
         with prediction_storage(self._model):
             if self.task == "pd":
-                return self._model.predict_proba(X)[:, 1]
+                return self._classification_output(self._model.predict_proba(X))
             return self._regression_output(self._model.predict(X))
 
     def predict_quantiles(self, X: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:

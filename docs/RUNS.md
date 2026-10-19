@@ -24,14 +24,14 @@ Related, and deliberately separate:
 **1. Before submitting.** Read this file and `AGENTS_MEMORY.md`. Then, locally:
 
 ```powershell
-.CreditICL\Scripts\python.exe -m src.utils.smoke_test --task lgd --steps 3
+.CreditICL\Scripts\python.exe -m src.validation.smoke --task lgd --steps 3
 .CreditICL\Scripts\python.exe -m pytest -q
 ```
 
 And **on the login node**, to verify permanent storage before requesting compute. Unwritable storage now fails closed:
 
 ```bash
-python scripts/check_storage.py
+python -m src.utils.check_storage
 ```
 
 **1b. Preserve the previous run.** Current Exp0 attempts have separate directories. Keep completed
@@ -166,6 +166,168 @@ The one thing to do differently.
 ---
 
 ## Runs
+
+## 19-10-2026 — Follow-up download of GPU 11692660: incomplete validation despite an OK shell footer
+
+**Evidence:** `Downloads/output CreditICL.zip`, downloaded 19-10-2026 09:05:57 CEST,
+SHA-256 `cd6f0481ea5052bc8a24d471b6a1e166c274df8c2575d2bcb9693d3739cb194d`.
+CRC passes: 107 files, 43 directories, 1,400,107 uncompressed bytes. Inspected directly;
+the archive was not extracted, modified or deleted. The download date is not the run date.
+
+### Configuration and results
+
+The newest attempts remain CPU **62324362** and GPU **11692660**, both started on
+15-10-2026 with commit `cf0e539` and executable fingerprint
+`adf308f6490eee2717ac9cf9ac87312376e0ef2bd89b8e2e785d8b9cfc347acb`.
+Their configuration, packages and library pin are recorded in the 16-10 entry below.
+All 22 CPU artifact hashes still match; the GPU-to-CPU receipt hash and input inventories
+also match. CPU passed 12/12 stages, 1,437 unit tests (three skipped). GPU has 12/66
+completed stages, including 17 CUDA checks, six smoke-training routes and both equivalence
+checks. Its interrupted benchmark still has 16/20 completed fold messages: five each for
+hackerearth, bank_status and loan_default, one for algorithmwatch. There are no new
+tracebacks, failed model checks or nonfinite prediction reports in this download.
+
+### Newly observed shutdown defect
+
+The main GPU log now ends `END status=OK - Fri Oct 16 09:17:46 CEST 2026`, while
+`validation.json` remains schema 2 / RUNNING and the benchmark log ends at 05:33:45
+during AlgorithmWatch fold 1. This is not a successful validation. The supplied 19-10
+sacct follow-up confirms **CANCELLED by 2538338**, elapsed **22:36:01**; batch step
+CANCELLED, exit **0:15**, elapsed **22:36:10**. The parent job's 0:0 exit field therefore
+does not establish success. The receipt is stale, not a job still running on 19 October.
+No completed benchmark CSVs or diagnostic-training summaries were supplied.
+
+The old shell printed OK solely from `$?` in its EXIT trap. It had no signal forwarding
+or independent record that the validator had returned successfully. A shell interruption
+could therefore print OK while the controller left a RUNNING receipt. The production
+gate correctly refused that incomplete evidence, so Experiments 1–3 remain blocked.
+
+### Fixes and interpretation
+
+CPU/GPU launchers now share explicit signal forwarding, wait for validator termination,
+and require a successful validator return before logging OK or cleaning scratch. Caught
+controller termination publishes DEFERRED after stopping the child process tree; hard
+SIGKILL remains necessarily uncatchable and cannot unlock training. Readiness and the
+download verifier explicitly distinguish stored RUNNING from live scheduler status.
+
+The streaming, per-cell persistence and continuation changes prepared on 16-10 remain
+uncommitted in the local checkout at this inspection. VSC `git log` also confirms
+`cf0e539` on main/origin/main and the old `adf308f...` source fingerprint. Its dirty
+entries are untracked sentinels, environment, archive and output files; they are not the
+new executable changes. Nothing in this archive tests the new adapter. Publish the reviewed local
+changes first, verify the same executable fingerprint on VSC, then perform the requested
+clean CPU/GPU campaign. Keep the archived evidence. Full rows, all eligible features and
+five folds remain unchanged; B200 speed and complete GPU validation remain unmeasured.
+
+**Local verification on 19-10:** focused lifecycle/readiness tests 160 passed; complete
+suite **1,519 passed, 21 skipped, 508 warnings in 1,000.54 seconds**. Nineteen skips are
+mandatory VSC/CUDA tests; two cover absent generated figures and an upstream-absent branch
+when upstream is installed. The 24 additional test cases include actual Bash TERM/INT/HUP
+delivery before/during validation, process cleanup, interrupted-receipt continuation,
+old-status diagnostics and rejection of a false shell OK. Executable fingerprint:
+`4348d3f6b1aab916ba94dca873009eb38a30bed4af8592a2b182ec092a133be1`.
+No package changes, Git commit/push, cluster submissions or output deletion were performed.
+
+## 16-10-2026 — Exp0 CPU 62324362 passed; GPU 11692660 cannot finish its full-width probes within 24 hours
+
+**Evidence:** `Downloads/output CreditICL.zip`, modified 16-10-2026 08:59:17 CEST,
+SHA-256 `06e7f519c1de9d07c754a0752c253d1dd3ca0c23e974fe269afea326234b0649`.
+CRC passed; 107 files / 1,399,975 uncompressed bytes. Read directly, without extraction
+or cleanup. This is the small output tier: no final benchmark CSVs or checkpoint binaries
+were supplied. User accounting at 09:01 confirms GPU job RUNNING, elapsed 22:20:16,
+limit 1 day, exit field 0:0; no MaxRSS was reported. Its final outcome is not yet known.
+
+### Identity and configuration
+
+- Both runs record commit `cf0e539`, dirty checkout. Executable fingerprint
+  `adf308f6490eee2717ac9cf9ac87312376e0ef2bd89b8e2e785d8b9cfc347acb`
+  matches the local checkout inspected on 16-10-2026. Dirty status alone is not evidence
+  of different executable code; the identities of the dirty files were not supplied.
+- Environment fingerprint `d4ed1fbe1397c0063fc12abffcb338fddd8038f21decb20c8c84accaf0bf0454`
+  matches between phases: TabPFN 9.1.0, TabICL 2.1.1 at
+  `8f1aa2098c894ab91dba15209cf2002ba4be6c6c`, CatBoost 1.2.10, torch 2.11.0+cu128.
+  All 135 requirements and `pip check` passed.
+- Input inventories match; all 22 CPU artifact hashes match ZIP contents. The GPU receipt
+  binds to CPU receipt SHA-256 `f04e918e92abf8e99b27aa0b1b216c01027c8b437eb43d0c997891b41b1e473d`.
+- Read-only library pin `de324efcca55be392feb0c01830b3b6ce364587f`.
+  Relevant official symbols in `tfm-library/repositories/TabICL.txt` and installed pinned
+  source: `ColEmbedding._inference_with_feature_group`, `RowInteraction._aggregate_embeddings`,
+  `InferenceManager.__call__`, `DiskTensor`, `TabICLClassifier._batch_forward`.
+
+### CPU 62324362 — PASS
+
+- wICE/batch, node `l33c20n3`; allocation banner 20 CPUs / 65,536 MiB.
+  Attempt `cpu_20261015T073645Z_j62324362_2c36467d`.
+- Log interval 15-10-2026 09:36:45–09:53:16 CEST, 16m31s (not scheduler accounting).
+  All 12 stages passed; unit suite **1,437 passed, 3 skipped, 17 deselected** in 716.27s.
+  Skips: absent sibling TabPFNCredit checkout, absent generated figures, and an upstream-absent
+  error branch in an environment where upstream is installed. CUDA tests were deselected here.
+- Benchmark contracts, configurations, 21 credit datasets, OOD cache, deterministic priors,
+  orchestration, paths and storage checks passed.
+
+### GPU 11692660 — RUNNING at the supplied snapshot, capacity problem
+
+- Mindwell `gpu_b200`, node `r11g22`, one B200, 24 CPUs / 184,320 MiB host RAM.
+  Attempt `gpu_20261015T084304Z_j11692660_c29a3510`.
+- Allocation started 15-10-2026 10:41:39 CEST; declared end 16-10-2026 10:41:39.
+  Validator began about 10:43:04 with its own 23.5-hour budget, so its timeout is expected
+  around 16-10-2026 10:13. These are deadlines, not successful completion estimates.
+- **12 of 66 stages passed**, in approximately 29 minutes. These include all **17 mandatory
+  CUDA tests**, all six 10-step training/checkpoint-to-prediction routes, weight/environment
+  checks and both 20-step upstream equivalence checks. CUDA tests include TabPFN PD/LGD
+  resume and forced disk-offload equivalence. The six longer stop/resume runs remain untested
+  in this attempt, as do all subsequent capacity/benchmark stages.
+- Equivalence maximum loss/parameter differences: PD 6.63e-6 / 2.32e-6;
+  LGD 3.11e-7 / 8.33e-6, within the configured tolerances.
+- Stage 13, `credit-pd-3`, is released TabICL on four PD tables, five folds, one seed,
+  protocol 7, with no row/context/feature cap. Three tables completed all five folds:
+  hackerearth (532,428 rows / 30 eligible features), bank_status (100,000 / 15), and
+  loan_default (105,471 / 759). The previous job's 759-feature OOM did not recur.
+  Their logged AUC ranges are respectively 0.8445–0.8477, 0.6346–0.6488, 0.6897–0.7107.
+- Algorithmwatch has 158,700 rows / 2,986 features. It began at 15-10 11:35:20;
+  fold 0 finished at 16-10 01:09:18 (**13h33m58s**), AUC 0.6548, F1 0.5702,
+  threshold 0.283, Brier 0.2206. Its inner/outer fits took 112.3s / 137.7s;
+  almost all the elapsed time was in prediction (plus threshold selection), not fitting.
+  Fold 1's outer fit finished at 05:33:45; both the ZIP and 09:01 live tail end there.
+  Thus 16/20 cells in this one stage have completed; this is not overall completion.
+- No new traceback, OOM, nonfinite prediction or failed stage was observed. AMP overflow
+  retries recovered in the TabPFN smoke checks. These partial checks do not prove the entire
+  suite correct or ready for production, and the ZIP cannot verify final prediction arrays.
+
+### Confirmed implementation gaps and interpretation
+
+- The full-width reference workload does not fit the single allocation at observed speed.
+  Extrapolating only the first wide-table fold gives about 68 hours for its five folds alone;
+  other stages remain, so no defensible completion time for the entire suite is available.
+- The large table enters the expensive memory-bounded inference route. Column embeddings
+  are laid out by feature and transposed for row attention; disk reads and full-width
+  attention are plausible contributors. There is no stage-level GPU/I/O profile in the
+  download to attribute the hours precisely; do not present disk thrashing as measured.
+  The released checkpoint config confirms 128-dimensional embeddings, four CLS tokens and
+  `col_feature_group="same"` (one group per feature). Float32 embedding storage is about
+  181 GiB for the inner prediction and 226 GiB for the outer prediction per ensemble member,
+  exceeding this B200's roughly 178 GiB. Eight members are evaluated sequentially.
+- `src/eval/tabicl_memory.py` logs through `logging.getLogger(__name__)`, while
+  `setup_logging` configures the non-propagating `crediticl` logger. INFO messages about
+  offload decisions/temp storage are consequently absent from the normal run log. A local
+  in-memory capture reproduced this: the control project message appeared, the memory
+  manager message did not. No files or execution settings were changed by the probe.
+- `evaluate_dataset` and `run` accumulate rows in memory; `scripts/evaluate.py` writes the
+  results CSV only after `run` returns. A timeout loses the structured results for completed
+  cells in this stage, although their headline log messages survive. `run_validation`
+  creates a fresh attempt without stage/fold continuation, so unchanged resubmission repeats work.
+- The supplied `sstat --clusters=mindwell` command was invalid and returned no resource
+  evidence. Do not infer low GPU use or measured RAM use from that failed command.
+
+### Next
+
+Recommend stopping the still-running attempt because it cannot complete its remaining work
+before its deadlines; no cancellation was performed by the assistant. Preserve this evidence.
+Before another allocation, implement and verify durable per-fold results/continuation, expose
+inference phase timings/storage, and address the full-width capacity path without reducing rows,
+features, folds or ensemble members. Revised executable code needs fresh validation receipts.
+Experiment 1 remains blocked. This audit changes existing run records only; it does not claim
+that the newly identified gaps have been fixed or that the GPU validation has passed.
 
 ## 14-10-2026 — Exp0 CPU 62319803 passed; GPU 11689448 exhausted host RAM in the full-width benchmark
 

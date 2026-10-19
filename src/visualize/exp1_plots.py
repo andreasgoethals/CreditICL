@@ -1,32 +1,9 @@
-"""Figures for the prior notebooks (0.2 PD, 0.3 LGD), which prepare Exp1's question: **which
-prior?** Exp1 sweeps 15 priors (credit fraction × filter mode × intensity) at 3 seeds each; these
-figures compare the two poles — the original prior (credit fraction 0) and ours (credit fraction 1)
-— against the real datasets before any of that compute is spent.
+"""Descriptive prior diagnostics; no selection or tuning on benchmark target histograms.
 
-Colours are by MEANING (`style.variant_colour`): the original prior grey, ours blue, real data
-orange, real-data markers magenta — never by a variant's position in a dict, which is what drew the
-control orange and our prior green here before.
-
-WHAT THIS REPLACED, AND WHY
-
-The earlier figures showed the prior in general — 100 target histograms, correlation heatmaps of
-random synthetic features, a target histogram for PD. They looked like analysis and answered
-nothing:
-
-* **a PD target histogram** is a bar at 0 and a bar at 1. That is one number, the default rate,
-  drawn as a picture.
-* **correlation heatmaps of synthetic features** show that random graphs produce random
-  correlations. There is nothing in them to learn.
-* **100 thumbnail histograms** cannot be compared by eye, which is the only thing they permit.
-
-Every figure here answers a question that changes what we do next:
-
-1. `plot_prior_realism_ranking` — which priors even look like real credit data?
-2. `plot_mechanism_decomposition` — do LGD's boundary atoms *come from* the loan economics?
-3. `plot_default_clustering` — do PD defaults arrive in waves, as real ones do?
-4. `plot_difficulty_calibration` — is the synthetic task the right difficulty?
-5. `plot_side_by_side_tables` — what does the model actually see?
-6. `plot_boundary_mass_sources` — where does the boundary mass come from?
+Experiment 1 compares three mixtures and five component removals. These figures describe
+synthetic mechanisms and their differences from previously inspected credit datasets.
+Standardized control regression targets have no loss-fraction scale and cannot be used
+in LGD boundary-mass comparisons.
 """
 
 from __future__ import annotations
@@ -74,20 +51,11 @@ def distribution_distance(a: np.ndarray, b: np.ndarray, bins: int = 40) -> float
 
 
 def _unit_target(y: Any) -> np.ndarray:
-    """A task's target on [0, 1] for a distance to real LGD data: unchanged when it already lies in
-    [0, 1] (our prior, the real books), min-max scaled when it does not (the original prior, which
-    standard-scales its target).
-
-    It used to be CLIPPED to [0, 1], which turned every negative standardised value into an
-    exact 0 — manufacturing a boundary atom the original prior does not have, and making it look
-    closest to `axa`, the real book with the most mass at 0. Min-max scaling keeps the shape and
-    puts atoms only where the target itself has ties.
-    """
+    """Loss fractions only: arbitrary standardized targets have no LGD boundary scale."""
     y = np.asarray(y, dtype=float).ravel()
-    lo, hi = float(np.nanmin(y)), float(np.nanmax(y))
-    if lo >= -1e-6 and hi <= 1 + 1e-6:
-        return np.clip(y, 0.0, 1.0)
-    return (y - lo) / (hi - lo) if hi > lo else np.zeros_like(y)
+    if not np.isfinite(y).all() or y.min() < -1e-6 or y.max() > 1 + 1e-6:
+        raise ValueError("An unbounded target cannot be ranked as a loss-fraction distribution")
+    return np.clip(y, 0.0, 1.0)
 
 
 def _real_targets(task: str, datasets: dict[str, Any] | None) -> dict[str, np.ndarray]:
@@ -111,15 +79,7 @@ def plot_prior_realism_ranking(
     real: dict[str, Any] | None = None,
     task: str = "lgd",
 ):
-    """THE MONEY FIGURE. One row per prior, sorted by how close its targets are to real data.
-
-    Exp1 exists to rank 32 priors. This is that ranking, as a single readable chart: for each
-    prior, the distance between its target distribution and each real dataset's, with the mean
-    marked. A reader learns in one glance which priors are candidates and which are not.
-
-    A distance is used rather than side-by-side histograms because 32 histograms cannot be
-    compared by eye — which is exactly why the old figures answered nothing.
-    """
+    """Descriptive target-distribution distances for priors on a comparable [0, 1] scale."""
     style.apply()
     reals = _real_targets(task, real)
     if not reals:
@@ -133,9 +93,17 @@ def plot_prior_realism_ranking(
     for name, tasks in variants.items():
         # Pool every synthetic target for this variant into one distribution: the question is
         # what the variant produces ON AVERAGE, not what one draw did. Each task on [0, 1] first.
-        pooled = np.concatenate([_unit_target(t.y) for t in tasks])
+        if task == "lgd" and any(getattr(t, "source", None) == "base" for t in tasks):
+            continue  # upstream standardised targets do not define losses at 0 and 1
+        try:
+            pooled = np.concatenate([_unit_target(t.y) for t in tasks])
+        except ValueError:
+            continue
         per_real = {r: distribution_distance(pooled, y) for r, y in reals.items()}
         rows.append((name, float(np.mean(list(per_real.values()))), per_real))
+    if not rows:
+        from src.visualize.results_plots import _placeholder
+        return _placeholder("No comparable targets on the loss-fraction scale")
     rows.sort(key=lambda r: r[1])
 
     fig, ax = plt.subplots(figsize=style.row_figsize(len(rows), per_row=0.34, base=1.05))

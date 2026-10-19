@@ -24,7 +24,7 @@ took steps 4.8x smaller than upstream's at the same nominal rate, with momentum 
 of 0.9. Experiment 1 ran that way. See docs/AGENTS_MEMORY.md, 28-09-2026.)*
 
 Muon's Newton-Schulz iteration is a chain of small matmuls per matrix per step, so it costs
-more per step than AdamW on a big card (measured 16-08-2026; `scripts/benchmark_gpu.py`).
+more per step than AdamW on a big card (measured 16-08-2026; `src/validation/benchmark_gpu.py`).
 
 AdamW remains available (`optimizer: adamw`), and upstream supports it too (`--muon False`).
 Every TabICL run uses MUON, because that is how the released weights were made: pretraining

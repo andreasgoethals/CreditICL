@@ -17,6 +17,8 @@ half on project storage (checkpoints, prior pools). Off-cluster both tiers are o
 `--experiment N` limits all of it to `experiment_N/`.
 `--reset-exp0-gpu` preserves CPU validation and removes GPU attempts on both tiers,
 their job logs and any matching job directories under the configured GPFS scratch.
+`--reset-output` also removes known output ZIPs at each project root and clears
+embedded notebook results. It never searches Downloads or other projects.
 
 LISTS BY DEFAULT. The two mistakes are not symmetric: a listing you meant as a deletion costs one
 more command, and a deletion you meant as a listing costs the run.
@@ -36,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import re
 import stat
@@ -169,6 +172,7 @@ def reset_output(*, clean: bool = False) -> tuple[int, int]:
     verify the entire plan before deleting, and never infer sibling project paths.
     """
     roots_seen, files, directories = set(), [], []
+    notebooks = []
     candidates = []
     current = (paths.outputs_dir(), paths.big_outputs_dir())
     if any(p.name != paths.OUTPUT_NAME or _linked(p) for p in current):
@@ -178,18 +182,39 @@ def reset_output(*, clean: bool = False) -> tuple[int, int]:
     # paths and aliased tiers cannot schedule a Slurm log for deletion twice.
     # The output roots themselves and all descendants still reject links.
     projects = {p.parent.resolve() for p in current}
+    output_names = (paths.OUTPUT_NAME, "output", "outputCreditICL", "output_CreditICL")
+    archives = {"benchmark-results.zip", *(f"{name}.zip" for name in output_names)}
     for project in sorted(projects):
-        # Slurm opens these before the job redirects into the output tree. Keep
-        # this narrowly scoped to this project's named jobs and numeric job IDs.
+        notebook_root = project / "notebooks"
+        if _linked(notebook_root):
+            raise RuntimeError(f"Linked notebook root: {notebook_root}")
+        if notebook_root.is_dir():
+            for notebook in _safe_tree(notebook_root):
+                if notebook.suffix != ".ipynb" or not notebook.is_file():
+                    continue
+                original = notebook.read_bytes()
+                data = json.loads(original)
+                changed = False
+                for cell in data.get("cells", []):
+                    if cell.get("cell_type") == "code" and (cell.get("outputs") or cell.get("execution_count") is not None):
+                        cell["outputs"], cell["execution_count"] = [], None
+                        cell.get("metadata", {}).pop("execution", None)
+                        changed = True
+                if changed:
+                    notebooks.append((notebook, hashlib.sha256(original).hexdigest(), data))
+        # Slurm logs and exported benchmark ZIPs can sit outside the output tree.
+        # Match only known archive names and this project's numeric job IDs.
         if project.is_dir():
             for item in project.iterdir():
-                if not re.fullmatch(r"slurm-(?:crediticl|cicl)-[A-Za-z0-9_-]+-\d+(?:_\d+)?\.(?:out|err)", item.name):
+                if (item.name not in archives and not re.fullmatch(
+                        r"slurm-(?:crediticl|cicl)-[A-Za-z0-9_-]+-\d+(?:_\d+)?\.(?:out|err)", item.name)):
                     continue
                 if _linked(item) or not item.is_file() or not item.resolve().is_relative_to(project.resolve()):
-                    raise RuntimeError(f"Unexpected Slurm output path: {item}")
+                    raise RuntimeError(f"Unexpected root output path: {item}")
+                print(f"Root output reset target: {item}")
                 info = item.stat()
                 files.append((item, project, (info.st_size, info.st_mtime_ns, info.st_ino)))
-        for name in (paths.OUTPUT_NAME, "output", "outputCreditICL", "output_CreditICL"):
+        for name in output_names:
             candidates.append((project / name, False))
         # Before the output-tree migration, generated runs and released downloads
         # shared checkpoints/. Delete only the recognised RUN subdirectories,
@@ -237,8 +262,14 @@ def reset_output(*, clean: bool = False) -> tuple[int, int]:
             directories.append(root)
     total = sum(info[0] for _, _, info in files)
     print(f"Full reset: {len(files)} generated files, {total / 1e9:.3f} GB, including trained checkpoints.")
+    print(f"Notebook outputs to clear: {len(notebooks)}; cell sources are preserved.")
     if clean:
+        for notebook, digest, _ in notebooks:
+            if _linked(notebook) or hashlib.sha256(notebook.read_bytes()).hexdigest() != digest:
+                raise RuntimeError(f"Notebook changed since planning; reset refused: {notebook}")
         _apply_reset_plan(files, directories, roots_seen)
+        for notebook, _, data in notebooks:
+            notebook.write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     return len(files), total
 
 

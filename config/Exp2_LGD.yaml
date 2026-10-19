@@ -61,7 +61,7 @@ prior:
     max_cat_size: 200 # legacy upstream sampler effectively draws 2-9 levels
     category_frequency: balanced # how category counts are distributed
 
-  credit: # OUR credit prior. Every range is from the credit-risk literature or deliberately wide; none is set from the evaluation data (docs/PRIORS.md)
+  credit: # OUR credit prior. Literature-motivated ranges; earlier benchmark inspection influenced the structure (docs/PRIORS.md)
     use_corrected_cat_sizes: true # upstream opt-in sampler; legacy sampler never exceeds 9 levels
     max_cat_size: 500 # credit has state, region, product codes — high cardinality
     category_frequency: balanced # as the control
@@ -98,7 +98,7 @@ prior:
       missing_prob: 0.5 # share of tables with any missing values — uninformative
       missing_col_fraction_range: [0.05, 1.0] # share of columns with gaps, per table — wide
       missing_rate_range: [0.01, 0.5] # how much is missing in those columns — wide
-      missing_target_coupling_range: [0.0, 1.0] # how strongly a gap depends on the target, per table — wide
+      missing_risk_coupling_range: [0.0, 1.0] # how strongly a gap depends on borrower covariates, per table — wide
       missing_indicators: false # TabICL's prediction path adds none; the signal lives in the filled value
 
     noise_features:
@@ -173,12 +173,12 @@ logging:
   log_grad_every: 250 # steps between per-block gradient-norm reports; 0 disables
 
 # ----------------------------------------------------------------------------
-# EVALUATION — frozen before any prior tuning
+# EVALUATION — fixed for this rerun; historical benchmark exposure is disclosed in docs/PRIORS.md
 # ----------------------------------------------------------------------------
 eval:
   data_dir: data/raw/lgd # where the real datasets live
   # hackerearth shares 5,696 loans with lendingclub, base_modelisation defaults with base_model
   # (audit 30-09-2026): each pair sits on ONE side, so the holdout stays independent
   dev_datasets: [0007.lgd_lendingclub, 0004.base_model, 0005.base_modelisation, 0001.heloc] # used to choose the prior
-  holdout_datasets: [0002.loss2, 0003.axa, 0006.lgd_freddie] # untouched until the end
+  holdout_datasets: [0002.loss2, 0003.axa, 0006.lgd_freddie] # excluded from selection in this rerun; previously inspected
   select_on: dev # dev | holdout — anything but `dev` here invalidates the experiment

@@ -16,7 +16,7 @@
 #                             eval pipeline finds them with no token and no
 #                             internet.
 #           data/processed/   the parquet cache, if you have already built it.
-#                             Optional — scripts/preprocess.py can rebuild it.
+#                             Optional — src/data/preprocess.py can rebuild it.
 #
 #    DOES   the synthetic datasets we generate. Those are produced from a seed and
 #    NOT   a config, so copying them would waste space on something reproducible.

@@ -51,131 +51,9 @@ _LEVER_TOKENS = ("credit_fraction=", "arm=", "strategy=", "l2sp_alpha=", "-lr=",
 _CTX_FILE = re.compile(r"_ctx\d+\.csv$")
 
 
-def _read_frames(files: list[Any], protocol: int | None, context: int | None = None) -> pd.DataFrame | None:
-    frames = []
-    for path in files:
-        try:
-            frames.append(pd.read_csv(path))
-        except (OSError, pd.errors.ParserError, pd.errors.EmptyDataError):
-            continue
-    if not frames:
-        return None
-    df = pd.concat(frames, ignore_index=True)
-    # Full-context rows carry no cap; capped ones only when asked for, and only that cap.
-    cap = pd.to_numeric(df["context_cap"], errors="coerce") if "context_cap" in df \
-        else pd.Series(np.nan, index=df.index)
-    df = df[cap.isna()] if context is None else df[cap.eq(int(context))]
-    # Rows written before the protocol column existed are protocol 2 (one split per seed,
-    # context capped at 1,024 rows).
-    version = pd.to_numeric(df["protocol"], errors="coerce").fillna(2) if "protocol" in df \
-        else pd.Series(2, index=df.index)
-    want = int(version.max()) if protocol is None and len(df) else protocol
-    df = df[version.eq(want)].assign(protocol=want)
-    if "status" in df and not df["status"].eq("ok").all():
-        import warnings
-        warnings.warn("Benchmark contains failed or skipped cells; comparisons are withheld", stacklevel=2)
-        return None
-    if want is not None and want >= 6 and len(df):
-        from src.eval.comparisons import require_balanced_cells
-        try:
-            require_balanced_cells(df)
-        except ValueError as exc:
-            import warnings
-            warnings.warn(f"Incomplete benchmark; comparisons are withheld: {exc}", stacklevel=2)
-            return None
-    return df if len(df) else None
-
-
-def _raw_config(track: str, exp: str) -> dict:
-    """The experiment's config as written — the raw file, not `config.load`, which refuses a
-    template whose placeholders are not filled yet (Exp3 before Exp1 has chosen its mix)."""
-    import yaml
-
-    path = paths.config_path(f"{exp.capitalize()}_{track.upper()}")
-    if not path.is_file():
-        return {}
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-
-
-def context_caps(track: str, exp: str = "exp1") -> list[int]:
-    """The capped-context evaluations the experiment's config asks for (`eval.context_caps`)."""
-    return [int(c) for c in ((_raw_config(track, exp).get("eval") or {}).get("context_caps") or [])]
-
-
-def headline_step(track: str, exp: str = "exp1") -> int | None:
-    """The checkpoint an experiment REPORTS: its config's `eval.headline_step`, or None for the
-    final one (no such key, a `FILL_FROM_*` placeholder not filled yet, or the last step).
-
-    No config sets one today (both Exp2 recipes fix 10,000 steps); every saved checkpoint is
-    scored, so a reported earlier one would be a choice of file, not a new run.
-    """
-    cfg = _raw_config(track, exp)
-    step = (cfg.get("eval") or {}).get("headline_step")
-    if step is None or (isinstance(step, str) and not step.strip().isdigit()):
-        return None
-    step = int(step)
-    return None if step >= int((cfg.get("train") or {}).get("max_steps", 0) or 0) else step
-
-
-def load_results(track: str, exp: str = "exp1", protocol: int | None = None,
-                 context: int | None = None) -> pd.DataFrame | None:
-    """Per-(dataset, model, seed, fold) results of the REPORTED checkpoints for `exp` on `track`,
-    or `None` if none exist: the final checkpoint, or the one `headline_step` names.
-
-    Concatenates the experiment's arm files (`results_<exp>bench_<track>_a<i>[_s<step>].csv`) with
-    the shared reference (`results_reference_<track>_<model>.csv`). Other experiments and other
-    checkpoints are excluded, and so is every protocol but one: the newest present when `protocol`
-    is None (the `protocol` column says which), else the one asked for. `context` reads the
-    capped-context evaluation instead (`..._ctx<cap>.csv`): every arm's FINAL checkpoint and the
-    reference models that take a context, each with its context capped at `context` rows.
-    """
-    out = paths.benchmark_dir(paths.experiment_of(f"{exp}_"), track)
-    ref = paths.benchmark_dir(paths.REFERENCE, track)
-    if not out.exists() and not ref.exists():
-        return None
-    # The reported checkpoint's arm files, whatever grid wrote them: the protocol filter below
-    # keeps one benchmark. The final checkpoint has no `_s<step>` suffix; the capped slots score
-    # the final checkpoint only.
-    if context is None:
-        step = headline_step(track, exp)
-        tail = f"_s{step}" if step is not None else ""
-    else:
-        tail = f"_ctx{int(context)}"
-    wanted = re.compile(rf"results_{re.escape(exp)}bench_{re.escape(track)}_a\d+{tail}\.csv$")
-    files = sorted(p for p in out.glob(f"results_{exp}bench_{track}_a*.csv") if wanted.match(p.name))
-    files += sorted(p for p in ref.glob(f"results_reference_{track}_*.csv")
-                    if (p.name.endswith(f"{tail}.csv") if context is not None
-                        else not _CTX_FILE.search(p.name)))
-    result = _read_frames(files, protocol, context)
-    if result is not None and result.protocol.min() >= 6:
-        from src.eval.benchmark_status import REFERENCE_MODELS
-        from src.eval.comparisons import identities, require_balanced_cells
-        from src.utils.config import expand_with_seeds, load, run_name
-        cfg = load(paths.config_path(f"{exp.capitalize()}_{track.upper()}"), allow_placeholders=True)
-        evaluation = cfg["eval"]
-        require_balanced_cells(result, evaluation["dev_datasets"] + evaluation["holdout_datasets"])
-        expected = {run_name(run) for run in expand_with_seeds(cfg)}
-        expected.update(REFERENCE_MODELS.split(","))
-        if set(identities(result)) != expected:
-            import warnings
-            warnings.warn("Benchmark still lacks complete model coverage; final comparisons are withheld", stacklevel=2)
-            return None
-    return result
-
-
-def load_checkpoint_results(track: str, exp: str = "exp1", protocol: int | None = None) -> pd.DataFrame | None:
-    """Every saved checkpoint of every arm — the final one and the `_s<step>` ones — with the
-    step in `checkpoint_step`: the learning curve on real data, one point per saved checkpoint.
-    One protocol only, as `load_results`."""
-    out = paths.benchmark_dir(paths.experiment_of(f"{exp}_"), track)
-    if not out.exists():
-        return None
-    files = sorted(p for p in out.glob(f"results_{exp}bench_{track}_a*.csv") if not _CTX_FILE.search(p.name))
-    df = _read_frames(files, protocol)
-    if df is None or "info_checkpoint_step" not in df:
-        return None
-    df = df.assign(checkpoint_step=pd.to_numeric(df["info_checkpoint_step"], errors="coerce"))
-    return df.dropna(subset=["checkpoint_step"])
+from src.eval.results import (  # shared by analysis, notebooks and development selection
+    _read_frames, _raw_config, context_caps, headline_step, load_results, load_checkpoint_results,
+)
 
 
 def _model_col(df: pd.DataFrame) -> str:
@@ -239,28 +117,43 @@ def _share(model: str) -> float | None:
     return float(m.group(1).replace("p", ".")) if m else 0.0
 
 
-def _groups(models: Any) -> list[float | None]:
-    """The groups present, in reading order: our shares ascending, then the references (`None`)."""
-    shares = {_share(m) for m in models}
-    return sorted(s for s in shares if s is not None) + ([None] if None in shares else [])
+def _group_key(model: str):
+    share = _share(model)
+    if share is None:
+        return str(model)
+    family = re.search(r"(?:^|__)arm=([^=]+?)(?:__|$)", str(model))
+    return (share, family.group(1)) if family else share
 
 
-def _group_label(share: float | None) -> str:
-    return _REFERENCES if share is None else style.prior_mix_label(share, control=True)
+def _groups(models: Any) -> list:
+    """Keep architectures, mixtures and individual references separate."""
+    keys = {_group_key(m) for m in models}
+    return sorted(keys, key=lambda k: (1, 0, k) if isinstance(k, str) else
+                  (0, k[0], k[1]) if isinstance(k, tuple) else (0, k, ""))
 
 
-def _group_tick(share: float | None) -> str:
-    """The label on two lines, the aside in brackets on the second, so that ticks side by side
-    do not run into each other."""
-    return _group_label(share).replace(" (", "\n(")
+def _group_label(group) -> str:
+    if isinstance(group, str):
+        return style.reference_label(group)
+    if isinstance(group, tuple):
+        return style.prior_mix_label(group[0], control=True) + " · " + style.CONTINUED_LABEL.get(group[1], group[1])
+    return _REFERENCES if group is None else style.prior_mix_label(group, control=True)
 
 
-def _group_colour(share: float | None) -> str:
-    return style.BASELINE if share is None else style.credit_fraction_colour(share)
+def _group_tick(group) -> str:
+    return _group_label(group).replace(" (", "\n(")
 
 
-def _group_marker(share: float | None) -> str:
-    return "D" if share is None else style.credit_fraction_marker(share)
+def _group_colour(group) -> str:
+    if group is None or isinstance(group, str):
+        return style.BASELINE
+    return style.credit_fraction_colour(group[0] if isinstance(group, tuple) else group)
+
+
+def _group_marker(group) -> str:
+    if group is None or isinstance(group, str):
+        return "D"
+    return style.credit_fraction_marker(group[0] if isinstance(group, tuple) else group)
 
 
 def _with_identity(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
@@ -294,7 +187,7 @@ def available_metrics(df: pd.DataFrame) -> list[str]:
 # ---------------------------------------------------------------------------
 
 #: How a split reads in a heading — the protocol in EXPERIMENTAL_DESIGN.md §5: development is where
-#: the prior is chosen, the holdout is untouched until the end and is what gets reported.
+#: the prior is chosen; holdout scores are reported separately. Historical exposure is disclosed in docs/PRIORS.md.
 ROLE_LABEL = {"development": "development datasets", "holdout": "holdout datasets", None: "all datasets"}
 
 
@@ -374,7 +267,7 @@ def per_dataset(track: str, exp: str = "exp1", metric: str | None = None):
     if df is None or metric not in df.columns or "dataset" not in df.columns:
         return _placeholder("no per-dataset benchmark results yet")
 
-    piv, groups = _best_per_group(df, metric)
+    piv, groups = _means_per_group(df, metric)
     roles = _roles(track, exp)
     rank = {"development": 0, "holdout": 1}
     datasets = sorted(piv.index, key=lambda d: (rank.get(roles.get(str(d).split(".", 1)[-1]), 2), str(d)))
@@ -394,8 +287,8 @@ def per_dataset(track: str, exp: str = "exp1", metric: str | None = None):
     return fig
 
 
-def _best_per_group(df: pd.DataFrame, metric: str) -> tuple[pd.DataFrame, list[float | None]]:
-    """Dataset × group descriptive means (historical function name retained).
+def _means_per_group(df: pd.DataFrame, metric: str) -> tuple[pd.DataFrame, list[float | None]]:
+    """Dataset × configuration descriptive means, averaging training seeds.
 
     Average folds within each model, then models/training seeds equally. Taking
     the best training seed on each test dataset is optimistic model selection.
@@ -404,7 +297,7 @@ def _best_per_group(df: pd.DataFrame, metric: str) -> tuple[pd.DataFrame, list[f
     df, mc = _with_identity(df)
     per_model = df.groupby(["dataset", mc])[metric].mean().reset_index()
     groups = _groups(per_model[mc].unique())
-    per_model["group"] = per_model[mc].map(lambda m: _group_label(_share(m)))
+    per_model["group"] = per_model[mc].map(lambda m: _group_label(_group_key(m)))
     piv = per_model.groupby(["dataset", "group"])[metric].mean().unstack("group")
     return piv[[_group_label(g) for g in groups]], groups
 
@@ -434,7 +327,7 @@ def credit_vs_control(track: str, exp: str = "exp1", metric: str | None = None,
     groups = _groups(per_model.index)
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.42))
     for i, g in enumerate(groups):
-        vals = per_model[[_share(m) == g for m in per_model.index]].values
+        vals = per_model[[(_group_key(m)) == g for m in per_model.index]].values
         ax.scatter(np.full(len(vals), i) + style_jitter(len(vals)), vals, s=34, alpha=0.7,
                    color=_group_colour(g), marker=_group_marker(g), edgecolor="white",
                    linewidth=0.4, zorder=3)
@@ -457,11 +350,19 @@ def _checkpoint_means(track: str, exp: str, metric: str, role: str | None) -> pd
     if df is None or metric not in df.columns or not len(df) or df["checkpoint_step"].nunique() < 2:
         return None
     df, mc = _with_identity(df)
+    # Use the same identities at every plotted step. A missing final checkpoint
+    # must not make the mean jump by dropping its least successful seed.
+    step_sets = [set(part.checkpoint_step) for _, part in df.groupby(mc)]
+    common_steps = set.intersection(*step_sets)
+    df = df[df.checkpoint_step.isin(common_steps)]
+    if len(common_steps) < 2:
+        return None
     per_arm = (df.groupby([mc, "checkpoint_step", "dataset"])[metric].mean()
                .groupby(level=[0, 1]).mean().reset_index())
     per_arm["share"] = per_arm[mc].map(_share)
+    per_arm["configuration"] = per_arm[mc].str.replace(r"__s\d+$", "", regex=True)
     per_arm = per_arm.dropna(subset=["share"])
-    out = per_arm.groupby(["share", "checkpoint_step"])[metric].agg(["mean", "min", "max"]).reset_index()
+    out = per_arm.groupby(["configuration", "share", "checkpoint_step"])[metric].agg(["mean", "min", "max"]).reset_index()
     return out.rename(columns={"min": "low", "max": "high"})
 
 
@@ -477,11 +378,13 @@ def checkpoint_curve(track: str, exp: str = "exp1", metric: str | None = None,
         return _placeholder("no learning curve yet: the protocol-3 benchmark scores every saved checkpoint")
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.42))
     handles = []
-    for share, part in curve.groupby("share"):
+    for configuration, part in curve.groupby("configuration"):
+        share = float(part["share"].iloc[0])
         colour = _group_colour(share)
         ax.fill_between(part["checkpoint_step"], part["low"], part["high"], color=colour, alpha=0.18, lw=0)
         line, = ax.plot(part["checkpoint_step"], part["mean"], color=colour, marker=_group_marker(share),
-                        lw=1.6, ms=4, label=_group_label(share))
+                        lw=1.6, ms=4, label=style.arm_name(configuration, track, seed=False),
+                        ls="--" if "tabpfn3" in configuration else "-")
         handles.append(line)
     ref = load_results(track, exp)
     if ref is not None:
@@ -598,7 +501,7 @@ def metric_grid(track: str, exp: str = "exp1", role: str | None = None):
         ax.axis("on")
         # Each model's mean first, then the group's: every model weighs the same.
         per_model = df.groupby(mc)[metric].mean()
-        vals = [per_model[[_share(m) == g for m in per_model.index]].mean() for g in groups]
+        vals = [per_model[[(_group_key(m)) == g for m in per_model.index]].mean() for g in groups]
         ax.bar(range(len(groups)), vals, color=[_group_colour(g) for g in groups], width=0.66)
         goal = style.metric_goal(metric)
         if isinstance(goal, (int, float)):
@@ -613,13 +516,13 @@ def metric_grid(track: str, exp: str = "exp1", role: str | None = None):
 
 
 def per_dataset_heatmap(track: str, exp: str = "exp1", metric: str | None = None):
-    """Best headline score in each group on each dataset, as an annotated heatmap."""
+    """Mean headline score in each group on each dataset, as an annotated heatmap."""
     df = load_results(track, exp)
     metric = metric or HEADLINE[track]
     style.apply()
     if df is None or metric not in df.columns or "dataset" not in df.columns:
         return _placeholder("no per-dataset benchmark results yet")
-    piv, groups = _best_per_group(df, metric)
+    piv, groups = _means_per_group(df, metric)
     roles = _roles(track, exp)
     rank = {"development": 0, "holdout": 1}
     order = sorted(piv.index, key=lambda v: (rank.get(roles.get(str(v).split(".", 1)[-1]), 2), str(v)))
@@ -641,13 +544,13 @@ def per_dataset_heatmap(track: str, exp: str = "exp1", metric: str | None = None
                 dark = (v - lo) / (hi - lo + 1e-12) < 0.55
                 ax.text(j, i, f"{v:.2f}", ha="center", va="center", fontsize=6,
                         color="white" if dark else style.INK)
-    fig.colorbar(im, ax=ax, shrink=0.55, label=f"best {style.metric_label(metric)} in the group")
+    fig.colorbar(im, ax=ax, shrink=0.55, label=f"mean {style.metric_label(metric)} in the group")
     return fig
 
 
 def beats_reference(track: str, exp: str = "exp1", metric: str | None = None,
                     role: str | None = None):
-    """Every trained arm's headline score minus the released TabICLv2's, on the datasets of one side
+    """Every trained arm's headline score minus its matching released model's, on the datasets of one side
     of the split — who clears the frontier."""
     df = load_results(track, exp)
     metric = metric or HEADLINE[track]
@@ -658,117 +561,77 @@ def beats_reference(track: str, exp: str = "exp1", metric: str | None = None,
         return _placeholder("no benchmark results yet")
     df, mc = _with_identity(df)
     per = df.groupby(mc)[metric].mean()
-    is_ref = [("tabiclv2" in str(m).lower()) for m in per.index]
-    if not any(is_ref):
-        return _placeholder("no released-TabICLv2 reference column in the results yet")
-    ref = float(per[is_ref].mean())
     ours = per[[_kind(m) in ("credit", "control") for m in per.index]]
     if ours.empty:
         return _placeholder("no trained arms scored yet")
+    references = {name: ("tabpfn3" if "tabpfn3" in str(name) else "tabiclv2") for name in ours.index}
+    if any(reference not in per for reference in references.values()):
+        return _placeholder("matching released-model references have not been scored yet")
     higher = HIGHER_IS_BETTER.get(metric, True)
     order = ours.sort_values(ascending=not higher)
-    delta = order.values - ref
+    delta = np.array([score - per[references[name]] for name, score in order.items()])
     fig, ax = plt.subplots(figsize=style.row_figsize(len(order), per_row=0.12, base=1.3))
     ax.barh(np.arange(len(order)), delta,
             color=[_group_colour(_share(m)) for m in order.index])
     ax.axvline(0, color=style.REFERENCE, lw=1.2)
     ax.set_yticks(np.arange(len(order)))
     ax.set_yticklabels([style.arm_name(m, track) for m in order.index], fontsize=6)
-    ax.set_xlabel(f"{style.metric_label(metric)} minus the released TabICLv2's, mean over the "
+    ax.set_xlabel(f"{style.metric_label(metric)} minus its matching released model, mean over the "
                   f"{ROLE_LABEL.get(role, role)}")
     groups = _groups(order.index)
     style.legend_below(ax, style.legend_patches({_group_label(g): _group_colour(g) for g in groups})
                        + [plt.Line2D([], [], color=style.REFERENCE, lw=1.2,
-                                     label="released TabICLv2 (0)")], ncol=2)
+                                     label="matching released model (0)")], ncol=2)
     return fig
 
 
 def results_summary(track: str, exp: str = "exp1") -> str:
-    """Text summary of the benchmark, in the notebook's order: what development selects, then how
-    it does on the holdout."""
-    df = load_results(track, exp)
-    title = f"{exp.upper()} {track.upper()} RESULTS — the benchmark"
-    if df is not None and "protocol" in df:
-        title += (f" (evaluation protocol {int(df['protocol'].iloc[0])}: "
-                  + ("5-fold CV, whole training pool as context, validation-tuned F1)"
-                     if int(df["protocol"].iloc[0]) >= 3 else "one split per seed, context capped at 1,024 rows)"))
-    if df is None:
-        return (f"{title}\n  no benchmark output in output CreditICL/experiment_<N>/benchmark/{track}/ yet.\n"
-                f"  The benchmark (phase 2) runs once every arm of the track has trained;\n"
-                f"  re-run this notebook after the phase-2 array finishes scoring.")
-    metric = HEADLINE[track]
-    label = style.metric_label(metric)
-    df, mc = _with_identity(df)
-    roles = _roles(track, exp)
-    lines = [title, f"  {df[mc].nunique()} models on "
-             f"{df['dataset'].nunique() if 'dataset' in df else '?'} datasets"
-             f" | metrics: {', '.join(available_metrics(df)) or 'none'}"]
-    if metric not in df.columns:
-        return "\n".join(lines)
-    lines += ["", f"A. WHICH PRIOR DEVELOPMENT SELECTS ({label}, development datasets, "
-              f"mean over datasets and seeds)"]
+    """Notebook sections A–C in order; later literature/OOD/component sections print separately."""
     from src.eval.selection import development_ranking
+    from src.eval.comparisons import paired_prior_effects, paired_reference_effects
 
+    df = load_results(track, exp)
+    title = f"{exp.upper()} {track.upper()} RESULTS — full-table five-fold benchmark"
+    headings = ["A. WHICH PRIOR DEVELOPMENT SELECTS", "B. HOW IT DOES ON THE HOLDOUT",
+                "B1. CREDIT PRIOR AGAINST THE CONTROL", "B2. AGAINST MATCHING RELEASED WEIGHTS",
+                "B3. EVERY BENCHMARK METRIC", "B4. EVERY SAVED CHECKPOINT", "C. EVERY DATASET"]
+    if df is None:
+        return title + "\n" + "\n".join(h + "\n  No complete benchmark output yet." for h in headings)
+    if "protocol" in df:
+        title += f" (protocol {int(df.protocol.iloc[0])})"
+    metric = HEADLINE[track]
+    df, mc = _with_identity(df)
+    lines = [title, headings[0]]
     ranking = development_ranking(df, track, exp)
-    if not ranking.empty:
-        for _, row in ranking.head(6).iterrows():
-            name = style.arm_name(row["configuration"], track, seed=False)
-            lines.append(f"  {row['mean']:.4f}  {name}")
-    else:
-        lines.append("  no complete development configuration scores yet")
-    full_means = pd.Series(dtype=float)
-    for role, heading in (("holdout", "B. HOW IT DOES ON THE HOLDOUT"),):
-        part = _restrict(df, track, exp, role) if roles else df
-        lines += ["", f"{heading} ({label}, {ROLE_LABEL[role if roles else None]}, "
-                  f"mean over every arm of each share)"]
-        if not len(part):
-            lines.append("  no holdout rows scored yet")
-            continue
-        full_means = _group_means(part, mc, metric, track)
-        for g in full_means.index:
-            lines.append(f"  {full_means[g]:.4f}  {g}")
-    curve = _checkpoint_means(track, exp, metric, "holdout" if roles else None)
-    lines += ["", f"B4. EVERY SAVED CHECKPOINT ({label}, holdout datasets, mean over training seeds)"]
+    lines.append(ranking.to_string(index=False) if not ranking.empty else "No complete development ranking.")
+    holdout = _restrict(df, track, exp, "holdout") if _roles(track, exp) else df
+    lines += [headings[1], "Datasets receive equal weight; CV folds are not independent replications."]
+    for heading, compare in ((headings[2], paired_prior_effects), (headings[3], paired_reference_effects)):
+        lines.append(heading)
+        if "protocol" in df and df.protocol.min() >= 6 and not holdout.empty:
+            try:
+                table = compare(holdout, metric)
+                lines.append(table.to_string(index=False) if not table.empty else "No matched contrasts.")
+            except ValueError as exc:
+                lines.append(f"Comparison withheld: {exc}")
+        else:
+            lines.append("Legacy/partial output: no current-protocol uncertainty claim.")
+    lines += ["Intervals are descriptive paired-dataset bootstraps; small benchmark sets limit precision.",
+              headings[4]]
+    for measure in available_metrics(holdout):
+        lines.append(measure + "\n" + _group_means(holdout, mc, measure, track).to_string())
+    lines.append(headings[5])
+    curve = _checkpoint_means(track, exp, metric, "holdout")
     if curve is None:
-        lines.append("  no learning curve yet: only final checkpoints have been scored")
+        lines.append("No complete learning curve yet.")
     else:
-        for share, part in curve.groupby("share"):
+        for configuration, part in curve.groupby("configuration"):
             steps = ", ".join(f"{int(r.checkpoint_step):,}: {r.mean:.4f}" for r in part.itertuples())
-            lines.append(f"  {style.prior_mix_label(share)} — {steps}")
-    for cap in context_caps(track, exp):
-        lines += ["", f"B5. CONTEXTS CAPPED AT {cap:,} ROWS ({label}, {ROLE_LABEL['holdout' if roles else None]}, "
-                  f"mean over every model of each group; the whole training pool in brackets)"]
-        capped = load_results(track, exp, context=cap)
-        if capped is not None:
-            capped, cmc = _with_identity(capped)
-            capped = _restrict(capped, track, exp, "holdout") if roles else capped
-        if capped is None or metric not in capped.columns or not len(capped):
-            lines.append("  not scored yet")
-            continue
-        means = _group_means(capped, cmc, metric, track)
-        for g in means.index:
-            full = f" (whole pool {full_means[g]:.4f})" if g in full_means.index else ""
-            lines.append(f"  {means[g]:.4f}{full}  {g}")
-    lines += ["", "C. OUR CREDIT PRIOR AGAINST THE CONTROL — matched arms that differ only in "
-              "the credit share", "  (same filter and training seed; a positive difference "
-              "means the credit prior helped)"]
-    for role in ("development", "holdout"):
-        for share, (mean, better, n) in paired_differences(df, track, exp, role).items():
-            lines.append(f"  {role:<11} {style.prior_mix_label(share)} minus 0 % credit: "
-                         f"{mean:+.4f} {label}, better in {better} of {n} pairs")
-    if "protocol" in df and df.protocol.min() >= 6:
-        from src.eval.comparisons import paired_prior_effects
-        holdout = _restrict(df, track, exp, "holdout") if roles else df
-        lines += ["", "D. PAIRED HOLDOUT UNCERTAINTY (datasets are the sampling units)",
-                  "  Fold/seed means within each dataset; descriptive bootstrap interval (nominal 95%).",
-                  "  Small benchmark sets give unstable intervals; coverage is not guaranteed.",
-                  "  Two-sided sign test; Holm correction across the comparisons below."]
-        if not holdout.empty:
-            for row in paired_prior_effects(holdout, metric).itertuples():
-                name = style.arm_name(row.configuration, track, seed=False)
-                lines.append(f"  {name}: {row.mean_difference:+.4f}, CI [{row.ci_low:+.4f}, "
-                             f"{row.ci_high:+.4f}], n={row.datasets} datasets, p(Holm)={row.p_holm:.4g}, "
-                             f"minimum attainable unadjusted p={row.minimum_sign_p:.4g}")
+            lines.append(f"{style.arm_name(configuration, track, seed=False)}: {steps}")
+    lines.append(headings[6])
+    if metric in df:
+        table, _ = _means_per_group(df, metric)
+        lines.append(table.to_string())
     return "\n".join(lines)
 
 

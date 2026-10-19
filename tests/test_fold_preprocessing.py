@@ -92,4 +92,4 @@ def test_a_lgd_target_is_scored_by_spearman_and_a_pd_one_by_auc():
 
 
 def test_the_protocol_is_bumped_for_the_new_preprocessing():
-    assert P.PROTOCOL == 7 and P.MAX_FEATURES is None
+    assert P.PROTOCOL == 8 and P.MAX_FEATURES is None

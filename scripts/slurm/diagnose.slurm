@@ -74,7 +74,7 @@ DATASETS="${DATASETS:-0005.base_modelisation,0004.base_model,0002.loss2,0003.axa
 echo "datasets: ${DATASETS}"
 echo
 
-python scripts/diagnose_nan.py --task "$TASK" --datasets "$DATASETS"
+python -m src.validation.diagnose_nan --task "$TASK" --datasets "$DATASETS"
 
 echo
 echo "finished: $(date -Is)"

@@ -221,7 +221,7 @@ Slurm jobs need nothing: scripts/slurm/_activate_env.sh finds this venv
 on its own.
 
 Next:
-    python -m src.utils.smoke_test --task lgd --steps 3 --report
+    python -m src.validation.smoke --task lgd --steps 3 --report
     python -m src.utils.fetch_ood --n 25
 EOF
 else

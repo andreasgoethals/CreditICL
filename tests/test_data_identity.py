@@ -57,7 +57,7 @@ def test_every_dataset_matches_tabpfncredit(task, dataset):
     from src.utils.paths import find_processed_dir
 
     if find_processed_dir(task, dataset) is None:
-        pytest.skip(f"{task}/{dataset} is not processed here (python scripts/preprocess.py)")
+        pytest.skip(f"{task}/{dataset} is not processed here (python -m src.data.preprocess)")
     base = SIBLING / task / dataset
     info = json.loads((base / "info.json").read_text(encoding="utf-8"))
     N = np.load(base / "N.npy", mmap_mode="r") if (base / "N.npy").exists() else None
@@ -85,6 +85,17 @@ def test_every_dataset_matches_tabpfncredit(task, dataset):
         if dataset == "0012.home_credit":
             column = numeric_names.index("DAYS_EMPLOYED")
             expected[:, column] = np.where(expected[:, column] == 365243, np.nan, expected[:, column])
+        if dataset == "0006.lgd_freddie":
+            for name in ("fico", "credit_score"):
+                if name in numeric_names:
+                    column = numeric_names.index(name)
+                    expected[expected[:, column] == 9999, column] = np.nan
+            # The sibling cache already clipped unavailable DTI=999 to 100.
+            # Its source value cannot be recovered; allow only this exact
+            # 100 -> missing correction. The raw recipe has a sentinel test.
+            column = numeric_names.index("dti")
+            restored = (expected[:, column] == 100) & np.isnan(actual[:, column])
+            expected[restored, column] = np.nan
         comparable &= (np.abs(expected) < 1e10) | np.isnan(expected)
         assert np.array_equal(expected[comparable], actual[comparable], equal_nan=True)
     if C is not None:

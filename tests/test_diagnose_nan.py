@@ -29,7 +29,7 @@ def test_it_names_the_module_where_the_first_nan_appears(tmp_path, capsys):
     import importlib.util
 
     spec = importlib.util.spec_from_file_location(
-        "diagnose_nan", ROOT / "scripts" / "diagnose_nan.py"
+        "diagnose_nan", ROOT / "src/validation/diagnose_nan.py"
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -64,7 +64,7 @@ def test_a_healthy_model_reports_healthy():
         pytest.skip("upstream tabicl not installed here")
 
     spec = importlib.util.spec_from_file_location(
-        "diagnose_nan", ROOT / "scripts" / "diagnose_nan.py"
+        "diagnose_nan", ROOT / "src/validation/diagnose_nan.py"
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

@@ -16,7 +16,7 @@ arms:
   no_macro_target:
     prior.credit.target.mechanism.macro_scale: 0.0
   no_informative_missingness:
-    prior.credit.missingness.missing_target_coupling_range: [0.0, 0.0]
+    prior.credit.missingness.missing_risk_coupling_range: [0.0, 0.0]
   no_shift:
     prior.credit.shift.shift_prob: 0.0
   no_tail_warp:

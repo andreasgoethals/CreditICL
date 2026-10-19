@@ -1,7 +1,7 @@
 """Is every directory this project writes to actually writable? Run it BEFORE submitting.
 
-    python scripts/check_storage.py            # report
-    python scripts/check_storage.py --fix      # also try to repair what it safely can
+    python -m src.utils.check_storage            # report
+    python -m src.utils.check_storage --fix      # also try to repair what it safely can
 
 WHY. On 14-08-2026 every arm of two debug arrays printed
 
@@ -27,7 +27,7 @@ import stat
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 

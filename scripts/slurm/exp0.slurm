@@ -6,7 +6,8 @@
 #
 #  GPU allocation after CPU validation: mandatory CUDA checks, isolated model smoke tests,
 #  upstream trainer equivalence, six short runs with forced stop/resume, and
-#  selected full-row credit/OOD benchmark receipts. Each attempt has its own output folder.
+#  selected full-row credit/OOD benchmark receipts. Resubmission continues the same
+#  source-bound campaign; completed stages/folds are verified and reused.
 #  PASS is bound to code, packages, inputs and artifacts; any failure blocks Exp1.
 # =============================================================================
 #SBATCH --job-name=crediticl-exp0-gpu
@@ -37,17 +38,8 @@ TS=$(date +%Y%m%d_%H%M%S)
 LOG="${LOGDIR}/exp0_gpu_${TS}_j${SLURM_JOB_ID}.log"
 exec > "$LOG" 2>&1
 
-_log_exit() {
-    rc=$?
-    if [[ "$rc" -eq 0 ]]; then
-        python -m src.utils.working_storage --cleanup-success || echo "WARNING: scratch retained; inspect cleanup error above"
-    fi
-    echo "=========================================="
-    if [[ "$rc" -eq 0 ]]; then echo "END status=OK - $(date)"
-    else echo "END status=FAILED exit_code=${rc} - $(date)"; fi
-    echo "=========================================="
-}
-trap _log_exit EXIT
+EXP0_PHASE=gpu
+source "${VSC_DATA}/CreditICL/scripts/slurm/_exp0_job.sh"
 
 cd "${VSC_DATA}/CreditICL"
 source scripts/slurm/_activate_env.sh
@@ -64,4 +56,4 @@ echo "Log            : ${LOG}"
 nvidia-smi || true
 echo "=========================================="
 
-python -u scripts/validate_experiment.py --phase gpu
+run_exp0_validation --phase gpu --resume

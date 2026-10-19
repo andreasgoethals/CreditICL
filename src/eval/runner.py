@@ -112,7 +112,9 @@ def _fit_predict(model_name: str, task: str, seed: int, X_fit: np.ndarray, y_fit
     if report.n_features != X_fit.shape[1]:
         raise ValueError("The model wrapper discarded benchmark feature columns")
     pred = np.asarray(model.predict(X_pred), dtype=float)
-    if pred.shape != (len(X_pred),):
+    n_classes = len(np.unique(y_fit)) if task == "pd" else 0
+    expected_shape = (len(X_pred), n_classes) if n_classes > 2 else (len(X_pred),)
+    if pred.shape != expected_shape:
         raise ValueError(f"Expected one prediction per test row: {pred.shape} for {len(X_pred)} rows")
     if not np.isfinite(pred).all():
         raise ValueError("Non-finite predictions")
@@ -152,7 +154,7 @@ def prepare_fold(task: str, X_tr: np.ndarray, y_tr: np.ndarray, X_te: np.ndarray
     fitted on 80 % of the pool, predicting the other 20 % (`y_val`), where the F1 threshold is
     chosen. Each fit learns its own preprocessing from its own fitted rows."""
     stages: dict[str, Any] = {"final": _stage(X_tr, y_tr, X_te, cat_indices)}
-    if task == "pd":
+    if task == "pd" and len(np.unique(y_tr)) == 2:
         fit_idx, val_idx = validation_split(y_tr, "pd", fraction=val_fraction, seed=1000 * seed + fold, groups=groups)
         stages["threshold"] = _stage(X_tr[fit_idx], y_tr[fit_idx], X_tr[val_idx], cat_indices)
         stages["y_val"] = np.asarray(y_tr)[val_idx]
@@ -176,7 +178,15 @@ def score_fold(task: str, model_name: str, X_tr: np.ndarray, y_tr: np.ndarray, X
     final = stages["final"]
     out: dict[str, Any] = {"n_train": int(len(y_tr)), "n_test": int(len(y_te)),
                            **{f"prep_{k}": v for k, v in final.report.items()}}
-    if task == "pd":
+    if task == "pd" and len(np.unique(y_tr)) > 2:
+        from src.eval.metrics import multiclass_metrics
+
+        p, _, report = _fit_predict(model_name, task, seed, final.X_fit, final.y_fit,
+                                   final.X_pred, final.cat_indices, model_kwargs, max_context_rows)
+        out.update(multiclass_metrics(y_te, p))
+        out["n_val"] = 0  # multiclass argmax has no binary F1 threshold to tune
+        headline = f"macro_auc={out['roc_auc']:.4f} log_loss={out['log_loss']:.4f}"
+    elif task == "pd":
         t = stages["threshold"]
         p_val, _, _ = _fit_predict(model_name, task, seed, t.X_fit, t.y_fit, t.X_pred,
                                    t.cat_indices, model_kwargs, max_context_rows)
@@ -251,12 +261,18 @@ def load_arrays(task: str, dataset: str, *, max_rows: int | None = None, seed: i
 def evaluate_dataset(task: str, dataset: str, models: list[str], seed: int, *, n_folds: int = N_FOLDS,
                      val_fraction: float = VALIDATION_FRACTION, split: str = "random",
                      model_kwargs: dict[str, dict[str, Any]] | None = None,
-                     max_rows: int | None = None, max_context_rows: int | None = None) -> list[dict[str, Any]]:
+                     max_rows: int | None = None, max_context_rows: int | None = None,
+                     journal=None) -> list[dict[str, Any]]:
     """Every model on every fold of one dataset: `n_folds x len(models)` rows."""
     log = get_logger()
     check_split(split)
     base = {"task": task, "dataset": dataset, "seed": seed, "split": split, "protocol": PROTOCOL,
             "n_folds": n_folds, "context_cap": max_context_rows}
+    cached = {(fold, model): journal.get({**base, "fold": fold, "model": model})
+              for fold in range(n_folds) for model in models} if journal else {}
+    if cached and all(cached.values()):
+        log.info("[eval] REUSE %s: all %d cells already saved", dataset, len(cached))
+        return list(cached.values())
     try:
         X, y, cat_indices, info = load_arrays(task, dataset, max_rows=max_rows, seed=seed)
         # The folds are fixed by (dataset, seed) alone, so every model sees the same ones.
@@ -268,6 +284,9 @@ def evaluate_dataset(task: str, dataset: str, models: list[str], seed: int, *, n
                 for m in models for f in range(n_folds)]
     rows: list[dict[str, Any]] = []
     for fold, (train_idx, test_idx) in enumerate(folds):
+        if all(cached.get((fold, model)) for model in models):
+            rows.extend(cached[(fold, model)] for model in models)
+            continue
         # THE SAME DATA FOR EVERY MODEL: the fold preprocessing (near-constant columns, outlier
         # rows, the column cap, winsorising) is learned once per fit, on its fitted rows.
         X_tr, y_tr, X_te = X[train_idx], y[train_idx], X[test_idx]
@@ -279,6 +298,11 @@ def evaluate_dataset(task: str, dataset: str, models: list[str], seed: int, *, n
             stages, prep_error = None, f"{type(exc).__name__}: {exc}"
         for model_name in models:
             row = {**base, **info, "model": model_name, "fold": fold, "status": "failed"}
+            if cached.get((fold, model_name)):
+                rows.append(cached[(fold, model_name)])
+                continue
+            if journal:
+                journal.begin(row)
             started = time.time()
             try:
                 if stages is None:
@@ -299,10 +323,12 @@ def evaluate_dataset(task: str, dataset: str, models: list[str], seed: int, *, n
                 _release_memory()
             row["total_seconds"] = round(time.time() - started, 2)
             rows.append(row)
+            if journal:
+                journal.save(row)
     return rows
 
 
-def run(cfg: EvalConfig) -> pd.DataFrame:
+def run(cfg: EvalConfig, *, journal=None) -> pd.DataFrame:
     """Run the whole sweep and return one row per (dataset, model, seed, fold)."""
     log = get_logger()
     log_section(log, f"EVAL — {cfg.task.upper()}  (protocol {PROTOCOL}: {cfg.n_folds}-fold CV, whole training pool as context)")
@@ -339,7 +365,7 @@ def run(cfg: EvalConfig) -> pd.DataFrame:
             rows.extend(evaluate_dataset(
                 cfg.task, dataset, models, seed, n_folds=cfg.n_folds, val_fraction=cfg.val_fraction,
                 split=cfg.split, model_kwargs=cfg.model_kwargs, max_rows=cfg.max_rows,
-                max_context_rows=cfg.max_context_rows,
+                max_context_rows=cfg.max_context_rows, **({"journal": journal} if journal else {}),
             ))
 
     df = pd.DataFrame(rows)
@@ -357,6 +383,10 @@ def summarise(df: pd.DataFrame, task: str) -> pd.DataFrame:
     datasets, so a dataset counts once whatever its fold count."""
     if df.empty:
         return df
+    if "fold" in df:
+        from src.eval.comparisons import require_balanced_cells
+
+        require_balanced_cells(df)
     ok = df[df["status"] == "ok"]
     if ok.empty:
         return ok

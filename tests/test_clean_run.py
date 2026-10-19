@@ -10,6 +10,24 @@ from pathlib import Path
 
 import pytest
 
+
+def test_full_reset_clears_embedded_notebook_outputs_but_preserves_sources(isolated_output, monkeypatch):
+    import json
+    from src.utils import paths
+    from src.utils.clean_run import reset_output
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
+    monkeypatch.setattr("src.utils.run_experiment.queued_job_names", lambda: set())
+    notebook = paths.outputs_dir().parent / "notebooks" / "probe.ipynb"
+    notebook.parent.mkdir(parents=True, exist_ok=True)
+    cells = [{"cell_type": "code", "source": ["print(1)"], "execution_count": 1,
+              "outputs": [{"output_type": "stream", "text": "1"}]}]
+    notebook.write_text(json.dumps({"cells": cells}))
+    reset_output()
+    assert json.loads(notebook.read_text())["cells"][0]["outputs"]
+    reset_output(clean=True)
+    cell = json.loads(notebook.read_text())["cells"][0]
+    assert cell["source"] == ["print(1)"] and cell["outputs"] == [] and cell["execution_count"] is None
+
 from src.utils import clean_run
 
 
@@ -187,7 +205,9 @@ def test_full_reset_includes_legacy_runs_and_names_on_both_tiers(isolated_output
                          "checkpoints/debug_pd/step-3.ckpt",
                          "slurm-crediticl-exp0-cpu-62316841.out",
                          "slurm-crediticl-exp0-gpu-11688276.err",
-                         "slurm-cicl-preprocess-1234.out"):
+                         "slurm-cicl-preprocess-1234.out", "benchmark-results.zip",
+                         "output.zip", "output CreditICL.zip", "outputCreditICL.zip",
+                         "output_CreditICL.zip"):
             p = project / relative
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_bytes(b"generated")
@@ -196,7 +216,8 @@ def test_full_reset_includes_legacy_runs_and_names_on_both_tiers(isolated_output
                          "checkpoints/tabpfn-v3-regressor-v3_default.ckpt",
                          "checkpoints/released_bundle/weights.ckpt",
                          "data/raw/input.csv", "prior_cache/ood/table.npz",
-                         "slurm-otherproject-1234.out", "slurm-crediticl-not-a-job.out"):
+                         "slurm-otherproject-1234.out", "slurm-crediticl-not-a-job.out",
+                         "input-data.zip", "output_JEVPFN.zip"):
             p = project / relative
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_bytes(b"input")
@@ -318,7 +339,7 @@ def test_full_reset_still_refuses_changed_slurm_logs_with_ancestor_aliases(
     assert log.exists() and other.read_bytes() == b"evidence"
 
 
-@pytest.mark.parametrize("linked_name", ["slurm-crediticl-exp0-cpu-62313072.out", "output CreditICL"])
+@pytest.mark.parametrize("linked_name", ["slurm-crediticl-exp0-cpu-62313072.out", "output CreditICL", "benchmark-results.zip"])
 def test_full_reset_rejects_linked_outputs_beneath_allowed_ancestor_aliases(
         aliased_projects, tmp_path, linked_name):
     projects, _ = aliased_projects

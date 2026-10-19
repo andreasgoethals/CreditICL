@@ -217,17 +217,17 @@ def test_results_views_keep_each_credit_share_apart(monkeypatch):
     monkeypatch.setattr(rp, "load_results", lambda track, exp="exp1", context=None: df)
     ticks = [t.get_text() for t in rp.credit_vs_control("pd", "exp2").axes[0].get_xticklabels()]
     assert ticks == ["0 % credit\n(TabICL prior only)", "50 % credit", "100 % credit",
-                     "reference models\n(not trained by us)"]
-    piv, groups = rp._best_per_group(df, "roc_auc")
-    assert groups == [0.0, 0.5, 1.0, None]
+                     "released TabICLv2"]
+    piv, groups = rp._means_per_group(df, "roc_auc")
+    assert groups == [0.0, 0.5, 1.0, "tabiclv2"]
     assert piv.loc["german", "50 % credit"] == pytest.approx(0.72)
 
 
-def test_best_per_group_takes_a_models_seed_mean_not_its_luckiest_seed():
+def test_group_means_use_all_evaluation_folds():
     rows = [{"dataset": "german", "model": "crediticl", "seed": s, "roc_auc": a,
              "info_run_name": "exp1_pd__prior-credit_fraction=0p5__filter-mode=off__s0"}
             for s, a in ((0, 0.60), (1, 0.80))]
-    piv, _ = rp._best_per_group(pd.DataFrame(rows), "roc_auc")
+    piv, _ = rp._means_per_group(pd.DataFrame(rows), "roc_auc")
     assert piv.loc["german", "50 % credit"] == pytest.approx(0.70)
 
 

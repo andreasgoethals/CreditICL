@@ -1,8 +1,8 @@
 """Experiment 0 — every check that can run before a real arm does, ON THE CLUSTER.
 
-    python scripts/exp0_checks.py                  # everything (a GPU job: scripts/slurm/exp0.slurm)
-    python scripts/exp0_checks.py --only env paths # a subset
-    python scripts/exp0_checks.py --quick          # skip the slow ones (training steps, benchmark fold)
+    python -m src.validation.checks                  # everything (a GPU job: scripts/slurm/exp0.slurm)
+    python -m src.validation.checks --only env paths # a subset
+    python -m src.validation.checks --quick          # skip the slow ones (training steps, benchmark fold)
 
 Each check is isolated — one failing never stops the others — and reports PASS, WARN or FAIL
 with the numbers behind it. The report goes to `output CreditICL/experiment_0/report/`
@@ -43,7 +43,7 @@ import traceback
 from pathlib import Path
 from typing import Any, Callable
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -186,7 +186,7 @@ def check_data(rep: Report) -> None:
         names = list(cfg["eval"]["dev_datasets"]) + list(cfg["eval"]["holdout_datasets"])
         for name in names:
             if find_processed_dir(track, name) is None:
-                rep.add("data", f"{track}/{name}", FAIL, "not processed (python scripts/preprocess.py)")
+                rep.add("data", f"{track}/{name}", FAIL, "not processed (python -m src.data.preprocess)")
                 continue
             try:
                 ds = load_processed(track, name)
@@ -346,7 +346,7 @@ def _batch_digest(prior: dict, track: str, *, workers: int, n_batches: int = 2, 
 _FRESH_PROCESS = """
 import copy, sys
 sys.path.insert(0, {root!r})
-from scripts.exp0_checks import _batch_digest
+from src.validation.checks import _batch_digest
 from src.utils.config import expand_with_seeds, load
 prior = copy.deepcopy(expand_with_seeds(load({config!r}))[0]["prior"])
 prior["credit_fraction"] = 0.5
@@ -541,6 +541,19 @@ def _checkpoint_round_trip(rep: Report, track: str, run: dict, trainer: Any, ckp
         rep.add("train", label, PASS if ok else FAIL,
                 {"wrapper": model_name, "tensors_compared": len(shared), "of": len(live), "max_abs_diff": diff,
                  "predictions_finite": bool(np.isfinite(pred).all())})
+        if track == "pd":
+            # The binary credit task must not hide broken native multiclass OOD routes.
+            for classes in (3, 11):
+                rng = np.random.default_rng(19)
+                features = rng.normal(size=(classes * 6, 5)).astype(np.float32)
+                labels = np.arange(classes * 5) % classes
+                m.fit(features[:len(labels)], labels, [])
+                probabilities = np.asarray(m.predict(features[len(labels):]))
+                if (probabilities.shape != (classes, classes)
+                        or not np.isfinite(probabilities).all()
+                        or not np.allclose(probabilities.sum(1), 1, atol=1e-5)):
+                    raise ValueError(f"Invalid {classes}-class predictions from trained checkpoint")
+            rep.add("train", label + ": native multiclass OOD", PASS, {"classes": [3, 11]})
     except Exception as exc:  # noqa: BLE001
         rep.add("train", label, FAIL, f"{type(exc).__name__}: {exc}\n{traceback.format_exc()[-1200:]}")
     finally:
@@ -567,9 +580,10 @@ def check_benchmark(rep: Report) -> None:
                 raise ValueError("Invalid train/test partition")
             if groups is not None and np.intersect1d(groups[train], groups[test]).size:
                 raise ValueError("An entity appears on both sides of a fold")
-            if task == "pd" and (len(np.unique(y[train])) != 2 or len(np.unique(y[test])) != 2):
+            if task == "pd" and (set(np.unique(y[train])) != set(np.unique(y))
+                                 or set(np.unique(y[test])) != set(np.unique(y))):
                 raise ValueError("A classification fold is missing a class")
-            if task == "pd":
+            if task == "pd" and len(np.unique(y)) == 2:
                 train_groups = groups[train] if groups is not None else None
                 fit, val = validation_split(y[train], task, seed=fold,
                                             groups=train_groups)

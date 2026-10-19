@@ -99,13 +99,19 @@ def main() -> int:
         max_context_rows=args.max_context_rows,
         model_kwargs=model_kwargs,
     )
-    df = run_ood(cfg)
-
     # OOD results are their OWN folder, never mixed with the credit results.
     out = benchmark_dir_for(owner_tag, "ood")
     out.mkdir(parents=True, exist_ok=True)
     suffix = f"_{args.tag}" if args.tag else ""
     from src.utils.atomic_output import write_csv
+    from src.eval.progress import CellJournal, EvaluationDeferred, identity
+
+    try:
+        with CellJournal(out / f"ood_results{suffix}.csv", identity(cfg, "ood")) as journal:
+            df = run_ood(cfg, journal=journal)
+    except EvaluationDeferred as exc:
+        log.info("[ood] DEFERRED: %s", exc)
+        return 64
 
     write_csv(df, out / f"ood_results{suffix}.csv")
     write_csv(summarise_ood(df), out / f"ood_summary{suffix}.csv")

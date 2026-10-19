@@ -39,4 +39,4 @@ source scripts/slurm/_activate_env.sh
 
 # TASK defaults to both, so running this on its own still does everything;
 # submit_pipeline.sh sets it per task so chaining both does not preprocess twice.
-python -u scripts/preprocess.py --task "${TASK:-both}"
+python -u -m src.data.preprocess --task "${TASK:-both}"

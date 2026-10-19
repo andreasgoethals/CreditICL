@@ -1,7 +1,7 @@
 """Is our trainer upstream's trainer? Run both on the SAME batches from the SAME weights.
 
-    python scripts/check_equivalence.py --config config/Exp1_PD.yaml --index 0 --steps 20 --device cuda
-    python scripts/check_equivalence.py --config config/Exp1_PD.yaml --tiny --steps 5    # local, CPU
+    python -m src.validation.equivalence --config config/Exp1_PD.yaml --index 0 --steps 20 --device cuda
+    python -m src.validation.equivalence --config config/Exp1_PD.yaml --tiny --steps 5    # local, CPU
 
 Our `Trainer.train_step` and the installed pinned upstream `Trainer.run_batch` (`tabicl/train/_run.py`)
 each take the identical batch — our prior's control arm, which is upstream's `GraphSCM` — starting
@@ -30,7 +30,7 @@ import tempfile
 import types
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -121,8 +121,6 @@ def main() -> int:
     ap.add_argument("--tiny", action="store_true", help="shrink model and tables for a quick CPU run")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
-
-    import torch
 
     from src.prior.dataset import PriorBatchDataset
     from src.prior.generator import TaskGenerator

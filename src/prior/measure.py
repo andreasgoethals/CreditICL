@@ -4,8 +4,8 @@ This is the honesty check. Several claims about "what the original prior does an
 does not contain" are easy to assert and easy to get wrong — this project already
 had to walk two of them back after reading the code. So measure instead.
 
-    python scripts/measure_prior.py --config config/Exp1_LGD.yaml --n 500
-    python scripts/measure_prior.py --config config/Exp1_PD.yaml  --n 500 \
+    python -m src.prior.measure --config config/Exp1_LGD.yaml --n 500
+    python -m src.prior.measure --config config/Exp1_PD.yaml  --n 500 \
         --credit-fraction 0.0   # measure the ORIGINAL prior on its own
 
 What it reports, per prior:
@@ -30,7 +30,7 @@ import json
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 

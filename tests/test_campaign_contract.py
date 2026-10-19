@@ -63,7 +63,7 @@ def test_full_million_rows_are_used_exactly_once_as_test_rows():
 
 @pytest.mark.parametrize("broken", [False, True])
 def test_cpu_exp0_validates_the_actual_inner_threshold_splits(monkeypatch, broken):
-    from scripts.exp0_checks import Report, check_benchmark
+    from src.validation.checks import Report, check_benchmark
     from src.eval import protocol
 
     X, y = np.ones((100, 2)), np.arange(100) % 2
@@ -151,7 +151,7 @@ def test_large_numeric_values_within_safe_reduction_range_are_not_flattened():
     from src.data.dataset_preprocessing import _sanitize_numeric_values
     frame = pd.DataFrame({"x": [1e14, 2e14, np.inf]})
     result = _sanitize_numeric_values(frame, ["x"])
-    assert result.x.iloc[1] == 2e14 and result.x.iloc[0] == 1e14
+    assert 0 < result.x.iloc[0] < result.x.iloc[1] < 2e14
     assert np.isnan(result.x.iloc[2])
 
 
@@ -161,15 +161,15 @@ def test_missingness_coupling_keeps_requested_marginal_rate():
     y = (torch.arange(20000) % 10 == 0).float()
     X = torch.ones(len(y), 1)
     cfg = {"missing_rate_range": [.3, .3], "missing_col_fraction": 1.,
-           "missing_target_coupling": 1., "missing_indicators": False}
-    missing, _ = apply_informative_missingness(PriorRNG(1), X, y, cfg, 1, fill="nan")
+           "missing_risk_coupling": 1., "missing_indicators": False}
+    missing, _ = apply_informative_missingness(PriorRNG(1), X, cfg, 1, fill="nan")
     mask = torch.isnan(missing[:, 0])
     assert abs(mask.float().mean().item() - .3) < .02
-    assert mask[y == 1].float().mean() > mask[y == 0].float().mean()
+    assert abs(float(mask[y == 1].float().mean() - mask[y == 0].float().mean())) < .04
 
 
 def test_cpu_gpu_validation_have_disjoint_expensive_stages():
-    from src.utils.validation import plan
+    from src.validation.campaign import plan
     cpu, gpu = plan("cpu"), plan("gpu")
     assert any(s.name == "unit" for s in cpu) and not any(s.name == "unit" for s in gpu)
     assert any(s.name == "vsc" for s in gpu) and not any(s.name == "vsc" for s in cpu)

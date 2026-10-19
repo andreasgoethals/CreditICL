@@ -1,7 +1,7 @@
 """Mandatory Experiment 0 checks that must fail, never skip, on the VSC node.
 
 Full-model training/save/load tests and selected full-table benchmark probes run as
-separate child processes in src.utils.validation, avoiding shared CUDA failures.
+separate child processes in src.validation.campaign, avoiding shared CUDA failures.
 """
 import os
 import sys
@@ -108,7 +108,7 @@ def test_cuda_scaler_retries_without_losing_training_tasks():
 
 def test_every_real_input_and_released_weight_is_present():
     from src.utils.preflight import run_checks
-    from src.utils.validation import input_inventory
+    from src.validation.campaign import input_inventory
 
     failures = [c for c in run_checks() if not c.ok]
     assert not failures, failures
@@ -132,13 +132,20 @@ def test_tabicl_disk_offload_preserves_full_ensemble_predictions(task):
     assert_released_memory_equivalence(task, device="cuda", force_disk=True)
 
 
+@pytest.mark.parametrize("task,width", [("pd", 2986), ("lgd", 601)])
+def test_tabicl_streaming_preserves_full_width_ensemble_predictions(task, width):
+    from test_tabicl_memory import assert_released_memory_equivalence
+
+    assert_released_memory_equivalence(task, device="cuda", force_stream=True, width=width)
+
+
 def test_storage_tiers_handle_spaces_and_atomic_writes():
     import json
     import tempfile
     from pathlib import Path
 
     from src.utils import paths
-    from src.utils.validation import write_json
+    from src.validation.campaign import write_json
 
     for root in (paths.outputs_dir(), paths.big_outputs_dir()):
         assert "output CreditICL" in str(root)
@@ -148,3 +155,21 @@ def test_storage_tiers_handle_spaces_and_atomic_writes():
             write_json(target, {"probe": 1})
             write_json(target, {"probe": 2})
             assert json.loads(target.read_text()) == {"probe": 2}
+
+
+@pytest.mark.parametrize("model_name", ["tabiclv2", "tabpfn3"])
+@pytest.mark.parametrize("classes", [3, 11])
+def test_native_multiclass_on_released_gpu_wrappers(model_name, classes):
+    from test_multiclass import assert_multiclass_wrapper
+    assert_multiclass_wrapper(model_name, classes)
+
+
+@pytest.mark.parametrize("classes", [3, 11])
+def test_streaming_multiclass_on_gpu(classes):
+    from test_tabicl_memory import assert_released_memory_equivalence
+    assert_released_memory_equivalence("pd", device="cuda", force_stream=True, classes=classes)
+
+
+def test_l2sp_references_follow_the_cuda_model(lgd_cfg, tmp_path, monkeypatch):
+    from test_l2sp import assert_l2sp_device_and_gradient
+    assert_l2sp_device_and_gradient(lgd_cfg, tmp_path, monkeypatch, device="cuda")

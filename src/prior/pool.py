@@ -242,7 +242,7 @@ class PoolReader:
         if not self.shards:
             raise FileNotFoundError(
                 f"no shards in {self.dir}. Generate the pool first:\n"
-                f"  python scripts/generate_prior.py --config config/{task.upper()}.yaml "
+                f"  python -m src.prior.generate --config config/{task.upper()}.yaml "
                 f"--variant {variant}"
             )
         self._loaded_index: int | None = None

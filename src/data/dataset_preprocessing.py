@@ -246,17 +246,17 @@ def _clip_lgd_target(
     original = df[target_col]
     n_below = (original < lower).sum()
     n_above = (original > upper).sum()
-    n_clipped = n_below + n_above
+    n_compressed = n_below + n_above
     
     df[target_col] = df[target_col].clip(lower=lower, upper=upper)
     
-    if n_clipped > 0:
+    if n_compressed > 0:
         logger.info(
-            f"LGD target clipping: {n_clipped} values clipped to [{lower}, {upper}] "
+            f"LGD target clipping: {n_compressed} values clipped to [{lower}, {upper}] "
             f"({n_below} below, {n_above} above)"
         )
     
-    return df, n_clipped
+    return df, n_compressed
 
 
 def parse_credit_age(value):
@@ -273,14 +273,14 @@ def parse_credit_age(value):
 def _sanitize_numeric_values(
     df: pd.DataFrame, 
     num_cols: List[str],
-    clip_threshold: float = 1e15
+    clip_threshold: float = 1e12
 ) -> pd.DataFrame:
     """
     Sanitize numeric columns to prevent numerical overflow.
     
     Operations:
     1. Replace infinity values (±inf) with NaN
-    2. Bound extreme values below the float32 reduction-overflow range. Representable
+    2. Compress extreme tails monotonically below the float32 reduction-overflow range. Representable
        individual values can still overflow a mean or variance on a full table.
     
     This is DATA CLEANING, not statistical modeling, so it's safe to 
@@ -289,7 +289,7 @@ def _sanitize_numeric_values(
     df = df.copy()
     
     n_inf_replaced = 0
-    n_clipped = 0
+    n_compressed = 0
     
     for col in num_cols:
         if col not in df.columns:
@@ -300,12 +300,15 @@ def _sanitize_numeric_values(
         df[col] = df[col].replace([np.inf, -np.inf], np.nan)
         
         extreme_mask = (df[col].abs() > clip_threshold) & df[col].notna()
-        n_clipped += extreme_mask.sum()
-        df[col] = df[col].clip(lower=-clip_threshold, upper=clip_threshold)
+        n_compressed += extreme_mask.sum()
+        # Fixed monotone tail compression avoids flattening distinct large values.
+        values = df.loc[extreme_mask, col].astype(float)
+        df.loc[extreme_mask, col] = np.sign(values) * clip_threshold * (
+            1.0 + np.log(np.abs(values)) - np.log(clip_threshold))
     
-    if n_inf_replaced > 0 or n_clipped > 0:
+    if n_inf_replaced > 0 or n_compressed > 0:
         logger.info(
-            f"Sanitized: {n_inf_replaced} inf→NaN, {n_clipped} clipped to ±{clip_threshold:.0e}"
+            f"Sanitized: {n_inf_replaced} inf→NaN, {n_compressed} tail-compressed beyond ±{clip_threshold:.0e}"
         )
     
     return df
@@ -811,9 +814,9 @@ def preprocess_dataset_specific(
                 df = df.infer_objects(copy=False)
 
             if "Age" in df.columns:
-                n_clipped = ((df["Age"] < 0) | (df["Age"] > 20)).sum()
-                if n_clipped > 0:
-                    logger.info(f"Clipping {n_clipped} Age values to [0, 20]")
+                n_compressed = ((df["Age"] < 0) | (df["Age"] > 20)).sum()
+                if n_compressed > 0:
+                    logger.info(f"Clipping {n_compressed} Age values to [0, 20]")
                 df["Age"] = df["Age"].clip(lower=0, upper=20)
 
             if "AvailAmt" in df.columns:
@@ -981,8 +984,13 @@ def preprocess_dataset_specific(
             if "number_of_units" in df.columns:
                 df["number_of_units"] = df["number_of_units"].clip(0, 5)
             
+            # Freddie Mac Single-Family Loan-Level Dataset user guide: unavailable codes.
+            # https://www.freddiemac.com/fmac-resources/research/pdf/user_guide.pdf
             if "dti" in df.columns:
-                df["dti"] = df["dti"].clip(0, 100)
+                df["dti"] = df["dti"].replace(999, np.nan).clip(0, 100)
+            for score in ("fico", "credit_score"):
+                if score in df.columns:
+                    df[score] = df[score].replace(9999, np.nan)
             
             logger.info("Applied lgd_freddie-specific transformations: capping number_of_units and dti")
             
@@ -1027,7 +1035,7 @@ def preprocess_dataset_specific(
     
     # 3a. LGD target clipping to [0, 1] (domain constraint - no leakage)
     if task == "lgd":
-        df, n_clipped = _clip_lgd_target(df, target_col, lower=0.0, upper=1.0)
+        df, n_compressed = _clip_lgd_target(df, target_col, lower=0.0, upper=1.0)
     
     # 3b. Sanitize numeric values (data cleaning - no leakage)
     df = _sanitize_numeric_values(df, num_cols)

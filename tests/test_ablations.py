@@ -29,7 +29,7 @@ def test_five_component_tests_share_the_main_training_and_evaluation_budget(trac
     permitted = {
         "no_macro_target": ({"credit.target.mechanism.macro_scale"} if track == "pd" else
                             {f"credit.target.zoib.macro_{x}_range" for x in ("p0", "p1", "mu")}),
-        "no_informative_missingness": {"credit.missingness.missing_target_coupling_range"},
+        "no_informative_missingness": {"credit.missingness.missing_risk_coupling_range"},
         "no_shift": {"credit.shift.shift_prob"},
         "no_tail_warp": {"credit.marginals.col_fraction_range"},
         "base_cardinality": {"credit.max_cat_size", "credit.use_corrected_cat_sizes"},

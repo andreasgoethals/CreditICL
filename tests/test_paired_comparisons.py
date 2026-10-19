@@ -57,10 +57,10 @@ def test_holm_adjustment_restores_original_order():
 
 
 def test_per_dataset_plot_does_not_choose_the_best_training_seed():
-    from src.visualize.results_plots import _best_per_group
+    from src.visualize.results_plots import _means_per_group
     df = scores()
     df.loc[df.info_run_name.str.endswith("__s2"), "roc_auc"] += .2
-    matrix, _ = _best_per_group(df, "roc_auc")
+    matrix, _ = _means_per_group(df, "roc_auc")
     expected = df[df.dataset.eq("a") & df.info_run_name.str.contains("credit_fraction=0p5")].roc_auc.mean()
     assert matrix.loc["a", "50 % credit"] == pytest.approx(expected)
 

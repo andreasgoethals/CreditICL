@@ -1,8 +1,8 @@
 """Why is this GPU slow? Separate "the chip is slow" from "the data pipeline stalls".
 
-    python scripts/benchmark_gpu.py                    # everything, ~2 minutes
-    python scripts/benchmark_gpu.py --skip-prior       # no CPU prior work, GPU only
-    python scripts/benchmark_gpu.py --steps 30 --json out.json
+    python -m src.validation.benchmark_gpu                    # everything, ~2 minutes
+    python -m src.validation.benchmark_gpu --skip-prior       # no CPU prior work, GPU only
+    python -m src.validation.benchmark_gpu --steps 30 --json out.json
 
 WHY THIS EXISTS. On 14-08-2026 the same PD configuration ran at 0.5 steps/s on a B200 and
 6.9 steps/s on a free RTX 5000 Ada — 12x slower on hardware costing 26,250 credits an hour,
@@ -42,7 +42,7 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 

@@ -14,7 +14,7 @@ import numpy as np
 
 from src.data.dataset_registry import canonical_slug
 
-FEATURE_POLICY = "application-pd_default-lgd_v3"
+FEATURE_POLICY = "application-pd_default-lgd_v4"
 
 # 29 September source-data audit, applied after the prediction-time decision on
 # 12 October. Exact source names, including categorical copies, are excluded.
@@ -60,7 +60,7 @@ def prediction_features(task: str, dataset: str, X: np.ndarray, cat_indices: lis
     def eligible(name):
         normalized = name.removesuffix("__cat").casefold()
         future_macro = (task == "lgd" and canonical_slug(dataset) == "0005.base_modelisation"
-                        and normalized.startswith("py1_"))
+                        and (normalized.startswith("py1_") or "_py1_" in normalized))
         return normalized not in excluded and not future_macro
 
     keep = [i for i, name in enumerate(names) if eligible(name)]

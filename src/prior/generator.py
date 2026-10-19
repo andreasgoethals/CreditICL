@@ -409,20 +409,19 @@ class TaskGenerator:
             return None, None
 
         if self.regression:
-            # The raw [0, 1] target first: missingness below couples to it on that scale, and
-            # the standardisation that matches prediction is applied last.
+            # Preserve the raw loss-fraction scale until context-fitted target standardisation.
             tcfg = {**self.credit_target_cfg, "target_scaling": "none"}
             if str(tcfg.get("mode", "quantile")) == "zoib":
                 # The literature's LGD process reads the features (its three predictors each get
                 # a direction in feature space), so they are processed first.
                 X = process_features(X)
-                X, y, tmeta = apply_lgd_zoib(rng, X, y_latent, tcfg.get("zoib", {}) or {}, self.max_features)
+                X, y, tmeta = apply_lgd_zoib(rng.fork("target"), X, y_latent, tcfg.get("zoib", {}) or {}, self.max_features)
             else:
-                y, tmeta = apply_lgd_target(rng, y_latent, tcfg)
+                y, tmeta = apply_lgd_target(rng.fork("target"), y_latent, tcfg)
                 X = process_features(X)
         else:
             X = process_features(X)
-            X, y, tmeta = apply_pd_target(rng, X, y_latent, self.credit_target_cfg, self.max_features)
+            X, y, tmeta = apply_pd_target(rng.fork("target"), X, y_latent, self.credit_target_cfg, self.max_features)
         meta.update(tmeta)
 
         # THE SLOT'S WIDTH IS FIXED. A target that ADDS a column (the period factor, recorded as a
@@ -442,15 +441,15 @@ class TaskGenerator:
                 meta["macro_feature"] = False
                 meta["target_columns_dropped"] = over
 
-        # Long-tailed marginals: amounts, balances and incomes are right-skewed, and real credit
-        # columns are far more skewed than the graph prior's (median |skew| 1.5 against 0.5).
+        # Long-tailed marginals for amounts, balances and incomes. This mechanism was
+        # developed after inspecting the benchmark suite; see the provenance in docs/PRIORS.md.
         if self.credit_marginals_cfg:
-            X, wmeta = warp_marginals(rng, X, self.credit_marginals_cfg)
+            X, wmeta = warp_marginals(rng.fork("marginals"), X, self.credit_marginals_cfg)
             meta.update(wmeta)
 
         # Irrelevant columns, inside the slot's feature budget (see `split_noise_budget`).
         if n_noise > 0:
-            X, nmeta = add_noise_features(rng, X, self.credit_noise_cfg, self.max_features, n_add=n_noise)
+            X, nmeta = add_noise_features(rng.fork("noise"), X, self.credit_noise_cfg, self.max_features, n_add=n_noise)
             meta.update(nmeta)
 
         if X.shape[0] < n_rows:
@@ -458,24 +457,24 @@ class TaskGenerator:
         if X.shape[0] > n_rows:
             # Sample the whole retained population, then retain its cohort order.
             # Taking the first rows systematically removed the later vintages.
-            take = rng.randperm(len(y))[:n_rows].sort().values
+            take = rng.fork("population").randperm(len(y))[:n_rows].sort().values
             X, y = X[take], y[take]
         width = int(X.shape[1])  # the table's real columns; zero padding follows them
 
         # Shift stress: order the rows so the context/query split — known exactly here — falls
         # across a change of population.
         if self.shift_cfg:
-            X, y, smeta = apply_shift(rng, X, y, self.shift_cfg, plan.train_size / n_rows)
+            X, y, smeta = apply_shift(rng.fork("shift"), X, y, self.shift_cfg, plan.train_size / n_rows)
             meta.update(smeta)
         # Shifts see real features, never the constant padding columns.
-        X = self._permute_and_pad(rng, X)
+        X = self._permute_and_pad(rng.fork("columns"), X)
         # Otherwise the rows go in a random order, so the split is random: upstream's rows are
         # i.i.d. and a cross-validation fold is a random split. The PD mechanism stacks vintages
         # in contiguous row blocks (`sample_cohort_factor`); until 28-09-2026 nothing reshuffled
         # them, so every table's context was its early vintages and its query the late ones — a
         # cohort shift in every table, not in the `shift_prob` share the config asks for.
         if meta.get("shift", "none") == "none":
-            order = rng.randperm(X.shape[0])
+            order = rng.fork("rows").randperm(X.shape[0])
             X, y = X[order], y[order]
 
         # UPSTREAM'S CLASS CHECK, BEFORE ANYTHING IS FITTED ON THE CONTEXT. A table whose context
@@ -487,8 +486,9 @@ class TaskGenerator:
         if not self.regression and not same_classes_on_both_sides(y, plan.train_size):
             if meta.get("shift", "none") != "none":
                 return None, None  # the row order IS the shift; permuting would undo it
+            repair_rng = rng.fork("repair")
             for _ in range(10):
-                perm = rng.randperm(len(y))
+                perm = repair_rng.randperm(len(y))
                 if same_classes_on_both_sides(y[perm], plan.train_size):
                     X, y = X[perm], y[perm]
                     meta["class_repair"] = True
@@ -496,14 +496,13 @@ class TaskGenerator:
             else:
                 return None, None
 
-        # Informative missingness, in a `missing_prob` share of tables (half the real PD tables
-        # have no gaps at all): whether a value is missing depends on the target (a thin credit
-        # file is itself a risk signal). Applied once the row order is final, because a gap is
+        # Covariate-dependent missingness, in a `missing_prob` share of tables. No realised
+        # target is an input. Apply once the row order is final, because a gap is
         # filled as upstream's wrapper fills a real one: with the mean of the observed CONTEXT
         # values (`SimpleImputer` fitted in `fit`), and no indicator column.
-        if self.credit_missing_cfg and rng.boolean(float(self.credit_missing_cfg.get("missing_prob", 1.0))):
+        if self.credit_missing_cfg and rng.fork("missing-enabled").boolean(float(self.credit_missing_cfg.get("missing_prob", 1.0))):
             filled, mmeta = apply_informative_missingness(
-                rng, X[:, :width], y, self.credit_missing_cfg, self.max_features, fit_rows=plan.train_size,
+                rng.fork("missing"), X[:, :width], self.credit_missing_cfg, self.max_features, fit_rows=plan.train_size,
                 fill="nan" if self.encoding == "raw" else "mean")
             X = X.clone()
             X[:, :width] = filled
@@ -513,7 +512,7 @@ class TaskGenerator:
             # TabPFN preprocesses a real table itself (imputation, per-member transforms, target
             # z-scoring on the context); the table goes in as recorded.
             meta["encoding"] = "raw"
-            if not self.regression and rng.boolean(0.5):
+            if not self.regression and rng.fork("labels").boolean(0.5):
                 y = 1.0 - y
                 meta["labels_swapped"] = True
             if not self.regression:
@@ -538,7 +537,7 @@ class TaskGenerator:
             # Random label identity, as upstream's `permute_labels` gives every control table and
             # as the prediction ensemble's class rotation gives every real one: a model that only
             # ever saw "1 = default" in credit tables would learn an asymmetry.
-            if rng.boolean(0.5):
+            if rng.fork("labels").boolean(0.5):
                 y = 1.0 - y
                 meta["labels_swapped"] = True
             meta["num_classes"] = 2

@@ -2,7 +2,7 @@
 which checkpoints are scored. Every model — ours, released TabICLv2, TabPFN-3, CatBoost, the
 linear floor — goes through exactly this.
 
-THE PROTOCOL (version 7, 13-10-2026)
+THE PROTOCOL (version 8, 19-10-2026)
 
 * **5-fold cross-validation**, stratified on the default flag for PD, shuffled with a fixed
   seed, so every model sees the same folds. Each row is scored exactly once, by a model whose
@@ -39,7 +39,7 @@ import numpy as np
 #: Bumped whenever the protocol changes, so a completion receipt written under an older one is
 #: never mistaken for a current result (`benchmark_status`). 4 (30-09-2026): TabPFNCredit's
 #: fold preprocessing (below) and the feature cap it replaces PCA with.
-PROTOCOL = 7  # full rows AND features; no project-level selection or TabPFN feature subsampling
+PROTOCOL = 8  # native multiclass OOD; full rows/features, five folds, no subsampling
 N_FOLDS = 5
 #: Share of the training pool held out to choose the PD threshold.
 VALIDATION_FRACTION = 0.2
@@ -287,7 +287,7 @@ def cv_folds(y: np.ndarray, task: str, *, n_folds: int = N_FOLDS, seed: int = 0,
                     else GroupKFold(n_splits=n_folds, shuffle=True, random_state=seed))
         return list(splitter.split(index, y, groups))
     if task == "pd":
-        labels = (y >= 0.5).astype(int)
+        _, labels = np.unique(y, return_inverse=True)
         if np.bincount(labels, minlength=2).min() >= n_folds:
             splitter = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
             return [(tr, te) for tr, te in splitter.split(index, labels)]

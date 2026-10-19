@@ -45,5 +45,5 @@ source scripts/slurm/_activate_env.sh
 CFG="config/$(echo "$TASK" | tr '[:lower:]' '[:upper:]').yaml"
 
 echo "verifying $TASK pools hold exactly $N_DATASETS datasets each"
-python scripts/generate_prior.py --config "$CFG" --status --n-datasets "$N_DATASETS"
+python -m src.prior.generate --config "$CFG" --status --n-datasets "$N_DATASETS"
 echo "pools verified at $(date) — training may start"

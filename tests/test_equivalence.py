@@ -1,6 +1,6 @@
 """Our trainer IS upstream's trainer: same batches, same starting weights, bit-identical steps.
 
-`scripts/check_equivalence.py` runs our `Trainer.train_step` beside upstream's `Trainer.run_batch`
+`src/validation/equivalence.py` runs our `Trainer.train_step` beside upstream's `Trainer.run_batch`
 (pinned dump, `src/tabicl/train/_run.py`) with upstream's own optimizer and scheduler. On CPU in
 float32 the two perform the same operations in the same order, so every loss and every parameter
 must agree EXACTLY. When this was first run (28-09-2026) it found three differences at once:
@@ -12,7 +12,6 @@ was rounded down. Each is now fixed; this test keeps it that way.
 from __future__ import annotations
 
 import copy
-import sys
 import tempfile
 from pathlib import Path
 
@@ -21,13 +20,12 @@ import pytest
 pytest.importorskip("tabicl")
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "scripts"))
 
 
 def _upstream_trainer_available() -> bool:
-    import check_equivalence
+    from src.validation import equivalence
 
-    check_equivalence._stub_optional_imports()
+    equivalence._stub_optional_imports()
     try:
         from tabicl.train._run import Trainer  # noqa: F401
     except Exception:  # noqa: BLE001 — the published wheel may lack the training package
@@ -39,7 +37,7 @@ def _upstream_trainer_available() -> bool:
 def test_our_training_steps_are_upstreams_bit_for_bit(track):
     if not _upstream_trainer_available():
         pytest.skip("upstream's training package is not importable here")
-    import check_equivalence as ce
+    from src.validation import equivalence as ce
     import torch
 
     from src.prior.dataset import PriorBatchDataset

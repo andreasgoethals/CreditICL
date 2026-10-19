@@ -1,7 +1,7 @@
 """Did Experiment 0 work? Read the downloaded `output CreditICL/experiment_0/` and say so.
 
-    python -m src.utils.exp0_verify              # the output tree in this repo
-    python -m src.utils.exp0_verify --root D:/x  # a downloaded copy elsewhere (the folder holding output CreditICL)
+    python -m src.validation.verify              # the output tree in this repo
+    python -m src.validation.verify --root D:/x  # a downloaded copy elsewhere (the folder holding output CreditICL)
 
 Every item is PASS, WARN or FAIL with the evidence, and the last section turns the measured
 speeds and sizes into what Experiments 1-3 will cost — GPU-hours, project storage, and whether
@@ -191,7 +191,6 @@ def verify(out_root: Path, *, big_root: Path | None = None) -> Verdicts:
             slot = slot_for(0, track, index)
             owner = "reference" if slot.kind == "reference" else "experiment_0"
             receipt = big_root / owner / "benchmark" / "receipts" / f"{slot.tag}.json"
-            result = big_root / owner / "benchmark" / track / f"results_{slot.tag}.csv"
             label = f"{track} benchmark slot {index} ({slot.kind} {slot.model})"
             if receipt.is_file():
                 try:
@@ -243,7 +242,7 @@ def verify_validation(out_root: Path, *, big_root: Path | None = None) -> Verdic
     from src.utils import paths
     from src.utils.config import expand_with_seeds, load
     from src.utils.preflight import source_fingerprint
-    from src.utils.validation import SCHEMA, attempt_scope, plan
+    from src.validation.campaign import SCHEMA, attempt_scope, plan
 
     v = Verdicts()
     receipt = out_root / "experiment_0" / "report" / "validation.json"
@@ -270,7 +269,15 @@ def verify_validation(out_root: Path, *, big_root: Path | None = None) -> Verdic
         rows = saved.get("stages", [])
         complete = (saved.get("schema") == SCHEMA and saved.get("status") == "PASS"
                     and [r["name"] for r in rows] == expected and all(r["status"] == "PASS" for r in rows))
-        v.add(PASS if complete else FAIL, "GPU Experiment 0", f"{saved.get('status')}: {saved.get('attempt')}")
+        v.add(PASS if complete else FAIL, "GPU Experiment 0",
+              f"Recorded {saved.get('status')}: {saved.get('attempt')}; {len(rows)}/{len(expected)} stages recorded")
+        if saved.get("status") == "RUNNING":
+            v.add(WARN, "GPU scheduler state unknown",
+                  "RUNNING is the last saved report, not a live scheduler check. Check sacct for this attempt; "
+                  "an END status=OK shell footer cannot replace a complete PASS receipt.")
+        if saved.get("status") == "DEFERRED":
+            v.add(WARN, "GPU continuation required", f"{len(rows)}/{len(expected)} stages saved; "
+                  "resubmit the same GPU script without changing code, inputs, packages or CPU receipt")
         v.add(PASS if cpu_saved and saved.get("cpu_receipt") == digest(cpu_file) else FAIL,
               "GPU used this CPU validation")
         v.add(PASS if cpu_saved and all(saved.get(k) == cpu_saved.get(k)
@@ -280,7 +287,7 @@ def verify_validation(out_root: Path, *, big_root: Path | None = None) -> Verdic
             v.add(PASS if row["status"] == "PASS" else FAIL, row["name"],
                   row.get("error", f"{row.get('seconds', '?')} seconds"))
         if saved.get("error"):
-            v.add(FAIL, "validation stopped", saved["error"])
+            v.add(WARN if saved.get("status") == "DEFERRED" else FAIL, "validation stopped", saved["error"])
         v.add(PASS if saved.get("source_fingerprint") == source_fingerprint() else FAIL,
               "current code/config/tests", "source fingerprint comparison; package compatibility is checked on VSC")
         roots = [out_root] + ([big_root] if big_root else [])

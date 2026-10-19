@@ -745,6 +745,7 @@ def test_all_tfm_wrappers_receive_the_same_context(monkeypatch, task, cap):
             self.n_estimators = kwargs.get("n_estimators", 8)
 
         def fit(self, X, y):
+            self.classes_ = np.unique(y)
             seen[name] = (X.copy(), y.copy())
             self.ensemble_preprocessor_ = SimpleNamespace(
                 feature_schema=SimpleNamespace(num_columns=X.shape[1]),

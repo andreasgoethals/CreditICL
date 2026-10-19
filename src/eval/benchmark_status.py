@@ -187,6 +187,12 @@ def diagnostic_datasets(track: str) -> tuple[list[str], list[str]]:
     credit = sorted(set(credit) | {n for n in names if n.split(".")[-1] == "loan_default"})
     ood = choose([(e.name, e.n_rows, e.n_features) for e in
                   list_ood_datasets("classification" if track == "pd" else "regression")])
+    if track == "pd":
+        multiclass = [e for e in list_ood_datasets("classification") if (e.n_classes or 0) > 2]
+        if multiclass:
+            # Exercise both a small native task and the suite's largest class count.
+            ood = sorted(set(ood) | {min(multiclass, key=lambda e: e.n_rows * e.n_features).name,
+                                     max(multiclass, key=lambda e: (e.n_classes, -e.n_rows)).name})
     return credit, ood
 
 

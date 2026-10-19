@@ -28,14 +28,8 @@ TS=$(date +%Y%m%d_%H%M%S)
 LOG="${LOGDIR}/exp0_cpu_${TS}_j${SLURM_JOB_ID}.log"
 exec > "$LOG" 2>&1
 
-_log_exit() {
-    rc=$?
-    echo "=========================================="
-    if [[ "$rc" -eq 0 ]]; then echo "END status=OK - $(date)"
-    else echo "END status=FAILED exit_code=${rc} - $(date)"; fi
-    echo "=========================================="
-}
-trap _log_exit EXIT
+EXP0_PHASE=cpu
+source "${VSC_DATA}/CreditICL/scripts/slurm/_exp0_job.sh"
 
 cd "${VSC_DATA}/CreditICL"
 source scripts/slurm/_activate_env.sh
@@ -54,4 +48,4 @@ export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 echo "=========================================="
 
-python -u scripts/validate_experiment.py --phase cpu
+run_exp0_validation --phase cpu

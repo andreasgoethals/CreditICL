@@ -189,7 +189,7 @@ def test_missingness_adds_indicator_columns():
     X = features(400, 6)
     y = (latent(400) > 0).float()
     X2, meta = apply_informative_missingness(
-        rng, X, y, {"missing_col_fraction": 0.5, "missing_indicators": True}, max_features=32
+        rng, X, {"missing_col_fraction": 0.5, "missing_indicators": True}, max_features=32
     )
     assert meta["missing_cols"] == 3
     assert X2.shape[1] > X.shape[1]
@@ -201,7 +201,7 @@ def test_missingness_respects_the_feature_cap():
     X = features(400, 8)
     y = (latent(400) > 0).float()
     X2, _ = apply_informative_missingness(
-        rng, X, y, {"missing_col_fraction": 1.0, "missing_indicators": True}, max_features=8
+        rng, X, {"missing_col_fraction": 1.0, "missing_indicators": True}, max_features=8
     )
     assert X2.shape[1] <= 8
 
@@ -209,7 +209,7 @@ def test_missingness_respects_the_feature_cap():
 def test_missingness_is_a_no_op_at_zero():
     X = features()
     y = (latent() > 0).float()
-    X2, meta = apply_informative_missingness(PriorRNG(16), X, y, {"missing_col_fraction": 0.0}, 32)
+    X2, meta = apply_informative_missingness(PriorRNG(16), X, {"missing_col_fraction": 0.0}, 32)
     assert torch.equal(X2, X) and meta["missing_cols"] == 0
 
 
@@ -218,7 +218,7 @@ def test_no_nans_survive_imputation():
     rng = PriorRNG(17)
     X = features(400, 6)
     y = (latent(400) > 0).float()
-    X2, _ = apply_informative_missingness(rng, X, y, {"missing_col_fraction": 0.5}, 32)
+    X2, _ = apply_informative_missingness(rng, X, {"missing_col_fraction": 0.5}, 32)
     assert not bool(torch.isnan(X2).any())
 
 
@@ -267,22 +267,11 @@ def test_mechanism_never_raises_on_a_single_class_draw():
     assert raised == 0, f"the mechanism raised {raised} times; it must never raise"
 
 
-def test_apply_pd_target_mechanism_branch_rescues_single_class():
-    """The mechanism branch returns early and never reached the quantile path's guard, so the
-    rescue had to be added to it. Every output must have both classes."""
-    import torch
-
-    from src.prior.rng import PriorRNG
-    from src.prior.targets.pd import apply_pd_target
-
-    rescued = 0
-    for s in range(2000):
-        r = PriorRNG(s)
-        X = r.randn(200, 6)
-        latent = torch.zeros(200) + r.randn(200) * 0.01
-        _, y, meta = apply_pd_target(
-            r, X, latent, {"mode": "mechanism", "mechanism": {"woe_prob": 0.0}}, max_features=32
-        )
-        assert int(torch.unique(y).numel()) >= 2, "a single-class target survived the rescue"
-        rescued += int(bool(meta.get("mechanism_single_class_rescued")))
-    assert rescued > 0, "the rescue never fired — the test is not exercising the guarded path"
+def test_single_class_draw_is_not_relabelled(monkeypatch):
+    from src.prior.targets import mechanisms
+    monkeypatch.setattr(mechanisms, "apply_pd_mechanism", lambda rng, latent, cfg:
+                        (torch.zeros_like(latent), {"realised_base_rate": 0.0}))
+    X = features(200, 6)
+    _, y, meta = apply_pd_target(PriorRNG(8), X, latent(200), {"mode": "mechanism"}, 32)
+    assert not y.any()
+    assert "mechanism_single_class_rescued" not in meta

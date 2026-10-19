@@ -49,7 +49,7 @@ so GPU speed alone does not predict the time or cost of an arm.
   The H100 GPU charge is about **1.30×** the B200 charge, not 4×; its 16-core allocation may
   constrain generation. Choose between them using measured throughput and current queue state.
 - **`gpu_a100` is cheaper per allocated hour**, but total cost depends on how much longer a job
-  takes. Measure with `scripts/slurm/gpubench.slurm` and `src/utils/compare_gpubench.py`; use
+  takes. Measure with `scripts/slurm/gpubench.slurm` and `src/validation/compare_gpu.py`; use
   `sam-quote` for the actual allocation price. The H100 CPU estimate uses the published Zen4
   Genoa rate (3.472 credits/core-minute), not the A100 Ice Lake rate (2.546).
 - The published table does not separately list the B200 hosts' Turin CPU rate. The launcher's
@@ -253,7 +253,7 @@ The ones that cost time or credits if you follow generic Slurm advice:
    `--export`, or read it from a file.
 
 Useful KU Leuven tooling: `slurm_jobinfo <jobid>`, `slurmtop`, `sam-balance`,
-`python scripts/check_storage.py` (is staging writable?).
+`python -m src.utils.check_storage` (is staging writable?).
 
 ## 8. Submitting: the scripts
 
@@ -291,13 +291,13 @@ For Experiment 2 (measured in Experiment 0 before it is committed): 18 arms per 
 mixes × 3 seeds), 10,000 steps each, using upstream TabICL and an adapted TabPFN-Wide recipe — no search
 since 30-09-2026. A TabICLv2 arm costs about what an Exp1 arm costs per step (same shapes, batch 64), a
 TabPFN-3 arm 16 tasks per step through TabPFN's own preprocessing. The old ~400 GPU-hour estimate
-is provisional. `python -m src.utils.exp0_verify` extrapolates training hours from the new six
+is provisional. `python -m src.validation.verify` extrapolates training hours from the new six
 diagnostic runs. Benchmark probes measure selected tables only: their times do not establish
 the runtime of the complete publication benchmark matrix.
 
 ## 10. Experiment 0: run it first
 
-Experiment 0 consists of **two sequential Slurm jobs**. The CPU job rebuilds preprocessing,
+Experiment 0 consists of **CPU then GPU validation** (two scripts). The CPU job rebuilds preprocessing,
 checks every credit/OOD table and all five folds, audits dependencies and runs the portable tests.
 The GPU job tests mandatory CUDA behavior, six isolated training routes, two upstream-equivalence
 checks, and six 600-step runs with forced stop/resume. It scores every model route on the largest,
@@ -309,6 +309,8 @@ cd "$VSC_DATA/CreditICL"
 git pull --ff-only
 source scripts/slurm/_activate_env.sh
 # Optional intentional clean restart; deletes generated output and our trained checkpoints:
+# Remove identified GPU scratch before deleting the attempt records containing its job IDs.
+python -m src.utils.clean_run --reset-exp0-gpu --clean
 python -m src.utils.clean_run --reset-output --clean
 bash scripts/slurm/update_env.sh
 # Refresh the existing pinned OOD list without the old 50,000-row download cap:
@@ -319,14 +321,39 @@ python -m src.utils.preflight --require-exp0-cpu && sbatch --clusters=mindwell s
 ```
 
 `update_env.sh` installs this project's requirements/extras and verifies all transitive dependencies
-and `pip check`. CPU and GPU jobs must use that same environment. Preprocessing cache v7 adds
-borrower groups, safe large-value transforms and percentage/sentinel corrections. OOD cache v3 retains the same pinned dataset IDs
+and `pip check`. CPU and GPU jobs must use that same environment. Preprocessing cache v8 retains
+borrower groups and percentage corrections, fixes Freddie missing-value codes and preserves distinct
+extreme feature values. OOD cache v3 retains the same pinned dataset IDs
 but restores full rows; a failed refresh cannot silently substitute another dataset.
 The CPU reservation is 4 hours (controller 3.8), GPU 24 hours (controller 23.5); these are limits,
 not runtime promises. No production array or automatic retry follows a failed validation.
+The GPU phase may span allocations under the same frozen code, dependencies and inputs. Each
+successful benchmark fold is immediately saved in an atomic journal and CSV. At the allocation
+deadline, `DEFERRED`/exit 64 preserves finished stages and folds; resubmit the same GPU script.
+Slurm may label exit 64 FAILED, so check the controller's `END status=DEFERRED` message. A receipt
+left RUNNING by a hard scheduler kill also supports verified continuation. A genuine FAILED
+receipt refuses continuation: inspect its cause instead of blindly repeating it. Keep the same
+CPU receipt; no `git pull`, package update, input refresh or output reset between allocations.
+
+RUNNING in the JSON is only the last saved controller state; use `sacct` to learn whether
+the allocation is still alive. A cancelled job may leave it behind. The launchers forward
+TERM/INT/HUP, report `END status=INTERRUPTED` and retain scratch/evidence; the controller
+publishes DEFERRED when it can catch termination. Only a complete, matching PASS receipt
+unlocks production. A shell footer, including an old `END status=OK`, is insufficient.
+Local edits must first be committed and pushed by Andreas before VSC's `git pull` can
+retrieve them; compare `python -c "from src.utils.preflight import source_fingerprint; print(source_fingerprint())"`
+on both machines before the clean CPU submission.
+
+Each benchmark cell has a two-hour Exp0 runtime guard. Crossing it fails validation and blocks
+production, even if the mathematics might eventually finish. No rows/features/folds/ensemble
+members are removed to meet this guard. TabICL uses upstream ISAB key/value caches plus bounded
+row blocks for large embeddings, retaining the entire training context. Mandatory CUDA tests
+compare this path with the unmodified upstream model before the capacity probes. Logs expose
+column/row progress, model timings and process-tree RAM; improved full-table runtime must be
+measured on the actual B200 before quoting a campaign ETA.
 
 Attempts live under `experiment_0/validation/<attempt>/` on both tiers. The canonical receipt is
-`output CreditICL/experiment_0/report/validation.json`; it is RUNNING, FAILED or PASS. Previous
+`output CreditICL/experiment_0/report/validation.json`; it is RUNNING, DEFERRED, FAILED or PASS. Previous
 attempts remain until an explicit reset. CPU completion is recorded in `cpu_validation.json`;
 the GPU receipt binds that exact CPU receipt. Rerunning CPU invalidates an older GPU PASS.
 Exp0 reference probes are isolated and are never published as complete production results.
@@ -339,14 +366,14 @@ After completion:
 
 ```bash
 python -m src.utils.preflight --require-exp0
-python -m src.utils.exp0_verify
+python -m src.validation.verify
 ```
 
 Only PASS authorizes proceeding with the separate Experiment 1 submission. The verifier estimates
 training hours from the short runs; it cannot predict queue delay. Download the small tier plus the
 benchmark/report files from project storage, retaining the attempt directory structure. Checkpoint
 binaries can remain on VSC; the local verifier reports that omission and VSC preflight verifies them
-in place. Run `python -m src.utils.exp0_verify --root "/path/to/parent"`, where that parent contains
+in place. Run `python -m src.validation.verify --root "/path/to/parent"`, where that parent contains
 the downloaded `output CreditICL/` directory.
 
 ## 11. Rename existing output, preserving completed work

@@ -358,7 +358,7 @@ def test_empty_variants_fail_with_the_fix_in_the_message(pools):
         pools.plot_shapes_by_variant,
         pools.plot_boundary_mass_by_variant,
     ):
-        with pytest.raises(ValueError, match="generate_prior.py|no variants"):
+        with pytest.raises(ValueError, match="src.prior.generate|no variants"):
             fn({})
     with pytest.raises(ValueError, match="no variants"):
         pools.variant_summary({}, "lgd")

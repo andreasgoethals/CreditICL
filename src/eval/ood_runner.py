@@ -7,7 +7,8 @@ the mistake of quoting a single mean across both.
 
 Same protocol as the credit datasets (`src/eval/protocol.py`): 5-fold cross-validation, the
 whole training pool as context, and every metric — for a binary task the PD set (ROC-AUC, Brier,
-log-loss, ECE, F1 at the threshold tuned on a validation split, ...), for a regression task R²,
+log-loss, ECE, F1 at the threshold tuned on a validation split, ...), for native multiclass
+tasks macro-OVR AUC, log-loss, accuracy, macro F1 and multiclass Brier, and for regression R²,
 RMSE, MAE, rank correlation and, where the model gives one, CRPS and interval coverage. The
 boundary-mass metrics are dropped: a mass at the edge of a min-max-scaled wine rating means
 nothing.
@@ -17,6 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
+import time
 
 import numpy as np
 import pandas as pd
@@ -39,10 +41,6 @@ class OODEvalConfig:
     #: Row cap per dataset. `None` — the protocol: every row of the full-table cache.
     max_rows: int | None = None
     max_context_rows: int | None = None
-    #: CC18 contains multiclass tasks, but every baseline here is binary (they were
-    #: built for PD). True = score them one-vs-rest on the majority class and record
-    #: that in the row; False = fail loudly rather than mis-score.
-    binarise_multiclass: bool = True
     model_kwargs: dict[str, dict[str, Any]] = field(default_factory=dict)
     #: OUR checkpoint scores only its own task's OOD kind. `crediticl` wraps ONE checkpoint:
     #: an LGD (regression, 999-quantile) net has no class head and cannot score a
@@ -53,7 +51,7 @@ class OODEvalConfig:
 
 
 def _prepare(entry: OODDataset, seed: int, cfg: OODEvalConfig) -> tuple[np.ndarray, np.ndarray, list[int], dict[str, Any]]:
-    """Load one OOD dataset, cap it only if asked, binarise a multiclass target."""
+    """Load one OOD dataset, cap it only if asked, encode native classification labels."""
     X, y, cat_indices = load_ood_dataset(entry)
     info: dict[str, Any] = {}
     if cfg.max_rows is not None and len(X) > cfg.max_rows:
@@ -61,20 +59,10 @@ def _prepare(entry: OODDataset, seed: int, cfg: OODEvalConfig) -> tuple[np.ndarr
         X, y = X[keep], y[keep]
         info["row_cap"] = cfg.max_rows
     if entry.kind == "classification":
-        n_classes = int(len(np.unique(y)))
-        if n_classes > 2:
-            if not cfg.binarise_multiclass:
-                raise ValueError(
-                    f"{entry.name} has {n_classes} classes and the baselines are "
-                    f"binary-only (they exist for PD). Set binarise_multiclass=True "
-                    f"to score it one-vs-rest on the majority class, or drop it."
-                )
-            # One-vs-rest on the MAJORITY class. Stated in the row, because a
-            # binarised multiclass AUC is not comparable to a native binary one and
-            # must not be pooled with it silently.
-            majority = int(np.bincount(y.astype(int)).argmax())
-            y = (y == majority).astype(np.int64)
-            info["binarised_from_n_classes"] = n_classes
+        # Encode every original class, never replace the native task by one-vs-rest.
+        _, y = np.unique(y, return_inverse=True)
+        info["n_classes"] = int(len(np.unique(y)))
+        info["classification_task"] = "binary" if info["n_classes"] == 2 else "multiclass"
     return X, y, cat_indices, info
 
 
@@ -97,7 +85,8 @@ def _fold_arrays(X: np.ndarray, y: np.ndarray, train_idx: np.ndarray, test_idx: 
     return Xtr, Xte, ytr, yte, info
 
 
-def evaluate_ood_dataset(entry: OODDataset, models: list[str], seed: int, cfg: OODEvalConfig) -> list[dict[str, Any]]:
+def evaluate_ood_dataset(entry: OODDataset, models: list[str], seed: int, cfg: OODEvalConfig,
+                         *, journal=None) -> list[dict[str, Any]]:
     """Every model on every fold of one OOD dataset. Never raises — failures become rows."""
     log = get_logger()
     is_clf = entry.kind == "classification"
@@ -105,6 +94,11 @@ def evaluate_ood_dataset(entry: OODDataset, models: list[str], seed: int, cfg: O
     base = {"suite": entry.source_suite or "pinned OpenML benchmark", "kind": entry.kind,
             "dataset": entry.name, "openml_id": entry.openml_id, "seed": seed,
             "protocol": PROTOCOL, "n_folds": cfg.n_folds, "context_cap": cfg.max_context_rows}
+    cached = {(fold, model): journal.get({**base, "fold": fold, "model": model})
+              for fold in range(cfg.n_folds) for model in models} if journal else {}
+    if cached and all(cached.values()):
+        log.info("[ood] REUSE %s: all %d cells already saved", entry.name, len(cached))
+        return list(cached.values())
     try:
         X, y, cat_indices, info = _prepare(entry, seed, cfg)
         folds = cv_folds(y, task, n_folds=cfg.n_folds, seed=seed)
@@ -115,6 +109,9 @@ def evaluate_ood_dataset(entry: OODDataset, models: list[str], seed: int, cfg: O
     base.update(info, n_features=int(X.shape[1]))
     rows: list[dict[str, Any]] = []
     for fold, (train_idx, test_idx) in enumerate(folds):
+        if all(cached.get((fold, model)) for model in models):
+            rows.extend(cached[(fold, model)] for model in models)
+            continue
         # The same fold preprocessing as the credit benchmark, once per fold for every model.
         try:
             Xtr, Xte, ytr, yte, fold_info = _fold_arrays(X, y, train_idx, test_idx, regression=not is_clf)
@@ -125,12 +122,18 @@ def evaluate_ood_dataset(entry: OODDataset, models: list[str], seed: int, cfg: O
             stages, prep_error = None, f"{type(exc).__name__}: {exc}"
         for model_name in models:
             row = {**base, "model": model_name, "fold": fold, "status": "failed"}
+            if cached.get((fold, model_name)):
+                rows.append(cached[(fold, model_name)])
+                continue
             # OUR checkpoint cannot cross task types; skip rather than crash.
             if model_name == "crediticl" and cfg.crediticl_task and cfg.crediticl_task != task:
                 row.update(status="skipped",
                            error=f"{cfg.crediticl_task} checkpoint cannot score a {entry.kind} task")
                 rows.append(row)
                 continue
+            if journal:
+                journal.begin(row)
+            started = time.monotonic()
             try:
                 if stages is None:
                     raise RuntimeError(f"fold preparation failed: {prep_error}")
@@ -143,18 +146,19 @@ def evaluate_ood_dataset(entry: OODDataset, models: list[str], seed: int, cfg: O
                 result.pop("_headline", None)
                 row.update(result)
                 row["status"] = "ok"
-                if is_clf:
-                    row["n_classes"] = 2
             except Exception as exc:  # noqa: BLE001 — one cell must not kill the sweep
                 row["error"] = f"{type(exc).__name__}: {exc}"
                 log.warning("[ood] FAILED %s / %s fold %d: %s", entry.name, model_name, fold, row["error"])
             finally:
                 _release_memory()
+            row["total_seconds"] = round(time.monotonic() - started, 2)
             rows.append(row)
+            if journal:
+                journal.save(row)
     return rows
 
 
-def run_ood(cfg: OODEvalConfig) -> pd.DataFrame:
+def run_ood(cfg: OODEvalConfig, *, journal=None) -> pd.DataFrame:
     """Score every model on every cached OOD dataset."""
     log = get_logger()
     log_section(log, "OUT-OF-DOMAIN EVAL")
@@ -187,7 +191,8 @@ def run_ood(cfg: OODEvalConfig) -> pd.DataFrame:
         log.info("[ood] --- %s (%s, %d x %d) ---",
                  entry.name, entry.kind, entry.n_rows, entry.n_features)
         for seed in cfg.seeds:
-            rows.extend(evaluate_ood_dataset(entry, cfg.models, seed, cfg))
+            rows.extend(evaluate_ood_dataset(entry, cfg.models, seed, cfg,
+                                            **({"journal": journal} if journal else {})))
 
     df = pd.DataFrame(rows)
     n_ok = int((df["status"] == "ok").sum()) if not df.empty else 0
@@ -205,6 +210,11 @@ def summarise_ood(df: pd.DataFrame) -> pd.DataFrame:
     """
     if df.empty:
         return df
+    from src.eval.comparisons import require_balanced_cells
+
+    for _, cells in df.groupby("kind"):
+        if "fold" in cells:
+            require_balanced_cells(cells[cells.status.ne("skipped")])
     ok = df[df["status"] == "ok"]
     out = []
     # The headline metric of each kind first (the text summary reads the first row per kind).

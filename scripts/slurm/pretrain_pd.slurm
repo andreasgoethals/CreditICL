@@ -104,7 +104,7 @@ nvidia-smi || true
 echo "=========================================="
 
 # Pre-flight: fail in seconds on a broken env rather than after the queue wait.
-python -m src.utils.smoke_test --task pd --steps 2 || {
+python -m src.validation.smoke --task pd --steps 2 || {
     echo "PREFLIGHT FAILED: PD smoke test. Not starting the real run." >&2
     exit 1
 }

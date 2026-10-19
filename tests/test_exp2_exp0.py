@@ -299,7 +299,7 @@ def test_the_checks_script_writes_its_report(tmp_path):
     import sys
 
     out = tmp_path / "report"
-    r = subprocess.run([sys.executable, str(ROOT / "scripts" / "exp0_checks.py"), "--only", "configs",
+    r = subprocess.run([sys.executable, str(ROOT / "src/validation/checks.py"), "--only", "configs",
                         "--out", str(out)], capture_output=True, text=True, timeout=300, cwd=ROOT)
     assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
     report = json.loads((out / "checks.json").read_text(encoding="utf-8"))
@@ -366,7 +366,7 @@ def _fake_exp0_tree(root: Path, *, resumed: bool = True) -> None:
 
 
 def test_the_verifier_passes_a_complete_experiment_0(tmp_path, capsys):
-    from src.utils.exp0_verify import FAIL, verify
+    from src.validation.verify import FAIL, verify
 
     _fake_exp0_tree(tmp_path)
     v = verify(tmp_path / "output CreditICL")
@@ -376,7 +376,7 @@ def test_the_verifier_passes_a_complete_experiment_0(tmp_path, capsys):
 
 
 def test_the_verifier_fails_when_the_forced_stop_never_happened(tmp_path):
-    from src.utils.exp0_verify import FAIL, verify
+    from src.validation.verify import FAIL, verify
 
     _fake_exp0_tree(tmp_path, resumed=False)
     v = verify(tmp_path / "output CreditICL")
@@ -386,7 +386,7 @@ def test_the_verifier_fails_when_the_forced_stop_never_happened(tmp_path):
 
 
 def test_verifier_cannot_accept_a_receipt_with_a_missing_ood_result(tmp_path):
-    from src.utils.exp0_verify import FAIL, verify
+    from src.validation.verify import FAIL, verify
 
     _fake_exp0_tree(tmp_path)
     root = tmp_path / "output CreditICL"
@@ -396,7 +396,7 @@ def test_verifier_cannot_accept_a_receipt_with_a_missing_ood_result(tmp_path):
 
 
 def test_verifier_rejects_completed_training_with_a_changed_recipe(tmp_path):
-    from src.utils.exp0_verify import FAIL, verify
+    from src.validation.verify import FAIL, verify
 
     _fake_exp0_tree(tmp_path)
     root = tmp_path / "output CreditICL"

@@ -56,7 +56,7 @@ from src.data.discovery import list_datasets
 from src.utils.logging_setup import get_logger
 from src.utils.paths import find_processed_dir, find_raw_file, processed_write_dir
 
-CACHE_VERSION = 7  # safe large magnitudes, numeric percentages, sentinels and borrower groups
+CACHE_VERSION = 8  # safe large magnitudes, numeric percentages, sentinels and borrower groups
 
 #: The categorical copy of a column a recipe lists as numeric AND categorical (TabPFNCredit feeds
 #: both: `N = X[num_cols]`, `C = X[cat_cols]`). The parquet needs unique names.
@@ -315,14 +315,14 @@ def load_frame(task: str, dataset: str) -> tuple[pd.DataFrame, DatasetMeta]:
     if d is None:
         raise FileNotFoundError(
             f"{task}/{dataset} is not in the processed cache. "
-            "Run scripts/preprocess.py, or call ensure_processed() first."
+            "Run python -m src.data.preprocess, or call ensure_processed() first."
         )
     meta_raw = json.loads((d / "meta.json").read_text(encoding="utf-8"))
     if meta_raw.get("cache_version") != CACHE_VERSION:
         raise ValueError(
             f"{task}/{dataset} was processed with cache_version="
             f"{meta_raw.get('cache_version')} but this code expects {CACHE_VERSION}. "
-            "Rebuild stale caches with: python scripts/preprocess.py --task both"
+            "Rebuild stale caches with: python -m src.data.preprocess --task both"
         )
     known = set(DatasetMeta.__dataclass_fields__)
     meta = DatasetMeta(**{k: v for k, v in meta_raw.items() if k in known})

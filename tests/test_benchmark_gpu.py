@@ -30,7 +30,7 @@ def _write(tmp_path: Path, name: str, info: dict, matmul: float, e2e: float,
 
 def _run(*paths: Path) -> str:
     r = subprocess.run(
-        [sys.executable, "-m", "src.utils.compare_gpubench", *map(str, paths)],
+        [sys.executable, "-m", "src.validation.compare_gpu", *map(str, paths)],
         capture_output=True, text=True, cwd=ROOT, timeout=120,
     )
     assert r.returncode == 0, r.stderr
@@ -62,7 +62,7 @@ def test_one_file_still_prints_its_numbers(tmp_path):
     which is the next question when a job has just finished."""
     a = _write(tmp_path, "a.json", FAST, matmul=40.0, e2e=6.9, ceiling=16.7)
     r = subprocess.run(
-        [sys.executable, "-m", "src.utils.compare_gpubench", str(a)],
+        [sys.executable, "-m", "src.validation.compare_gpu", str(a)],
         capture_output=True, text=True, cwd=ROOT, timeout=120,
     )
     assert r.returncode == 2, "one file cannot answer a comparison question"
@@ -75,7 +75,7 @@ def test_an_unexpanded_glob_says_the_files_do_not_exist_yet(tmp_path):
     count is 1. Reporting that as "need at least two JSON files" sent the reader looking for
     a second card when in fact NEITHER had finished."""
     r = subprocess.run(
-        [sys.executable, "-m", "src.utils.compare_gpubench",
+        [sys.executable, "-m", "src.validation.compare_gpu",
          str(tmp_path / "gpubench_*.json")],
         capture_output=True, text=True, cwd=ROOT, timeout=120,
     )
@@ -100,7 +100,7 @@ def test_bench_shape_and_batch_come_from_the_config():
     import yaml
 
     spec = importlib.util.spec_from_file_location(
-        "benchmark_gpu", ROOT / "scripts" / "benchmark_gpu.py"
+        "benchmark_gpu", ROOT / "src/validation/benchmark_gpu.py"
     )
     bench = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(bench)
@@ -118,7 +118,7 @@ def test_bench_shape_and_batch_come_from_the_config():
 def test_no_hardcoded_dataset_shape_is_left_in_the_benchmark():
     """`1024, 40, 768` appeared four times. It must come from `bench_shape` or the next config
     change is measured against the last one again."""
-    src = (ROOT / "scripts" / "benchmark_gpu.py").read_text(encoding="utf-8")
+    src = (ROOT / "src/validation/benchmark_gpu.py").read_text(encoding="utf-8")
     # The ASSIGNMENT, not the string — `bench_shape`'s docstring names the old triple on purpose.
     assert "train_size = 1024, 40, 768" not in src
     # >= 4: the four original rungs, plus any new one — the point is that none is hardcoded.
@@ -138,7 +138,7 @@ def test_micro_plan_matches_what_a_training_step_actually_does():
     import yaml
 
     spec = importlib.util.spec_from_file_location(
-        "benchmark_gpu", ROOT / "scripts" / "benchmark_gpu.py"
+        "benchmark_gpu", ROOT / "src/validation/benchmark_gpu.py"
     )
     bench = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(bench)
@@ -155,7 +155,7 @@ def test_micro_plan_matches_what_a_training_step_actually_does():
 def test_no_gpu_rung_builds_a_full_batch_tensor():
     """Every `torch.randn` in a timing rung must be sized by `micro`, never by `batch_size` —
     that is the difference between measuring a training step and OOMing the card."""
-    src = (ROOT / "scripts" / "benchmark_gpu.py").read_text(encoding="utf-8")
+    src = (ROOT / "src/validation/benchmark_gpu.py").read_text(encoding="utf-8")
     assert "torch.randn(batch_size," not in src
     assert "torch.rand(batch_size," not in src
 
@@ -168,7 +168,7 @@ def test_every_timing_key_says_whether_it_is_a_pass_or_a_step():
     the truth was 0.99 — so a run reaching 80 % of its ceiling was announced as
     "STARVED BY THE PRIOR", the opposite of the finding.
     """
-    src = (ROOT / "scripts" / "benchmark_gpu.py").read_text(encoding="utf-8")
+    src = (ROOT / "src/validation/benchmark_gpu.py").read_text(encoding="utf-8")
     # The per-pass numbers must be named `_micro_ms` ...
     for key in ('f"{label}_micro_ms"', 'f"{name}_micro_ms"'):
         assert key in src, key
@@ -182,6 +182,6 @@ def test_every_timing_key_says_whether_it_is_a_pass_or_a_step():
 def test_the_step_number_is_the_pass_number_times_the_pass_count():
     """`forward_backward_ms` and `amp_*_step_ms` are derived, not measured separately; if the
     multiplication is dropped the two units silently become the same again."""
-    src = (ROOT / "scripts" / "benchmark_gpu.py").read_text(encoding="utf-8")
+    src = (ROOT / "src/validation/benchmark_gpu.py").read_text(encoding="utf-8")
     assert "round(both * n_micro * 1000, 2)" in src
     assert "round(sec * n_micro * 1000, 2)" in src

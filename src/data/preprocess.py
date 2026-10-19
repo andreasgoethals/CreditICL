@@ -1,8 +1,8 @@
 """PIPELINE 1 — preprocess the raw credit datasets into the cache.
 
-    python scripts/preprocess.py --task lgd
-    python scripts/preprocess.py --task both --force
-    python scripts/preprocess.py --task pd --datasets 0008.german,0013.hmeq
+    python -m src.data.preprocess --task lgd
+    python -m src.data.preprocess --task both --force
+    python -m src.data.preprocess --task pd --datasets 0008.german,0013.hmeq
 
 You rarely need to run this by hand: the eval pipeline preprocesses whatever is
 missing. Run it when you want the cache built up front (for example on a login
@@ -18,7 +18,7 @@ import argparse
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 

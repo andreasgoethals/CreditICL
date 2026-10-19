@@ -31,7 +31,7 @@ prior_cache*/
 *.ckpt
 *.safetensors
 
-# Processed datasets. Regenerable from data/raw via scripts/preprocess.py, and on
+# Processed datasets. Regenerable from data/raw via python -m src.data.preprocess, and on
 # the cluster they live on project storage rather than here.
 data/processed/**/*.npy
 data/processed/**/*.json

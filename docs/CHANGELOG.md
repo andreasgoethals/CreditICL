@@ -8,6 +8,21 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 19-10-2026
+
+- Final review verification: 1,597 tests passed / 26 VSC-only skips in 914.60s; all 11 notebooks executed (125 figures). Reset 140 local generated files and 11 embedded notebook outputs; SHA-256 confirms all 71 input/weight files and executable source unchanged.
+- Audit the 19 October review: retain native multiclass OOD tasks (including streamed many-class TabICL), fix tied-score PD calibration, outcome-driven missingness, component RNG coupling, selection/reporting/data edge cases and latent GPU L2-SP placement; use protocol/cache v8.
+- Move diagnostics to `src/validation` and pipeline tools into their packages; keep four main experiment Python entry points, execute notebooks in CPU Exp0, and extend guarded full resets to notebook outputs and known root output ZIPs.
+- Disclose earlier benchmark influence on prior design; distinguish applicant PD from realised selected-book rates and predeclared selection metrics from secondary hypothesis checks.
+- Earlier, before this review: 1,519 tests passed / 21 expected skips (19 VSC-only), 1,000.54s; this result does not validate the subsequent review changes.
+- Audit the new download: it is still job 11692660 with an incomplete old-code receipt; fix Exp0 signal forwarding/false success footers, preserve interrupted progress, clarify saved versus live status, and add shutdown regressions.
+
+## 16-10-2026
+
+- Verify 1,495 local tests passed / 21 expected skips (19 VSC-only), 1,223.80s; after final lint cleanup all 27 inference regressions also pass. Fresh CPU/GPU validation and measured B200 runtime remain required.
+- Stream large TabICL inference through upstream attention caches, persist/resume individual benchmark cells and verified Exp0 stages, connect memory/progress logs, and stop two-hour benchmark cells; retain full rows/features/five folds and add local/CUDA equivalence and interruption tests.
+- Record CPU 62324362 PASS and GPU 11692660's 22-hour progress: the old 759-feature OOM did not recur, but full-width prediction exceeds the allocation; identify missing per-fold persistence/continuation and disconnected memory logging. Audit only, no executable changes.
+
 ## 14-10-2026
 
 - Verify the final memory fix and GPU-only reset: full suite 1,458 passed / 19 expected skips (17 VSC-only), 935.43s; remove 34 stale GPU files from the downloaded ZIP while preserving 39 other files byte-for-byte.

@@ -81,15 +81,15 @@ Three rules govern every addition:
    none of our code on it — enforced by a test, including that `prior.base` never carries our values.
 2. **A mechanism must come from credit risk, not curve-fitting.** The claim is that encoding *how
    losses arise* transfers — not that a parameter was tuned until a histogram matched.
-3. **Every number comes from the credit-risk literature, or is deliberately wide. None comes from the
-   evaluation datasets** (since 29-09-2026). A development change on 28-09 calibrated ranges to all
-   14 PD and 7 LGD evaluation datasets, holdout included, and was removed on 29-09. It postdates the
-   completed September campaign; it is not a reason to reject those checkpoints. Such calibration
-   would leak evaluation information into the prior. Where the literature gives a value the
-   prior is centred on it; where it gives only a direction, the direction is used and the magnitude is
-   left wide; where it is silent, the range is wide on purpose and says so. The real datasets are still
-   compared with the prior in notebooks 0.2 and 0.3 (`src/prior/realism.py`) — as a *description* of
-   how far a literature prior lands from real books, never as a target.
+3. **Record provenance and prior exposure honestly.** Current ranges use cited literature and
+   deliberately broad modelling choices. However, the family of mechanisms was developed after
+   inspecting these same benchmark datasets, including the designated holdout. Removing numerical
+   calibration on 29-09-2026 did not erase that earlier influence. The 28-09 calibration change
+   postdates the completed September campaign; it must not be attributed to those checkpoints.
+   The current benchmark supports controlled comparisons on a previously inspected suite, not a
+   claim of untouched external validation. Independent source/time cohorts are needed for that.
+   Notebook comparisons describe the prior; they must not be used to retune it after the freeze.
+
 
 `credit_fraction` **mixes** rather than replaces: at 0.5, each task slot independently has 50% probability of using our prior. A model that
 only ever saw credit tables would be a credit model, not a foundation model — which is what the
@@ -114,6 +114,17 @@ which `signal_share` is kept and the rest is risk no file records.
 | `rules` | 0 – 3 cut-offs per table | hard underwriting cut-offs, **from Klein & Hoffart (2026), a position paper with no experiments — the most speculative mechanism, labelled so** |
 | `woe_prob` | 0.5 | scorecard-style monotone binning of the risk driver; practitioner convention, no rate published — **uninformative** |
 | label noise | **none** | asymmetric label noise (cures booked as non-default) was in the prior until 29-09-2026 with rates from nowhere; removed |
+
+The base-rate range is the **unconditional applicant** PD parameter. A finite cohort,
+macroeconomic shocks, acceptance selection and label noise can change its realised default rate.
+Single-class tables are rejected and redrawn by the generator, not repaired by inventing defaults;
+this validity conditioning is part of the training distribution. Tied latent scores use randomized
+probability-integral transforms, preserving the normal marginal required by the Vasicek threshold.
+
+Missingness uses no realised target. All affected columns share a noisy borrower propensity and
+one borrower-level uniform draw, avoiding an increasing number of independent target votes as
+width grows. This is an explicit synthetic modelling choice, not a calibrated empirical missingness
+law. The component removal switches its covariate dependence off while retaining missing values.
 
 ### 5.2 LGD — a loss fraction in [0, 1] with real mass at both ends
 
@@ -156,7 +167,7 @@ Kumaraswamy interior) remain in the code for ablations; no experiment uses them.
 
 | knob | value | source |
 |---|---|---|
-| `missingness` | half the tables; 5 – 100 % of columns; 1 – 50 % missing; coupling to the target 0 – 1 | gaps in credit data are informative, not random — reject inference is itself a missing-data problem (Baesens et al. 2026); rates are not published, so **wide** |
+| `missingness` | half the tables; 5 – 100 % of columns; 1 – 50 % missing; coupling to a noisy covariate-based borrower propensity 0 – 1 | gaps in credit data are informative, not random — reject inference is itself a missing-data problem (Baesens et al. 2026); rates are not published, so **wide** |
 | `marginals` | 0 – 100 % of continuous columns, skew 0.25 – 2.5 | money amounts, balances and incomes are positive and right-skewed; a monotone warp, so every split a tree could make — and the dependence on the target — is unchanged; magnitudes **wide** |
 | `shift` | 30 % of tables | populations drift with the economic cycle and with acceptance policy (economic-cycle dependency and reject inference; Baesens et al. 2026); kinds **wide** |
 | `prior_prob_ratio_range` | 1.25 – 4, log-uniform, either way | the prior-probability shift sets the query's default rate (LGD: its share of above-median losses) to the context's times this ratio. Under the Vasicek model of 5.1, a one-to-two standard-deviation move of the factor multiplies a book's default rate by 1.1 – 6.1 over ρ 0.03 – 0.24 and default rates 1 – 50 %; the range sits inside that. Until 29-09-2026 the knob (`prior_prob_range`) set the context's share of defaults to an absolute 15 – 85 %, which left the query of a low-default book a single default in 85 % of these tables |

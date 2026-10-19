@@ -612,7 +612,7 @@ def test_the_benchmark_measures_the_optimizer_that_is_actually_configured():
     """The first benchmark used plain SGD and concluded the B200 was FASTER, while real
     training on it was 12x slower. The missing rung was the optimiser."""
     root = Path(__file__).resolve().parents[1]
-    bench = (root / "scripts" / "benchmark_gpu.py").read_text(encoding="utf-8")
+    bench = (root / "src/validation/benchmark_gpu.py").read_text(encoding="utf-8")
     assert "def bench_optimizers" in bench
     assert '"adamw", "muon"' in bench, "both must be timed, or there is nothing to compare"
     # `muon_slowdown_in_training`, not `..._vs_adamw`: the rung calls `opt.step()` once per
@@ -847,7 +847,7 @@ def test_the_smoke_test_cannot_write_into_the_real_manifests():
     SHARED output tree on the cluster — so a two-step toy run was filing telemetry under the
     real 12,500-step arm's run name."""
     root = Path(__file__).resolve().parents[1]
-    smoke = (root / "src" / "utils" / "smoke_test.py").read_text(encoding="utf-8")
+    smoke = (root / "src" / "validation" / "smoke.py").read_text(encoding="utf-8")
     assert "manifest_dir=" in smoke, "the smoke test must pin its own manifests directory"
     loop = (root / "src" / "train" / "loop.py").read_text(encoding="utf-8")
     assert "self.manifest_dir or self.out_dir" in loop, "the override must actually be honoured"

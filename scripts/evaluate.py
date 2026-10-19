@@ -117,12 +117,18 @@ def main() -> int:
             max_rows=args.max_rows,
             max_context_rows=args.max_context_rows,
         )
-        df = run(cfg)
-
         out = benchmark_dir_for(stamp, task)
         out.mkdir(parents=True, exist_ok=True)
         res_path = out / f"results_{stamp}.csv"
         from src.utils.atomic_output import write_csv
+        from src.eval.progress import CellJournal, EvaluationDeferred, identity
+
+        try:
+            with CellJournal(res_path, identity(cfg, "credit")) as journal:
+                df = run(cfg, journal=journal)
+        except EvaluationDeferred as exc:
+            log.info("[eval] DEFERRED: %s", exc)
+            return 64
 
         write_csv(df, res_path)
         log.info("wrote %s (%d rows)", res_path, len(df))
