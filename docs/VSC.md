@@ -1,7 +1,15 @@
 # Running CreditICL on KU Leuven VSC
 
+Shared infrastructure reference: [VSC Library](../vsc-library/README.md). The parent Git commit pins its revision; inspect it with `git submodule status -- vsc-library`.
+Its [official repository snapshot](<../vsc-library/VSC Repository.txt>),
+[guides](../vsc-library/guides/) and [Slurm templates](<../vsc-library/slurm templates/README.md>)
+are read-only. Keep this project's actual paths, environment, resource choices,
+submission/resume steps and run evidence in this file or the project's own run logs.
+Check [upstream review flags](../vsc-library/UPSTREAM_CHANGES.md) and the
+[live Leuven status](https://status.vscentrum.be/tier2_leuven.html) before applying a changed policy.
+
 How to submit, what it costs, and how a multi-day sweep survives a cluster that stops routinely.
-Distilled from `tfm-library/repositories/VSC Documentation.txt` (pin `de324efcca55be392feb0c01830b3b6ce364587f`, checked 13-10-2026) plus what we learned
+Distilled from `vsc-library/VSC Repository.txt` (pin `289ed81df5d101512f91ae1ea3b0083a2de08a96`, checked 20-10-2026) plus what we learned
 running on it; where the docs are silent this file says so. **Verify charge rates and partitions
 against the live docs before a large run.** The recovery procedure after *any* interruption is one
 command — [§4.4](#44-recovery-is-one-command).

@@ -157,14 +157,14 @@ torch-index = "https://download.pytorch.org/whl/cu128"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src*"]
-exclude = ["tfm-library*", "lib*", "notebooks*", "data*", "checkpoints*", "results*"]
+exclude = ["tfm-library*", "vsc-library*", "lib*", "notebooks*", "data*", "checkpoints*", "results*"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
 extend-exclude = [
     # Read-only submodule. Never lint, never format, never touch.
-    "tfm-library",
+    "tfm-library", "vsc-library",
     # Third-party code used unmodified.
     "lib",
     "notebooks",

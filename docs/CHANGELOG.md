@@ -8,6 +8,10 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 20-10-2026
+
+- Added the independent read-only VSC Library submodule and daily pin-update proposals; shared HPC guidance moved out of TFM Library, with project instructions retained in docs/VSC.md. No cluster workload was submitted.
+
 ## 19-10-2026
 
 - Verify the precision fix: 1,605 passed / 27 skipped in the full run, plus one 20-second Git Bash timeout; all 16 environment tests passed unchanged on follow-up. Executable fingerprint remained `4da9e67`; B200 validation remains required.
