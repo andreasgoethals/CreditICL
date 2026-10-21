@@ -77,7 +77,7 @@ def test_restored_optimizer_follows_training_device_before_first_forward(tmp_pat
         restored.close()
 
 
-def assert_real_checkpoint_resume(directory, task, device):
+def assert_real_checkpoint_resume(directory, task, device, *, force_full_precision=False):
     """Stop after one real update, recreate the trainer, restore, and update again."""
     run = resume_config(task)
     run["train"]["amp"] = device.startswith("cuda")
@@ -87,6 +87,13 @@ def assert_real_checkpoint_resume(directory, task, device):
     trainer._install_stop_signals = lambda: None
     trainer.maybe_resume()
     trainer._stop_requested = "SIGUSR1"
+    if force_full_precision:
+        # A real batched TabPFN executor must disable its own autocast context,
+        # not just the trainer's outer context, before gradients can recover.
+        for parameter in trainer.model.parameters():
+            if parameter.requires_grad:
+                parameter.register_hook(lambda grad: torch.full_like(grad, float('nan'))
+                                        if trainer.est.use_autocast_ else grad)
     try:
         stopped = trainer.train()
         assert not stopped["completed"] and stopped["steps"] == 1
@@ -98,6 +105,10 @@ def assert_real_checkpoint_resume(directory, task, device):
         expected_schedule = copy.deepcopy(trainer.scheduler.state_dict())
         expected_scaler = copy.deepcopy(trainer.scaler.state_dict()) if trainer.scaler else None
         expected_retries = trainer.amp_retries
+        expected_full_precision_retries = trainer.full_precision_retries
+        if force_full_precision:
+            assert expected_full_precision_retries == 1
+            assert trainer.amp and trainer.est.use_autocast_
     finally:
         trainer.close()
     del trainer, parameter
@@ -112,6 +123,7 @@ def assert_real_checkpoint_resume(directory, task, device):
         assert restored.step == 1 and restored.datasets_seen == 2
         assert restored.scheduler.state_dict() == expected_schedule
         assert restored.amp_retries == expected_retries
+        assert restored.full_precision_retries == expected_full_precision_retries
         if expected_scaler is not None:
             assert restored.scaler.state_dict() == expected_scaler
         parameter = dict(restored.model.named_parameters())[name]

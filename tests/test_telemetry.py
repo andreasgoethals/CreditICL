@@ -141,6 +141,15 @@ def test_the_global_norm_is_the_quadrature_sum_of_the_blocks():
     assert combined == pytest.approx(row["grad_global"], rel=1e-5)
 
 
+def test_large_finite_gradients_are_not_reported_as_infinite():
+    model = torch.nn.Linear(2, 1, bias=False)
+    model.weight.grad = torch.full_like(model.weight, 1e30)
+    expected = float(torch.linalg.vector_norm(model.weight.grad, dtype=torch.float64))
+    row = grad_norms(model)
+    assert row['grad_other'] == pytest.approx(expected)
+    assert row['grad_global'] == pytest.approx(expected)
+
+
 def test_weight_norms_cover_the_same_blocks():
     grads, weights = grad_norms(_stepped_model()), weight_norms(_Model())
     assert {k.replace("grad_", "") for k in grads if k.startswith("grad_") and k != "grad_global"} \

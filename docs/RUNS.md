@@ -167,6 +167,207 @@ The one thing to do differently.
 
 ## Runs
 
+## 21-10-2026 — audit of GPU 11715564 — 47 stages passed, TabPFN LGD gradient overflow
+
+**Run** 20-10 13:28:50 through 21-10 00:07:55 CEST (main-log interval).
+**Job** 11715564, Mindwell `gpu_b200`, node r11g22, one NVIDIA B200 (183,359 MiB),
+24 CPU cores, 184,320 MiB host RAM; 24-hour request.
+Andreas's `sacct` confirms **FAILED 1:0 after 10:39:48** (batch also FAILED 1:0).
+**Commit** `d31770f`, dirty; runtime TFM pin `de324efcca55`, source
+`4da9e67eb78b4e1a753b6fa8fe5580fb37b86c956df114db9e8879dab4677d8e`.
+Primary-source inspection used read-only TFM pin `dd5091482404278f429e6f4b272d0314808f64d4`
+and VSC pin `3a04134ab7786dc4158a389ac685acfe7b77b62b`; neither is evidence of a
+different runtime pin in this job.
+At the final check, other workspace activity had advanced the tracked library
+pins to TFM `cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a` and VSC
+`9e376b5ee9106e82d37eca86ca6acb861f580c93`; this audit did not modify either
+submodule. The tested executable fingerprint remained unchanged.
+
+### Configuration
+
+- Same accepted CPU 62371055 receipt and environment fingerprint
+  `d4ed1fbe1397c0063fc12abffcb338fddd8038f21decb20c8c84accaf0bf0454`.
+  TabPFN 9.1.0, pinned TabICL 2.1.1, CatBoost 1.2.10, torch 2.11.0+cu128;
+  dependency/pip checks passed.
+- Six 600-step diagnostic arms: scratch/released TabICL and continued TabPFN-3
+  for PD/LGD. Each arm forcibly stops at step 101 and resumes. All use the
+  synthetic 50% credit mixture; no production experiments were launched.
+- Failing LGD arm: raw encoding, 1,024 synthetic rows, 1–100 features, batch 16,
+  two TabPFN members, AdamW lr 1e-5, wd 1e-4, 10% warm-up/cosine, clip norm 1,
+  FP16 AMP; upstream 9.1.0 CRPS+MSE objective and member target transforms.
+  Checkpoint cadence 100; online monitoring every 3,200 tasks.
+- Production/full-table validation retains all eligible rows/features and five folds.
+
+### Results
+
+- **47/66 stages PASS; stage 48 `resume-lgd-2` FAIL**. All **26/26 mandatory CUDA
+  tests**, six smoke routes and both trainer-equivalence checks passed. The prior
+  2,986-column streaming discrepancy is no longer present in its B200 test.
+- Reference TabICLv2, TabPFN-3, CatBoost and linear models completed credit/OOD
+  capacity checks. Credit logs show 20 successful folds/model on four PD tables
+  (hackerearth, bank_status, loan_default, algorithmwatch) and 15/model on three
+  LGD tables (heloc, loss2, base_modelisation). The 2,986-feature PD route passed.
+- Five long arms completed step 600 after resuming at 101. All four TabICL arms
+  reached 38,400 tasks each; TabPFN PD reached 9,600 with three AMP retries.
+- TabPFN LGD resumed from 101, passed monitoring at 200 (lendingclub RMSE 0.1301,
+  R2 0.7470; monitoring is not the publication benchmark), then failed at step 217.
+  Sixteen backoffs reduced scale 128 to 0.001953125 without finite gradients.
+  No successful update is counted for the failing batch. Last logged checkpoint
+  is step 200; its summary still records the earlier deliberate stop at 101.
+- No trained-checkpoint benchmark stages ran. The gate correctly blocks Exp1–3.
+
+### Files and audit limits
+
+- `Downloads/output CreditICL.zip`, 3,273,975 bytes, 373 files/442 entries,
+  SHA-256 `8345cea09de1845bcc7969c9ba552fde54b688a5a2e7ace8e0c3a8de389141f1`;
+  CRC valid. Attempt `gpu_20261020T112850Z_j11715564_4e63fa05`.
+- CPU 23/23 artifact hashes match; the GPU's bound CPU receipt hash also matches.
+  All 81 available GPU stage artifacts match. Forty referenced project-tier
+  benchmark CSV/progress/receipt files and five recorded final checkpoints are outside the
+  download; stage PASS records are available, but their numerical contents
+  cannot be independently rechecked from this ZIP.
+- Strict log scan finds the traceback only in `resume-lgd-2.log`. Scheduler
+  and traceback establish a gradient failure, not walltime/OOM. No updated
+  storage quota or directory-size output was supplied.
+
+### Diagnosis and prepared fix
+
+A local one-thread, PYTHONHASHSEED=0 replay of the same configuration and batch
+index exposes task 6's safepower-transformed query magnitude **3.3905049e18**;
+context/ordinary query targets are much smaller. A controlled upstream-loss
+reproduction at that magnitude has finite loss **3.8576e34** and infinite FP16
+gradients, versus finite float32 gradients. This establishes the failure mode;
+the exact failed CUDA checkpoint remains on VSC and has not been replayed locally.
+The pinned source is `TabPFN .txt`, symbols `_targets_in_estimator_space`,
+`_compute_regression_loss`, `InferenceEngineBatchedNoPreprocessing.iter_outputs`.
+
+The trainer now replays the entire unchanged batch once in float32 after bounded
+loss-scale backoff, restoring RNG starting states and disabling both autocast owners. The
+previously calibrated AMP scale is restored for the replay and following batches;
+unsuccessful backoffs on an unrepresentable half-precision batch must not cause
+underflow in subsequent ordinary batches. Persistent
+failure still raises. The fallback's norm reduction uses float64 before applying
+the same norm-1 clipping rule, preventing reduction overflow on large finite
+gradients. Loss weights, target transforms, input tables and update budget are
+unchanged. Replay counts are logged, summarized and restored from checkpoints.
+Gradient telemetry now also reduces in float64: a direct probe with finite
+1e30 gradients previously reported infinity instead of a norm of 1.4142e30.
+Portable regressions cover the observed target magnitude, RNG/budget/scaler
+state, persistent failure, autocast restoration and large finite norms. Two new
+mandatory early CUDA checks cover the magnitude and real TabPFN replay/resume
+paths before capacity/long-training stages.
+
+All 22 recorded progress-curve points have finite headline metrics in the ZIP.
+Local focused replay/resume tests initially passed 17/17. Two draft broad
+invocations were deliberately stopped while completing the diagnostic-norm and
+scale-recovery review; neither is counted as final verification.
+
+Final local verification used fixed source
+`f07e71e70eebd282b3401a9e745968ca47fc2edfec4821cc4608bf9eae21050a`:
+**1,582 passed / 58 skipped**, zero failures, in **1,175.90s**. The skips comprise
+29 Bash checks (Git Bash was installed but not on this process's PATH), 28 VSC
+checks and one PDF-size check after output cleanup. With the existing Git Bash
+enabled for the test process, the environment/Slurm/notebook-contract modules
+passed **178 tests**, with only that PDF check skipped, in **28.94s**. This
+recovers all 29 shell skips on unchanged source: **1,611 distinct local tests
+passed**, without claiming a CUDA PASS. The extreme-target replay, retained
+scale, next ordinary update and finite gradient reporting also passed a direct
+focused follow-up. No package installation or VSC job was performed. Existing
+notebooks/visualization sources were not changed; the fresh CPU job executes
+the notebooks and generates the figures.
+
+### Interpretation and next
+
+CPU PASS certified the prior source; this training fix requires new CPU/GPU
+receipts. Preserve the downloaded evidence, publish all prepared changes, and
+use the guarded reset for the requested clean campaign before CPU then GPU.
+Run the GPU-scoped reset before the full-output reset: the former uses existing
+GPU attempt/log job IDs to find matching GPFS scratch directories; deleting
+those identifiers first would leave the failed job's scratch copies behind.
+Keep that revision/dependencies/inputs fixed throughout. A future DEFERRED run
+can continue unchanged; a FAILED run must be diagnosed. Production remains gated.
+
+## 20-10-2026 — Exp0 GPU 11715564 — submitted after corrected-source CPU PASS
+
+**Submitted** 20-10-2026 around 09:21 CEST by Andreas; **job** 11715564, Mindwell.
+The terminal records successful `--require-exp0-cpu` followed by `exp0.slurm`.
+CPU receipt `cpu_20261019T131049Z_j62371055_f8ff58fe` was accepted as current.
+
+### Configuration and results
+
+- Current script requests one B200, 24 CPU cores, 180 GiB RAM and 24 hours;
+  these are requested resources, not evidence of an allocated node.
+- Current executable source is `4da9e67eb78b4e1a753b6fa8fe5580fb37b86c956df114db9e8879dab4677d8e`,
+  local commit `d31770f`, library pin `de324efcca55be392feb0c01830b3b6ce364587f`.
+- The 09:25 download contains no GPU attempt directory, main log or GPU receipt.
+  Submission is confirmed; scheduler state, progress, elapsed runtime and outcome are unknown.
+
+### Interpretation and next
+
+Keep the accepted CPU receipt and freeze executable source, dependencies and inputs.
+Inspect `sacct --clusters=mindwell -j 11715564`; do not reset or submit a duplicate.
+GPU validation is still required before Experiments 1–3. A failed GPU result requires
+diagnosis; a recorded DEFERRED continuation can reuse completed stages on unchanged source.
+
+## 19-10-2026 — Exp0 CPU 62371055 — corrected source passed all 13 stages
+
+**Audited** 20-10-2026 from `Downloads/output CreditICL.zip`.
+**Job** 62371055, wICE `batch`, node m28c20n4; log reports 20 cores and 65,536 MiB RAM.
+**Commit** `d31770f` (`dirty=YES` in log); executable fingerprint
+`4da9e67eb78b4e1a753b6fa8fe5580fb37b86c956df114db9e8879dab4677d8e` matches the current checkout.
+**tfm-library pin** `de324efcca55be392feb0c01830b3b6ce364587f` in the matching local source.
+Main log 15:10:49–15:31:58 CEST (**21m09s**); this is not a scheduler billing total.
+
+### Configuration
+
+- CPU validation on protocol/cache v8: 21 credit datasets, 25 classification plus
+  25 regression OOD tables, four released model weights; no production training.
+- TabPFN 9.1.0, TabICL 2.1.1 at `8f1aa2098c894ab91dba15209cf2002ba4be6c6c`,
+  CatBoost 1.2.10, torch 2.11.0+cu128; 135 dependency checks and pip check passed.
+- Environment fingerprint `d4ed1fbe1397c0063fc12abffcb338fddd8038f21decb20c8c84accaf0bf0454`.
+
+### Results
+
+- **13/13 stages PASS**: preprocess 5s, preflight 3s, unit 741s, benchmark 37s,
+  configs 2s, data 16s, determinism 63s, OOD 1s, orchestration 33s, paths 1s,
+  prior 102s, storage 3s, notebooks 238s. Detailed check reports: 129 PASS, zero FAIL/WARN.
+- Pytest **1,586 passed, one skipped, 26 deselected** in 738.06s. The skip is the
+  sibling TabPFNCredit data-identity comparison, unavailable on VSC; the 26 GPU
+  checks belong to the GPU phase. All eight new FP16/BF16 boundary regressions pass.
+  The prior local setup-guard timeout did not recur: all 16 environment tests passed.
+- **11/11 notebooks executed**, producing 125 PDFs and 11 figure manifests.
+  Untrained experiment plots are placeholders, not production results.
+  Notebook process-tree RSS sampled at 35.75 GiB, below the 64 GiB request.
+- Canonical `experiment_0/report/cpu_validation.json` is PASS; **23/23 artifact
+  SHA-256s verified** against the archive. Main log ends `END status=OK`.
+
+### Output inventory and anomalies
+
+- ZIP SHA-256 `045f65b49e31a8103b82d4ea9a87b497015c0f7a8e7cc60b5390f1ca72bd9cee`:
+  213 files, 2,679,280 compressed bytes, 3,908,396 uncompressed bytes;
+  CRC valid, no duplicate or unsafe paths.
+- One previous CPU attempt, 62369106, remains: 33 attempt files plus its main and
+  preprocessing logs, **35 files / 548,545 bytes**. It is isolated from the current
+  canonical receipt. No previous GPU attempt or production checkpoint/result tree
+  is present in this ZIP. Generated notebook figures/summaries are expected output.
+- At 19-10 15:27 CEST, the storage check recorded **zero files** under the current
+  project-tier output root. This does not inventory legacy paths elsewhere on VSC.
+  The local checkout's output tree contains only its README; the downloaded ZIP
+  was preserved and was not extracted into that tree.
+- Shared Lustre project `stg_00211` reported **147,529/150,000 files** (2,471 slots
+  remaining), despite using only 253.1 GiB of 1 TiB. This is a shared quota,
+  not proof that CreditICL owns all those files. Review before larger campaigns.
+- No new CPU failure was found. Deprecation and group-lookup warnings remain;
+  passing CPU checks do not establish CUDA equivalence or full-table GPU capacity.
+
+### Interpretation and next
+
+The corrected code now has a valid VSC CPU result. GPU 11715564 is the next required
+validation; no further CPU rerun or output reset is indicated. Keep this campaign
+unchanged and inspect the GPU outcome before launching production experiments.
+Remove only the isolated old CPU files later if a single-attempt archive is desired;
+do not erase the current CPU evidence or active GPU output.
+
 ## 19-10-2026 — Exp0 GPU 11714993 — early streaming equivalence failure
 
 **Job** 11714993, Mindwell `gpu_b200`, node r11g17, one NVIDIA B200 (183,359 MiB).

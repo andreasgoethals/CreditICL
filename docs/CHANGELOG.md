@@ -8,9 +8,15 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 21-10-2026
+
+- Diagnose GPU 11715564's TabPFN LGD gradient overflow; add one identical-batch float32 replay, stable norm clipping/reporting, checkpointed replay counts and early portable/CUDA regressions.
+
 ## 20-10-2026
 
 - Added the independent read-only VSC Library submodule and daily pin-update proposals; shared HPC guidance moved out of TFM Library, with project instructions retained in docs/VSC.md. No cluster workload was submitted.
+
+- Record verified CPU 62371055 PASS, GPU 11715564 submission, remaining old CPU files and shared project file-quota headroom; executable code unchanged.
 
 ## 19-10-2026
 

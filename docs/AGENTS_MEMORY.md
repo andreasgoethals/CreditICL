@@ -40,7 +40,13 @@ older preservation instructions below. Exp0 now requires CPU then GPU PASS recei
 Exp1 has 48 runs including component tests. Historical run entries remain an audit trail, not
 reusable completion evidence. VSC submissions are made by Andreas; the rows below record the supplied evidence.
 
-Latest VSC evidence (19-10-2026, 14:03 download): CPU 62369106 passed; GPU 11714993 failed its first wide streaming equivalence test after 16 passes. A local mixed-precision reproduction exposed an unintended float32 conversion before row attention. Corrected source needs new CPU/GPU receipts; the downloaded ZIP is preserved. Do not retry the old FAILED receipt with `--resume`: use guarded GPU-only reset, then CPU and GPU scripts on the corrected source.
+Latest VSC evidence (21-10-2026, 08:30 download): GPU 11715564 FAILED 1:0 after 10:39:48, at TabPFN LGD step 217 after 16 AMP retries. 47/66 stages passed, including 26/26 CUDA tests, wide streaming equivalence, all reference capacity benchmarks and five 600-step stop/resume arms. The local batch-217 replay exposes a safepower query target around 3.39e18; a finite loss overflows half-precision gradients. The prepared fix retries the identical batch once in float32 with stable norm clipping; fresh CPU/GPU receipts are required for changed source. Preserve this ZIP; do not resubmit the failed receipt or launch production.
+
+Local final verification (21-10-2026), fixed source `f07e71e70eebd282b3401a9e745968ca47fc2edfec4821cc4608bf9eae21050a`: full suite **1,582 PASS / 58 SKIP**, zero failures, 1,175.90s. Existing Git Bash was absent from PATH; after enabling it for the test process, environment/Slurm/notebook-contract modules passed **178/178 executed tests**, one figure test skipped, in 28.94s. This covers all 29 Bash skips from the full run without source changes: 1,611 distinct local tests passed; 28 mandatory VSC tests and the missing-figure check remain unexecuted locally. Two added VSC cases test the replay and real checkpoint/resume before expensive stages. The prior CPU notebooks passed 11/11; the fresh CPU job will regenerate them. No VSC jobs, installs or pushes were performed here.
+
+Previous snapshot (20-10-2026, 09:25): CPU 62371055 passed all 13 stages, 1,586 tests and 11 notebooks; all 23 artifact hashes verified for source `4da9e67`. GPU 11715564 was then only submitted, with no GPU files in that earlier ZIP. One old CPU attempt remained (35 files, 0.55 MB); current project-output inventory was empty at its CPU storage check. Shared file quota was 147,529/150,000; no later quota inventory was supplied.
+
+Earlier VSC evidence (19-10-2026, 14:03 download): CPU 62369106 passed; GPU 11714993 failed its first wide streaming equivalence test after 16 passes. A local mixed-precision reproduction exposed an unintended float32 conversion before row attention. The corrected source was subsequently validated by CPU 62371055; the B200 result remains pending.
 
 Local verification after the precision fix: fingerprint `4da9e67eb78b4e1a753b6fa8fe5580fb37b86c956df114db9e8879dab4677d8e` unchanged throughout. Full suite: 1,605 passed, 27 skipped, one Git Bash subprocess timed out at 20s (47m21s total). That test passed unchanged alone and all 16 environment tests then passed in 1.97s; the timeout's cause is unconfirmed. The skips are 26 mandatory VSC tests and one PDF check after local output cleanup. Do not describe the full invocation as green or infer a B200 PASS from these local checks.
 
@@ -53,6 +59,8 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 20-10-2026 | Exp0 GPU 11715564, Mindwell B200/r11g22, `d31770f`; audited 21-10 | **FAILED 1:0 after 10:39:48; 47 stages PASS, resume-lgd-2 FAIL** | 26/26 CUDA checks and wide equivalence passed; four reference models completed full-row five-fold capacity checks, five 600-step arms completed. TabPFN LGD stopped at step 217 after 16 AMP retries; last recorded checkpoint step 200. Local replay exposes a transformed target 3.39e18; fixed-source CPU/GPU validation required |
+| 19-10-2026 | Exp0 CPU 62371055, wICE batch/m28c20n4, `d31770f`; audited 20-10 | **PASS: 13/13 stages, 1,586 tests PASS/1 SKIP, 11/11 notebooks, 125 figures; 21m09s main-log interval** | Source `4da9e67` and 23/23 artifact hashes verified; all eight new mixed-precision cases pass on CPU, 26 CUDA checks deferred to GPU phase. No production arms started |
 | 19-10-2026 | Exp0 GPU 11714993, Mindwell B200/r11g17, `b351325` | **FAILED exit 1; 16 CUDA tests PASS, 1 FAIL; 2m18s main-log interval** | PD 2,986-feature streaming predictions differed from stock by up to 0.00238492 (3/16 probabilities outside tolerance). No long training or capacity stages started. Local AMP reproduction confirms a float32 boundary conversion; remove it, retain tolerance, revalidate on B200 |
 | 19-10-2026 | Exp0 CPU 62369106, wICE batch/l33c22n2, `b351325` | **PASS: 13/13 stages, 1,575 tests PASS/2 SKIP, 11/11 notebooks, 125 figures; 35m10s log interval** | All 23 CPU artifact hashes match; GPU binds this exact receipt and input inventory. All 21 caches v8 and 50 OOD tables present. Subsequent precision/test changes require a new CPU receipt |
 | 19-10-2026 | Follow-up of GPU 11692660 and VSC checkout | **CANCELLED by 2538338 after 22:36:01; batch 0:15, 22:36:10** | ZIP still has schema-2 RUNNING / 12 of 66 stages and a false OK footer. All 22 CPU hashes match; no new model errors. VSC remains `cf0e539` / fingerprint `adf308f...`; 16-10 fixes remain unpublished locally. Add signal-aware status/tests, publish fixes, then clean CPU/GPU validation; do not resume the old slow code |
@@ -101,6 +109,20 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 [`RUNS.md`](RUNS.md).
 
 ## Dead ends
+
+### 21-10-2026 — finish numerical recovery review before final verification
+
+**Tried:** Broad local verification while reviewing the new full-precision recovery path.
+**Result:** Two draft broad invocations were deliberately stopped while completing review; neither is counted as final verification. Direct telemetry reproduction reported infinity for finite 1e30 gradients.
+**Why:** The old diagnostic norm/square overflowed in float32, and retaining unsuccessful scale backoffs after a float32 replay could underflow later ordinary AMP gradients.
+**Instead:** Use stable diagnostic norms and restore the calibrated scale on replay; the final frozen-source suite passed 1,582 tests, with 29 Bash checks subsequently recovered unchanged from skips.
+
+### 21-10-2026 — loss scaling cannot recover every finite regression loss
+
+**Tried:** GPU 11715564 with bounded identical-batch AMP retries, after CPU PASS.
+**Result:** Five arms finished; TabPFN LGD failed at step 217 despite scale 128 falling to 0.001953125, after 10h40m allocated.
+**Why:** A locally regenerated task in that batch has a safepower query target around 3.39e18. The finite MSE overflows float16 gradients even at small scales; repeated scale backoff alone is insufficient. No CUDA replay of the failed checkpoint is available locally.
+**Instead:** Replay the same batch once in float32, disable the estimator's nested autocast too, retain objective/RNG/budget, clip its norm with a float64 reduction, and test replay plus checkpoint/resume before long GPU stages. Persistent float32 failures still stop the run.
 
 ### 19-10-2026 — one local Git Bash deadline during the full suite
 

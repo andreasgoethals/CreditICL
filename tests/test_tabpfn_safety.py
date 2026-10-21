@@ -24,7 +24,10 @@ def tiny_trainer(*, scale=None, device='cpu'):
     trainer.scheduler = torch.optim.lr_scheduler.StepLR(trainer.optimizer, step_size=1, gamma=.9)
     trainer.scaler = torch.amp.GradScaler(device, init_scale=scale) if scale else None
     trainer.device = device
+    trainer.amp = bool(scale)
+    trainer.est = SimpleNamespace(use_autocast_=bool(scale))
     trainer.step = trainer.datasets_seen = trainer.skipped_tasks = trainer.amp_retries = 0
+    trainer.full_precision_retries = 0
     trainer.grad_clip = 1.
     trainer.log = logging.getLogger('test_amp')
     trainer.telemetry = SimpleNamespace(due_grad=lambda _: False)
@@ -75,6 +78,8 @@ def test_persistent_nonfinite_gradients_cannot_update_or_advance(scale):
     assert not t.optimizer.state and t.datasets_seen == 0
     assert t.model.weight.grad is None
     assert t.amp_retries == (16 if scale else 0)
+    assert t.full_precision_retries == (1 if scale else 0)
+    assert t.amp == bool(scale) and t.est.use_autocast_ == bool(scale)
 
 
 def test_nonfinite_forward_after_one_task_discards_partial_gradients():
@@ -115,3 +120,90 @@ def assert_regression_loss_devices(device):
 
 def test_regression_loss_has_finite_gradients_without_mutating_prepared_batch():
     assert_regression_loss_devices('cpu')
+
+
+def assert_extreme_regression_replay(device):
+    """A finite MSE with the target magnitude observed in synthetic batch 217.
+
+    The model output is explicitly cast to half to exercise the float16 gradient
+    boundary on CPU as well as CUDA. Full precision must replay the entire batch,
+    retaining the original objective, targets, RNG draws and one optimizer step.
+    """
+    from tabpfn.architectures.shared.bar_distribution import FullSupportBarDistribution
+
+    trainer = tiny_trainer(scale=128., device=device)
+    baseline = tiny_trainer(device=device)
+    bar = FullSupportBarDistribution(torch.linspace(-3, 3, 5))
+    target = torch.tensor([[0., 3.390504907822858e18, 1.]])
+    batch = SimpleNamespace(X_query=None, y_query=target, znorm_space_bardist=bar,
+                            configs=[[SimpleNamespace(target_transform=None)]])
+    seen, draws = [], []
+
+    def loss(t, task):
+        if t is trainer:
+            seen.append(task['item'])
+            draws.append(torch.rand(2, device=device).cpu())
+        output = t.model(torch.ones(3, 1, device=device))
+        output = output.to(torch.float16 if t.est.use_autocast_ else torch.float32)
+        logits = torch.cat([output, -output, output * 0, output * .5], dim=-1).unsqueeze(1)
+        estimator = SimpleNamespace(forward=lambda _: (None, [logits], None))
+        return regression_loss(estimator, batch, 1, dict(ce=0., crps=1., crls=0., mse=1., mae=0.))
+
+    trainer._task_loss = lambda p: loss(trainer, p)
+    baseline._task_loss = lambda p: loss(baseline, p)
+    tasks = [{'item': 'first'}, {'item': 'second'}]
+    original_target = target.clone()
+    stats = trainer.train_step(tasks)
+    baseline.train_step(tasks)
+    assert stats['amp_retries'] == 16 and stats['full_precision_retry'] == 1
+    assert trainer.full_precision_retries == 1 and trainer.datasets_seen == 2
+    assert trainer.scaler.get_scale() == 128., 'retain the calibrated scale for subsequent AMP batches'
+    assert trainer.skipped_tasks == 0 and trainer.scheduler.last_epoch == 1
+    assert int(trainer.optimizer.state[trainer.model.weight]['step']) == 1
+    assert trainer.amp and trainer.est.use_autocast_
+    assert seen == ['first', 'second'] * 18  # initial + 16 backoffs + one float32 replay
+    for i in range(2, len(draws), 2):
+        torch.testing.assert_close(draws[i], draws[0], rtol=0, atol=0)
+        torch.testing.assert_close(draws[i + 1], draws[1], rtol=0, atol=0)
+    torch.testing.assert_close(target, original_target, rtol=0, atol=0)
+    torch.testing.assert_close(trainer.model.weight, baseline.model.weight, rtol=1e-6, atol=1e-7)
+    assert trainer.model.weight.grad is None
+    # Restored AMP and scaler state must also work on the following ordinary batch.
+    trainer._task_loss = lambda _: trainer.model.weight.square().sum()
+    ordinary = trainer.train_step(tasks)
+    assert ordinary['full_precision_retry'] == 0 and trainer.full_precision_retries == 1
+    assert trainer.datasets_seen == 4 and trainer.scheduler.last_epoch == 2
+
+
+def test_extreme_regression_target_replays_full_precision_without_changing_the_objective():
+    assert_extreme_regression_replay('cpu')
+
+
+@pytest.mark.parametrize('max_norm', [1., 0.])
+def test_full_precision_gradient_norm_does_not_overflow(max_norm):
+    from src.train.tabpfn_trainer import _clip_full_precision_grad_norm
+
+    params = [torch.nn.Parameter(torch.ones(2)), torch.nn.Parameter(torch.ones(1))]
+    params[0].grad = torch.tensor([1e30, -1e30])
+    params[1].grad = torch.tensor([1e30])
+    before = [p.grad.clone() for p in params]
+    _clip_full_precision_grad_norm(params, max_norm)
+    actual = torch.cat([p.grad for p in params]).double()
+    assert torch.isfinite(actual).all()
+    if max_norm > 0:
+        expected = torch.cat(before).double()
+        expected /= torch.linalg.vector_norm(expected)
+        torch.testing.assert_close(actual, expected, rtol=1e-6, atol=1e-7)
+    else:
+        torch.testing.assert_close(actual, torch.cat(before).double(), rtol=0, atol=0)
+
+
+def test_full_precision_scope_disables_inner_autocast_and_restores_on_error():
+    trainer = tiny_trainer(scale=8.)
+    with pytest.raises(RuntimeError, match='probe'):
+        with torch.amp.autocast('cpu', dtype=torch.bfloat16):
+            with trainer._full_precision():
+                assert not trainer.amp and not trainer.est.use_autocast_
+                assert not torch.is_autocast_enabled('cpu')
+                raise RuntimeError('probe')
+    assert trainer.amp and trainer.est.use_autocast_

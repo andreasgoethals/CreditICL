@@ -60,6 +60,30 @@ def test_tabpfn_cuda_checkpoint_resume_before_long_training(tmp_path, task):
         assert_real_checkpoint_resume(Path(directory), task, "cuda")
 
 
+def test_tabpfn_cuda_full_precision_replay_survives_real_checkpoint_resume(tmp_path, monkeypatch):
+    """Prove the nested executor/scaler/checkpoint contract before expensive stages."""
+    import tempfile
+    from pathlib import Path
+
+    from src.train import tabpfn_trainer
+    from src.utils.working_storage import work_root
+    from test_tabpfn_resume import assert_real_checkpoint_resume
+
+    # One forced AMP failure is sufficient to exercise the real executor here;
+    # the portable and CUDA magnitude tests verify all 16 production backoffs.
+    monkeypatch.setattr(tabpfn_trainer, 'MAX_AMP_RETRIES', 1)
+    root = work_root() or tmp_path
+    root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='precision-resume-lgd-', dir=root) as directory:
+        assert_real_checkpoint_resume(Path(directory), 'lgd', 'cuda', force_full_precision=True)
+
+
+def test_cuda_extreme_regression_targets_keep_the_whole_training_batch():
+    from test_tabpfn_safety import assert_extreme_regression_replay
+
+    assert_extreme_regression_replay('cuda')
+
+
 def test_cluster_working_storage_publishes_complete_checkpoint():
     from src.utils import paths
     from src.utils.working_storage import checkpoint_work_dir, local_input, publish_checkpoint, work_root

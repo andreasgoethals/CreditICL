@@ -194,7 +194,10 @@ def grad_norms(model: Any) -> dict[str, float]:
         for name, param in model.named_parameters():
             if param.grad is None:
                 continue
-            value = float(torch.linalg.vector_norm(param.grad.detach()) ** 2)
+            # A float32 norm or its squared tensor can overflow even when every
+            # gradient entry is finite (e.g. a full-precision TabPFN replay).
+            # Reduce in float64, then square the Python double for accumulation.
+            value = float(torch.linalg.vector_norm(param.grad.detach(), dtype=torch.float64)) ** 2
             block = _classify(name)
             sums[block] = sums.get(block, 0.0) + value
             counts[block] = counts.get(block, 0) + 1

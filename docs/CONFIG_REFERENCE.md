@@ -254,6 +254,17 @@ construction. **`init.strategy: full`** — every layer trains.
 (default the fine-tuner's: CRPS 1 + MSE 1, no NLL term), `train.amp` (float16 autocast + GradScaler,
 as the fine-tuner). AdamW only.
 
+Numerical safeguard: after at most 16 loss-scale backoffs, an AMP batch with
+non-finite gradients is replayed once in float32, disabling both the trainer's
+and TabPFN executor's autocast. Tasks, targets and loss weights are retained;
+RNG starting states are restored before each retry, and only one successful
+optimizer/scheduler update is counted. The previously calibrated AMP scale is
+restored for the float32 replay and subsequent batches. The
+global gradient norm uses a float64 reduction on that replay to avoid overflow
+before clipping. `full_precision_retries` is logged and checkpointed. Persistent
+non-finite gradients still stop the run. This is a project safeguard beyond the
+upstream fine-tuner's default AMP loop, not a different regression objective.
+
 **`train.l2sp_alpha: 0`** — L2-SP (`Ω(w) = (α/2)‖w − w₀‖²` toward the released weights, Real-TabPFN's
 α = 0.003) is implemented and tested but not in the design: neither recipe Exp2 follows uses it, and a
 second axis would confound the first. A later ablation; forgetting is measured instead, on the
