@@ -6,7 +6,7 @@ the model, so it decides what the model is good at. This project changes that ge
 what upstream does, what we add, and why every mechanism — and every number in it — comes from the credit-risk
 literature rather than from the datasets the models are scored on.
 
-Sources, in-repo (pin `de324efcca55be392feb0c01830b3b6ce364587f`): paper `tfm-library/papers/2026/02_Qu_et_al._TabICLv2_*.pdf`; code
+Original in-repo source audit (pin `de324efcca55be392feb0c01830b3b6ce364587f`; later checks record their own pins): paper `tfm-library/papers/2026/02_Qu_et_al._TabICLv2_*.pdf`; code
 `tfm-library/repositories/TabICL.txt`, including their own `scripts/train_v2_{clf,reg}_stage{1,2,3}.sh`.
 Code is cited **by symbol name**, never line number. The *values* these mechanisms take are in
 [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md); why they exist is [EXPERIMENTAL_DESIGN.md](EXPERIMENTAL_DESIGN.md).
@@ -167,7 +167,7 @@ Kumaraswamy interior) remain in the code for ablations; no experiment uses them.
 
 | knob | value | source |
 |---|---|---|
-| `missingness` | half the tables; 5 – 100 % of columns; 1 – 50 % missing; coupling to a noisy covariate-based borrower propensity 0 – 1 | gaps in credit data are informative, not random — reject inference is itself a missing-data problem (Baesens et al. 2026); rates are not published, so **wide** |
+| `missingness` | half the tables; 5 – 100 % of columns; 1 – 50 % missing; coupling to a noisy covariate-based borrower propensity 0 – 1 | models correlated, covariate-dependent gaps (MAR), not outcome-driven missingness; target information is not guaranteed. The legacy `no_informative_missingness` ablation removes this coupling; it need not improve target AUC/R² |
 | `marginals` | 0 – 100 % of continuous columns, skew 0.25 – 2.5 | money amounts, balances and incomes are positive and right-skewed; a monotone warp, so every split a tree could make — and the dependence on the target — is unchanged; magnitudes **wide** |
 | `shift` | 30 % of tables | populations drift with the economic cycle and with acceptance policy (economic-cycle dependency and reject inference; Baesens et al. 2026); kinds **wide** |
 | `prior_prob_ratio_range` | 1.25 – 4, log-uniform, either way | the prior-probability shift sets the query's default rate (LGD: its share of above-median losses) to the context's times this ratio. Under the Vasicek model of 5.1, a one-to-two standard-deviation move of the factor multiplies a book's default rate by 1.1 – 6.1 over ρ 0.03 – 0.24 and default rates 1 – 50 %; the range sits inside that. Until 29-09-2026 the knob (`prior_prob_range`) set the context's share of defaults to an absolute 15 – 85 %, which left the query of a low-default book a single default in 85 % of these tables |

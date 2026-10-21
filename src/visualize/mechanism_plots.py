@@ -157,10 +157,7 @@ def imbalance_control(config_path: str, n: int = 200, seed: int = 0):
     ax.axvspan(*REAL_PD_BAND, color=style.REAL, alpha=0.15, zorder=0)
     ax.annotate("real credit\n7–22%", (np.mean(REAL_PD_BAND), ax.get_ylim()[1] * 0.9),
                 color=style.REAL, fontsize=8, ha="center", weight="semibold")
-    # The base rate below which a default-threshold classifier collapses to the majority class,
-    # measured on real credit data — the regime our controlled imbalance deliberately reaches into.
-    literature.line(ax, "tanna_paradox", label="Tanna: collapse < 10%")
-    ax.set_xlabel("positive (default) rate per task")
+    ax.set_xlabel("positive-label rate per task")
     ax.set_ylabel("number of tasks")
     style.legend_below(ax, ncol=2)
     return fig

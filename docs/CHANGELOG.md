@@ -10,6 +10,8 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 21-10-2026
 
+- Verify CPU 62378918 PASS; close outcome aliases (protocol 9), paired macro RNG, plotting/reporting and validation error-propagation gaps, preserving the approved experiment grids and benchmark inventory.
+- Validate frozen source 20f0e981: 1,638 tests passed / 28 VSC-only skips; all 11 notebooks and 125 figures regenerated successfully.
 - Diagnose GPU 11715564's TabPFN LGD gradient overflow; add one identical-batch float32 replay, stable norm clipping/reporting, checkpointed replay counts and early portable/CUDA regressions.
 
 ## 20-10-2026

@@ -880,6 +880,8 @@ class Trainer:
     def train(self) -> dict[str, Any]:
         self._stop_requested: str | None = getattr(self, "_stop_requested", None)
         self._install_stop_signals()
+        from src.utils.signal_ready import publish
+        publish()
         loader = build_loader(
             self.cfg["prior"],
             self.task,

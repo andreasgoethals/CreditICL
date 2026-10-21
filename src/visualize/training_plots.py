@@ -54,16 +54,11 @@ from matplotlib.patches import Patch
 
 from src.utils import paths
 from src.visualize import style
+from src.eval.metrics import METRIC_DIRECTIONS as HIGHER_IS_BETTER, higher_is_better
 
 # Headline evaluation metric per task: the one curve a reader looks at first. Higher is better
 # for both (ROC-AUC for classification, R² for regression), so "best/worst" is unambiguous.
 HEADLINE = {"pd": "roc_auc", "lgd": "r2"}
-HIGHER_IS_BETTER = {"auc": True, "ap": True, "r2": True, "spearman": True, "kendall": True,
-                    "roc_auc": True, "pr_auc": True,
-                    "brier": False, "logloss": False, "log_loss": False, "ece": False,
-                    "rmse": False, "mae": False, "pinball": False, "crps": False, "ks": True,
-                    "f1_at_base_rate": True, "mcc_at_base_rate": True,
-                    "balanced_accuracy_at_base_rate": True}
 
 #: The levers that name an arm, per experiment, and how each reads in a heading. Credit fraction
 #: comes first in both: it is the lever the sweep's rows are grouped by. Since 29-09-2026 Exp1
@@ -412,7 +407,7 @@ def rank_arms(runs: dict[str, pd.DataFrame], track: str) -> list[tuple[str, floa
     metric = HEADLINE[track]
     kept, _ = comparable_datasets(runs, metric)
     scored = _finals(_aggregate(runs), metric, kept)
-    return sorted(scored.items(), key=lambda kv: kv[1], reverse=HIGHER_IS_BETTER.get(metric, True))
+    return sorted(scored.items(), key=lambda kv: kv[1], reverse=higher_is_better(metric))
 
 
 def _curve(df: pd.DataFrame, metric: str, datasets: list[str], grid: np.ndarray,
@@ -808,8 +803,12 @@ def metric_over_training(track: str, exp: str = "exp1", metric: str | None = Non
 
 
 def credit_vs_control_over_training(track: str, exp: str = "exp1", metric: str | None = None):
-    """The headline comparison as a curve: credit-prior arms (any credit fraction above 0) against
-    the control arms, median and inter-quartile band over the finished arms of each group."""
+    """One curve per architecture and mixture; bands describe training-seed variation.
+
+    Pooling architectures or positive mixtures would hide a paired prior effect
+    behind unrelated between-model variation. These bands are descriptive, not
+    a significance test of the difference between paired arms.
+    """
     metric = metric or HEADLINE[track]
     runs, agg, kept, _ = _view(track, exp, metric)
     style.apply()
@@ -817,21 +816,22 @@ def credit_vs_control_over_training(track: str, exp: str = "exp1", metric: str |
         return _placeholder("no progress logs in output CreditICL/experiment_<N>/runs/ yet")
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.46))
     grid = _common_step_grid(agg)
-    groups: dict[str, list] = {"credit prior": [], "control": []}
+    groups: dict[tuple[str, float], list] = {}
     for name, df in agg.items():
         curve = _curve(df, metric, kept, grid)
         if curve is not None:
-            groups["control" if _is_control(name) else "credit prior"].append(curve)
-    labels = {"credit prior": "with our credit prior (> 0 % credit)", "control": "control: 0 % credit (TabICL prior only)"}
-    for key, colour in (("credit prior", style.CREDIT), ("control", style.ORIGINAL)):
-        stack = groups[key]
-        if not stack:
-            continue
+            family = re.search(r"(?:^|__)arm=(tabicl|tabpfn3)(?:__|$)", name)
+            groups.setdefault((family.group(1) if family else "scratch", _cf_value(name)), []).append(curve)
+    for (family, share), stack in sorted(groups.items()):
+        colour = style.credit_fraction_colour(share)
         med = _complete(stack, np.median)
         lo, hi = _complete_band(stack)
         ax.fill_between(grid, lo, hi, color=colour, alpha=0.16, lw=0)
         ax.plot(grid, med, color=colour, lw=2.3, zorder=4,
-                label=f"{labels[key]}: median of {len(stack)} arms, inter-quartile band")
+                ls="--" if family == "tabpfn3" else "-",
+                label=f"{style.CONTINUED_LABEL.get(family, 'scratch TabICL')} · "
+                      f"{style.prior_mix_label(share, control=True)}: "
+                      f"median of {len(stack)} seeds, inter-quartile band")
     if not any(groups.values()):
         _empty(ax, "no finished arm carries a development score yet")
         return fig
@@ -1077,7 +1077,7 @@ def seed_spread(track: str, exp: str = "exp1", metric: str | None = None):
         by_config.setdefault(_config_of(name), []).append(v)
     if not by_config:
         return _placeholder("no finished arms to compare yet")
-    higher = HIGHER_IS_BETTER.get(metric, True)
+    higher = higher_is_better(metric)
     # Best first; the axis is inverted below, so the best configuration is the top row.
     configs = sorted(by_config, key=lambda c: np.mean(by_config[c]), reverse=higher)
     fig, ax = plt.subplots(figsize=style.row_figsize(len(configs), per_row=0.19, base=1.35))
@@ -1681,7 +1681,7 @@ def training_summary(track: str, exp: str = "exp1") -> str:
     control = [v for n, v in finals.items() if _is_control(n)]
     if credit and control:
         lines.append(f"  credit prior minus control: {np.mean(credit) - np.mean(control):+.4f}")
-    ranked = sorted(finals.items(), key=lambda kv: kv[1], reverse=HIGHER_IS_BETTER.get(metric, True))
+    ranked = sorted(finals.items(), key=lambda kv: kv[1], reverse=higher_is_better(metric))
     if ranked:
         lines.append(f"  best  {label} = {ranked[0][1]:.4f}  {arm_label(ranked[0][0])}")
         lines.append(f"  worst {label} = {ranked[-1][1]:.4f}  {arm_label(ranked[-1][0])}")
@@ -1699,7 +1699,7 @@ def training_summary(track: str, exp: str = "exp1") -> str:
             seeds = {_seed_of(n): v for n, v in finals.items() if _config_of(n) == config}
             if len(seeds) > 1:
                 scored += 1
-                best = max(seeds, key=seeds.get) if HIGHER_IS_BETTER.get(metric, True) else min(seeds, key=seeds.get)
+                best = max(seeds, key=seeds.get) if higher_is_better(metric) else min(seeds, key=seeds.get)
                 tops[best] = tops.get(best, 0) + 1
         if tops:
             lines.append("  best seed within a configuration: " + ", ".join(

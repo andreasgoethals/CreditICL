@@ -293,16 +293,17 @@ def data_summary(
             )
         else:
             per = {s.split('.', 1)[-1]: float(np.asarray(d.y).mean()) for s, d in datasets.items()}
-            lines.append(f"\nbase rate          {_fmt_range(list(per.values()), pct=True)}")
+            lines.append(f"\npositive-label rate {_fmt_range(list(per.values()), pct=True)}")
             for name, v in sorted(per.items(), key=lambda kv: kv[1]):
                 odds = (1 - v) / max(v, 1e-9)
                 # One decimal below ten, trailing zero dropped: 40% is "1 per 1.5", not "1 per 1".
                 shown = f"{odds:.1f}".rstrip("0").rstrip(".") if odds < 10 else f"{odds:.0f}"
-                lines.append(f"  {name:24} {v:6.1%}   (1 default per {shown} non-defaults)")
+                lines.append(f"  {name:24} {v:6.1%}   (1 positive label per {shown} negative labels)")
             lines.append(
-                "\nEvery dataset is below 50%. TabICL's unmodified prior spreads its tasks'\n"
-                "base rates over the whole [0, 1] with a median near 50% (notebook 0.2), so\n"
-                "real books sit in its left tail. That gap is what the PD arm addresses."
+                "\nThese are source-defined label frequencies, not uniformly certified default\n"
+                "rates. Minority frequency is min(p, 1-p); label orientation and maturity\n"
+                "limitations are disclosed in EXPERIMENTAL_DESIGN. Compare the actual control\n"
+                "class-frequency distribution in notebook 0.2 rather than assuming balance."
             )
 
     if leakage is not None and len(leakage):

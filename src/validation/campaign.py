@@ -195,8 +195,26 @@ def check_junit(path: Path, *, mandatory: bool) -> dict:
     suites = [root] if root.tag == "testsuite" else list(root.iter("testsuite"))
     counts = {k: sum(int(s.get(k, "0")) for s in suites)
               for k in ("tests", "failures", "errors", "skipped")}
-    if not counts["tests"] or counts["failures"] or counts["errors"] or (mandatory and counts["skipped"]):
+    if (counts["tests"] <= counts["skipped"] or counts["failures"] or counts["errors"]
+            or (mandatory and counts["skipped"])):
         raise ValueError(f"Incomplete/failed test coverage: {counts}")
+    if not mandatory and counts["skipped"]:
+        # These two prerequisites are legitimately absent in a fresh cluster
+        # checkout. Missing packages or newly skipped scientific tests are not.
+        allowed = {
+            ("tests.test_data_identity", "test_every_dataset_matches_tabpfncredit"):
+                "the TabPFNCredit project is not on this machine",
+            ("tests.test_notebook_outputs", "test_every_saved_pdf_fits_the_a4_text_block"):
+                "no figures on disk; run python -m src.utils.run_notebooks",
+        }
+        skips = [(case, case.find("skipped")) for case in root.iter("testcase")
+                 if case.find("skipped") is not None]
+        if len(skips) != counts["skipped"]:
+            raise ValueError("Incomplete test coverage: skipped test identities missing")
+        for case, skipped in skips:
+            key = (case.get("classname"), case.get("name", "").split("[", 1)[0])
+            if allowed.get(key) != skipped.get("message"):
+                raise ValueError(f"Incomplete test coverage: unexpected skipped test {key}: {skipped.get('message')}")
     return counts
 
 
@@ -254,6 +272,12 @@ def execute(stage: Stage, log: Path, *, timeout: float) -> dict:
         raise ValidationDeferred("Allocation budget exhausted before the next stage")
 
     env = dict(os.environ, PYTHONHASHSEED="0", PYTHONUNBUFFERED="1")
+    from src.utils.signal_ready import READY_ENV, matches
+    ready = log.with_suffix(".ready")
+    ready.unlink(missing_ok=True)
+    env.pop(READY_ENV, None)
+    if stage.phase == "training":
+        env[READY_ENV] = str(ready.resolve())
     progress = None
     if any(Path(arg).name in ("evaluate.py", "evaluate_ood.py") for arg in stage.command):
         progress = log.parent.parent / "report" / "timing" / f"{stage.name}.json"
@@ -298,10 +322,14 @@ def execute(stage: Stage, log: Path, *, timeout: float) -> dict:
                     from src.utils.working_storage import checkpoint_work_dir
 
                     checkpoint = latest_checkpoint(checkpoint_work_dir(paths.run_checkpoints_dir(stage.stop_run)))
-                    if checkpoint is not None:
+                    # A continued campaign can already have a checkpoint while
+                    # the new interpreter is still importing torch. SIGUSR1's
+                    # default action would kill it before its handler exists.
+                    if checkpoint is not None and matches(ready, proc.pid):
                         proc.send_signal(signal.SIGUSR1)
                         signalled = True
-                elif stage.phase == "training" and not signalled and timeout - (time.monotonic() - started) < 120:
+                elif (stage.phase == "training" and not signalled
+                      and timeout - (time.monotonic() - started) < 120 and matches(ready, proc.pid)):
                     proc.send_signal(signal.SIGUSR1)
                     signalled = True
                 time.sleep(1)
@@ -309,6 +337,7 @@ def execute(stage: Stage, log: Path, *, timeout: float) -> dict:
         finally:
             # Even a crashed parent can leave DataLoader workers behind on the GPU node.
             kill_process_tree(proc)
+            ready.unlink(missing_ok=True)
     expected = 64 if stage.stop_run else 0
     if rc == 64 and not stage.stop_run and (progress is not None or stage.name.startswith("resume-")):
         raise ValidationDeferred(f"{stage.name}: saved progress; next allocation can continue")

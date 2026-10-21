@@ -7,8 +7,8 @@ a notebook's references cell prints the sources (`literature.references_md(...)`
 from memory: if a fact is not in the library, it is tagged `external` and says so, so a reader never
 mistakes domain knowledge for a library-grounded result.
 
-Current library pin: `de324efcca55be392feb0c01830b3b6ce364587f`.
-Training and benchmark claims were checked against this snapshot. Tags:
+Citation audit pin: `cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a`.
+Earlier training audits used de324ef; that is historical provenance. Tags:
   paper-evaluated — the paper *measured* it        code-supported — the code does it, unevaluated
   editorial       — the library's own synthesis    external — NOT in the library (domain knowledge)
 """
@@ -20,7 +20,7 @@ from typing import Any
 
 #: The tfm-library commit these citations were read against. Record it beside any result that uses
 #: them; bump with `python -m src.utils.update_tfm_library`.
-PIN = "de324efcca55be392feb0c01830b3b6ce364587f"
+PIN = "cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a"
 
 
 @dataclass(frozen=True)
@@ -103,8 +103,8 @@ REFS: dict[str, Ref] = {
                             "paper-evaluated", None, "balanced sampling adds more AUC than the choice of TFM"),
     "tanna_zerorecall": Ref("default-threshold GBDTs collapse to 0% recall", "papers/2026/05_Tanna_DataPresentation Table 1",
                             "paper-evaluated", 0.0, "the accuracy paradox — why we never report accuracy alone"),
-    "tanna_paradox": Ref("majority collapse below ~10% base rate", "papers/2026/05_Tanna_DataPresentation §5.1",
-                         "paper-evaluated", 0.10, "report MCC / recall / balanced-acc, not accuracy"),
+    "tanna_paradox": Ref("observed majority-class collapse at default decision thresholds", "papers/2026/05_Tanna_DataPresentation Table 1",
+                         "paper-evaluated", None, "model/dataset-specific observations, not a universal 10% base-rate cutoff"),
     "calibration_gap": Ref("no ECE/Brier protocol across adaptation exists", "SYNTHESIS.md (editorial)",
                            "editorial", None, "calibration is a first-class selling point yet under-measured — a contribution to fill"),
     "crps": Ref("CRPS scores the whole predictive, not its mean", "SYNTHESIS.md; TabICLv2 §I.7",
@@ -124,7 +124,7 @@ REFS: dict[str, Ref] = {
     "tanna_xgb_lc": Ref("Lending Club: XGBoost 0.718", "papers/2026/05_Tanna_DataPresentation §5.3",
                         "paper-evaluated", 0.718, "the LC crossover most TFMs do not reach within 50K context"),
     "tanna_hybrid_lc": Ref("Lending Club: hybrid strategy mean 0.686", "papers/2026/05_Tanna_DataPresentation Table 2",
-                           "paper-evaluated", 0.686, "mean across five models, not the best individual TFM"),
+                           "paper-evaluated", 0.686, "mean across five models and six context sizes, not the best individual TFM"),
     "tanna_hc_ceiling": Ref("Home Credit Kaggle ceiling ~0.80", "papers/2026/05_Tanna_DataPresentation §6.3",
                             "paper-described", 0.80, "top competition ensembles, cited as an external ceiling — NOT a TFM result"),
     "creditg_tabpfn": Ref("Credit-g (German): TabPFN 0.789", "papers/2023/09_Hollmann_TabPFN Table 2",
@@ -134,7 +134,7 @@ REFS: dict[str, Ref] = {
     "hc_base_rate": Ref("Home Credit default rate ~8%", "papers/2026/05_Tanna_DataPresentation §4.1",
                         "paper-described", 0.08, "a real base rate our controlled-imbalance arm targets"),
     "lc_base_rate": Ref("Lending Club default rate 12-22%", "papers/2026/05_Tanna_DataPresentation §4.1",
-                        "paper-described", 0.15, "0.12–0.22 depending on filtering; drawn at the midpoint"),
+                        "paper-described", 0.17, "0.12–0.22 depending on filtering; 0.17 is the range midpoint, not an observed rate"),
     "hc_rows": Ref("Home Credit ~307K rows, 120+ features", "papers/2026/05_Tanna_DataPresentation §4.1",
                    "paper-described", 307000, "orders of magnitude past the 1024-row ICL context the model sees"),
     "lc_rows": Ref("Lending Club ~533K rows, 70+ features", "papers/2026/05_Tanna_DataPresentation §4.1",

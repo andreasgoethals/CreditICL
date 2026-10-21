@@ -2,7 +2,7 @@
 which checkpoints are scored. Every model — ours, released TabICLv2, TabPFN-3, CatBoost, the
 linear floor — goes through exactly this.
 
-THE PROTOCOL (version 8, 19-10-2026)
+THE PROTOCOL (version 9, 21-10-2026)
 
 * **5-fold cross-validation**, stratified on the default flag for PD, shuffled with a fixed
   seed, so every model sees the same folds. Each row is scored exactly once, by a model whose
@@ -39,7 +39,7 @@ import numpy as np
 #: Bumped whenever the protocol changes, so a completion receipt written under an older one is
 #: never mistaken for a current result (`benchmark_status`). 4 (30-09-2026): TabPFNCredit's
 #: fold preprocessing (below) and the feature cap it replaces PCA with.
-PROTOCOL = 8  # native multiclass OOD; full rows/features, five folds, no subsampling
+PROTOCOL = 9  # exclude outcome aliases/components; full rows/features, five folds
 N_FOLDS = 5
 #: Share of the training pool held out to choose the PD threshold.
 VALIDATION_FRACTION = 0.2

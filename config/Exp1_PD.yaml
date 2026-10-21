@@ -22,8 +22,8 @@ architecture: tabicl # the upstream TabICL class; see src/models/architecture.py
 # ----------------------------------------------------------------------------
 # THE SWEEP — every multi-value knob, crossed. This block IS the experiment.
 # The control is TabICLv2's own prior with its own filter, exactly. The credit prior is
-# set from the credit-risk literature (29-09-2026; docs/PRIORS.md), never from the
-# evaluation datasets, so the one lever left is how much of it is in the mix.
+# current ranges use literature and broad assumptions; mechanism design was informed
+# by this benchmark suite, as disclosed in docs/PRIORS.md. The lever is its mix share.
 # ----------------------------------------------------------------------------
 sweep:
   prior.credit_fraction: [0.0, 0.5, 1.0] # share of each batch from our prior; 0.0 = the control

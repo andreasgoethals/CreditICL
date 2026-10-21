@@ -1,18 +1,10 @@
 """PD target family: imbalanced binary labels with credit-shaped generating structure.
 
-WHAT ARM A ALREADY DOES, and why that changes the intervention. TabICL's
-`_prior_config.py` sets ``"balanced": False``, so `BalancedBinarize` (median
-split) is *not* the active path — `MulticlassAssigner` is, and in ``mode="rank"``
-it cuts the latent at a **uniformly random data row**:
-
-    boundary_indices = torch.randint(0, T, (num_classes - 1,))
-    boundaries = input[boundary_indices]
-
-For binary targets that makes the minority rate roughly Uniform(0,1), so on the
-order of 10% of arm A's binary tasks already sit below 5% minority. Prior-side
-imbalance in TabICL is therefore **uncontrolled and unmeasured, not missing** —
-the opposite of O'Prior, which explicitly rejects tasks with *"collapsed or
-severely imbalanced support classes"*.
+The control uses upstream GraphSCM's CategoricalConverter. The older SCMPrior's
+MulticlassAssigner and rank-binarisation rules are not the active control path.
+Measure class counts and minority frequencies from the actual control instead
+of inferring them from that older implementation. Imbalance is not structurally
+absent from the upstream prior; this intervention reshapes its distribution.
 
 So this module **reshapes an existing distribution** rather than adding a missing
 mechanism. That is a cleaner intervention, and it means the arm-A base-rate
@@ -147,15 +139,15 @@ def apply_informative_missingness(
     fit_rows: int | None = None,
     fill: str = "mean",
 ) -> tuple[torch.Tensor, dict]:
-    """Missingness driven by a shared borrower propensity, never the realised outcome.
+    """Covariate-dependent gaps driven by a shared propensity, never the outcome.
 
     `fill="mean"` fills a gap as TabICL's wrapper does (the observed context mean); `fill="nan"`
     leaves it missing, for a model that handles missing values itself (TabPFN).
 
-    A thin credit file — no bureau record, no income documentation — is itself a
-    risk signal, so the *fact* of missingness carries information. Arm A's prior
-    has no missingness at all, and TabICLv2 mean-imputes at inference, which
-    discards exactly this signal.
+    This simulates correlated missingness conditional on observed covariates.
+    It does not guarantee predictive information about the target: the random
+    propensity direction need not align with a table's risk driver. The legacy
+    `no_informative_missingness` ablation sets this coupling to zero (MCAR).
     """
     rate_lo, rate_hi = cfg.get("missing_rate_range", [0.05, 0.35])
     frac = cfg.get("missing_col_fraction_range", cfg.get("missing_col_fraction", 0.0))

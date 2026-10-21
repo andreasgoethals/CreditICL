@@ -7,7 +7,7 @@ submit, so prose in it makes the settings unfindable. If you catch yourself writ
 a knob, it belongs here.
 
 Neighbours: [EXPERIMENTAL_DESIGN.md](EXPERIMENTAL_DESIGN.md) (what the experiments ask) ·
-[PRIORS.md](PRIORS.md) (how the prior is built) · [VSC.md](VSC.md) (the cluster). Library pin `de324efcca55be392feb0c01830b3b6ce364587f`.
+[PRIORS.md](PRIORS.md) (how the prior is built) · [VSC.md](VSC.md) (the cluster). Original source-audit pin `de324efcca55be392feb0c01830b3b6ce364587f`; later citation checks record their pins in `src/visualize/literature.py` and RUNS.md.
 
 ## Contents
 
@@ -38,8 +38,9 @@ config body already has, so a typo raises instead of doing nothing.
 
 **Exp1 sweeps `credit_fraction {0, .5, 1}` × 3 seeds = 9 arms** (since 28-09-2026; before, it also
 crossed three filters and two intensities, 45 arms). The control is TabICLv2's prior and filter exactly;
-the credit prior is set from the credit-risk literature (29-09-2026, [PRIORS.md](PRIORS.md) §5), never
-from the evaluation datasets, and is the same in Exp0-Exp3. At
+the current ranges use the credit-risk literature and broad modelling choices ([PRIORS.md](PRIORS.md) §5).
+Mechanism design was informed by the benchmark suite, including the designated holdout;
+it is not untouched external validation. The prior is the same in Exp0-Exp3. At
 `credit_fraction: 0.0` the credit knobs have no effect, so such combinations collapse to one control
 per seed (`effective_fingerprint` in `src/utils/config.py`).
 
@@ -83,7 +84,7 @@ stops noise/missingness columns pushing past it. It does **not** limit inference
 takes no feature-count parameter — `col_embedder` is a permutation-equivariant induced-set transformer
 with learned inducing points and no per-feature weights, so a trained checkpoint accepts any width.
 
-Protocol 7 (13-10-2026) has **no benchmark feature cap**: `protocol.MAX_FEATURES = None`.
+Protocol 9 retains the uncapped benchmark from 13-10-2026: `protocol.MAX_FEATURES = None`.
 All prediction-time eligible columns and all training-fold rows reach every model. The wrappers
 do not rank or select columns; the near-constant filter is also off. TabPFN's checkpoint-defined
 per-estimator feature budget is enlarged to retain every input column, including preprocessing

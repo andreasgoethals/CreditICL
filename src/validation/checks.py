@@ -379,8 +379,9 @@ def check_determinism(rep: Report) -> None:
             code = _FRESH_PROCESS.format(root=str(ROOT), config=config, track=track)
             r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=900, cwd=ROOT)
             fresh = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else f"failed: {r.stderr[-300:]}"
-            rep.add("determinism", f"{track}: this process = a fresh one", PASS if fresh == one else FAIL,
-                    {"here": one, "fresh": fresh})
+            rep.add("determinism", f"{track}: this process = a fresh one",
+                    PASS if r.returncode == 0 and fresh == one else FAIL,
+                    {"here": one, "fresh": fresh, "exit": r.returncode})
             control = copy.deepcopy(prior)
             control["credit_fraction"] = 0.0
             g0 = TaskGenerator(control, track, PriorRNG(0), stream_seed=0)

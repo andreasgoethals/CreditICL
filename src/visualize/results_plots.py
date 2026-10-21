@@ -32,12 +32,9 @@ import pandas as pd
 
 from src.utils import paths
 from src.visualize import style
+from src.eval.metrics import METRIC_DIRECTIONS as HIGHER_IS_BETTER, higher_is_better
 
 HEADLINE = {"pd": "roc_auc", "lgd": "r2"}
-HIGHER_IS_BETTER = {"auc": True, "ap": True, "r2": True, "rmse": False, "mae": False,
-                    "roc_auc": True, "pr_auc": True, "f1_tuned": True, "mcc_tuned": True,
-                    "pinball": False, "crps": False, "brier": False, "logloss": False,
-                    "log_loss": False, "ece": False}
 
 # Names that are external baselines rather than one of our trained arms.
 BASELINES = ("catboost", "xgboost", "lightgbm", "tabpfn", "tabpfn3", "tabiclv2", "tabicl", "logreg",
@@ -233,16 +230,16 @@ def overall_ranking(track: str, exp: str = "exp1", metric: str | None = None):
     mc = "configuration"
     if agg.empty:
         return _placeholder("no complete development-set configuration scores yet")
-    agg = agg.sort_values("mean", ascending=HIGHER_IS_BETTER.get(metric, True))
+    agg = agg.sort_values("mean", ascending=higher_is_better(metric))
     fig, ax = plt.subplots(figsize=style.row_figsize(len(agg), base=1.3))
     y = np.arange(len(agg))
     # Points, not bars. A bar is read by its length from zero, and on PD every configuration sits
     # within a few hundredths of the others: bars from zero drew them all the same length.
     ax.errorbar(agg["mean"], y, xerr=agg["std"].fillna(0), fmt="none", ecolor=style.MUTED,
                 elinewidth=0.8, zorder=2)
-    shares = [_share(m) for m in agg[mc]]
+    keys = [_group_key(m) for m in agg[mc]]
     for g in _groups(agg[mc]):
-        rows = [i for i, s in enumerate(shares) if s == g]
+        rows = [i for i, key in enumerate(keys) if key == g]
         ax.scatter(agg["mean"].values[rows], y[rows], s=30, color=_group_colour(g),
                    marker=_group_marker(g), edgecolor="white", linewidth=0.4, zorder=3,
                    label=_group_label(g))
@@ -390,7 +387,8 @@ def checkpoint_curve(track: str, exp: str = "exp1", metric: str | None = None,
     if ref is not None:
         ref = _restrict(ref, track, exp, role)
     if ref is not None and len(ref) and metric in ref.columns:
-        ref = ref[ref["model"].map(_kind).eq("baseline")]
+        ref, ref_id = _with_identity(ref)
+        ref = ref[ref[ref_id].map(_kind).eq("baseline")]
         per_ref = ref.groupby(["model", "dataset"])[metric].mean().groupby(level=0).mean()
         right = float(curve["checkpoint_step"].max())
         for model, value in per_ref.items():
@@ -430,7 +428,8 @@ def _lever_tick(key: str, value: str) -> str:
     return str(value)
 
 
-def lever_effect(track: str, exp: str = "exp2", metric: str | None = None):
+def lever_effect(track: str, exp: str = "exp2", metric: str | None = None,
+                 role: str | None = "development"):
     """One panel per fine-tuning lever: mean headline score grouped by that lever's value.
 
     Reads the arm's swept levers out of its run name and averages the headline metric over every
@@ -440,7 +439,7 @@ def lever_effect(track: str, exp: str = "exp2", metric: str | None = None):
     """
     df = load_results(track, exp)
     if df is not None:
-        df = _restrict(df, track, exp, "development")
+        df = _restrict(df, track, exp, role)
     metric = metric or HEADLINE[track]
     style.apply()
     if df is None or metric not in df.columns or df.empty:
@@ -462,7 +461,7 @@ def lever_effect(track: str, exp: str = "exp2", metric: str | None = None):
         ax.bar(x, grp.values, color=style.CREDIT, width=0.6)
         ax.set_xticks(x)
         ax.set_xticklabels([_lever_tick(key, v) for v in grp.index], fontsize=7)
-        ax.set_ylabel(f"mean {style.metric_label(metric)}", fontsize=8)
+        ax.set_ylabel(f"{ROLE_LABEL.get(role, role)} mean {style.metric_label(metric)}", fontsize=8)
         ax.set_xlabel(label, fontsize=8)
         drawn = True
     for ax in axes:
@@ -567,7 +566,7 @@ def beats_reference(track: str, exp: str = "exp1", metric: str | None = None,
     references = {name: ("tabpfn3" if "tabpfn3" in str(name) else "tabiclv2") for name in ours.index}
     if any(reference not in per for reference in references.values()):
         return _placeholder("matching released-model references have not been scored yet")
-    higher = HIGHER_IS_BETTER.get(metric, True)
+    higher = higher_is_better(metric)
     order = ours.sort_values(ascending=not higher)
     delta = np.array([score - per[references[name]] for name, score in order.items()])
     fig, ax = plt.subplots(figsize=style.row_figsize(len(order), per_row=0.12, base=1.3))
@@ -696,7 +695,7 @@ def paired_differences(df: pd.DataFrame, track: str, exp: str,
     for share in sorted(s for s in cell.index.get_level_values(0).unique() if s > 0):
         diff = (cell.xs(share, level="share") - control).dropna()
         if len(diff):
-            better = int((diff > 0).sum()) if HIGHER_IS_BETTER.get(metric, True) else int((diff < 0).sum())
+            better = int((diff > 0).sum()) if higher_is_better(metric) else int((diff < 0).sum())
             out[share] = (float(diff.mean()), better, int(len(diff)))
     return out
 

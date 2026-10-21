@@ -115,7 +115,10 @@ SEEDS="${SEEDS:-0}"
 REFERENCE_MODELS="${REFERENCE_MODELS:-tabiclv2,tabpfn3,catboost,linear}"
 STATUS_ARGS=(--exp "$EXP" --track "$TRACK" --index "$IDX" --seeds "$SEEDS"
              --reference-models "$REFERENCE_MODELS" --variant "$VARIANT")
-read -r SLOT_KIND TAG ARM STEP MODEL CONTEXT <<< "$(python -m src.eval.benchmark_status "${STATUS_ARGS[@]}" --describe)"
+# A failing command substitution inside `read` otherwise inherits read's
+# successful status and hides the Python error even under `set -e`.
+SLOT_DESCRIPTION=$(python -m src.eval.benchmark_status "${STATUS_ARGS[@]}" --describe)
+read -r SLOT_KIND TAG ARM STEP MODEL CONTEXT <<< "$SLOT_DESCRIPTION"
 # A capped-context slot (`eval.context_caps`, tag `_ctx<cap>`) scores the same model with at most
 # CONTEXT rows of context; every other slot gives the model the whole training pool.
 CTX_ARGS=()
@@ -168,13 +171,14 @@ if [[ "$SLOT_KIND" == "reference" ]]; then
 fi
 
 # ------------------------------------------------------------- one checkpoint of one arm --
-read -r RUN_NAME CKPT_DIR <<< "$(python -c "
+RUN_DESCRIPTION=$(python -c "
 from src.utils import paths
 from src.utils.config import expand_with_seeds, load, run_name
 runs = expand_with_seeds(load('${CONFIG}'))
 name = run_name(runs[${ARM}])
 print(name, paths.run_checkpoints_dir(name))
-")"
+")
+read -r RUN_NAME CKPT_DIR <<< "$RUN_DESCRIPTION"
 echo "arm ${ARM}: ${RUN_NAME}, step ${STEP}"
 echo "checkpoint dir: ${CKPT_DIR}"
 

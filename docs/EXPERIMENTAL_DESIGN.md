@@ -3,7 +3,7 @@
 What the three experiments ask, why the design can fail, and the premises it rests on. This
 describes what is **built** (the `config/Exp{1,2,3}_*.yaml` sweeps); the prior's mechanics are in
 [PRIORS.md](PRIORS.md), every knob's value in [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md), and what
-each run actually did in [RUNS.md](RUNS.md). Library pin `de324efcca55be392feb0c01830b3b6ce364587f`.
+each run actually did in [RUNS.md](RUNS.md). Original source-audit pin `de324efcca55be392feb0c01830b3b6ce364587f`; later citation checks record their pins in `src/visualize/literature.py` and RUNS.md.
 
 ## Contents
 
@@ -19,28 +19,22 @@ each run actually did in [RUNS.md](RUNS.md). Library pin `de324efcca55be392feb0c
 
 ## 1. The claim, and how it fails
 
-> Encoding credit-risk-specific structure into a TFM's synthetic pretraining prior improves
-> downstream credit-risk performance, and the improvement is **selective** to the sub-task whose
-> structure was encoded.
+> At fixed architecture and training budget, does the complete credit-targeted prior package
+> change performance on this credit benchmark suite, and what happens to native OOD performance?
 
-Selectivity is what makes this falsifiable and distinguishes it from O'Prior. An average improvement
-over the default prior would be consistent with three explanations we cannot otherwise separate:
-(a) we targeted credit; (b) we targeted *something*, and any narrowing helps; (c) our prior is simply
-harder. Only selectivity discriminates (a) from (b) and (c).
+This is a package comparison. It does not identify credit structure separately from task format,
+encoding, filtering or difficulty. Selective transfer and double dissociation are stronger,
+future hypotheses that require additional controls, rather than claims established by this grid.
 
 **The claim is wrong if:**
 
 - the credit prior (`credit_fraction > 0`) does **not** beat the control (`credit_fraction = 0`) on
   the matching track — the intervention does not transfer;
-- there is **no selectivity** — the LGD boundary-mass mechanism helps PD as much as LGD, or the PD
-  base-rate/Vasicek mechanism helps LGD as much as PD — in which case we shaped a *harder* prior, not
-  a *domain* one;
-- the gains vanish under **temporal or out-of-domain** evaluation — an i.i.d. artefact of the kind
-  Purucker 2026 documents for credit data;
 - fine-tuning (Exp2) buys credit gains only by **eroding out-of-domain generality** — measured
   directly, not assumed.
 
 Each is a publishable negative. The design is built to learn which is true, not so that credit wins.
+Temporal deployment and crossed-task selectivity are not tested by the current five-fold protocol.
 
 **One honest limitation.** A generic-realism control arm (O'Prior-style: realism *without* credit
 targeting) was designed but **not built** — see [§3](#3-the-experiments). Without it we cannot
@@ -67,12 +61,11 @@ p≈0.5). The defensible claim: nothing in the prior *targets* boundary mass in 
 nothing aligns the output support with [0,1]. That is weaker than "absent" and, crucially,
 **measurable** — the `0.3` prior-visualisation notebook measures it.
 
-**2.3 CORRECTION — TabICL's prior is *not* class-balanced by default.** `_prior_config.py` fixes
-`"balanced": False`, so the active path (`MulticlassAssigner`, `mode="rank"`) draws the cut at a
-uniformly-random data row → minority rate ≈ Uniform(0,1), so ~10% of binary prior tasks already sit
-below 5% minority. So prior-side imbalance is **uncontrolled and unmeasured, not missing** — a better
-story: we shape an existing distribution rather than invent a mechanism. (O'Prior is the opposite: it
-filters out "collapsed or severely imbalanced" tasks by design.)
+**2.3 CORRECTION — TabICL's prior is *not* necessarily balanced.** The active `GraphSCM`
+uses `CategoricalConverter`, not the older `SCMPrior`'s `MulticlassAssigner`. Its realised
+class-count and minority-frequency distributions must be measured directly, not inferred from
+the older rank-binarisation path. Imbalance is uncontrolled rather than structurally absent;
+we reshape the task distribution. O'Prior instead filters collapsed or severely imbalanced support.
 
 **2.4 The head can already represent atoms.** The regressor is a **999-quantile** pinball head, which
 represents a point mass exactly (an atom at 0 = quantile levels 0.001…mass all mapping to 0). So
@@ -269,7 +262,7 @@ prediction times: **PD at application, LGD at default**. It records excluded nam
 categorical columns identically for all models and monitoring. Raw/cache files remain unchanged.
 Remaining anonymised fields and cohort observation dates still need source-dictionary validation;
 behavioural card datasets cannot automatically be described as application underwriting tasks.
-After those exclusions, protocol 7 retains **every feature and every fitted row**, without
+After those exclusions, protocol 9 retains **every eligible feature and every fitted row**, without
 univariate selection or near-constant filtering. Validation/test numeric values are clipped to
 the fitted rows' 0.1st and 99.9th percentiles, learned separately inside each fit. TabPFN retains
 its released preprocessing transforms but receives a per-estimator budget large enough for all
@@ -288,6 +281,25 @@ real data as well as a final number. Our checkpoints train on 1,024-row tables a
 of up to ~426,000 rows: that length gap is identical for every arm, so the arm-vs-control contrast is
 matched, but the released TabICLv2 was trained on up to 60,000 rows and is not — report the reference
 gap with that caveat.
+Matching table lengths across arms does not rule out a prior-by-length or prior-by-width
+interaction. The estimand is performance in the requested full-table setting; this project does
+not claim a length-invariant prior effect and does not replace the primary benchmark with a cap.
+
+**Task-format limitation.** PD credit tasks are binary; the untouched upstream control draws
+2–10 classes. Increasing the credit share therefore also increases the binary-task share.
+A PD improvement cannot by itself be attributed to credit mechanisms rather than more binary
+practice. Native binary and multiclass OOD results should be examined separately as well as in
+the aggregate. A binary-only upstream control would be an additional attribution experiment,
+not a repair needed to execute the currently approved package comparison.
+
+**Inference scope.** Dataset-paired sign tests use datasets, not overlapping CV folds, as units.
+Only three LGD datasets are in the holdout: even unanimous non-tied differences have a minimum
+two-sided sign-test p-value of 0.25. LGD holdout and component results are consequently descriptive
+at this sample size; effect sizes, all per-dataset scores and uncertainty must be reported.
+Moving inspected development tasks into the confirmatory test or counting folds as independent
+replicates would not solve that limitation. ROC-AUC/R² remain the predeclared selection metrics;
+log-loss/Brier and CRPS/boundary calibration address different secondary questions, not post-hoc
+replacement primary endpoints.
 
 **Metrics** (all computed in one run). PD: ROC-AUC, PR-AUC, Brier, log-loss, KS, calibration slope, and
 F1, precision, recall, MCC and balanced accuracy at the validation-tuned threshold —
@@ -323,6 +335,24 @@ rather than generalising an i.i.d. result to deployment. Grouped five-fold split
 for HELOC loans, base_model obligors, base_modelisation clients and bank_status borrowers.
 Temporal splits remain unimplemented; requesting temporal splitting raises an error. Feasibility depends on identifying
 observation dates, label maturity and repeated borrowers in each source — see [§7](#7-open-decisions).
+The presence of a date column alone does not establish an observation-time and mature-label protocol.
+
+**5.5 Dataset semantics and the scope of the comparison.** Retain the existing benchmark inventory;
+unusual correlations or high predictability alone are not grounds for dropping a dataset. The
+source-defined `hackerearth` label has a repayment-oriented interpretation on matched Lending Club
+loans and incomplete maturity information; do not call its positive label a verified default event
+or silently flip it. `lgd_lendingclub`'s target is strongly explained by amortisation; without a
+source definition it is a reported bounded-target benchmark, not independent evidence about realised
+workout loss. These limitations restrict domain/calibration claims, not the execution of a matched
+synthetic-pretraining comparison. No target or dataset is rebuilt by this audit.
+
+Known target construction inputs are a different issue. On 21-10 the raw `loss2` target was
+reconstructed as `clip((_EAD - _Proceeds + _ELAO) / _EAD, 0, 1)` for all 4,638 rows with finite terms.
+Protocol 9 excludes `_ELAO` too. For `base_modelisation`, `an` exactly copies excluded
+`annee_in_dft` (594/594); `EAD_BALOISE_REELLE` copies excluded `denominateur` (585/594); and
+`Perim_poids`/`ponderation_11` encode the already excluded workout-group flags. Those aliases,
+including categorical copies, are excluded consistently. Raw/cache tables and benchmark membership
+are preserved. This closes known exclusions; it does not certify every anonymised field's timing.
 
 ## 6. Risks
 
@@ -346,9 +376,10 @@ observation dates, label maturity and repeated borrowers in each source — see 
    after source review; the existing two-track mixture comparison is not a substitute.
 3. **ZOIB/mixture LGD head** — held in reserve behind decoding + support constraints
    ([§2.4](#2-verified-premises)); revisit only if those are insufficient.
-4. **Which mix fills Exp3's `FILL_FROM_EXP1`** — the Exp1 winner on the development datasets; if Exp1
-   gives no clean winner, run Exp3 across several mixes rather than betting on one. Exp2 needs no
-   winner: it compares every mix itself, at each model's published recipe.
+4. **Which mix fills Exp3's `FILL_FROM_EXP1`** — the predeclared development selection in
+   `src/eval/selection.py`, at Exp1's final 12,500-step checkpoint. This is a budget-conditional
+   choice, not proof that its ranking remains optimal at 200,000 steps; Exp3 tests persistence.
+   Keep the current grid frozen. Exp2 compares every mix independently.
 5. **Outcome information in the evaluation data (audit of 29-09-2026; decision revised 12-10-2026).**
    The following historical audit numbers describe that cache/split, not the corrected benchmark. A column
    scan (ExtraTrees out-of-bag R² with and without the suspects, processed data) found:

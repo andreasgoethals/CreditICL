@@ -57,7 +57,9 @@ def test_the_predicted_rows_are_clipped_to_the_fitted_rows_tails_and_keep_their_
     out = prep.transform(test)
     assert out[0, 0] == pytest.approx(prep.upper[0]) and np.isnan(out[1, 0])
     assert out[0, 1] == 3.0
-    assert Xf.max() > prep.upper[0] - 1e-6 or True  # the fitted rows are not clipped
+    # The default full-table protocol retains fitted rows and values exactly;
+    # clipping is applied only when transforming predicted rows.
+    np.testing.assert_array_equal(Xf, X.astype(np.float32))
 
 
 def test_the_cap_uses_the_univariate_filter_and_records_what_it_did():
@@ -92,4 +94,4 @@ def test_a_lgd_target_is_scored_by_spearman_and_a_pd_one_by_auc():
 
 
 def test_the_protocol_is_bumped_for_the_new_preprocessing():
-    assert P.PROTOCOL == 8 and P.MAX_FEATURES is None
+    assert P.PROTOCOL == 9 and P.MAX_FEATURES is None

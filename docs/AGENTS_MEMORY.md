@@ -35,14 +35,28 @@ with no other context, and expect that to be the *only* record of the run — so
 
 ## Runs
 
+Latest upload (21-10-2026, 11:12): CPU 62378918 PASS for f07e71e: 13 stages, 1,590 tests passed,
+2 expected skips, 28 CUDA cases deselected, 11 notebooks and 125 PDFs. All 23 hashes verified.
+ZIP has one CPU attempt and no GPU/old campaign clutter. Subsequent independently confirmed audit
+fixes change source and feature policy (protocol 9): publish/sync, then CPU once more before GPU.
+No dataset dropped, labels flipped or output deleted. Shared project quota is now 36,730/150,000
+files (243G/1T). The older near-full quota and GPU evidence below are historical.
+
+Final corrected-source local verification (21-10-2026): `20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5`
+unchanged through the final run. **1,638 passed / 28 VSC-only skips**, zero failures/errors,
+1,109.96s; 26 new behavioural regressions included. All 11 notebooks executed, 125 PDFs;
+the post-generation PDF test passed. Source/config/notebook corrections include protocol 9,
+paired beta RNG, signal readiness, strict skip/exit checks and truthful plotting/labels.
+Sync this version, rerun CPU, then GPU; keep code, packages and inputs fixed between phases.
+
 Current campaign decision (13-10-2026): Andreas requested a fresh output reset, superseding the
 older preservation instructions below. Exp0 now requires CPU then GPU PASS receipts; the revised
 Exp1 has 48 runs including component tests. Historical run entries remain an audit trail, not
 reusable completion evidence. VSC submissions are made by Andreas; the rows below record the supplied evidence.
 
-Latest VSC evidence (21-10-2026, 08:30 download): GPU 11715564 FAILED 1:0 after 10:39:48, at TabPFN LGD step 217 after 16 AMP retries. 47/66 stages passed, including 26/26 CUDA tests, wide streaming equivalence, all reference capacity benchmarks and five 600-step stop/resume arms. The local batch-217 replay exposes a safepower query target around 3.39e18; a finite loss overflows half-precision gradients. The prepared fix retries the identical batch once in float32 with stable norm clipping; fresh CPU/GPU receipts are required for changed source. Preserve this ZIP; do not resubmit the failed receipt or launch production.
+Previous VSC evidence (21-10-2026, 08:30 download): GPU 11715564 FAILED 1:0 after 10:39:48, at TabPFN LGD step 217 after 16 AMP retries. 47/66 stages passed, including 26/26 CUDA tests, wide streaming equivalence, all reference capacity benchmarks and five 600-step stop/resume arms. The local batch-217 replay exposes a safepower query target around 3.39e18; a finite loss overflows half-precision gradients. The prepared fix retries the identical batch once in float32 with stable norm clipping; fresh CPU/GPU receipts are required for changed source. Preserve this ZIP; do not resubmit the failed receipt or launch production.
 
-Local final verification (21-10-2026), fixed source `f07e71e70eebd282b3401a9e745968ca47fc2edfec4821cc4608bf9eae21050a`: full suite **1,582 PASS / 58 SKIP**, zero failures, 1,175.90s. Existing Git Bash was absent from PATH; after enabling it for the test process, environment/Slurm/notebook-contract modules passed **178/178 executed tests**, one figure test skipped, in 28.94s. This covers all 29 Bash skips from the full run without source changes: 1,611 distinct local tests passed; 28 mandatory VSC tests and the missing-figure check remain unexecuted locally. Two added VSC cases test the replay and real checkpoint/resume before expensive stages. The prior CPU notebooks passed 11/11; the fresh CPU job will regenerate them. No VSC jobs, installs or pushes were performed here.
+Previous local final verification (21-10-2026), fixed source `f07e71e70eebd282b3401a9e745968ca47fc2edfec4821cc4608bf9eae21050a`: full suite **1,582 PASS / 58 SKIP**, zero failures, 1,175.90s. Existing Git Bash was absent from PATH; after enabling it for the test process, environment/Slurm/notebook-contract modules passed **178/178 executed tests**, one figure test skipped, in 28.94s. This covers all 29 Bash skips from the full run without source changes: 1,611 distinct local tests passed; 28 mandatory VSC tests and the missing-figure check remain unexecuted locally. Two added VSC cases test the replay and real checkpoint/resume before expensive stages. The prior CPU notebooks passed 11/11; the fresh CPU job will regenerate them. No VSC jobs, installs or pushes were performed here.
 
 Previous snapshot (20-10-2026, 09:25): CPU 62371055 passed all 13 stages, 1,586 tests and 11 notebooks; all 23 artifact hashes verified for source `4da9e67`. GPU 11715564 was then only submitted, with no GPU files in that earlier ZIP. One old CPU attempt remained (35 files, 0.55 MB); current project-output inventory was empty at its CPU storage check. Shared file quota was 147,529/150,000; no later quota inventory was supplied.
 
@@ -59,6 +73,7 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 21-10-2026 | Exp0 CPU 62378918, wICE batch/m33c22n1, `576caea` | **PASS: 13/13 stages, 1,590 passed / 2 expected skips, 11/11 notebooks, 125 PDFs; 22m50s log interval** | Source f07e71e, 23/23 artifact hashes match; one clean CPU attempt in ZIP. Subsequent protocol-9 audit corrections require a fresh CPU receipt before GPU |
 | 20-10-2026 | Exp0 GPU 11715564, Mindwell B200/r11g22, `d31770f`; audited 21-10 | **FAILED 1:0 after 10:39:48; 47 stages PASS, resume-lgd-2 FAIL** | 26/26 CUDA checks and wide equivalence passed; four reference models completed full-row five-fold capacity checks, five 600-step arms completed. TabPFN LGD stopped at step 217 after 16 AMP retries; last recorded checkpoint step 200. Local replay exposes a transformed target 3.39e18; fixed-source CPU/GPU validation required |
 | 19-10-2026 | Exp0 CPU 62371055, wICE batch/m28c20n4, `d31770f`; audited 20-10 | **PASS: 13/13 stages, 1,586 tests PASS/1 SKIP, 11/11 notebooks, 125 figures; 21m09s main-log interval** | Source `4da9e67` and 23/23 artifact hashes verified; all eight new mixed-precision cases pass on CPU, 26 CUDA checks deferred to GPU phase. No production arms started |
 | 19-10-2026 | Exp0 GPU 11714993, Mindwell B200/r11g17, `b351325` | **FAILED exit 1; 16 CUDA tests PASS, 1 FAIL; 2m18s main-log interval** | PD 2,986-feature streaming predictions differed from stock by up to 0.00238492 (3/16 probabilities outside tolerance). No long training or capacity stages started. Local AMP reproduction confirms a float32 boundary conversion; remove it, retain tolerance, revalidate on B200 |
@@ -109,6 +124,20 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 [`RUNS.md`](RUNS.md).
 
 ## Dead ends
+
+### 21-10-2026 — verify the entire corrected suite after draft failures
+
+- **Tried**: full local verification before the final Windows fixture and reporting wording were settled.
+- **Result**: first full trial had 1,634 passes / 29 skips / two failures; an intermediate focused run had one stale summary-wording assertion. The final serial suite is green (1,638/28).
+- **Why**: one new mock assumed SIGUSR1 existed on Windows; the wording assertion encoded the old default-label claim. A one-off continuation failure passed unchanged in isolation and the final full run; its initial cause is unconfirmed.
+- **Instead**: correct the portable mock and semantic expectation, retain strict assertions, execute notebooks, freeze source 20f0e981 and complete a new full suite with structured JUnit evidence. Never claim a failed trial passed.
+
+### 21-10-2026 — portable test of the Unix stop-stage handshake
+
+- **Tried**: fake a resumed training child with an existing checkpoint to test that its handler is ready before SIGUSR1.
+- **Result**: the new local test failed first on an invalid fixture run name, then because Windows has no SIGUSR1; this is not a VSC runtime failure.
+- **Why**: the mock used an unrecognised experiment prefix and assumed Linux's signal constants existed on Windows.
+- **Instead**: use a valid Exp0 name and mock the signal number; exercise the same parent/child logic without skipping. All 25 new regressions pass in the focused run.
 
 ### 21-10-2026 — finish numerical recovery review before final verification
 

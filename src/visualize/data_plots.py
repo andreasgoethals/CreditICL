@@ -10,8 +10,8 @@ The measurements here are the ones that drove the design:
 * **boundary mass** — the share of LGD targets sitting exactly at 0 or 1. This is
   the single feature the original prior does not produce, and the reason the
   project exists.
-* **base rate** — how rare default is in each PD dataset. TabICL's prior spreads its
-  tasks' base rates over the whole [0, 1], centred on 50%; real PD data runs 6.7%-40%.
+* **base rate** — source-defined positive-label rates in the binary credit benchmarks.
+  Their orientation and maturity are not uniformly verified as default events.
 * **shape and type mix** — rows, columns, and how many columns are categorical.
   These set the ranges the prior samples over; if the prior generated 500-column
   tables and every real dataset has 20, the extra capacity is wasted.
@@ -196,15 +196,11 @@ def plot_boundary_mass_ranking(datasets: dict[str, Any]):
 
 
 def plot_pd_base_rates(datasets: dict[str, Any]):
-    """Default rate per dataset, against the rate below which a classifier collapses.
+    """Positive-label frequency on its full probability scale.
 
-    LINEAR, not log: the rates run 6.7%-40%, well inside one order of magnitude. The reference is
-    Tanna 2026's ~10% (`literature.tanna_paradox`): below it a default-threshold classifier
-    predicts "no default" for everyone on real credit data. It replaces a dashed 50% line labelled
-    "TabICL prior", which claimed more than it could show — the original prior's base rates spread
-    over the whole [0, 1] (0.2 A2), centred on 50%.
+    This is a property of the source-defined target, not certification that
+    label 1 consistently denotes a mature default in every benchmark.
     """
-    from src.visualize import literature
 
     style.apply()
     rows = sorted(
@@ -217,19 +213,18 @@ def plot_pd_base_rates(datasets: dict[str, Any]):
 
     fig, ax = plt.subplots(figsize=style.row_figsize(len(rows), per_row=0.20, base=1.15))
     ypos = np.arange(len(rows))
-    ax.barh(ypos, rates, color=style.TASK_COLOR["pd"], alpha=0.9, label="default rate")
-    literature.line(ax, "tanna_paradox", label="Tanna 2026: classifier collapse below 10%",
-                    inline=False)
-    # Value labels INSIDE the bar when there is room, outside when there is not — and then to the
-    # right of the 10% line, which a label just past a short bar would be written across.
+    ax.barh(ypos, rates, color=style.TASK_COLOR["pd"], alpha=0.9, label="source positive-label rate")
+    # Value labels inside the bar when there is room, outside for short bars.
     for i, r in enumerate(rates):
         inside = r > 0.12
-        ax.text(r - 0.01 if inside else max(r + 0.01, 0.106), i, f"{r:.1%}",
+        ax.text(r - 0.01 if inside else r + 0.01, i, f"{r:.1%}",
                 va="center", ha="right" if inside else "left", fontsize=7,
                 color="white" if inside else style.MUTED)
     ax.set_yticks(ypos, names)
-    ax.set_xlim(0, 0.45)
-    ax.set_xlabel("default rate (share of rows that defaulted)")
+    # Source-defined labels are not uniformly oriented as default=1. In
+    # particular the retained hackerearth positive rate exceeds 45%.
+    ax.set_xlim(0, 1)
+    ax.set_xlabel("source positive-label rate (share of rows labelled 1)")
     ax.xaxis.set_major_formatter(mpl.ticker.PercentFormatter(1.0, decimals=0))
     ax.grid(axis="x")
     ax.grid(axis="y", visible=False)

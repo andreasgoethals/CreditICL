@@ -355,9 +355,6 @@ def plot_base_rate_by_variant(loaded: dict[str, list[SyntheticTask]], real_refer
         rates = np.array([minority_share(t.y) for t in tasks])
         ax.hist(rates, bins=bins, histtype="step", lw=1.8, color=variant_color(variant, i),
                 label=f"{style.variant_label(variant)} (median {np.median(rates):.0%})")
-    # Below ~10% a default-threshold classifier collapses to the majority class on real credit
-    # data (Tanna 2026). In the LEGEND: a rotated label beside the line was written across the bars.
-    literature.line(ax, "tanna_paradox", label="Tanna: collapse below 10%", inline=False)
     ax.set_xlim(0, 0.5)
     ax.set_ylabel("number of tasks")
     # Legend OUTSIDE the axes, above it. Inside, it either sat on the bars or on the 50% line

@@ -587,6 +587,8 @@ class TabPFNTrainer:
         from src.prior.dataset import build_loader
 
         self._install_stop_signals()
+        from src.utils.signal_ready import publish
+        publish()
         prior_cfg = dict(self.cfg["prior"])
         preparer = TabPFNTaskPreparer(self.task, self.weights_path, self.n_estimators, self.seed)
         loader = build_loader(prior_cfg, self.task, batch_size=self.batch_size, seed=self.seed,

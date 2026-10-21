@@ -167,6 +167,86 @@ The one thing to do differently.
 
 ## Runs
 
+## 21-10-2026 — Exp0 CPU 62378918 — PASS; subsequent audit corrections require a new receipt
+
+**Logged start/end** 09:56:44–10:19:34 CEST (22m50s; no sacct interval supplied)
+| **job** 62378918 | **cluster** wICE `batch`, m33c22n1 | **commit** 576caea, dirty=YES
+| **resources** 20 effective CPU cores, 65,536 MiB; requested four hours; no GPU.
+
+### Configuration
+
+- `scripts/slurm/exp0_cpu.slurm`, all 13 CPU stages; attempt
+  `cpu_20261021T075644Z_j62378918_0028241f`, schema 3, source
+  `f07e71e70eebd282b3401a9e745968ca47fc2edfec4821cc4608bf9eae21050a`.
+- Environment fingerprint `d4ed1fbe1397c0063fc12abffcb338fddd8038f21decb20c8c84accaf0bf0454`.
+  TabPFN 9.1.0, TabICL 2.1.1 / commit 8f1aa2098c894ab91dba15209cf2002ba4be6c6c,
+  CatBoost 1.2.10, torch 2.11.0+cu128; all 135 requirements and pip check passed.
+- Cache/protocol 8; full-row/full-feature five-fold inventory. No production training/benchmark
+  results expected. Run log does not independently record submodule pins; local audit pins are
+  TFM cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a / VSC 9e376b5ee9106e82d37eca86ca6acb861f580c93.
+
+### Results
+
+- Canonical CPU receipt PASS, 13/13 stages and 129 individual checks PASS, no WARN/FAIL;
+  all 23/23 recorded artifact hashes match. No traceback or failed footer; `END status=OK`.
+- Portable suite: 1,590 passed, 2 expected skips, 28 GPU cases deselected, 879.26s. JUnit's
+  1,592 includes skips: absent sibling-project identity comparison and PDF check before figures exist.
+- 11/11 notebooks executed; 125 PDFs. Independent ZIP MediaBox inspection finds all 125 within
+  the A4 figure bounds, covering the pre-generation PDF skip for this uploaded output.
+- Current output storage at its check: 37 small-tier files/~1 MB and empty project output tree.
+  Shared project quota 36,730/150,000 files, 243G/1T; DATA 54,245M/76,800M. The former nearly-full
+  project inode condition is absent here. This does not enumerate every remote legacy/scratch path.
+- ZIP: 2,581,682 bytes, SHA-256
+  `e241c46e95c753155d16b473721f175ee499e390889d5989279719251a95a63e`, 178 files, one CPU attempt,
+  no GPU attempt; CRC clean, no duplicate or unsafe entry paths.
+
+### Bugs and anomalies
+
+No CPU stage failed. Independent review nevertheless confirmed exclusion aliases/components,
+missing ranking markers, architecture/mixture pooling, latent checkpoint-reference classification,
+incomplete metric directions and stale notebook descriptions. Corrected those, strict portable-skip
+checking, subprocess exit propagation and a current-child signal-ready handshake. Isolated LGD beta
+draws so changing macro target loadings cannot alter the later macro-feature coin. Prior measurement
+now separates binary positive-label rates from multiclass rarest-class rates. Protocol is now 9;
+dataset membership and raw/cache tables stay unchanged.
+
+Raw evidence: loss2's `clip((EAD - Proceeds + ELAO)/EAD, 0, 1)` matches all 4,638 complete targets
+(maximum error ~5.6e-16). Base_modelisation's year alias matches 594/594, exposure alias 585/594,
+and both sampling weights exactly identify the already excluded workout flags. Matched 5,671
+unambiguous seven-feature loan signatures between Lending Club and hackerearth: all labels opposite;
+all 14,705 hackerearth positive-recovery rows have source label zero. A standard amortisation fraction
+explains R² 0.735 on 5,556 complete Lending Club LGD rows. These limit domain/target interpretation;
+they do not authorize discarding datasets, flipping labels or rebuilding maturity cohorts.
+
+### Interpretation and next
+
+This CPU PASS was valid and unlocked GPU for f07e71e. The new corrections change the fingerprint:
+publish/sync fixes, run CPU again, then require current CPU PASS before GPU. Preserve the uploaded ZIP;
+no output was deleted here. Keep the approved grids, selection endpoints, full rows/features and
+five folds. Do not adopt automatic restoration of AMP scale after every successful retry: backoff
+calibrates GradScaler and repeatedly restoring an unsafe scale can repeat overflows. Existing
+float32 replay and retry counters remain. No GPU PASS or production readiness is inferred.
+
+### Final local verification of the corrected version
+
+- Frozen source `20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5`, identical
+  before and after verification. No source edits during the final full suite.
+- `python -m src.utils.run_notebooks --workers 2`: 11/11 notebooks OK, 125 PDFs; the slowest
+  PD-prior notebook took 245s. Corrected the previously cropped positive-label-rate plot and
+  removed the unsupported universal 10% collapse threshold; labels no longer certify every
+  source target as default=1. Corrected Tanna's hybrid mean aggregation and range-midpoint note.
+- Final `python -m pytest -q --junitxml <temporary report>`: **1,638 passed, 28 skipped**, zero
+  failures/errors, 1,109.96s. All 28 skips are `tests.test_vsc`, requiring the actual allocation;
+  the PDF check executes and passes after notebook generation. All 26 new audit regressions pass.
+  Both ordinary and hard-kill continuation cases pass in this final invocation.
+- An earlier trial had 1,634 passes, 29 skips and two failures: the Windows SIGUSR1 mock was
+  corrected; a continuation case passed unchanged on isolated recheck and in the final serial
+  suite (initial failure cause unconfirmed). An intermediate summary-string assertion was
+  updated to the corrected positive-label wording. No failed trial is presented as a green run.
+- `git diff --check` clean; TFM/VSC pins and the downloaded ZIP hash remain unchanged. Changes
+  are local/uncommitted; no package install, VSC submission, output reset or Git publication
+  performed here. Existing output figures/summaries were regenerated by the required notebook run.
+
 ## 21-10-2026 — audit of GPU 11715564 — 47 stages passed, TabPFN LGD gradient overflow
 
 **Run** 20-10 13:28:50 through 21-10 00:07:55 CEST (main-log interval).

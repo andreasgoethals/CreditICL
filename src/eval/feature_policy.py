@@ -14,7 +14,7 @@ import numpy as np
 
 from src.data.dataset_registry import canonical_slug
 
-FEATURE_POLICY = "application-pd_default-lgd_v4"
+FEATURE_POLICY = "application-pd_default-lgd_v5"
 
 # 29 September source-data audit, applied after the prediction-time decision on
 # 12 October. Exact source names, including categorical copies, are excluded.
@@ -29,6 +29,10 @@ EXCLUDED = {
     ("lgd", "0005.base_modelisation"): {
         "numerateur", "denominateur", "C_flag_crc_clos_f", "annee_in_dft",
         "DT_DECHEANCE_TERME", "topbaloispur", "topbaloispur_cor", "spm",
+        # Raw-table aliases: an == annee_in_dft; the exposure duplicates the
+        # excluded denominator on 585/594 rows. These two sampling weights
+        # also encode the excluded workout-group flag exactly.
+        "an", "EAD_BALOISE_REELLE", "Perim_poids", "ponderation_11",
     },
     ("lgd", "0004.base_model"): {
         "FCLT_UnpaidInterest", "flag_clos", "duree_defaut", "DFLT_duree",
@@ -41,6 +45,7 @@ EXCLUDED = {
     ("lgd", "0002.loss2"): {
         "UPB_At_Resolution", "Unpaid_Interest", "Total_Debt", "REO_Appraisal_Amount",
         "_Miclaimbal", "_Mirecovery", "_adv_interest1M", "_adv_interest", "_Accrued_int", "_Accruad_int", "_EAD",
+        "_ELAO",  # ELGD = clip((EAD - Proceeds + ELAO) / EAD, 0, 1)
     },
 }
 

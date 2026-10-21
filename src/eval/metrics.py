@@ -327,10 +327,28 @@ def recall_at_top_k(y_true: np.ndarray, p: np.ndarray, k_frac: float) -> float:
     return float(y_true[top].sum() / n_pos)
 
 
+METRIC_DIRECTIONS = {
+    **dict.fromkeys(("roc_auc", "auc", "pr_auc", "ap", "r2", "accuracy", "balanced_accuracy",
+                     "f1_macro", "f1_tuned", "precision_tuned", "recall_tuned", "mcc_tuned",
+                     "balanced_accuracy_tuned", "spearman", "kendall", "gini", "ks",
+                     "brier_skill_score", "f1_at_base_rate", "mcc_at_base_rate",
+                     "balanced_accuracy_at_base_rate"), True),
+    **dict.fromkeys(("rmse", "mae", "pinball", "crps", "brier", "logloss", "log_loss", "ece",
+                     "mce", "boundary_mass_abs_err", "pit_uniformity_error", "mae_boundary",
+                     "mae_interior", "train_loss", "loss"), False),
+}
+
+
 def higher_is_better(metric: str) -> bool:
-    """Direction for selection and paired reporting, independent of plotting code."""
-    return metric in {"roc_auc", "pr_auc", "r2", "accuracy", "balanced_accuracy", "f1_macro",
-                      "f1_tuned", "spearman", "kendall", "gini", "brier_skill_score", "ap"}
+    """Monotone direction shared by selection, reporting and plots.
+
+    Calibration slope and coverage have target values, not a direction. Refuse
+    to rank those as though the largest (or smallest) raw value were best.
+    Their descriptive plots use the target lines in visualize.style.
+    """
+    if metric not in METRIC_DIRECTIONS:
+        raise ValueError(f"{metric!r} has no declared monotone metric direction")
+    return METRIC_DIRECTIONS[metric]
 
 
 def multiclass_metrics(y_true: np.ndarray, probabilities: np.ndarray) -> dict[str, float]:

@@ -12,8 +12,8 @@ What it reports, per prior:
 
 * **LGD** — how much mass sits at exactly 0 and exactly 1, how often either atom
   appears at all, the target's range, and how many distinct values it takes.
-* **PD** — the base-rate distribution: mean, percentiles, and what fraction of
-  tasks have positive-class rates below 5% and 10%, plus a separately named minority-rate summary.
+* **PD** — positive-label rates on binary tasks, minority-class rates on all tasks,
+  and class counts. Labels are permuted: label 1 is not a semantic default flag.
 * **both** — the ExtraTrees pseudo-R² distribution (how predictable the tasks
   are), the filter's rejection rate, feature counts and categorical cardinality.
 
@@ -38,6 +38,17 @@ import numpy as np  # noqa: E402
 
 from src.utils.config import expand_with_seeds, load  # noqa: E402
 from src.utils.target_stats import summarise, target_stats  # noqa: E402
+
+
+def classification_rates(y) -> tuple[float | None, float, int]:
+    """Binary positive-label frequency, rarest-class frequency and class count.
+
+    A mean of multiclass label codes is not a probability, and permuting labels
+    must not change the minority statistic.
+    """
+    labels, counts = np.unique(np.asarray(y), return_counts=True)
+    positive = float(counts[-1] / counts.sum()) if len(labels) == 2 else None
+    return positive, float(counts.min() / counts.sum()), len(labels)
 
 
 def pct(values: list[float], q: float) -> float:
@@ -66,6 +77,7 @@ def main() -> int:
     stats: list[dict] = []
     rates: list[float] = []
     minority_rates: list[float] = []
+    class_counts: list[int] = []
     n_features: list[int] = []
     sources = {"base": 0, "credit": 0}
 
@@ -75,8 +87,11 @@ def main() -> int:
         n_features.append(t.n_features)
         stats.append(target_stats(t.y))
         if task == "pd":
-            rates.append(float(t.y.mean()))
-            minority_rates.append(min(rates[-1], 1.0 - rates[-1]))
+            positive, minority, classes = classification_rates(t.y)
+            if positive is not None:
+                rates.append(positive)
+            minority_rates.append(minority)
+            class_counts.append(classes)
 
         if (i + 1) % 100 == 0:
             print(f"  sampled {i + 1}/{args.n}", flush=True, file=sys.stderr)
@@ -105,13 +120,18 @@ def main() -> int:
             "0003.axa_recovery": {"at_0": 0.0, "at_1": 0.0, "shape": "fully interior"},
         }
     else:
+        report["class_counts"] = {str(k): class_counts.count(k) for k in sorted(set(class_counts))}
         report["base_rate"] = {
+            "meaning": "positive-label frequency on binary tasks only; labels are permuted, not semantic defaults",
+            "binary_tasks": len(rates),
+            **({
             "mean": round(float(np.mean(rates)), 4),
             "p10": round(pct(rates, 10), 4),
             "p50": round(pct(rates, 50), 4),
             "p90": round(pct(rates, 90), 4),
             "frac_under_05": round(float(np.mean([r < 0.05 for r in rates])), 4),
             "frac_under_10": round(float(np.mean([r < 0.10 for r in rates])), 4),
+            } if rates else {}),
             "minority_mean": round(float(np.mean(minority_rates)), 4),
             "minority_frac_under_05": round(float(np.mean(np.asarray(minority_rates) < .05)), 4),
         }

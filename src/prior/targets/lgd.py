@@ -396,7 +396,11 @@ def apply_lgd_zoib(
     at0 = u < p0
     at1 = (~at0) & (u < p0 + p1)
     phi = p["phi"]
-    draws = rng.np.beta((mu * phi).double().numpy(), ((1.0 - mu) * phi).double().numpy())
+    # Beta rejection sampling consumes a parameter-dependent number of draws.
+    # Isolate it so changing macro target loadings cannot change the later
+    # macro-feature coin, which must be paired across the component ablation.
+    draws = rng.fork("zoib-interior").np.beta(
+        (mu * phi).double().numpy(), ((1.0 - mu) * phi).double().numpy())
     # A beta draw can round to exactly 0 or 1 in float32; an interior loss is strictly inside.
     interior = torch.from_numpy(draws).float().clamp(1e-6, 1.0 - 1e-6)
     y = torch.where(at0, torch.zeros(n), torch.where(at1, torch.ones(n), interior))

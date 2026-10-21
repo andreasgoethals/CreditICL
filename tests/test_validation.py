@@ -76,7 +76,7 @@ def test_complete_manifest_covers_all_routes_budgets_and_benchmarks():
     assert len({s.name for s in stages}) == len(stages)  # no repeated benchmark work
 
 
-@pytest.mark.parametrize("skipped,mandatory,ok", [(0, True, True), (1, True, False), (1, False, True)])
+@pytest.mark.parametrize("skipped,mandatory,ok", [(0, True, True), (1, True, False), (1, False, False)])
 def test_mandatory_vsc_tests_cannot_pass_by_skipping(tmp_path, skipped, mandatory, ok):
     report = tmp_path / "junit.xml"
     report.write_text(f'<testsuites><testsuite tests="5" skipped="{skipped}" failures="0" errors="0"/></testsuites>')

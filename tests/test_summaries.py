@@ -128,10 +128,10 @@ def test_data_summary_covers_both_tasks():
     assert "2 datasets loaded" in out
 
 
-def test_data_summary_states_the_odds_for_pd():
+def test_data_summary_states_the_source_label_odds_for_pd():
     """A base rate as odds is easier to feel than a percentage."""
     out = summaries.data_summary({"pd": {"0002.b": _DS([0.0] * 9 + [1.0])}})
-    assert "1 default per 9 non-defaults" in out
+    assert "1 positive label per 9 negative labels" in out
 
 
 def test_data_summary_flags_a_suspicious_leak():
