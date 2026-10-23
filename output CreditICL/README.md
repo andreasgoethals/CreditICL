@@ -17,7 +17,7 @@ output CreditICL/
 ├── README.md                 this file
 ├── All_Results.md            every notebook's printed summary, in notebook order
 ├── CAPTIONS.md               every figure's caption, ready for the paper
-├── figures/<notebook>/       every notebook's figures (chapters 0, 1 and 2), drawn locally
+├── figures/<notebook>/       vector PDFs, captions and summaries (chapters 0–3), drawn locally
 ├── logs/                     jobs that belong to no experiment: preprocessing (with
 │                             processed_summary_<track>.csv), the OOD fetch, prior pools, GPU benchmarks
 ├── reference/                the released TabICLv2 and TabPFN-3, CatBoost, the linear model —
@@ -31,7 +31,7 @@ output CreditICL/
     ├── runs/<run name>/      one folder per trained arm
     │   ├── config.json       the resolved configuration, exactly as trained
     │   ├── summary.json      completed?, steps, training time over every restart
-    │   ├── progress.csv      development-set metrics every 500 steps (real credit + out-of-domain)
+    │   ├── progress.csv      development metrics at the configured monitoring interval
     │   ├── telemetry.csv     throughput, GPU and CPU use, memory, time per phase, loss, learning
     │   │                     rate, gradient norms per block
     │   ├── weights.csv       how far each block has moved from its starting weights, and how fast
@@ -44,12 +44,14 @@ output CreditICL/
 ```
 
 `_s<step>` marks an earlier checkpoint than the final one; `_ctx1024` a result scored with at most
-1,024 rows of context (Experiment 1's second evaluation, inside the training distribution).
+1,024 rows of context in historical optional outputs. The current primary benchmark uses
+all eligible rows and features with five folds; capped-context files do not populate the new
+paper-facing final panels.
 
 The released weights and the datasets are inputs, not output, and live beside the tree on project
 storage: `checkpoints/` (TabICLv2 and TabPFN-3 as downloaded) and `data/` (`raw/`, `processed/`,
 and the out-of-domain cache `ood/`).
 
-Committed to git: this README, `All_Results.md`, `CAPTIONS.md` and each figure folder's
-`_figures.json`. Everything else is regenerated (figures) or downloaded from the cluster (logs, runs,
-benchmark results). `python -m src.utils.clean_run` lists what a clean would remove.
+Committed to git: this README, `All_Results.md`, `CAPTIONS.md`, official notebook PDFs and
+each figure folder's `_figures.json`. Downloaded logs, run records, benchmark tables and
+checkpoint binaries remain ignored. `python -m src.utils.clean_run` lists what a clean would remove.

@@ -365,19 +365,20 @@ def plot_base_rate_by_variant(loaded: dict[str, list[SyntheticTask]], real_refer
     if has_real:
         strip = axes[1][0]
         rates = np.asarray(list(real_reference.values()), dtype=float)
+        rates = np.minimum(rates, 1-rates)
         strip.scatter(rates, np.zeros_like(rates), marker="|", s=260, linewidths=1.4,
                       color=style.STAR, clip_on=False)
         strip.set_ylim(-0.5, 0.5)
         strip.set_yticks([0])
         # The row is labelled on the AXIS, so no floating text can drift onto anything.
         strip.set_yticklabels(["real"], fontsize=7, color=style.STAR)
-        strip.set_xlabel("default rate per task or dataset (minority-class share)")
+        strip.set_xlabel("Minority-class share · binary diagnostic tables and real datasets")
         strip.grid(visible=False)
         for side in ("left", "right", "top"):
             strip.spines[side].set_visible(False)
         strip.xaxis.set_major_formatter(mpl.ticker.PercentFormatter(1.0, decimals=0))
     else:
-        ax.set_xlabel("default rate per task (minority-class share)")
+        ax.set_xlabel("Minority-class share per binary diagnostic table")
 
     # NO heading. The legend already occupies the space above the axes, and a title there
     # collides with it — as it did. The caption names the figure, which is the policy anyway:
@@ -422,7 +423,7 @@ def plot_target_shapes_by_variant(
         n_var, n_cols,
         figsize=style.grid_figsize(n_cols, n_var, panel_ratio=0.95), squeeze=False,
     )
-    small = mpl.rcParams["xtick.labelsize"] * 0.85
+    small = style.PANEL_TEXT
     for r, (variant, tasks) in enumerate(loaded.items()):
         colour = variant_color(variant, r)
         bounded_row = True

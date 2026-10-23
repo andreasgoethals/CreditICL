@@ -106,6 +106,23 @@ def plot_prior_realism_ranking(
         return _placeholder("No comparable targets on the loss-fraction scale")
     rows.sort(key=lambda r: r[1])
 
+    if len(rows) == 1:
+        name, _, per_real = rows[0]
+        ordered = sorted(per_real.items(), key=lambda item: item[1])
+        fig, ax = plt.subplots(figsize=style.row_figsize(len(ordered), per_row=.25, base=1.15))
+        values = np.array([value for _, value in ordered])
+        ypos = np.arange(len(ordered))
+        ax.barh(ypos, values, color=style.CREDIT)
+        ax.set_yticks(ypos, [key.split(".", 1)[-1].removeprefix("lgd_") for key, _ in ordered])
+        for y, value in zip(ypos, values):
+            ax.text(value+.01, y, f"{value:.3f}", va="center", fontsize=style.PANEL_TEXT)
+        ax.set(xlabel="Marginal target distance (total variation)",
+               xlim=(0, max(.5, float(values.max())*1.2)),
+               title="Raw credit prior versus real portfolios")
+        ax.invert_yaxis()
+        ax.grid(axis="y", visible=False)
+        return fig
+
     fig, ax = plt.subplots(figsize=style.row_figsize(len(rows), per_row=0.34, base=1.05))
     labels = [style.variant_label(r[0]) for r in rows]
     ypos = np.arange(len(rows))
@@ -504,7 +521,7 @@ def plot_boundary_mass_sources(
     variants: dict[str, list[Any]],
     real: dict[str, Any] | None = None,
 ):
-    """Mass at 0 against mass at 1, one panel per variant, real datasets as stars.
+    """Raw credit mass at economic 0/1, real datasets as stars; no generic-scale points.
 
     A refinement of a figure that already existed rather than a new idea. The reason to keep it
     is that "total boundary mass" hides the asymmetry that matters: a portfolio where most
@@ -513,19 +530,25 @@ def plot_boundary_mass_sources(
     two a prior actually produces, and whether it lands where the real datasets do.
     """
     style.apply()
-    names = list(variants)
+    names = [name for name in variants if name.startswith("credit")]
+    if not names:
+        from src.visualize.campaign import availability
+        return availability("Raw credit loss targets are required for the economic endpoint-mass view.")
     n = len(names)
+    if any(float(t.y.min()) < 0 or float(t.y.max()) > 1 for name in names for t in variants[name]):
+        raise ValueError("The economic endpoint panel requires raw [0,1] credit targets")
     fig, axes = plt.subplots(1, n, figsize=style.grid_figsize(n, 1, panel_ratio=1.0),
                              squeeze=False, sharex=True, sharey=True)
     real_points = [
-        (target_stats(y)["frac_at_min"], target_stats(y)["frac_at_max"])
+        (float((np.asarray(y) <= 1e-4).mean()), float((np.asarray(y) >= 1-1e-4).mean()))
         for y in _real_targets("lgd", real).values()
     ]
+    real_names = [s.split(".", 1)[-1].removeprefix("lgd_") for s in _real_targets("lgd", real)]
     for i, name in enumerate(names):
         ax = axes[0][i]
         colour = style.variant_colour(name, i)
-        pts = [(s["frac_at_min"], s["frac_at_max"])
-               for s in (target_stats(t.y) for t in variants[name])]
+        pts = [(float((np.asarray(t.y) <= 1e-4).mean()), float((np.asarray(t.y) >= 1-1e-4).mean()))
+               for t in variants[name]]
         if pts:
             xs, ys = zip(*pts)
             ax.scatter(xs, ys, s=14, color=colour, alpha=0.6, linewidths=0, zorder=2,
@@ -544,10 +567,47 @@ def plot_boundary_mass_sources(
                 label="equal mass at 0 and at 1" if i == 0 else None)
         ax.set_xlim(-0.02, 1.02)
         ax.set_ylim(-0.02, 1.02)
-        # At the target's MINIMUM and MAXIMUM: 0 and 1 for our prior and the real books, but the
-        # original prior standard-scales its target, so there they are its own extremes.
-        ax.set_xlabel("share of rows at the minimum (0 on [0, 1])")
-        ax.set_title(style.variant_label(name), loc="left", fontsize=9)
-    axes[0][0].set_ylabel("share at the maximum (1 on [0, 1])")
+        ax.set_xlabel("Raw loss mass at 0 · full recovery")
+        ax.set_title(f"Credit tasks (n={len(variants[name])}) and real books", loc="left")
+    axes[0][0].set_ylabel("Raw loss mass at 1 · total loss")
+    from matplotlib.ticker import PercentFormatter
+    for ax in axes.flat:
+        ax.xaxis.set_major_formatter(PercentFormatter(1))
+        ax.yaxis.set_major_formatter(PercentFormatter(1))
     style.legend_below(fig, ncol=3)
+    if real_points:
+        for ax in axes.flat:
+            style.place_labels(ax, *np.asarray(real_points).T, real_names,
+                               fontsize=style.PANEL_TEXT, background=True)
+    return fig
+
+
+def plot_standardised_endpoint_ties(variants):
+    """Endpoint ties after a common context-fitted affine map, with no loss semantics."""
+    from matplotlib.ticker import PercentFormatter
+    import torch
+    from src.prior.generator import standardise_on_context
+
+    style.apply()
+    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, .62))
+    for i, (name, tasks) in enumerate(variants.items()):
+        points = []
+        for task in tasks:
+            y = np.asarray(task.y, dtype=float)
+            if "train_size" not in task.meta:
+                raise ValueError("A recorded context split is required for comparable standardised ties")
+            n_context = int(task.meta["train_size"])
+            z = np.asarray(standardise_on_context(torch.as_tensor(task.y), n_context), dtype=float)
+            # A shared 1e-4 tolerance on the standardised view, not economic zero/one.
+            points.append((float(np.mean(np.abs(z-z.min()) <= 1e-4)),
+                           float(np.mean(np.abs(z-z.max()) <= 1e-4))))
+        if points:
+            x, y = np.asarray(points).T
+            ax.scatter(x, y, color=style.variant_colour(name, i), alpha=.45,
+                       s=style.SEED_POINT, label=f"{style.variant_label(name)} (n={len(points)})")
+    ax.set(xlabel="Lower-endpoint tie frequency", ylabel="Upper-endpoint tie frequency",
+           xlim=(-.02, 1.02), ylim=(-.02, 1.02), title="Standardised endpoint ties")
+    ax.xaxis.set_major_formatter(PercentFormatter(1))
+    ax.yaxis.set_major_formatter(PercentFormatter(1))
+    style.legend_below(fig, ncol=2)
     return fig

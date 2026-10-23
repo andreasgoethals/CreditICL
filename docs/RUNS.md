@@ -167,6 +167,131 @@ The one thing to do differently.
 
 ## Runs
 
+## 23-10-2026 — Exp1 first production snapshot — 21 complete, 13 running, one Slurm launch hold
+
+**Submitted** exact submission timestamps not supplied; four arrays cover both main grids and component tests | **jobs** 11728997 (main LGD), 11728998 (main PD), 11728999 (LGD components), 11729000 (PD components) | **cluster** Mindwell `gpu_b200`; live jobs on r11g17/r11g22 at 09:14 CEST
+**Validated commit** a073d7d | **source fingerprint** 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5 | **tfm-library gitlink** cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a | **vsc-library gitlink** 9e376b5ee9106e82d37eca86ca6acb861f580c93 | **GPUs** 1 B200 per task, %8 per array | **walltime** 12h requested per task
+
+### Configuration
+
+- **Config files** `config/Exp1_PD.yaml`, `config/Exp1_LGD.yaml`, `config/Exp1_PD_ablations.yaml`, `config/Exp1_LGD_ablations.yaml`; 9 main and 15 component runs per track, 48 total. Main mixture fractions 0/0.5/1, seeds 0/1/2; component tests at fraction 0.5 remove macro targeting, informative missingness, tail warps, shift or corrected cardinalities.
+- **The levers** main `prior.credit_fraction`; components `arm` with the five named removals. All 34 saved resolved configurations pass comparison against their exact current expected run (prior, architecture, seed, initialization and optimizer recipe).
+- **Budget** 12,500 updates x batch 64 = 800,000 synthetic tasks per run; micro-batch 4, scratch TabICL, 24 CPU cores / 180 GiB per GPU. Main permanent checkpoints every 2,500 updates; components retain the final checkpoint, rolling saves every 250 updates.
+- **Init** scratch for every started arm. All 21 completed summaries have training fingerprint `0d328e50ce06778731c5ba5218a61222b9cf396c8b8d767cb3e8a58f7473e69b`, matching the validated TabICL implementation/environment. All 34 top-level logs first pass the exact current Exp0 GPU gate.
+- **Anything edited by hand** no executable/package/config/notebook changes by this audit. The per-job two-update smoke test intentionally checks the credit path before the actual configured arm; its temporary credit-fraction override is not the production recipe. Saved production recipes and subsequent training logs match the declared fractions.
+
+### Results
+
+Snapshot combines the 09:12 download with the user's read-only `squeue` / `sacct` output at 09:14 CEST:
+
+| Array / group | Completed | Running | Normally pending | Held |
+|---|---|---|---|---|
+| 11728997, main LGD | 8 | 0 | 0 | 1 |
+| 11728998, main PD | 8 | 1 | 0 | 0 |
+| 11728999, LGD components | 5 | 8 | 2 | 0 |
+| 11729000, PD components | 0 | 4 | 11 | 0 |
+| Total | 21 | 13 | 13 | 1 |
+
+- **Completion evidence** all 21 completed summaries report `completed=true`, 12,500 updates and 800,000 tasks; 21 job logs end `END status=OK`, and supplied scheduler records show COMPLETED / exit 0:0 for the same tasks. No other completed task is inferred from absence in the queue.
+- **Progress curve** 365,600 of 600,000 planned updates recorded (~60.9%); 43.75% of runs fully complete. The 13 active routes continue producing fresh metrics through 23-10 09:11:57 CEST. Monitored metrics are finite, all recorded training losses finite, and each started run's latest weight-drift observation is finite and positive. Training losses across different prior mixtures are not a like-for-like generalization comparison.
+- **Out-of-domain** periodic monitoring is present; there are no production benchmark CSVs/receipts in this upload. Full credit/OOD five-fold evaluation follows training. No scientific winner or retention claim is established by these intermediate logs.
+- **Throughput** completed LGD training median 6.51h (13 arms; range 6.44–6.67h); PD median 6.97h (8 arms; range 6.85–7.38h), before the short per-job activation/smoke overhead visible in scheduler elapsed times. All completed allocations fit the 12h request. Sampled GPU utilization means ~87.9% LGD and ~84.7% PD across available telemetry; these are sampled observations, not a billing efficiency measurement.
+- **Remaining active work from the snapshot** main PD array 8 at 9,600/12,500, roughly 1.63h extrapolated remaining. LGD components: 5,000–10,200 updates, roughly 1.2–3.9h remaining per active task. PD components: 1,900–8,100 updates, roughly 2.5–5.9h. Each not-yet-started task still needs a normal full run plus queue time; no guaranteed calendar completion follows from these estimates.
+- **Files** `C:\Users\U0152019\Downloads\output CreditICL.zip`, 6,476,160 bytes, SHA-256 `6713c528f221cf2f7dcd96693b56d1438f83ea4e175d2d33f3628ebeeb4e64dc`; 708 files / 37,728,169 uncompressed bytes, CRC valid, no duplicate or unsafe names. New production files are under `experiment_1/logs/` and `experiment_1/runs/` (34 resolved configs, 21 summaries). Project-tier checkpoint binaries are intentionally absent; their bytes were not independently hashed in this audit.
+- **Exp0 preservation** the same CPU/GPU PASS receipts remain; all 23 CPU and 105 present GPU artifact hashes still match. The same six project checkpoint binaries, 28 benchmark CSVs and 14 receipts remain outside this DATA-tier download. The prior successful in-place VSC verification is historical evidence, not a new 23-10 check of those remote files.
+
+### Bugs and anomalies
+
+- **One held launch failure:** `11728997_6`, the main LGD control (`credit_fraction=0`, seed 2), is PENDING with reason `launch failed requeued held`, elapsed 0 and no corresponding training output in the ZIP. The supplied evidence establishes a launch hold, not its underlying filesystem/node/program cause; it contains no Python traceback for this task. Its held state blocks completion of the LGD main comparison until recovered.
+- **Normal pending states:** LGD component indices 13–14 wait at the array's %8 concurrency cap (`JobArrayTaskLimit`); PD component indices 4–14 wait for scheduler priority. Every one of the 48 expected arms is accounted for between output and live queue.
+- **Runtime audit:** no training traceback, fatal exception, failed footer, OOM or nonfinite monitored/training value found. Existing Mindwell Python-module fallback warnings occur before successful project-environment activation. Multiclass probability-rounding warnings recur in monitoring; they do not produce invalid monitored values. Counts from top-level and nested logs duplicate the same events, so they are not reported as independent failures.
+- **No code fix is justified by this snapshot.** Do not invalidate a running validated campaign to remove cosmetic warnings, and do not confuse the smoke-test override with the actual control-run configuration.
+
+### Interpretation
+
+The production campaign is progressing as configured and within its requested per-task walltime. There is one operational recovery action, the held LGD control, rather than evidence requiring failed training arms or Exp0 to be rerun. Generalization and the prior-effect comparison still require the benchmark phase. A scheduler launch reason alone cannot prove the root cause is a particular node, filesystem or repository bug.
+
+### Next
+
+The agent advised `scontrol --clusters=mindwell release 11728997_6`, followed by a queue check for that exact task. This attempts to resume eligibility of the existing held task without submitting a duplicate or disturbing the other allocations. No release outcome has been supplied yet. If release is denied or the task returns to held, inspect `scontrol --clusters=mindwell show job 11728997_6`; an administrative hold may require VSC assistance. Do not repeatedly force release without diagnosing a recurring launch failure.
+
+Keep the current source/packages and all ongoing jobs. After the training groups finish, submit missing benchmark slots with `python -m src.utils.run_experiment 1 --phase benchmark --single-cluster --submit`. No new jobs, package changes, cleanup or pushes were executed by the audit agent.
+
+## 22-10-2026 — Exp0 GPU 11724030 — all 66 stages PASS on the frozen source
+
+**Submitted** exact submission time not supplied; allocation recorded 21-10-2026 14:33:17 CEST | **job** 11724030 | **cluster** Mindwell `gpu_b200`, node r11g12
+**Commit** a073d7d (`dirty=YES`; executable fingerprint matches) | **tfm-library gitlink** cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a | **vsc-library gitlink** 9e376b5ee9106e82d37eca86ca6acb861f580c93 | **GPUs** 1 x NVIDIA B200 | **walltime** 24h requested / 17h38m40s from banner to successful footer, not a scheduler billing record
+
+### Configuration
+
+- **Config files** `config/Exp0_PD.yaml`, `config/Exp0_LGD.yaml`; `scripts/slurm/exp0.slurm`, 24 cores / 180 GiB host RAM. GPU runtime reports Torch 2.11.0+cu128 and CUDA 12.8.
+- **The levers** — six routes: scratch TabICL, continued TabICL and continued TabPFN-3, for each track, at the diagnostic 50% credit mixture. No new production sweep was submitted.
+- **Budget** 600 updates per route; forced SIGUSR1 after update 100 stops at 101, then all six resume to 600. TabICL: batch 64, 38,400 synthetic tasks; TabPFN: batch 16, 9,600 tasks, zero skipped tasks.
+- **Init** scratch or released classifier/regressor weights as appropriate; strict tensor matching and both upstream trainer-equivalence checks pass.
+- **Frozen source** `20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5`; environment `d4ed1fbe1397c0063fc12abffcb338fddd8038f21decb20c8c84accaf0bf0454`. GPU binds CPU receipt SHA-256 `d6e4a8bbc3509087af0197543ad9ef55b1463e9d05e5231fb548843e26b7f3e8` exactly; the full CPU/GPU input dictionaries are identical.
+- **Packages** TabPFN 9.1.0; TabICL 2.1.1 at 8f1aa2098c894ab91dba15209cf2002ba4be6c6c; CatBoost 1.2.10; all 135 requirements and `pip check` pass. Dataset cache version 8, benchmark protocol 9.
+- **Anything edited since validation** only these existing documentation records during the 22-10 audit; no executable, notebook-cell, dependency or input changes. The library pins above are verified checkout gitlinks; the uploaded runtime log does not include a separate `git submodule status` listing.
+
+### Results
+
+- **Validation** schema-3 receipt PASS, exact current 66-stage plan/order, every stage PASS; 28 CUDA tests passed with zero failures/errors/skips. Main log ends `END status=OK` at 22-10-2026 08:11:57 CEST. Supplied VSC preflight and verifier report all current prerequisites, 72 items and zero FAIL.
+- **Full-table benchmark probes** four PD tables (HackerEarth, bank status, loan default, AlgorithmWatch), three LGD tables (HELOC, loss2, base_modelisation), five classification OOD tables and three regression OOD tables. All three diagnostic checkpoints and four references complete credit/OOD evaluation. Credit logs show 245 successful model/dataset/fold cells, with all folds 0–4. Largest PD table retains 532,428 rows; widest retains 158,700 rows and 2,986 features. Context caps remain `None`.
+- **Interpretation of metrics** this is selected-dataset pipeline validation, not a completed Exp1 or a prior-effect claim. Reported reference means on those PD probes are AUC 0.711900 (TabICL), 0.724528 (TabPFN), 0.738023 (CatBoost), 0.697063 (linear); the 600-step scratch diagnostic is 0.646180. These summaries are from logs; the underlying project-tier CSVs are not in the download.
+- **Progress curve** all six have points at steps 0/200/400/600; monitored metrics are finite. Only the deliberately uncomputed step-zero `train_loss` is NaN. This is not enough training to infer convergence or a scientific improvement.
+- **Out-of-domain** multiclass and regression probes complete; full OOD retention comparisons remain part of Experiments 1–3.
+- **Throughput** scratch training totals 1,286.3s PD / 1,260.1s LGD over 600 steps. Mean sampled GPU utilization is 86.4–87.2% across TabICL routes and 30.1% PD / 34.6% LGD for TabPFN; low TabPFN utilization is a performance limitation, not evidence by itself that adding workers fixes it. Largest observed process-tree RSS in heartbeat logs is 82.31 GiB, below the 180 GiB request; this is not scheduler MaxRSS.
+- **Files** `experiment_0/report/validation.json`, attempt `gpu_20261021T123317Z_j11724030_f8a32d10`, job log `experiment_0/logs/exp0_gpu_20261021_143255_j11724030.log`. Download `C:\Users\U0152019\Downloads\output CreditICL.zip`: 3,733,314 bytes; SHA-256 `8dafa4663a67da647c5cf940ef303b8a6492871ee6a2734fed1206f31641292d`; 415 files, valid CRC, no duplicate/unsafe names.
+- **Evidence completeness** 105/153 GPU artifacts are present and hash-identical; all 23 CPU artifacts also match. The omitted six checkpoint binaries, 28 benchmark CSVs and 14 benchmark receipts live on project storage. The supplied VSC verifier checks them in place successfully; independent local cell-by-cell CSV verification requires that tier as well. No omitted file is described as independently verified from this ZIP.
+- **Projected training costs** Exp1 main comparison 132.6 GPU-h plus component tests 221.1 GPU-h (48 runs, about 353.7 GPU-h total); Exp2 about 886.9 GPU-h; Exp3 about 943.1 GPU-h. These extrapolate 600-step measurements, exclude production benchmarking/queue time and are not a billing statement or guaranteed walltime.
+
+### Bugs and anomalies
+
+- No failed stage, traceback, OOM termination or fatal runtime error in this successful attempt.
+- The previously failing TabPFN LGD path now replays the same batches successfully in float32 at steps 217 and 511. Its cumulative summary records 50 AMP retries, two full-precision retries and zero skipped tasks; PD records three AMP retries, no full-precision retry and zero skipped tasks. Large finite synthetic regression losses are not downstream LGD errors; final monitoring remains finite.
+- Multiclass OOD/monitoring emits probability-sum warnings. The metric path checks finite, nonnegative, near-unit rows; casting float32 probabilities to float64 can expose harmless rounding to sklearn's stricter warning threshold. A separate no-training reproduction using normalized float32 probabilities produced the same warning at a maximum row-sum error 1.29e-7 (log-loss change about 3.19e-9 after exact renormalization). This demonstrates a warning mechanism; the archive does not retain per-row probability matrices, so its exact residuals are unknown.
+- One sklearn power-transform overflow warning occurs during LGD task preparation after step 520; the following updates, monitored predictions, checkpoint and all benchmark stages succeed. Its precise intermediate values are not retained. Do not silently claim every upstream operation was warning-free.
+- Python module loading warns on Mindwell, then the project Python 3.12.3 environment, requirements and CUDA checks pass. Other warnings are upstream deprecations, deliberate signal/resume notices and utilization advisories.
+- The ZIP retains old CPU attempt 62378918 (33 files / 500,191 bytes plus its main job log). There is one current CPU/GPU pair and no failed GPU attempt. Archive contents cannot establish that every legacy directory on both remote storage tiers is empty; no cleanup was performed.
+
+### Interpretation
+
+The frozen pipeline has passed its defined CPU and production-B200 validation, including the failure cases that previously blocked it. This supports starting Exp1 without changing source or rerunning Exp0. It does not prove every future synthetic task or production checkpoint will succeed, nor that the credit prior improves performance. Exp1 supplies that comparison. Keep existing receipts and outputs; source changes would require new validation.
+
+### Next
+
+Start Exp1 training on Mindwell using the current checkout and `python -m src.utils.run_experiment 1 --phase train --single-cluster --submit`; this includes the approved main grids and component ablations (24 runs per track). After training completes, use the same orchestrator with `--phase benchmark` to submit missing benchmark slots. Include project-tier CSVs/receipts with the next output download. No jobs were submitted by the audit agent.
+
+## 21-10-2026 — Exp0 CPU 62382230 — current source passed all 13 stages
+
+**Submitted** exact submission time not supplied; allocation recorded 21-10-2026 13:18:32 CEST | **job** 62382230 | **cluster** wICE `batch`, node m33c25n4
+**Commit** a073d7d, `dirty=YES` with matching executable fingerprint | **tfm-library gitlink** cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a | **vsc-library gitlink** 9e376b5ee9106e82d37eca86ca6acb861f580c93 | **GPUs** none | **walltime** 4h requested / 21m04s banner-to-footer, not scheduler accounting
+
+### Configuration
+
+- **Config/entry point** `scripts/slurm/exp0_cpu.slurm`, 20 cores / 64 GiB, full 13-stage CPU campaign; source 20f0e981 and the same package/input inventories used by GPU 11724030.
+- **The levers / budget / init** no production training arm; preprocessing, prerequisites, portable tests, benchmark/config/data/determinism/OOD/orchestration/path/prior/storage checks and all notebooks.
+- **Anything edited by hand** previous executed notebook outputs and small generated summaries were preserved with a scoped Git stash before updating to a073d7d. The earlier Git lock/update failures occurred before submission and did not launch extra CPU jobs.
+
+### Results
+
+- PASS, 13/13 exact expected stages. Pytest: 1,617 passed, one expected missing sibling-TabPFNCredit identity skip, 28 CUDA cases deselected, zero failures/errors, 754.57s; GPU later executes all 28 CUDA cases. The PDF-bound test executes rather than skipping.
+- Notebooks 11/11, 125 PDFs; notebook stage 225.04s. All 23 receipt-bound artifacts verified against the ZIP, and the GPU binds the exact resulting CPU receipt SHA-256.
+- All processed data v8, full feature/no context-limit protocol 9, released weights and OOD inputs pass readiness. Small output tier at its storage check: 210 files / about 4 MB; current project output tree then empty. Shared project quota: 243G/1T, 36,730/150,000 files; DATA 54,256M/76,800M. These precede the GPU run and are not a current whole-filesystem cleanup certificate.
+- **Progress / out-of-domain / throughput** no production learning curve or prior-effect estimate in this CPU job; its checks validate readiness. Main log ends `END status=OK` at 21-10-2026 13:39:36 CEST.
+- **Files** `experiment_0/report/cpu_validation.json`, attempt `cpu_20261021T111832Z_j62382230_43923b09`, main log `experiment_0/logs/exp0_cpu_20261021_131814_j62382230.log`; archived in the 22-10 ZIP identified above.
+
+### Bugs and anomalies
+
+No CPU failures. One explicitly permitted missing-sibling test skip; upstream/test-fixture warnings remain in the log. The older CPU 62378918 attempt is still present separately and does not satisfy or invalidate this newer receipt.
+
+### Interpretation
+
+The current frozen source passed CPU validation and was subsequently consumed unchanged by the successful GPU campaign. No new CPU rerun is needed for this documentation-only audit.
+
+### Next
+
+Retain the CPU/GPU pair as the prerequisite evidence for Experiments 1–3; proceed to Exp1.
+
 ## 21-10-2026 — Exp0 CPU 62378918 — PASS; subsequent audit corrections require a new receipt
 
 **Logged start/end** 09:56:44–10:19:34 CEST (22m50s; no sacct interval supplied)

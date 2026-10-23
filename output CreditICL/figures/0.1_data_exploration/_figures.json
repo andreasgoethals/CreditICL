@@ -3,60 +3,42 @@
     "index": 1,
     "stem": "01_pd_base_rates",
     "name": "pd_base_rates",
-    "caption": "Frequency of source label 1 per binary credit benchmark, sorted, with each rate written on its bar. Source labels are not uniformly verified as mature defaults."
+    "caption": "Frequency of source label 1 per binary credit benchmark, sorted, with rates written on the bars; source-event definitions are not uniformly certified as mature defaults."
   },
   {
     "index": 2,
     "stem": "02_lgd_targets",
     "name": "lgd_targets",
-    "caption": "Histograms of the LGD target for each of the seven LGD datasets, share of rows per bin, 40 bins on [0, 1], ordered by sample size; dashed vertical lines mark exact minimum or maximum values holding more than 1% of rows, and panel titles give the share of rows at exactly 0 or 1."
+    "caption": "LGD target histograms for seven processed benchmark tables, ordered by row count, with 40 bins on the loss scale [0,1] and dataset-specific vertical scales; titles report the share within 1e-4 of 0 or 1."
   },
   {
     "index": 3,
     "stem": "03_boundary_mass_ranking",
     "name": "boundary_mass_ranking",
-    "caption": "Share of rows lying exactly at 0 (full recovery) and exactly at 1 (total loss) per LGD dataset, as stacked horizontal bars ordered by the total, which is written at the end of each bar."
+    "caption": "Share of rows within 1e-4 of loss 0 and loss 1 per LGD benchmark, stacked and ordered by their total, with the total written beside each bar."
   },
   {
     "index": 4,
     "stem": "04_shapes",
     "name": "shapes",
-    "caption": "Number of rows against number of features for all 21 evaluation datasets on logarithmic axes, one labelled point per dataset coloured by task; dotted lines mark 1,024 rows and 100 features, the size of a generated table."
+    "caption": "Rows against features for 21 processed source tables on logarithmic axes, with one named point per table; dotted lines mark the synthetic pretraining sizes of 1,024 rows and 100 features, not benchmark limits."
   },
   {
     "index": 5,
     "stem": "05_type_mix",
     "name": "type_mix",
-    "caption": "Share of columns that are categorical per dataset, all 21 evaluation datasets, as horizontal bars sorted by share and coloured by task."
+    "caption": "Share of processed source columns marked categorical per benchmark dataset, sorted and coloured by prediction task."
   },
   {
     "index": 6,
     "stem": "06_missingness",
     "name": "missingness",
-    "caption": "Share of cells that are missing per dataset after preprocessing, all 21 evaluation datasets, as horizontal bars sorted by share and coloured by task."
+    "caption": "Share of missing cells per processed source table, sorted and coloured by prediction task; the rates describe the available preprocessing rather than original source missingness."
   },
   {
     "index": 7,
-    "stem": "07_feature_correlations_lgd_p1",
-    "name": "feature_correlations_lgd_p1",
-    "caption": "Pearson correlation matrices between the features of each LGD dataset on a random 5,000-row sample with constant columns removed, colour scale from -1 to 1, datasets ordered by mean absolute correlation, which is given under each panel."
-  },
-  {
-    "index": 8,
-    "stem": "08_feature_correlations_pd_p1",
-    "name": "feature_correlations_pd_p1",
-    "caption": "Pearson correlation matrices between the features of each PD dataset on a random 5,000-row sample with constant columns removed, colour scale from -1 to 1, datasets ordered by mean absolute correlation, which is given under each panel."
-  },
-  {
-    "index": 9,
-    "stem": "09_feature_correlations_pd_p2",
-    "name": "feature_correlations_pd_p2",
-    "caption": "Pearson correlation matrices between the features of each PD dataset on a random 5,000-row sample with constant columns removed, colour scale from -1 to 1, datasets ordered by mean absolute correlation, which is given under each panel."
-  },
-  {
-    "index": 10,
-    "stem": "10_leakage_screen",
+    "stem": "07_leakage_screen",
     "name": "leakage_screen",
-    "caption": "Largest absolute Pearson correlation between a single feature and the target per dataset, all 21 evaluation datasets, as horizontal bars labelled with that feature and coloured by task; the dashed line marks the 0.9 flag threshold."
+    "caption": "Largest absolute single-feature Pearson correlation with the target per processed source table, labelled with its source column; the dashed line marks 0.9, and this screen is separate from the prediction-time feature policy."
   }
 ]

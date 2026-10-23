@@ -7,18 +7,17 @@ the ways that matter, and not merely in the ways that are easy to hit?
 
 The measurements here are the ones that drove the design:
 
-* **boundary mass** — the share of LGD targets sitting exactly at 0 or 1. This is
-  the single feature the original prior does not produce, and the reason the
-  project exists.
+* **boundary mass** — the share of LGD targets near economic 0 or 1. The generic
+  prior can also produce atoms; economic support and exposure differ.
 * **base rate** — source-defined positive-label rates in the binary credit benchmarks.
   Their orientation and maturity are not uniformly verified as default events.
 * **shape and type mix** — rows, columns, and how many columns are categorical.
-  These set the ranges the prior samples over; if the prior generated 500-column
-  tables and every real dataset has 20, the extra capacity is wasted.
+  These describe the inference regime relative to the synthetic training sizes;
+  they are not evaluation caps or evidence of transfer by themselves.
 
 Everything reads from the processed parquet cache via `src.data.pipeline`, so the
-notebook sees exactly the tables the evaluation sees — not a separate re-read of
-the raw CSVs that might disagree.
+  notebook sees the processed source view. The prediction-time feature policy is
+  audited separately below; exploration alone does not certify feature timing.
 """
 
 from __future__ import annotations
@@ -34,6 +33,30 @@ from src.data.dataset_registry import datasets_for_task
 from src.data.pipeline import ensure_processed, load_processed
 from src.utils.target_stats import target_stats
 from src.visualize import style
+
+
+def feature_policy_inventory(by_task: dict[str, dict]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Mechanical policy counts and named exclusions; observation timing stays unknown."""
+    import json
+    from src.eval.feature_policy import prediction_features
+
+    counts, details = [], []
+    for task, datasets in by_task.items():
+        for slug, dataset in datasets.items():
+            names = dataset.feature_names
+            empty = np.empty((0, len(names)))
+            retained, _, report = prediction_features(task, slug, empty, dataset.cat_indices, names)
+            counts.append({"dataset": slug, "task": task, "retained": retained.shape[1],
+                           "excluded": report["n_features_excluded"],
+                           "prediction_time": "application" if task == "pd" else "default onset",
+                           "grouped_split": getattr(dataset, "groups", None) is not None,
+                           "timing_status": "not independently certified"})
+            excluded = json.loads(report["excluded_features"])
+            for name in excluded:
+                details.append({"dataset": slug, "source_column": name, "decision": "excluded",
+                                "basis": "existing outcome/construction/identifier policy",
+                                "observation_time": "not independently verified here"})
+    return pd.DataFrame(counts), pd.DataFrame(details)
 
 
 def load_all(task: str, *, verbose: bool = True) -> dict[str, Any]:
@@ -99,14 +122,11 @@ def summary_table(datasets: dict[str, Any], task: str) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 
-def plot_lgd_targets(datasets: dict[str, Any], ncols: int = 4):
+def plot_lgd_targets(datasets: dict[str, Any], ncols: int = 3):
     """One target histogram per LGD dataset: the share of rows per bin, on labelled axes.
 
-    Each panel's title is the dataset and its share of rows at exactly 0 or 1, on ONE line. An
-    earlier version put that share on a second title line, which wrapped, collided with the panel
-    above and collapsed the grid ("axes sizes collapsed to zero"); the version after it dropped the
-    share and every axis, which left panels that could not say how tall an atom was — the one thing
-    the figure is for.
+    Three columns reserve room for readable names and an explicit second line
+    reporting mass within 1e-4 of 0/1. Each panel retains its own percentage scale.
     """
     style.apply()
     items = sorted(datasets.items(), key=lambda kv: -kv[1].n_rows)
@@ -118,7 +138,7 @@ def plot_lgd_targets(datasets: dict[str, Any], ncols: int = 4):
     )
     flat = axes.ravel()
 
-    small = mpl.rcParams["xtick.labelsize"] * 0.9
+    small = style.PANEL_TEXT
     for ax, (slug, ds) in zip(flat, items):
         y = np.asarray(ds.y, dtype=float)
         st = target_stats(y)
@@ -131,9 +151,10 @@ def plot_lgd_targets(datasets: dict[str, Any], ncols: int = 4):
         for edge, frac in ((y.min(), st["frac_at_min"]), (y.max(), st["frac_at_max"])):
             if frac > 0.01:
                 ax.axvline(edge, color=style.WARN, lw=0.9, ls="--", alpha=0.85)
-        # The NAME and its boundary share, on ONE line: a wrapped two-line title is what once
-        # collapsed this grid, and the share is the number each panel exists to show.
-        ax.set_title(f"{slug.split('.', 1)[-1]} · {st['frac_at_min'] + st['frac_at_max']:.0%} at 0 or 1",
+        # Explicit line break; the three-column layout reserves its height.
+        mass = float(np.mean((np.abs(y) <= 1e-4) | (np.abs(y-1) <= 1e-4)))
+        name = slug.split('.', 1)[-1].removeprefix("lgd_")
+        ax.set_title(f"{name}\n{mass:.0%} near 0 or 1",
                      fontsize=small, loc="left", pad=3)
         ax.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(1.0, decimals=0))
         ax.yaxis.set_major_locator(mpl.ticker.MaxNLocator(3))
@@ -164,8 +185,9 @@ def plot_boundary_mass_ranking(datasets: dict[str, Any]):
     style.apply()
     rows = []
     for slug, ds in datasets.items():
-        st = target_stats(np.asarray(ds.y, dtype=float))
-        rows.append((slug.split(".", 1)[-1], st["frac_at_min"], st["frac_at_max"]))
+        y = np.asarray(ds.y, dtype=float)
+        rows.append((slug.split(".", 1)[-1], float(np.mean(np.abs(y) <= 1e-4)),
+                     float(np.mean(np.abs(y-1) <= 1e-4))))
     rows.sort(key=lambda r: r[1] + r[2])
     names = [r[0] for r in rows]
     at0 = np.array([r[1] for r in rows])
@@ -175,8 +197,8 @@ def plot_boundary_mass_ranking(datasets: dict[str, Any]):
     ypos = np.arange(len(rows))
     # The palette's two atom colours — full recovery and total loss mean the same in every
     # figure; they were CREDIT blue and REAL orange here, which mean something else entirely.
-    ax.barh(ypos, at0, color=style.ATOM_LO, label="at exactly 0 (full recovery)")
-    ax.barh(ypos, at1, left=at0, color=style.ATOM_HI, label="at exactly 1 (total loss)")
+    ax.barh(ypos, at0, color=style.ATOM_LO, label="near 0 (full recovery)")
+    ax.barh(ypos, at1, left=at0, color=style.ATOM_HI, label="near 1 (total loss)")
     for i, (a, b) in enumerate(zip(at0, at1)):
         if a + b > 0.005:
             ax.text(a + b + 0.01, i, f"{a + b:.1%}", va="center", fontsize=8, color=style.MUTED)
@@ -196,7 +218,7 @@ def plot_boundary_mass_ranking(datasets: dict[str, Any]):
 
 
 def plot_pd_base_rates(datasets: dict[str, Any]):
-    """Positive-label frequency on its full probability scale.
+    """Source-defined positive-label frequency.
 
     This is a property of the source-defined target, not certification that
     label 1 consistently denotes a mature default in every benchmark.
@@ -223,7 +245,7 @@ def plot_pd_base_rates(datasets: dict[str, Any]):
     ax.set_yticks(ypos, names)
     # Source-defined labels are not uniformly oriented as default=1. In
     # particular the retained hackerearth positive rate exceeds 45%.
-    ax.set_xlim(0, 1)
+    ax.set_xlim(0, min(1., max(.5, float(rates.max())*1.15)) if rates.size else 1.)
     ax.set_xlabel("source positive-label rate (share of rows labelled 1)")
     ax.xaxis.set_major_formatter(mpl.ticker.PercentFormatter(1.0, decimals=0))
     ax.grid(axis="x")
@@ -240,8 +262,7 @@ def plot_pd_base_rates(datasets: dict[str, Any]):
 def plot_shapes(datasets_by_task: dict[str, dict[str, Any]]):
     """Rows against columns, per dataset. Sets the prior's shape ranges.
 
-    Both axes are log: dataset sizes here span 1,000 to over a million rows, and on
-    a linear axis every small dataset would sit on top of the origin.
+    Both axes are log: source-table sizes span several orders of magnitude.
     """
     style.apply()
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.62))
@@ -261,13 +282,13 @@ def plot_shapes(datasets_by_task: dict[str, dict[str, Any]]):
     ax.grid(axis="x")
     # The prior's own table: 1,024 rows and up to 100 features (config/Exp1_*.yaml).
     ax.axvline(1024, color=style.MUTED, lw=0.8, ls=":", zorder=1,
-               label="the prior's table: 1,024 rows, at most 100 features")
+               label="synthetic training: 1,024 rows × ≤100 features")
     ax.axhline(100, color=style.MUTED, lw=0.8, ls=":", zorder=1)
     ax.margins(x=0.12, y=0.15)
     style.legend_below(ax, ncol=3)
     # Last: the labels need the final limits. Placed so that no two names collide — at one fixed
     # offset `lgd_lendingclub` sat on `hmeq` and `lgd_freddie` under a marker.
-    style.place_labels(ax, xs_all, ys_all, names, fontsize=6.5)
+    style.place_labels(ax, xs_all, ys_all, names, fontsize=style.PANEL_TEXT)
     return fig
 
 

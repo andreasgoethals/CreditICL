@@ -102,11 +102,12 @@ def test_benchmarks_checkpoints_and_pools_go_to_project_storage():
         importlib.reload(p)
 
 
-def test_captions_and_summary_are_committed_but_pdfs_are_not():
+def test_official_notebook_pdfs_are_committed_and_other_artifacts_stay_ignored():
     """A `figures/` rule without a leading slash previously matched `output/figures/` too
     and ignored everything under it."""
     gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
     assert "output CreditICL/**/*.pdf" in gitignore
+    assert "!output CreditICL/figures/**/*.pdf" in gitignore
     for anchored in ("/figures/", "/results/", "/logs/", "/res/"):
         assert anchored in gitignore, (
             f"{anchored} must be anchored with a leading slash, or it also matches "

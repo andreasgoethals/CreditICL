@@ -573,11 +573,11 @@ def sweep_map(track: str, exp: str = "exp1", metric: str | None = None):
         handles.append(Patch(facecolor=style.GRID, label="no development score logged"))
     if "partial" in states:
         handles.append(Patch(facecolor="white", hatch="////", edgecolor=style.WARN,
-                             label="still training (share of steps done)"))
+                             label="partial local trace (% of updates recorded)"))
     if "todo" in states:
         handles.append(Patch(facecolor="white", hatch=None if nothing_yet else "...",
                              edgecolor=style.GRID if nothing_yet else style.MUTED,
-                             label="scheduled, not started"))
+                             label="no local output (queue state unknown)"))
     if handles:
         style.legend_below(ax, handles, ncol=len(handles))
     return fig

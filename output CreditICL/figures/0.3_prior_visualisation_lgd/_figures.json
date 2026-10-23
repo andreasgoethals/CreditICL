@@ -1,56 +1,38 @@
 [
   {
     "index": 1,
-    "stem": "01_target_shapes_by_variant",
-    "name": "target_shapes_by_variant",
-    "caption": "Histograms of the target of five single generated tasks per prior, share of rows per bin, 25 bins; the original prior's target on its own standardised scale with its minimum and maximum as ticks, the credit prior's on [0, 1]; columns show the same draw index."
+    "stem": "01_target_shapes",
+    "name": "target_shapes",
+    "caption": "Target histograms for three unfiltered tasks per generator, 25 bins per panel; generic targets use their own scales and raw credit losses use [0,1], with share of rows on the vertical axes."
   },
   {
     "index": 2,
-    "stem": "02_boundary_mass_sources",
-    "name": "boundary_mass_sources",
-    "caption": "Share of rows at the target minimum against share at the maximum, one point per generated task and one panel per prior, stars for the seven real LGD datasets and the dotted diagonal for equal mass at both ends."
+    "stem": "02_raw_credit_loss_masses",
+    "name": "raw_credit_loss_masses",
+    "caption": "Raw loss mass at 0 against mass at 1 for 500 unfiltered credit tasks, with one star per real LGD benchmark and percentage axes; both endpoints use tolerance 1e-4, and generic-scale targets are excluded."
   },
   {
     "index": 3,
-    "stem": "03_prior_realism_ranking",
-    "name": "prior_realism_ranking",
-    "caption": "Total-variation distance between each prior's pooled target distribution and each real LGD dataset's over 40 fixed bins on [0, 1], one dot per real dataset and a diamond at the mean; standardized control targets are omitted because they have no loss-fraction scale."
+    "stem": "03_standardised_endpoint_ties",
+    "name": "standardised_endpoint_ties",
+    "caption": "Lower- against upper-endpoint tie frequency in 500 tasks per generator after the same context-fitted affine target transformation; ties use tolerance 1e-4 in standardized units, without economic 0/1 interpretation."
   },
   {
     "index": 4,
-    "stem": "04_boundary_atoms",
-    "name": "boundary_atoms",
-    "caption": "Histogram of the LGD target pooled over 50 generated tasks of the original prior and of the credit prior, and over the seven real LGD datasets with equal weight per dataset, share of rows per bin; each panel states the mean share of rows at the boundaries."
+    "stem": "04_zoib_response",
+    "name": "zoib_response",
+    "caption": "ZOIB endpoint probabilities and interior loss mean against a shared controlled recovery driver, for macro values -1, 0 and +1; one parameter draw uses seed 0 from the production sampler, with the three component drivers held equal."
   },
   {
     "index": 5,
-    "stem": "05_shift_kinds",
-    "name": "shift_kinds",
-    "caption": "Context against query mean per generated task, one panel per shift kind (cohort, covariate, prior probability), 60 tasks with the shift switched on and 60 without; mean LGD for the target shifts, the shifted feature in standard deviations for the covariate shift, and the dashed line where query equals context."
+    "stem": "05_unfiltered_difficulty",
+    "name": "unfiltered_difficulty",
+    "caption": "ExtraTrees out-of-bag pseudo-R\u00b2 for 120 unfiltered tasks per generator and real LGD benchmarks averaged over three 1,024-row subsamples, with medians and hypothetical statistical-filter decisions."
   },
   {
     "index": 6,
-    "stem": "06_informative_missingness",
-    "name": "informative_missingness",
-    "caption": "Share of values missing by covariate-score sextile on a controlled table of 4,000 rows, with covariate-independent and covariate-dependent missingness. Both use a shared borrower-level mask draw; realised outcomes are not inputs."
-  },
-  {
-    "index": 7,
-    "stem": "07_predictability",
-    "name": "predictability",
-    "caption": "ExtraTrees out-of-bag pseudo-R\u00b2 per task for 120 unfiltered tasks of each prior and per real LGD dataset (mean over three 1,024-row samples), with each row's median; the shaded band marks the range kept by the banded filter and hollow points the tasks rejected by the tabicl filter at p of 0.05 or more."
-  },
-  {
-    "index": 8,
-    "stem": "08_side_by_side_tables",
-    "name": "side_by_side_tables",
-    "caption": "Twelve random rows of one generated credit-prior task and of one real LGD dataset as heatmaps, the seven most varied columns plus the target separated by a vertical rule, each column min-max scaled to its own range."
-  },
-  {
-    "index": 9,
-    "stem": "09_spectrum_by_variant",
-    "name": "spectrum_by_variant",
-    "caption": "Eigenvalue spectra of the feature correlation matrix, each normalised by its largest eigenvalue and plotted against eigenvalue rank over the number of varying columns, faint lines for 40 generated tasks per prior and for every real LGD dataset, bold lines the medians over all tasks of a prior and over the real datasets."
+    "stem": "06_raw_credit_real_distance",
+    "name": "raw_credit_real_distance",
+    "caption": "Marginal histogram distance from pooled raw credit-prior targets to each real LGD target distribution on common [0,1] bins, as sorted bars; this panel contains no generic-prior efficacy comparison."
   }
 ]

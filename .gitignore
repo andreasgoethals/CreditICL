@@ -123,10 +123,12 @@ desktop.ini
 #
 # Committed:  README.md (what lives where), CAPTIONS.md, All_Results.md and each notebook's
 #             _figures.json â€” the readable record of a run, worth having in git history.
-# Ignored:    PDF figures (regenerated), job logs, run folders, benchmark scores (downloaded
+# Committed:  official notebook PDF figures, as requested for manuscript reuse.
+# Ignored:    other PDF artifacts, job logs, run folders, benchmark scores (downloaded
 #             from the cluster), checkpoints, prior pools, and any large array.
 # ---------------------------------------------------------------------------
 output CreditICL/**/*.pdf
+!output CreditICL/figures/**/*.pdf
 output CreditICL/*/logs/
 output CreditICL/*/runs/
 output CreditICL/*/benchmark/

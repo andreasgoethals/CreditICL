@@ -82,6 +82,37 @@ def _base_rate(t: Any) -> float:
 # ---------------------------------------------------------------------------
 
 
+def zoib_response(config_path: str, seed: int = 0):
+    """Controlled response of the active ZOIB equations, not a fitted credit model.
+
+    All three component drivers are set to the same displayed value. Actual
+    generated tasks allow different drivers, noise and unobserved macro factors.
+    Parameters are sampled by the production parameter sampler without mutation.
+    """
+    from src.prior.targets.lgd import sample_zoib_params
+
+    cfg = expand_with_seeds(load(config_path))[0]["prior"]["credit"]["target"]
+    params = sample_zoib_params(PriorRNG(seed), cfg.get("zoib", {}))
+    driver = np.linspace(-3, 3, 201)
+    style.apply()
+    fig, axes = plt.subplots(1, 3, figsize=style.figsize(style.WIDTH_FULL, .47), sharey=True)
+    for macro, (color, linestyle) in zip((-1., 0., 1.), style.LEVEL_STYLES):
+        eta0 = params["a0"]+params["a_s"]*driver+params["a_m"]*macro
+        eta1 = params["b0"]-params["b_s"]*driver+params["b_m"]*macro
+        logits = np.column_stack([np.zeros_like(driver), eta0, eta1])
+        probs = np.exp(logits-logits.max(axis=1, keepdims=True))
+        probs /= probs.sum(axis=1, keepdims=True)
+        mu = 1/(1+np.exp(-(params["g0"]-params["g_s"]*driver+params["g_m"]*macro)))
+        for ax, values in zip(axes, (probs[:, 1], probs[:, 2], mu)):
+            ax.plot(driver, values, color=color, linestyle=linestyle, label=f"macro {macro:+g}")
+    for ax, title in zip(axes, ("P(loss = 0)", "P(loss = 1)", "Interior loss mean")):
+        ax.set(xlabel="Shared recovery driver", title=title, ylim=(0, 1))
+        ax.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(1))
+    axes[0].set_ylabel("Probability / mean loss fraction")
+    style.legend_below(fig, ncol=3)
+    return fig
+
+
 def boundary_atoms(config_path: str, n: int = 100, seed: int = 0, real: dict | None = None):
     """LGD: the target pooled over `n` tasks of the original prior and of our prior as configured,
     beside the real LGD datasets pooled with equal weight per dataset.
@@ -189,7 +220,11 @@ def correlated_defaults(config_path: str, n: int = 200, seed: int = 0):
         "credit.target.mechanism.woe_prob": 0.0,
         "credit.target.flip_pos_to_neg_range": [0.0, 0.0],
         "credit.target.flip_neg_to_pos": 0.0,
+        "credit.target.flip_neg_to_pos_range": [0.0, 0.0],
         "credit.target.selection.selection_drop": 0.0,
+        "credit.target.selection.selection_drop_range": [0.0, 0.0],
+        "credit.target.rules.n_rules_range": [0, 0],
+        "credit.shift.shift_prob": 0.0,
     }
     indep = _generate(task, prior, n, seed, {**fixed, "credit.target.mechanism.rho_range": [0.0, 0.0]})
     configured = _generate(task, prior, n, seed, {**fixed, "credit.target.mechanism.rho_range": [rho_lo, rho_hi]})
@@ -221,7 +256,7 @@ def correlated_defaults(config_path: str, n: int = 200, seed: int = 0):
     literature.line(ax2, "basel_corp", label="Basel IRB corporate cap 0.24", inline=False)
     ax2.set_xlabel("asset correlation ρ")
     ax2.set_ylabel("SD of the realised default rate")
-    ax2.set_ylim(bottom=0)
+    ax2.set_ylim(0, max(sds)*1.15)
     ax2.set_title("Spread of the realised rate against ρ", loc="left", fontsize=9)
     style.legend_below(fig, ncol=2)
     return fig
@@ -525,15 +560,17 @@ def plot_predictability(scores: pd.DataFrame, config_path: str):
     (bootstrap p ≥ 0.05); the black tick is each row's median. `off` keeps every point.
     """
     lo, hi = _band(config_path)
+    mode = expand_with_seeds(load(config_path))[0]["prior"]["filter"]["mode"]
     style.apply()
     order = [s for s in ("original prior", "credit prior", "real") if (scores["source"] == s).any()]
     fig, ax = plt.subplots(figsize=style.row_figsize(len(order), per_row=0.42, base=1.25))
-    ax.axvspan(lo, hi, color=style.CREDIT_MILD, alpha=0.22, zorder=0,
-               label=f"kept by 'banded': pseudo-R² in [{lo:g}, {hi:g}]")
+    if mode == "banded":
+        ax.axvspan(lo, hi, color=style.CREDIT_MILD, alpha=0.22, zorder=0,
+                   label=f"configured band: [{lo:g}, {hi:g}]")
     jitter = np.random.default_rng(0)
     for i, source in enumerate(order):
         part = scores[scores["source"] == source]
-        x = np.clip(part["pseudo_r2"].to_numpy(), -0.1, 1.0)
+        x = part["pseudo_r2"].to_numpy()
         yy = i + (jitter.random(len(x)) - 0.5) * 0.36
         if source == "real":
             ax.scatter(x, yy, marker="*", s=70, color=style.STAR, zorder=4,
@@ -551,7 +588,8 @@ def plot_predictability(scores: pd.DataFrame, config_path: str):
     ax.set_yticks(range(len(order)))
     ax.set_yticklabels(["real datasets" if s == "real" else s for s in order])
     ax.set_ylim(len(order) - 0.5, -0.5)
-    ax.set_xlim(-0.1, 1.0)
+    finite_scores = scores.pseudo_r2[np.isfinite(scores.pseudo_r2)]
+    ax.set_xlim(min(-.1, float(finite_scores.min())-.04), max(1., float(finite_scores.max())+.04))
     ax.set_xlabel("ExtraTrees out-of-bag pseudo-R² (the filter's measure; 0 = no signal)")
     ax.grid(axis="x")
     ax.grid(axis="y", visible=False)

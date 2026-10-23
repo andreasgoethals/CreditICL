@@ -1,50 +1,50 @@
 [
   {
     "index": 1,
-    "stem": "01_base_rate_by_variant",
-    "name": "base_rate_by_variant",
-    "caption": "Distribution of the default rate per generated task for the original and the credit prior, 500 tasks each, as step histograms over 40 bins; the strip below marks the 14 real PD datasets and the dashed line the 10% threshold of Tanna 2026; the axis ends at a balanced 50%."
+    "stem": "01_binary_minority_exposure",
+    "name": "binary_minority_exposure",
+    "caption": "Minority-class frequencies in 500 fresh unfiltered binary tasks per generator as step histograms; the separate strip marks the minority share min(p,1-p) of each real binary benchmark."
   },
   {
     "index": 2,
-    "stem": "02_default_clustering",
-    "name": "default_clustering",
-    "caption": "Left: between-block standard deviation of the positive-label rate divided by its binomial standard error under independence, one violin per prior and stars for the real datasets, the dashed line at the binomial reference value of 1. Right: positive-label rate per contiguous row block, for one task of each prior and two real datasets."
+    "stem": "02_accepted_class_exposure",
+    "name": "accepted_class_exposure",
+    "caption": "Observed class-count shares among 48 accepted tasks per mixture and cumulative binary minority-share distributions from the same accepted stream, seed 1729; legends give total and binary task counts."
   },
   {
     "index": 3,
-    "stem": "03_correlated_defaults",
-    "name": "correlated_defaults",
-    "caption": "Left: histogram of the realised default rate over 80 generated tasks with the target rate fixed at 15%, with independent defaults and with the configured asset correlation, underwriting screen and scorecard binning switched off, standard deviations in the legend. Right: standard deviation of the realised rate against the asset correlation rho at five values, with the Basel IRB corporate cap of 0.24 dashed."
+    "stem": "03_candidate_acceptance_difficulty",
+    "name": "candidate_acceptance_difficulty",
+    "caption": "Accepted/all candidate counts per source and mixture on the left, and cumulative ExtraTrees out-of-bag pseudo-R\u00b2 for valid candidates versus accepted tables on the right, pooled across the mixtures in the same production-route diagnostic draw; legends give valid-candidate and accepted counts."
   },
   {
     "index": 4,
-    "stem": "04_shift_kinds",
-    "name": "shift_kinds",
-    "caption": "Context against query mean per generated task, one panel per shift kind (cohort, covariate, prior probability, selection), 60 tasks with the shift switched on and 60 without; default rates for the target shifts, the shifted feature in standard deviations for the covariate shift, and the dashed line where query equals context."
+    "stem": "04_accepted_feature_exposure",
+    "name": "accepted_feature_exposure",
+    "caption": "Cumulative distributions of non-padding feature count and the share of features with at most 20 distinct values among 48 accepted tasks per mixture; the latter is a type proxy rather than a categorical schema."
   },
   {
     "index": 5,
-    "stem": "05_informative_missingness",
-    "name": "informative_missingness",
-    "caption": "Share of values missing by covariate-score sextile on a controlled table of 4,000 rows, with covariate-independent and covariate-dependent missingness. Both use a shared borrower-level mask draw; realised outcomes are not inputs."
+    "stem": "05_correlated_defaults",
+    "name": "correlated_defaults",
+    "caption": "Realised positive-label rates in 80 controlled tasks at a fixed 15% applicant target rate, with independent and correlated risk; selection, threshold rules, label noise, shifts and scorecard binning are disabled; 400 rows per task and the configured cohort recipe are used, and the second panel varies asset correlation."
   },
   {
     "index": 6,
-    "stem": "06_predictability",
-    "name": "predictability",
-    "caption": "ExtraTrees out-of-bag pseudo-R\u00b2 per task for 120 unfiltered tasks of each prior and per real PD dataset (mean over three 1,024-row samples), with each row's median; the shaded band marks the range kept by the banded filter and hollow points the tasks rejected by the tabicl filter at p of 0.05 or more."
+    "stem": "06_shift_kinds",
+    "name": "shift_kinds",
+    "caption": "Context against query summaries per synthetic task for cohort, covariate, prior-probability and selection shifts, 60 tasks with and 60 without each shift; the dashed line marks equality."
   },
   {
     "index": 7,
-    "stem": "07_side_by_side_tables",
-    "name": "side_by_side_tables",
-    "caption": "Twelve random rows of one generated credit-prior task and of one real PD dataset as heatmaps, the seven most varied columns plus the target separated by a vertical rule, each column min-max scaled to its own range."
+    "stem": "07_covariate_missingness",
+    "name": "covariate_missingness",
+    "caption": "Share of missing values by covariate-score sextile in a controlled 4,000-row table, with independent and covariate-coupled missingness; realised outcomes are not inputs to the shared borrower-level mask."
   },
   {
     "index": 8,
-    "stem": "08_spectrum_by_variant",
-    "name": "spectrum_by_variant",
-    "caption": "Eigenvalue spectra of the feature correlation matrix, each normalised by its largest eigenvalue and plotted against eigenvalue rank over the number of varying columns, faint lines for 40 generated tasks per prior and for every real PD dataset, bold lines the medians over all tasks of a prior and over the real datasets."
+    "stem": "08_unfiltered_difficulty",
+    "name": "unfiltered_difficulty",
+    "caption": "ExtraTrees out-of-bag pseudo-R\u00b2 for 120 unfiltered tasks per generator and real PD benchmarks averaged over three 1,024-row subsamples; marker fill records the hypothetical generic statistical-filter decision."
   }
 ]

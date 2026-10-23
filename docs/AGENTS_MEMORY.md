@@ -1,5 +1,23 @@
 # Agents' memory — runs and dead ends
 
+## 23-10-2026 — notebook presentation refresh
+
+Twelve notebooks now follow the manuscript questions, with fresh seeded prior diagnostics,
+native accepted-stream auditing, strict current-protocol final panels and a gated Exp3 chapter.
+Training/evaluation/prior implementations and approved experiment grids are unchanged. The
+active VSC checkout must remain at its validated source during the campaign: notebook/plot/test
+edits change the full validation fingerprint, even though they do not change training weights.
+The earlier 21/48 cluster snapshot below remains historical evidence. Its Downloads ZIP was no
+longer present during notebook regeneration, and no local run/benchmark CSVs were available;
+local availability notices must not be read as a new scheduler or training-failure report.
+
+Local verification: **1,664 tests passed / 28 VSC-only skips**, 1,203.83s; all 12 notebooks
+executed successfully. All 30 saved PDFs (21 diagnostics and nine availability notices) were
+rendered and visually inspected, together with 35 artificial future-result layouts outside the
+repository. Captions, inline figures, verbatim summaries and embedded fonts were checked.
+Read-only library pins: TFM `702d9ab0b66f6639ba8d443ff9c4a91231964465`;
+VSC `3bcdf55e576d10161d6189b40ac39380bbba9eca`. No production run was launched or changed.
+
 ## 20-10-2026
 
 - Added the independent read-only VSC Library submodule and daily pin-update proposals; shared HPC guidance moved out of TFM Library, with project instructions retained in docs/VSC.md. No cluster workload was submitted.
@@ -35,7 +53,36 @@ with no other context, and expect that to be the *only* record of the run — so
 
 ## Runs
 
-Latest upload (21-10-2026, 11:12): CPU 62378918 PASS for f07e71e: 13 stages, 1,590 tests passed,
+Latest upload (23-10-2026, 09:12 ZIP; 09:14 live queue): **Exp1 21/48 complete, 13 running,
+13 normally pending, one held before training output**. Main PD 8/9 and LGD 8/9 complete;
+component tests PD 0/15 and LGD 5/15 complete. All 34 started recipes match the approved grids;
+all completed arms reach 12,500 updates / 800,000 synthetic tasks. Recorded updates total
+365,600/600,000 (~60.9%). No training exception, failed footer, OOM, nonfinite loss or progress
+metric found; sampled GPU means ~85% PD / 88% LGD. Frozen source remains 20f0e981, and the
+same Exp0 PASS receipts remain intact. Benchmarking has not started; project-tier binaries absent.
+**Held task 11728997_6** is LGD control seed 2, reason `launch failed requeued held`, elapsed 0.
+Recommend one `scontrol --clusters=mindwell release 11728997_6`, then check its queue state;
+this was advised, not executed or confirmed by this audit. If denied/held again, inspect its
+`scontrol show job` record and seek VSC assistance. Leave all other jobs running; do not resubmit
+whole arrays or change validated source. Normal pending reasons are Priority and the %8 array cap.
+Measured finished training ~6.5h LGD / ~7h PD. Remaining walltime depends on pending allocations
+and held-task recovery. Archive SHA-256 6713c528f221cf2f7dcd96693b56d1438f83ea4e175d2d33f3628ebeeb4e64dc.
+
+Previous upload (22-10-2026, 09:11): **Exp0 CPU 62382230 and GPU 11724030 both PASS** for frozen
+source `20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5`, commit a073d7d.
+CPU: 13/13 stages, 1,617 tests passed / one expected missing-sibling skip, 11 notebooks and 125 PDFs.
+GPU: 66/66 stages, 28/28 CUDA tests, six 600-step stop/resume routes and all selected full-table
+five-fold capacity benchmarks. CPU receipt hash, source, environment and input inventories match.
+All 128 downloaded receipt-bound files match their hashes. Project-tier files (28 benchmark CSVs,
+14 receipts and six checkpoints) are absent from this DATA-tier ZIP; the supplied VSC verifier
+checked them in place and reports 72 items / zero FAIL. Download both tiers for independent CSV review.
+LGD steps 217 and 511 replayed successfully in float32; zero skipped TabPFN tasks. No fatal errors;
+multiclass rounding, upstream power-transform and utilization warnings remain disclosed in RUNS.md.
+The ZIP retains one older CPU attempt (33 files, 500,191 bytes plus its job log), no failed GPU attempt.
+**Proceed to Exp1 on this source; no Exp0 rerun or output reset is required.** No source/package edits,
+training, installations, submissions or pushes were performed during this audit.
+
+Previous upload (21-10-2026, 11:12): CPU 62378918 PASS for f07e71e: 13 stages, 1,590 tests passed,
 2 expected skips, 28 CUDA cases deselected, 11 notebooks and 125 PDFs. All 23 hashes verified.
 ZIP has one CPU attempt and no GPU/old campaign clutter. Subsequent independently confirmed audit
 fixes change source and feature policy (protocol 9): publish/sync, then CPU once more before GPU.
@@ -73,6 +120,12 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 
 | Date | Run | Outcome | Notes |
 |---|---|---|---|
+| 23-10-2026 | Exp1 main LGD 11728997, Mindwell B200; started 22-10 | **8/9 complete, one held launch failure, no running task at 09:14** | All eight summaries 12,500 steps / 800,000 tasks; array 6 is control seed 2, no run output and elapsed 0, Slurm `launch failed requeued held`. Single-task release advised, outcome pending |
+| 23-10-2026 | Exp1 main PD 11728998, Mindwell B200; started 22-10 | **8/9 complete, array 8 running at step 9,600/12,500 in snapshot** | Training configurations match; finite losses/monitoring and positive weight drift. ~1.6h estimated remaining for active task from 09:12, not a scheduler guarantee |
+| 23-10-2026 | Exp1 LGD component tests 11728999, Mindwell B200; started 22-10 | **5/15 complete, eight running, two pending (%8 cap)** | Active updates 5,000–10,200; finished-arm training median ~6.5h. No training failures in uploaded evidence |
+| 23-10-2026 | Exp1 PD component tests 11729000, Mindwell B200; started 23-10 | **0/15 complete, four running, eleven pending (Priority)** | Active updates 1,900–8,100; finite losses/monitoring. All 48 expected tasks accounted for by ZIP plus live queue |
+| 22-10-2026 | Exp0 GPU 11724030, Mindwell B200/r11g12, a073d7d; started 21-10 | **PASS: 66/66 stages, 28/28 CUDA tests, all six stop/resume arms reach 600; 17h38m40s banner-to-footer** | Source 20f0e981, bound to CPU 62382230; all downloaded hashes match, 48 project-tier artifacts omitted from ZIP but verified in place by VSC (72 items / zero FAIL). LGD float32 replays at steps 217 and 511 succeeded; zero skipped tasks. Exp1 may proceed without source changes |
+| 21-10-2026 | Exp0 CPU 62382230, wICE batch/m33c25n4, a073d7d; audited 22-10 | **PASS: 13/13 stages, 1,617 passed / one expected skip, 11/11 notebooks, 125 PDFs; 21m04s banner-to-footer** | Source 20f0e981; 23/23 artifact hashes verified, exact CPU receipt consumed by GPU 11724030. Input inventories and package fingerprint identical between phases |
 | 21-10-2026 | Exp0 CPU 62378918, wICE batch/m33c22n1, `576caea` | **PASS: 13/13 stages, 1,590 passed / 2 expected skips, 11/11 notebooks, 125 PDFs; 22m50s log interval** | Source f07e71e, 23/23 artifact hashes match; one clean CPU attempt in ZIP. Subsequent protocol-9 audit corrections require a fresh CPU receipt before GPU |
 | 20-10-2026 | Exp0 GPU 11715564, Mindwell B200/r11g22, `d31770f`; audited 21-10 | **FAILED 1:0 after 10:39:48; 47 stages PASS, resume-lgd-2 FAIL** | 26/26 CUDA checks and wide equivalence passed; four reference models completed full-row five-fold capacity checks, five 600-step arms completed. TabPFN LGD stopped at step 217 after 16 AMP retries; last recorded checkpoint step 200. Local replay exposes a transformed target 3.39e18; fixed-source CPU/GPU validation required |
 | 19-10-2026 | Exp0 CPU 62371055, wICE batch/m28c20n4, `d31770f`; audited 20-10 | **PASS: 13/13 stages, 1,586 tests PASS/1 SKIP, 11/11 notebooks, 125 figures; 21m09s main-log interval** | Source `4da9e67` and 23/23 artifact hashes verified; all eight new mixed-precision cases pass on CPU, 26 CUDA checks deferred to GPU phase. No production arms started |
@@ -124,6 +177,27 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 [`RUNS.md`](RUNS.md).
 
 ## Dead ends
+
+### 23-10-2026 — validate all declared captions before the slow suite
+
+- **Tried**: run the full local test suite before auditing every caption in data-gated notebook branches.
+- **Result**: 1,661 tests passed, 28 VSC tests skipped; one OOD caption contract failed after 18 minutes. Local CPU work only.
+- **Why**: the binary/multiclass caption omitted its comparator, and did not match the concrete-quantity contract; the branch was not visible with missing benchmark data.
+- **Instead**: name the equally trained 0% comparator explicitly and run all four caption checks over every declared save call before the full suite, including withheld future panels.
+
+### 23-10-2026 — notebook gate and controlled-illustration settings
+
+- **Tried**: read the Exp3 mixture from `load(...)["sweep"]`; retain the correlation illustration's scalar selection-disable setting.
+- **Result**: the first local notebook pass finished 11/12; visual/source review found selection still active in that diagnostic. No cluster run was submitted.
+- **Why**: `load` resolves/removes the sweep block; `selection_drop_range` takes precedence over the scalar. Old plotting prose did not establish the actual controlled settings.
+- **Instead**: read the resolved `prior.credit_fraction`, override the range in the illustration, test observer equivalence/current-protocol gates/layout, and visually inspect rendered PDFs. Production generation and evaluation stay unchanged.
+
+### 23-10-2026 — one production array task held after launch failure
+
+- **Tried**: launch the nine-arm LGD main array 11728997 on Mindwell.
+- **Result**: eight tasks completed; index 6 remains held at elapsed 0 with no training output while other arrays progress.
+- **Why**: Slurm reports `launch failed requeued held`; its underlying node/filesystem/program cause is not established by the supplied queue/accounting records.
+- **Instead**: release only 11728997_6 once and inspect its state; if denied or held again, read its detailed scheduler record and involve VSC support. Do not duplicate whole arrays or change the running validated code. Release outcome not yet supplied.
 
 ### 21-10-2026 — verify the entire corrected suite after draft failures
 

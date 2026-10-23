@@ -8,6 +8,15 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 23-10-2026
+
+- Rebuild the notebook story around native accepted-stream exposure, paired final effects, LGD scale-aware diagnostics and gated budget persistence; version PDFs. Validate 1,664 tests and all 12 notebooks; visually inspect 30 exports and 35 future-result test layouts.
+- Audit Exp1 snapshot: 21/48 complete, 13 running, 13 normally pending and one held launch failure; training/configuration checks pass, targeted Slurm release advised. Executable code unchanged.
+
+## 22-10-2026
+
+- Record frozen-source Exp0 CPU 62382230 and GPU 11724030 PASS; verify downloaded evidence, successful LGD float32 replays and the remaining project-tier download gap. Executable code unchanged.
+
 ## 21-10-2026
 
 - Verify CPU 62378918 PASS; close outcome aliases (protocol 9), paired macro RNG, plotting/reporting and validation error-propagation gaps, preserving the approved experiment grids and benchmark inventory.

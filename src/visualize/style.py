@@ -220,6 +220,16 @@ INK = "#1e293b"
 MUTED = "#64748b"
 GRID = "#e2e8f0"
 
+# Shared annotation sizes for the compact paper panels and evidence notices.
+PANEL_TEXT = 8
+NOTE_TITLE = 11
+LIGHT_INK = "#ffffff"
+EFFECT_LINE = 2
+EFFECT_POINT = 28
+SEED_POINT = 16
+FRONTIER_MARKER = 5
+SEED_MARKERS = ("o", "s", "^")
+
 #: Named colormaps, both colour-blind-safe and monotone in lightness so they survive a greyscale
 #: photocopy — `CMAP_SEQ` for one-directional intensity (a correlation magnitude, a density),
 #: `CMAP_DIV` for a signed quantity around a meaningful zero (an effect, a difference from control).
@@ -639,13 +649,13 @@ def legend_below(target: Any, handles: list[Any] | None = None, *, ncol: int | N
 
 
 def place_labels(ax: Any, xs: Any, ys: Any, labels: list[str], *, fontsize: float | None = None,
-                 color: str = MUTED, pad_points: float = 5.0) -> None:
+                 color: str = MUTED, pad_points: float = 5.0, background: bool = False) -> None:
     """Name every point of a scatter without two names landing on each other.
 
-    Greedy: each label tries eight positions around its point, in order, and takes the first
+    Greedy: each label tries progressively more distant positions and takes the first
     whose box overlaps neither an earlier label nor another point. Twenty-one dataset names placed
     at one fixed offset collided (`lgd_lendingclub` on `hmeq`, `lgd_freddie` under a marker).
-    Needs the axes limits to be final, so call it last.
+    Distant labels receive leader lines. Needs final axes limits, so call it last.
     """
     import numpy as np
     from matplotlib.transforms import Bbox
@@ -657,28 +667,47 @@ def place_labels(ax: Any, xs: Any, ys: Any, labels: list[str], *, fontsize: floa
     pts = ax.transData.transform(np.column_stack([np.asarray(xs, float), np.asarray(ys, float)]))
     point_boxes = [Bbox.from_extents(x - 4, y - 4, x + 4, y + 4) for x, y in pts]
     placed: list[Any] = []
-    offsets = [(1, 0.6), (1, -0.6), (-1, 0.6), (-1, -0.6), (0, 1.3), (0, -1.3), (1.6, 0), (-1.6, 0)]
+    directions = [(1, .6), (1, -.6), (-1, .6), (-1, -.6), (0, 1.3), (0, -1.3), (1.6, 0), (-1.6, 0)]
+    offsets = [(radius*dx, radius*dy) for radius in (1, 2, 3, 4, 6, 8) for dx, dy in directions]
+    bounds = ax.get_window_extent(renderer)
+    box_style = dict(facecolor=LIGHT_INK, alpha=.85, edgecolor="none", pad=1) if background else None
     for (x, y), text in zip(pts, labels):
         best = None
+        fallback = None
         for dx, dy in offsets:
             ha = "left" if dx > 0 else ("right" if dx < 0 else "center")
             va = "bottom" if dy > 0 else ("top" if dy < 0 else "center")
             t = ax.annotate(text, ax.transData.inverted().transform((x, y)),
                             xytext=(dx * pad_points, dy * pad_points), textcoords="offset points",
-                            ha=ha, va=va, fontsize=fontsize, color=color)
+                            ha=ha, va=va, fontsize=fontsize, color=color, bbox=box_style)
             box = t.get_window_extent(renderer).expanded(1.05, 1.1)
-            clash = any(box.overlaps(b) for b in placed) or any(
-                box.overlaps(b) for i, b in enumerate(point_boxes) if not b.contains(x, y))
+            conflicts = sum(box.overlaps(b) for b in placed) + sum(
+                box.overlaps(b) for b in point_boxes if not b.contains(x, y))
+            outside = not (bounds.contains(box.x0, box.y0) and bounds.contains(box.x1, box.y1))
+            score = conflicts + 100*outside
+            if fallback is None or score < fallback[0]:
+                fallback = (score, dx, dy)
+            clash = conflicts or outside
             if not clash:
-                best = (t, box)
+                best = (t, box, dx, dy)
                 break
             t.remove()
-        if best is None:  # nowhere free: keep the first position rather than drop the name
-            dx, dy = offsets[0]
+        if best is None:
+            _, dx, dy = fallback
+            ha = "left" if dx > 0 else ("right" if dx < 0 else "center")
+            va = "bottom" if dy > 0 else ("top" if dy < 0 else "center")
             t = ax.annotate(text, ax.transData.inverted().transform((x, y)),
                             xytext=(dx * pad_points, dy * pad_points), textcoords="offset points",
-                            ha="left", va="bottom", fontsize=fontsize, color=color)
-            best = (t, t.get_window_extent(renderer))
+                            ha=ha, va=va, fontsize=fontsize, color=color, bbox=box_style)
+            best = (t, t.get_window_extent(renderer), dx, dy)
+        if np.hypot(dx, dy)*pad_points > 12:
+            # A distant label needs a leader; testing the text box before adding
+            # its arrow avoids counting the connector as a huge collision box.
+            t.remove()
+            ax.annotate(text, ax.transData.inverted().transform((x, y)),
+                        xytext=(dx*pad_points, dy*pad_points), textcoords="offset points",
+                        ha=ha, va=va, fontsize=fontsize, color=color, bbox=box_style,
+                        arrowprops=dict(arrowstyle="-", color=color, linewidth=.55))
         placed.append(best[1])
 
 

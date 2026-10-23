@@ -373,6 +373,75 @@ def data_summary(
 # ---------------------------------------------------------------------------
 
 
+def data_story_summary(datasets, policy, exclusions, leakage):
+    """Section-ordered source-table inventory, without a feature-timing certificate."""
+    lines = ["A · BENCHMARK TARGETS"]
+    for task, books in datasets.items():
+        lines.append(f"{task.upper()}: {len(books)} datasets; "
+                     f"{sum(ds.n_rows for ds in books.values()):,} total rows.")
+        for slug, ds in books.items():
+            y = np.asarray(ds.y)
+            measure = (f"source positive-label rate {np.mean(y):.2%}" if task == "pd" else
+                       f"mass at 0 {np.mean(np.abs(y) <= 1e-4):.2%}; "
+                       f"mass at 1 {np.mean(np.abs(y-1) <= 1e-4):.2%}")
+            lines.append(f"  {slug}: {measure}.")
+    lines += ["\nB · TABLE SIZE AND OBSERVATION", policy.to_string(index=False),
+              "Counts precede fold-fitted encoding; full-table benchmarking imposes no row or feature cap.",
+              "\nC · FEATURE POLICY AND DIAGNOSTIC SCREEN",
+              f"Named policy exclusions: {len(exclusions)} source columns across the benchmark.",
+              "Application-time PD and default-onset LGD are the declared prediction times.",
+              "Retained anonymised/ambiguous fields are not independently timing-certified.",
+              "Dataset semantics are benchmark metadata; a correlation screen cannot certify deployment validity."]
+    if not leakage.empty:
+        top = leakage.sort_values("|corr with target|", ascending=False).drop_duplicates("dataset").head(5)
+        lines.append(top[["dataset", "feature", "|corr with target|"]].to_string(index=False))
+    return "\n".join(lines)
+
+
+def prior_story_summary(loaded, task, *, source, scores, exposure_frame=None):
+    """The notebook's illustrative, accepted-stream and mechanism views stay distinct."""
+    lines = [f"A · ILLUSTRATIVE PRIOR EXPOSURE — {task.upper()}",
+             f"Source: {source}; seed 0; draws per generator: "
+             + ", ".join(f"{k}={len(v)}" for k, v in loaded.items()),
+             "These are diagnostic generator draws, not recovered production training samples."]
+    for name, tasks in loaded.items():
+        if task == "pd":
+            rates = [minority_share(t.y) for t in tasks]
+            lines.append(f"{name}: binary minority-share median {np.median(rates):.2%}; "
+                         f"share below 10% {np.mean(np.array(rates)<.1):.2%}.")
+        elif name.startswith("credit"):
+            lower = [float(np.mean(np.abs(np.asarray(t.y)) <= 1e-4)) for t in tasks]
+            upper = [float(np.mean(np.abs(np.asarray(t.y)-1) <= 1e-4)) for t in tasks]
+            lines.append(f"{name}: raw economic boundary-mass median "
+                         f"{np.median(np.array(lower)+upper):.2%}; "
+                         f"range {min(np.array(lower)+upper):.2%}–{max(np.array(lower)+upper):.2%}.")
+        else:
+            lines.append(f"{name}: endpoint ties are on a generic target scale; "
+                         "they are not economic mass at loss 0 or 1.")
+    if task == "pd":
+        lines.append("Binary illustration forces two classes; production generic tasks draw 2–10 classes.")
+        lines.append("\nB · ACCEPTED PRODUCTION-ROUTE AUDIT")
+        if exposure_frame is not None:
+            from src.visualize.exposure import summary
+            lines.append(summary(exposure_frame))
+        lines += ["\nC · CONTROLLED MECHANISMS AND DIFFICULTY",
+                  "The applicant outcome is generated before underwriting selection.",
+                  "Missingness uses covariates and a shared borrower draw, never realised outcomes."]
+    else:
+        lines += ["Common standardized view: context-fitted affine transformation; "
+                  "1e-4 tolerance at each table's standardized minimum/maximum.",
+                  "Affine scaling preserves atoms; the raw credit family need not cover every real portfolio.",
+                  "\nB · CONDITIONAL LOSS MECHANISM",
+                  "The active target is zero-and-one-inflated beta (ZOIB); dormant loss modes are not the current treatment.",
+                  "\nC · DIFFICULTY AND MARGINAL COMPARISON",
+                  "Marginal histogram distance compares raw credit draws with real targets only; it is not transfer efficacy."]
+    for name, rows in scores.groupby("source", sort=False):
+        lines.append(f"{name}: n={len(rows)}, median ExtraTrees OOB pseudo-R² {rows.pseudo_r2.median():.3f}.")
+    lines.append("Difficulty scores above use unfiltered draws; accepted-stream diagnostics are separately labelled. "
+                 "The figures are generator diagnostics, not downstream performance.")
+    return "\n".join(lines)
+
+
 def load_real_datasets(task: str, max_rows: int = 20_000) -> dict[str, Any]:
     """The real credit datasets for a task, as loaded objects. `{}` if none are on this machine.
 
@@ -499,8 +568,8 @@ def realism_summary(loaded: dict[str, Any], real: dict[str, Any], task: str) -> 
     winner, best_mean = rows[0][0], rows[0][1]
     lines.append(f"Closest to real data: {winner} (mean {best_mean:.3f}).")
     lines.append(
-        "A CAVEAT THAT MATTERS: looking like real data is not the same as training a better\n"
-        "model. This ranking says which priors are worth the compute; Exp1's training runs are\n"
-        "what decide which one actually helps."
+        "This is a raw credit-versus-real marginal comparison, not a two-prior efficacy ranking.\n"
+        "Marginal resemblance does not establish conditional prediction quality; only the\n"
+        "matched final benchmark measures transfer."
     )
     return "\n".join(lines)

@@ -104,19 +104,13 @@ knowing:
 - **Prior pools:** training can read datasets pre-generated once per variant
   (`prior_cache/<task>__original`, `…__credit_v1`) so a GPU never waits on CPU generation and the two
   sides differ only by design, not by draw. `--prior-source generate` builds live instead.
-- **Notebooks** — eleven, in three numbered chapter folders read as one story
-  ([`notebooks/README.md`](notebooks/README.md)): **`0. General`** (the real data, the PD prior, the
-  LGD prior), **`1. Experiment 1`** (which prior — `1.1`/`1.2` training, `1.3`/`1.4` benchmark) and
-  **`2. Experiment 2`** (fine-tuning — `2.1`/`2.2` training and out-of-domain retention, `2.3`/`2.4`
-  benchmark). Logic lives in `src/visualize/`; every figure is an A4 PDF. Training notebooks average
-  **development datasets only**, over **finished** arms — holdout datasets some old arms happened to
-  monitor are shown but never averaged — and results notebooks select on development, report on the
-  holdout, and show a placeholder until phase 2 has run. Every section is **grounded in the pinned
-  `tfm-library`**: `src/visualize/literature.py` holds the citable values (paper-evaluated /
-  code-supported / *external*), drawn as reference lines where the axis genuinely matches — teal for a
-  library value, amber for external domain knowledge — and printed in each notebook's references block;
-  `literature_plots.py` draws the credit-AUC *landscape* in the PD results notebooks (Tanna 2026 on
-  Home Credit / Lending Club, Hollmann 2023 on Credit-g), as context under each paper's own protocol.
+- **Notebooks** — twelve, in four numbered chapters ([reading order](notebooks/README.md)):
+  benchmark/prior diagnostics; Experiment 1 training and matched-budget effects;
+  Experiment 2 adaptation within each backbone; and a gated Experiment 3 budget-persistence chapter.
+  Logic lives in `src/visualize/`. Every figure is a saved A4 vector PDF with a descriptive caption.
+  Final panels require complete current-protocol benchmark cells; monitoring and local file absence
+  are never presented as final efficacy or live queue state. Mixtures are selected on development;
+  designated-holdout historical exposure is disclosed. Official notebook PDFs are committed.
 
 ## Repository layout
 
@@ -137,7 +131,7 @@ CreditICL/
 │   ├── AGENTS_MEMORY.md         one line per run, four per dead end
 │   ├── CHANGELOG.md             one chapter per date
 │   └── TEMPLATE.md              the layout this project started from
-├── notebooks/         0. General · 1. Experiment 1 · 2. Experiment 2 — one story (see its README)
+├── notebooks/         0. General · Experiments 1–3 — one story (see its README)
 ├── output CreditICL/  everything generated: figures/ reference/ experiment_0..3/  [mostly gitignored]
 ├── scripts/           four main experiment entry points · slurm/ holds the Slurm jobs
 ├── src/               data/ prior/ train/ eval/ models/ visualize/ utils/

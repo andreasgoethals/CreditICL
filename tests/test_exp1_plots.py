@@ -207,7 +207,7 @@ def test_boundary_mass_sources_puts_each_atom_on_its_own_axis():
     fig = e1.plot_boundary_mass_sources(_variants(), _real())
     ax = fig.axes[0]
     assert "0" in ax.get_xlabel() and "1" in ax.get_ylabel()
-    assert len(fig.axes) == 2
+    assert len(fig.axes) == 1, "Generic-scale ties must not occupy an economic loss-mass panel"
 
 
 # -- the uninformative figures are gone ---------------------------------------
@@ -231,7 +231,7 @@ def test_the_pd_notebook_does_not_draw_a_target_histogram():
     code = "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
     assert "plot_target_shapes_by_variant" not in code
     assert "plot_target_comparison" in code or "plot_base_rate_by_variant" in code
-    assert "plot_default_clustering" in code, "PD's clustering figure must be present"
+    assert "exposure.class_exposure" in code, "Show the actual native accepted stream, not shuffled-row pseudo-cohorts"
 
 
 def test_both_notebooks_visualise_exp1_because_that_is_the_sweep():
