@@ -145,7 +145,12 @@ This adds 15 runs per track to the nine main runs, 48 in total. Component groups
 controlled-ablation principle in `tfm-library/papers/text/2026/05_Bouadi_et_al._Shaping_the_Prior_How_Synthetic_Task_Distributions_Determine_Tabular_Foundation_Model_Quality.txt`;
 that paper studies general classification, not the credit-risk mechanisms here.
 
-**Exp2** asks whether the effect survives where it matters: the released, fully trained models, whose
+**Exp2 compares all three mixtures (0%, 50%, 100%) for both released models**, with three seeds:
+18 runs per track, 36 total. It does not select a winning mixture from Exp1. Finish and benchmark
+Exp1 first to assess its evidence and cost before the next campaign, while keeping this comparison
+fixed. The submission gate requires validated Exp0, not an Exp1 selection artifact.
+
+Exp2 asks whether the effect survives where it matters: the released, fully trained models, whose
 pretraining continues on our prior. Two models, because a result for one architecture could be an
 accident of it: TabICLv2 (open prior, trained through our own trainer, verified equal to upstream's)
 and TabPFN-3 (trained through TabPFN's own fine-tuning path, `src/train/tabpfn_trainer.py`). **Recipes are fixed rather than searched (30-09-2026), with different evidential status:**
@@ -166,7 +171,14 @@ where the released models also saw far longer ones, so the comparison with the r
 our prior's effect with that change (the control arm measures it), while the comparison between mixes
 does not.
 
-**Exp3** runs Experiment 1's chosen mix long, against its control, from scratch: 200,000 steps (16 × Exp1),
+**Exp3** runs Experiment 1's best nonzero credit mix long, against its 0% control, from scratch:
+the choice maximises development ROC-AUC (PD) or R² (LGD), averaging folds and training seeds.
+Exact numerical ties choose the smaller credit share; seed spread is reported descriptively and
+does not change that rule. If neither credit mix exceeds the control's development mean, the
+candidate is not an established improvement: review whether the long-budget study merits its
+cost, and describe a study that proceeds as testing whether an effect emerges at longer budgets.
+Never substitute a duplicate 0% arm for the nonzero candidate.
+The budget is 200,000 steps (16 × Exp1),
 2 paired seeds (each seed gives both arms the same base tasks and initial weights; 5 seeds were too
 expensive, 30-09-2026). The length: TabICLv2 reaches its reference in normalised accuracy before
 100,000 steps but in log-loss only after ~200,000 (`papers/2026/02_Qu_TabICLv2` §7), our PD and LGD
@@ -183,7 +195,8 @@ Any long-context training extension requires a separately specified budget and v
 control) and an **unrealistic-but-complex arm** (TabForestPFN's counter-hypothesis that complexity
 beats realism). Both are deferred: O'Prior's realism engine is non-trivial to reimplement faithfully,
 and a weak reimplementation would be a strawman that invalidates the headline. Their absence is the
-limitation named in [§1](#1-the-claim-and-how-it-fails); the two-track dissociation stands in.
+limitation named in [§1](#1-the-claim-and-how-it-fails); evaluating both tracks does not replace
+those controls or establish a double dissociation.
 
 The prior mechanisms each experiment can switch on — PD's Vasicek one-factor defaults, controlled
 base rate, underwriting rules, reject-inference selection, high-cardinality categoricals; LGD's
@@ -192,8 +205,11 @@ boundary atoms and interior shape; and the shared shift/missingness/noise — ar
 
 ## 4. Matched compute, seeds, and the two phases
 
-**Matched across arms, not across papers.** The comparison is *between arms*, so every arm in an
-experiment sees the same optimizer steps and datasets. It is **not** a match to O'Prior's protocol
+**Matched within each backbone, not across papers.** Mixture arms of the same backbone receive
+the same optimizer steps and task count. In Exp2, TabICLv2 receives 640,000 tasks (batch 64) and
+TabPFN-3 receives 160,000 tasks (batch 16), each over 10,000 updates. Consequently, cross-backbone
+contrasts also include different adaptation budgets; the primary prior effect is the contrast
+between mixtures within each backbone. This is **not** a match to O'Prior's protocol
 (the configs follow TabICLv2 stage-1: 1,024 rows/table, 1–100 features), so absolute numbers are not
 comparable to theirs — only our arm-to-arm contrasts are. **Two traps:** turning the filter *off*
 makes generation cheaper, so wall-clock and credits are not comparable across filter arms (match on
@@ -202,7 +218,9 @@ prior×architecture interaction, so a prior change may need retuning — **log e
 and treat divergence as a reportable outcome, never tune it away silently.**
 
 **Seeds.** 3 per arm in Exp1 and Exp2, 2 in Exp3 (paired: a seed gives both arms the same base tasks
-and initial weights). Report mean ± spread; treat gaps smaller than the seed spread as unresolved ties (flagged by the selection report).
+and initial weights within a backbone). Report mean ± spread; gaps smaller than the seed spread
+indicate descriptive instability, not a significance test or an alternative selection rule.
+The Exp3 rule above breaks only exact development-mean ties by smaller credit share.
 
 **Two phases, and the order is a fact about the data.** Phase 1 (`pretrain_{pd,lgd}.slurm`) trains one
 checkpoint per saved step per arm; phase 2 (`benchmark.slurm`) scores every saved checkpoint — one array
@@ -248,7 +266,17 @@ search (30-09-2026), the one choice left is Exp3's mix, made on development; eve
 is reported on all eligible datasets, with the designated holdout shown separately. This separation
 does not erase the effects of earlier inspection and must not be described as an unbiased fresh test.
 
-**The protocol** (`src/eval/protocol.py`, version 7 since 13-10-2026) is the same for every model —
+Five-fold CV estimates each fixed model's performance; selecting a mixture using those same
+assessment scores and then reporting only its winning score would still induce selection bias.
+Exp2 therefore retains every predeclared mixture and the final checkpoint, with paired effects
+against the matching continued-pretraining control and released model reported separately.
+Only Exp3's nonzero mix is selected, using development datasets and the primary metric alone.
+OOD retention is an outcome to report, not an extra rule for re-ranking that choice. Existing
+holdout exposure remains disclosed; this separation cannot make past inspection disappear.
+These distinctions follow [Cawley & Talbot (2010)](https://www.jmlr.org/papers/v11/cawley10a.html)
+and [Varma & Simon (2006)](https://doi.org/10.1186/1471-2105-7-91).
+
+**The protocol** (`src/eval/protocol.py`, version 9 since 21-10-2026) is the same for every model —
 our checkpoints, released TabICLv2, TabPFN-3, CatBoost, the linear floor — and for the out-of-domain
 suites: **5-fold cross-validation** (stratified for PD, one fixed fold assignment); **the whole training
 pool is the context** — no row cap or context selection; for PD, **the decision threshold maximises F1 on a validation split** (20 % of the

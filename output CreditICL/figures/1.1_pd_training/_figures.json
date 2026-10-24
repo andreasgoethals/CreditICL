@@ -1,8 +1,0 @@
-[
-  {
-    "index": 1,
-    "stem": "01_training_availability",
-    "name": "training_availability",
-    "caption": "Local training-trace availability per prediction task for loss, throughput, gradient and development-monitoring panels; no scheduler state is inferred from missing files."
-  }
-]

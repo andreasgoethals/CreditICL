@@ -107,13 +107,13 @@ def load_yaml(path: str | Path) -> dict[str, Any]:
     return data
 
 
-#: What an unfilled Exp2/Exp3 config still contains. Exp1 chooses the winning prior
+#: What an unfilled Exp3 config still contains. Exp1 chooses a nonzero credit prior
 #: setting, and until it has run there is nothing to put in these slots. A YAML default
 #: would be worse than a hole: it would submit, run for hours, and quietly measure the
 #: wrong arm.
 PLACEHOLDER = "FILL_FROM_EXP1"
-#: Every placeholder a template may hold: Exp1's winner (Exp3's mix). Experiment 2 has none since
-#: 30-09-2026 — it runs at each model's published continued-pretraining recipe.
+#: Every placeholder a template may hold: Exp3's development-selected mix. Experiment 2 has
+#: none: it compares all three mixtures with fixed literature-derived training recipes.
 PLACEHOLDERS = (PLACEHOLDER,)
 
 
@@ -149,14 +149,10 @@ def find_placeholders(node: Any, prefix: str = "") -> list[str]:
 def load(path: str | Path, *, allow_placeholders: bool = False) -> dict[str, Any]:
     """THE way to read a config: resolve `prior_file:`, then apply the `sweep:` block.
 
-    `prior_file:` is the one piece of indirection in the layout, and it earns its place.
-    All three experiments on a track must sample the SAME prior — that is what makes
-    them comparable — so the prior lives in one file and each experiment names it.
-    Copying sixty lines of prior into six files would guarantee they drift, and a drift
-    of one number silently invalidates the comparison between two experiments.
-
-    The experiment file's own `prior:` block is merged ON TOP, key by key, which is how
-    Exp2 and Exp3 pin the single setting Exp1 chose without restating the rest.
+    `prior_file:` supports inherited recipes, as used by component ablations. Main
+    experiment files currently carry their own prior blocks. When an inheritance
+    path is present, the experiment's body is merged on top, key by key; an inherited
+    sweep cannot silently overwrite the child's fixed setting.
 
     Refuses a config still holding `FILL_FROM_EXP1` unless asked not to. `--list` and the
     tests pass `allow_placeholders=True` so a template can still be inspected; nothing
@@ -178,8 +174,8 @@ def load(path: str | Path, *, allow_placeholders: bool = False) -> dict[str, Any
         if holes:
             raise ValueError(
                 f"{resolved.name} is still a template: {len(holes)} unfilled value(s) — "
-                f"{', '.join(holes)}. Run the experiment that decides them first (Exp1, or "
-                f"the Exp2 search), then replace every {' / '.join(PLACEHOLDERS)} with the "
+                f"{', '.join(holes)}. Complete Exp1's development benchmark, then replace "
+                f"every {' / '.join(PLACEHOLDERS)} with the "
                 f"chosen value. Refusing to expand it, because a config that runs with a "
                 f"placeholder wastes GPU-hours measuring nothing."
             )
@@ -262,7 +258,7 @@ def apply_sweep_block(cfg: dict[str, Any]) -> dict[str, Any]:
                 f"knobs. Single values belong in the config body below it."
             )
         # `seeds` is exempt: it is a REPEAT COUNT, never a lever. `[0]` legitimately means "no
-        # repeats", which a screening tier wants — Exp2 is 60 arms before seeds are considered.
+        # repeats", which a diagnostic configuration can request.
         # The rule exists to stop a fixed value being parked here where it looks like a lever.
         if len(values) < 2 and path != "seeds":
             raise ValueError(
@@ -419,8 +415,8 @@ def effective_fingerprint(run: dict[str, Any]) -> str:
     for key in ("_grid", "_run_name"):
         probe.pop(key, None)
     prior = probe.get("prior") or {}
-    # A TEMPLATE MUST NOT CRASH THE DEDUPER. Exp2 and Exp3 ship with `FILL_FROM_EXP1` where
-    # Exp1's winner goes, and `float()` on that raised — so `--list` was unusable on exactly
+    # A TEMPLATE MUST NOT CRASH THE DEDUPER. Exp3 ships with `FILL_FROM_EXP1` where
+    # its selected mixture goes, and `float()` on that raised — so `--list` was unusable on exactly
     # the configs a person is most likely to be inspecting. An unresolvable value cannot be
     # compared to 0.0, so it is treated as "not the control" and nothing is collapsed.
     try:

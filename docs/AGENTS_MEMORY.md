@@ -1,5 +1,36 @@
 # Agents' memory — runs and dead ends
 
+## 24-10-2026 — figure readability and Experiment 2 audit
+
+Exp2 remains **36 runs**: both released backbones, all three mixtures, three seeds, both tracks.
+Parsed PD/LGD configurations are unchanged; only comments were corrected. The new TabPFN
+guard rejects unsupported freezing/initialization and nonzero L2-SP before writing output.
+Direct tests compare losses and gradients with the installed 9.1.0 fine-tuner, including
+member-specific regression target transforms. Exp3 alone selects a nonzero Exp1 mixture from
+complete current-protocol development results; OOD is descriptive, and seed spread is not a
+significance test or tie-break rule. Historically inspected holdouts remain non-confirmatory.
+
+Keep the active VSC checkout frozen through **Exp1 training and all credit/OOD/component
+benchmarks**. The TabPFN guard changes the shared training fingerprint, and selection changes
+the evaluation fingerprint, despite unchanged Exp1 numerical recipes. Preserve that checkout
+and its receipts; validate the updated code separately before Exp2. These changes do not
+justify retraining Exp1. No cluster job, installation, data change or submodule update occurred.
+Read-only audit pins: TFM `702d9ab0b66f6639ba8d443ff9c4a91231964465`;
+VSC `3bcdf55e576d10161d6189b40ac39380bbba9eca`.
+
+All 12 notebooks executed successfully. The 19 diagnostic PDFs were rendered and visually
+inspected; 35 artificial result layouts plus four full-size result stress layouts were
+checked only in TEMP. Captions, inline displays, embedded fonts and verbatim final summaries
+match. No local production run/benchmark files were available: result notebooks print absence
+notices rather than exporting empty PDFs. This is not a new VSC status assessment.
+Full local suite: **1,701 passed / 28 VSC-only skips**, 1,112.59s. Final presentation changes
+also passed 127 focused tests, with the two Bash checks passing separately after PATH setup.
+
+Tried: recover the prior full-test session after the overnight continuation.
+Result: its terminal handle had expired; a final pass/fail receipt was unavailable.
+Why: process-session state did not survive the continuation; this is not evidence of a code failure.
+Instead: repeat the full suite with a durable temporary log and JUnit report before publishing.
+
 ## 23-10-2026 — notebook presentation refresh
 
 Twelve notebooks now follow the manuscript questions, with fresh seeded prior diagnostics,

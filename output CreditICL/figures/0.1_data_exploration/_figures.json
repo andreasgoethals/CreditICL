@@ -25,20 +25,8 @@
   },
   {
     "index": 5,
-    "stem": "05_type_mix",
-    "name": "type_mix",
-    "caption": "Share of processed source columns marked categorical per benchmark dataset, sorted and coloured by prediction task."
-  },
-  {
-    "index": 6,
-    "stem": "06_missingness",
-    "name": "missingness",
-    "caption": "Share of missing cells per processed source table, sorted and coloured by prediction task; the rates describe the available preprocessing rather than original source missingness."
-  },
-  {
-    "index": 7,
-    "stem": "07_leakage_screen",
-    "name": "leakage_screen",
-    "caption": "Largest absolute single-feature Pearson correlation with the target per processed source table, labelled with its source column; the dashed line marks 0.9, and this screen is separate from the prediction-time feature policy."
+    "stem": "05_table_inventory",
+    "name": "table_inventory",
+    "caption": "Processed source-table inventory with one aligned row per dataset: categorical columns as a share of all source columns on the left, and missing feature entries as a share of all source feature entries on the right. Percentages are written beside the marks; axes have separate percentage ranges. PD (circles) and LGD (squares) label the prediction tasks. The inventory precedes prediction-time feature exclusions and fold-fitted encoding; a zero reflects the available processed table, not necessarily complete original records."
   }
 ]

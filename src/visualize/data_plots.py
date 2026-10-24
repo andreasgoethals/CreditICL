@@ -355,6 +355,93 @@ def plot_missingness(datasets_by_task: dict[str, dict[str, Any]]):
     return fig
 
 
+def table_inventory(datasets_by_task: dict[str, dict[str, Any]]) -> pd.DataFrame:
+    """Aligned source-table observations, with one stable row per task/dataset.
+
+    Missingness is the fraction of feature entries in the processed source table;
+    categorical share is the fraction of columns marked categorical by that cache.
+    Neither statistic changes the benchmark's feature policy or table sizes.
+    """
+    records = []
+    for task in sorted(datasets_by_task, key=lambda value: (value != "pd", value)):
+        for slug, ds in sorted(datasets_by_task[task].items()):
+            X = np.asarray(ds.X)
+            records.append({
+                "task": task,
+                "dataset": slug,
+                "categorical_share": len(ds.cat_indices) / ds.n_features if ds.n_features else np.nan,
+                "missing_share": float(np.isnan(X).mean()) if X.size else np.nan,
+            })
+    return pd.DataFrame(records, columns=["task", "dataset", "categorical_share", "missing_share"])
+
+
+def plot_table_inventory(datasets_by_task: dict[str, dict[str, Any]]):
+    """Two aligned columns replace separately ranked type and missingness charts."""
+    style.apply()
+    table = table_inventory(datasets_by_task)
+    fig, axes = plt.subplots(1, 2, sharey=True,
+                             figsize=style.row_figsize(len(table), per_row=.16, base=1.2))
+    if table.empty:
+        for ax in axes:
+            ax.axis("off")
+        axes[0].text(.5, .5, "No processed source tables available", ha="center", va="center",
+                     color=style.MUTED)
+        return fig
+    labels = [f"{row.task.upper()} · {row.dataset.split('.', 1)[-1].removeprefix('lgd_')}"
+              for row in table.itertuples()]
+    for ax, column, title, xlabel in zip(
+        axes,
+        ("categorical_share", "missing_share"),
+        ("Categorical columns", "Missing feature entries"),
+        ("Share of source columns", "Share of source feature entries"),
+    ):
+        finite = table[column].dropna()
+        bound = 1.0
+        if column == "missing_share":
+            bound = min(1.0, max(.1, np.ceil(float(finite.max()) * 10) / 10)) if len(finite) else .1
+        for index, row in table.iterrows():
+            value = row[column]
+            if np.isfinite(value):
+                ax.plot([0, value], [index, index], color=style.GRID, zorder=1)
+                ax.scatter(value, index, color=style.TASK_COLOR.get(row["task"], style.MUTED),
+                           marker="o" if row["task"] == "pd" else "s", s=style.SEED_POINT,
+                           zorder=3, clip_on=False)
+                label = "<0.1%" if 0 < value < .001 else f"{value:.1%}"
+                ax.annotate(label, (value, index), xytext=(4, 0), textcoords="offset points",
+                            va="center", fontsize=style.PANEL_TEXT, color=style.INK)
+            else:
+                ax.text(0, index, "not available", va="center", fontsize=style.PANEL_TEXT,
+                        color=style.MUTED)
+        ax.set_xlim(-.025 * bound, bound * 1.25)
+        ax.set_xticks(np.linspace(0, bound, 3))
+        ax.xaxis.set_major_formatter(mpl.ticker.PercentFormatter(1, decimals=0))
+        ax.set_title(title, loc="left")
+        ax.set_xlabel(xlabel)
+        ax.set_yticks(np.arange(len(table)), labels, fontsize=style.PANEL_TEXT)
+        ax.set_ylim(len(table) - .5, -.5)
+        ax.grid(axis="x")
+        ax.grid(axis="y", visible=False)
+        ax.spines["left"].set_visible(False)
+        ax.tick_params(axis="y", length=0)
+    axes[1].tick_params(axis="y", labelleft=False)
+    return fig
+
+
+def correlation_inventory(leakage: pd.DataFrame) -> pd.DataFrame:
+    """Report marginal associations as numbers, without a pass/fail cutoff.
+
+    A large or small correlation cannot establish feature availability at the
+    declared prediction time, and combinations of features can behave differently.
+    """
+    columns = ["task", "dataset", "feature", "|corr with target|"]
+    if leakage.empty:
+        return pd.DataFrame(columns=columns)
+    identity = [column for column in ("task", "dataset") if column in leakage]
+    result = leakage.sort_values("|corr with target|", ascending=False).drop_duplicates(identity)
+    return result[[column for column in columns if column in result]].sort_values(
+        [column for column in ("task", "dataset") if column in result]).reset_index(drop=True)
+
+
 def correlation_pages(datasets: dict[str, Any], per_page: int = 9) -> int:
     """How many figures `plot_feature_correlations` needs to show EVERY dataset."""
     return max(1, int(np.ceil(len(datasets) / max(per_page, 1))))

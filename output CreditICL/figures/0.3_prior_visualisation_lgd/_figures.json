@@ -15,7 +15,7 @@
     "index": 3,
     "stem": "03_standardised_endpoint_ties",
     "name": "standardised_endpoint_ties",
-    "caption": "Lower- against upper-endpoint tie frequency in 500 tasks per generator after the same context-fitted affine target transformation; ties use tolerance 1e-4 in standardized units, without economic 0/1 interpretation."
+    "caption": "Share of rows tied at each table minimum and maximum in 500 tasks per generator, shown in separate panels with identical axes. Each point is one table after the same context-fitted target standardization, with ties defined within 1e-4 standardized units; these extrema are not economic loss zero and one."
   },
   {
     "index": 4,

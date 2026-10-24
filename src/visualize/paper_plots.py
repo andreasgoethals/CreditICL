@@ -84,12 +84,15 @@ def development_selection(track, exp="exp1"):
         values = seeds.loc[name].to_numpy()
         ax.plot([values.min(), values.max()], [i, i], color=_mass_colour(name), linewidth=style.EFFECT_LINE)
         ax.scatter(values, np.full(len(values), i), color=_mass_colour(name), s=style.SEED_POINT)
-    ax.set_yticks(range(len(order)), [label(name) for name in order])
+    ax.set_yticks(range(len(order)), [label(name) if name.startswith("exp") else
+                                    style.reference_label(name, track) for name in order])
     ax.set(xlabel=f"Development {style.metric_label(metric)}", title="Complete final development results")
     return fig
 
 
 def label(configuration):
+    if not configuration.startswith("exp"):
+        return style.reference_label(configuration)
     if "ablations" in configuration:
         key = configuration.split("__arm=", 1)[-1]
         return {"no_macro_target": "No macro term", "no_informative_missingness": "Uncoupled gaps",
@@ -282,8 +285,9 @@ def endpoint_mass(exp="exp1", *, backbone=None):
         for i, name in enumerate(configurations):
             rows = means[means.configuration.eq(name)]
             for identity, values in rows.groupby("identity"):
-                found = re.search(r"__s(\d+)$", identity)
-                marker = style.SEED_MARKERS[int(found.group(1)) % 3] if found else "D"
+                found = re.search(r"credit_fraction=([0-9p.]+)", name)
+                marker = (style.credit_fraction_marker(float(found.group(1).replace("p", ".")))
+                          if found else ("D" if "tabicl" in name else "P"))
                 ax.scatter(values[f"true_mass_at_{endpoint}"], values[f"pred_mass_at_{endpoint}"],
                            color=_mass_colour(name), marker=marker,
                            s=style.SEED_POINT, alpha=.75, label=label(name) if identity == rows.identity.iloc[0] else None)
@@ -303,7 +307,7 @@ def _mass_colour(name):
     match = re.search(r"credit_fraction=([0-9p.]+)", name)
     if match:
         return style.credit_fraction_colour(float(match.group(1).replace("p", ".")))
-    return style.REFERENCE if "tabicl" in name else style.EXTERNAL
+    return style.REFERENCE if "tabicl" in name else style.RELEASED_TABPFN
 
 
 def final_summary(track, exp="exp1"):
@@ -321,7 +325,8 @@ def results_summary(track, exp="exp1"):
     metrics = ("roc_auc", "log_loss") if track == "pd" else ("r2", "crps", "boundary_mass_abs_err")
     dev = final_credit(track, exp, "development")
     lines = ["A · DEVELOPMENT AND COMPARISON CONTRACT",
-             "Fixed training recipes; mixtures selected on complete development results only.",
+             ("Both backbones and all three mixtures are fixed; no Experiment 1 winner is selected for Experiment 2."
+              if exp == "exp2" else "Fixed training recipes; any subsequent mixture choice uses complete development results only."),
              "The designated holdout has historical project exposure; it is not untouched confirmation.",
              f"Development final table available: {dev is not None}.",
              "\nB · DESIGNATED-HOLDOUT PACKAGE EFFECTS"]
@@ -337,7 +342,9 @@ def results_summary(track, exp="exp1"):
             lines.append(metric + ": " + ("not yet completely benchmarked" if table.empty
                                           else "\n" + table.to_string(index=False)))
     lines += ["\nC · FINAL NATIVE OOD AND RETENTION FRONTIER", analysis.summary(track, exp),
-              "Binary/multiclass OOD subsets are diagnostics, not replacement selection endpoints."]
+              ("Binary/multiclass OOD subsets are diagnostics, not replacement selection endpoints."
+               if track == "pd" else
+               "Native regression OOD retention is descriptive and does not select the prior mixture.")]
     if exp == "exp1":
         lines.append("\nD · CONDITIONAL COMPONENT REMOVALS")
         components = _components(track)
@@ -347,7 +354,7 @@ def results_summary(track, exp="exp1"):
             lines.append(metric + ": " + ("not yet completely benchmarked" if table.empty
                                           else "\n" + table.to_string(index=False)))
     if track == "lgd":
-        lines += ["\nE · DISTRIBUTIONAL ENDPOINTS",
+        lines += [f"\n{'D' if exp == 'exp2' else 'E'} · DISTRIBUTIONAL ENDPOINTS",
                   "Endpoint matching is aggregate, not conditional calibration; tolerance 1e-4; 99 quantile levels."]
     lines.append("Dataset bootstrap intervals are descriptive; training seeds/folds are not extra datasets.")
     return "\n".join(lines)

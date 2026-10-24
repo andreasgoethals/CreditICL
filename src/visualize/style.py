@@ -171,7 +171,10 @@ _RC = {
 #: Our credit-targeted prior. A saturated blue: it is the subject of the figure.
 CREDIT = "#2b6cb0"
 #: The unmodified TabICL prior — the control. Deliberately grey and recessive.
-ORIGINAL = "#94a3b8"
+ORIGINAL = "#525252"
+#: A mixed training stream has its own hue, rather than an indistinguishable
+#: blue-grey blend. Shapes and line patterns repeat the mixture identity.
+MIXED = "#b06a00"
 #: Real credit data, when overlaid as a reference. Warm, so it reads as "measured".
 REAL = "#c2410c"
 #: MARKERS for real datasets drawn ON TOP of coloured data — stars, reference points.
@@ -200,6 +203,8 @@ BASELINE = "#4d7c0f"
 #: asset correlation, a TabICLv2 filtering rate, an LGD R² band. Teal, so it reads as "the paper
 #: said" and is never mistaken for our data (blue), the control (grey) or the real data (orange).
 REFERENCE = "#0d9488"
+#: Released TabPFN in adaptation comparisons: distinct from the amber 50% mixture.
+RELEASED_TABPFN = "#7c3aed"
 #: The two LGD boundary atoms, given opposed meanings a reader can feel: mass at 0 is FULL RECOVERY
 #: (a good outcome, cool green) and mass at 1 is TOTAL LOSS (a bad outcome, deep rose). Distinct
 #: from REAL/WARN so a figure showing atoms and a real-data overlay stays legible.
@@ -229,6 +234,8 @@ EFFECT_POINT = 28
 SEED_POINT = 16
 FRONTIER_MARKER = 5
 SEED_MARKERS = ("o", "s", "^")
+SOURCE_MARKERS = ("s", "o")
+SOURCE_LINES = ("--", "-")
 
 #: Named colormaps, both colour-blind-safe and monotone in lightness so they survive a greyscale
 #: photocopy — `CMAP_SEQ` for one-directional intensity (a correlation magnitude, a density),
@@ -458,16 +465,24 @@ LEVEL_STYLES = [("#1e293b", "-"), ("#475569", "--"), ("#7b8799", ":"), ("#334155
 
 
 def credit_fraction_colour(fraction: float) -> str:
-    """Colour for a credit fraction: ORIGINAL grey at 0 (the control), CREDIT blue at 1, and a
-    straight blend between. The fraction is "how much of our prior", so the colour says it
-    continuously — and the blend is monotone in lightness, so cf 0 / 0.5 / 1 still separate in a
-    greyscale photocopy. Deliberately NOT CREDIT_MILD/CREDIT_STRONG: those mean prior *intensity*,
-    and a figure with intensity on its x-axis must not also use them for the fraction."""
+    """Neutral control, amber mixture, blue credit; match the marker/line key.
+
+    The three experimental conditions must be distinguishable at paper width.
+    Intermediate fractions interpolate through the amber midpoint, not through
+    the former near-identical blue greys. Shape carries identity in greyscale.
+    """
     import matplotlib.colors as mcolors
 
     f = min(max(float(fraction), 0.0), 1.0)
-    lo, hi = mcolors.to_rgb(ORIGINAL), mcolors.to_rgb(CREDIT)
+    lo, hi = (mcolors.to_rgb(ORIGINAL), mcolors.to_rgb(MIXED)) if f <= .5 else (
+        mcolors.to_rgb(MIXED), mcolors.to_rgb(CREDIT))
+    f = 2*f if f <= .5 else 2*(f-.5)
     return mcolors.to_hex(tuple(a + (b - a) * f for a, b in zip(lo, hi)))
+
+
+def credit_fraction_line(fraction: float) -> str:
+    """Redundant encoding of the three main mixtures for overlapping curves."""
+    return "--" if fraction <= 0 else ("-" if fraction >= 1 else "-.")
 
 
 #: How a metric reads on an axis, in a heading or a legend — the paper's spelling, not the CSV

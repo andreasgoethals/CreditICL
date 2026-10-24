@@ -1,4 +1,4 @@
-"""Development-only, seed-aggregated configuration ranking for the next experiments."""
+"""Development-only ranking for Exp3; Exp2 compares all three mixtures independently."""
 from __future__ import annotations
 
 import argparse
@@ -85,12 +85,45 @@ def development_ranking(df: pd.DataFrame, track: str, exp: str = "exp1",
     return ranking
 
 
+def exp3_candidate(ranking: pd.DataFrame, track: str) -> dict | None:
+    """Choose the best nonzero Exp1 mixture on the predeclared primary metric.
+
+    The 0% arm remains the control even when it ranks first. Exact numerical ties
+    between credit mixtures prefer the smaller credit fraction; seed spread is
+    descriptive and does not change the ranking. References and historical arms
+    cannot become candidates. All currently configured mixtures must be complete.
+    """
+    required = {"configuration", "mean", "metric"}
+    if ranking is None or ranking.empty or not required.issubset(ranking):
+        return None
+    cfg = load(ROOT / f"config/Exp1_{track.upper()}.yaml")
+    mixtures = {re.sub(r"__s\d+$", "", run_name(run)): float(run["prior"]["credit_fraction"])
+                for run in expand_with_seeds(cfg)}
+    part = ranking[ranking.configuration.isin(mixtures)].copy()
+    metric = "roc_auc" if track == "pd" else "r2"
+    if (set(part.configuration) != set(mixtures) or part.configuration.duplicated().any()
+            or not part.metric.eq(metric).all() or not np.isfinite(part["mean"]).all()):
+        return None
+    part["credit_fraction"] = part.configuration.map(mixtures)
+    controls = part[part.credit_fraction.eq(0)]
+    candidates = part[part.credit_fraction.gt(0)].sort_values(
+        ["mean", "credit_fraction"], ascending=[False, True], kind="stable")
+    if len(controls) != 1 or candidates.empty:
+        return None
+    best = candidates.iloc[0]
+    control_mean = float(controls.iloc[0]["mean"])
+    return {"configuration": best.configuration, "credit_fraction": float(best.credit_fraction),
+            "metric": metric, "mean": float(best["mean"]), "control_mean": control_mean,
+            "difference_from_control": float(best["mean"]) - control_mean}
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--track", choices=("pd", "lgd"), required=True)
     args = ap.parse_args(argv)
     from src.eval.benchmark_status import complete, n_slots, slot_for
     from src.eval.results import load_results
+    from src.eval.protocol import PROTOCOL
 
     # Selection reads the FINAL checkpoints and the reference models; earlier checkpoints are
     # the learning curve, not a candidate.
@@ -100,10 +133,24 @@ def main(argv=None) -> int:
     if missing:
         print(f"Selection blocked: incomplete benchmark indices {missing}")
         return 1
-    ranking = development_ranking(load_results(args.track), args.track)
+    ranking = development_ranking(load_results(args.track, protocol=PROTOCOL), args.track)
+    choice = exp3_candidate(ranking, args.track)
+    if choice is None:
+        print(f"Selection blocked: no complete current-protocol ({PROTOCOL}) development ranking "
+              "for every configured Exp1 mixture.")
+        return 1
     print(ranking.to_string(index=False))
-    print("Rows within the seed spread are unresolved ties, not established improvements. "
-          "Use development results only; review OOD retention before filling Exp3.")
+    print(f"Exp3 candidate: credit_fraction={choice['credit_fraction']:g}; development "
+          f"{choice['metric']}={choice['mean']:.6f}, 0% control={choice['control_mean']:.6f}, "
+          f"difference={choice['difference_from_control']:+.6f}.")
+    if choice["difference_from_control"] <= 0:
+        print("Neither credit mixture beats the control on the development mean. "
+              "This candidate tests whether a credit effect emerges with more training; "
+              "it is not an established improvement. Review whether Exp3 merits its cost.")
+    print("The candidate is the best nonzero mixture; exact score ties prefer the smaller credit share. "
+          "Seed spread describes stability, not a significance test. OOD retention is reported "
+          "descriptively and must not re-rank this development-only choice. Exp2 uses all three "
+          "mixtures and needs no selected winner. No config was changed and no job was submitted.")
     return 0
 
 

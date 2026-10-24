@@ -25,8 +25,9 @@ WHAT IS TABPFN'S, ARGUMENT FOR ARGUMENT (`FinetunedTabPFNBase.__init__` / `_fit`
   z-scored with the context statistics (the collator's `znorm_space_bardist`).
 
 WHAT IS OURS: the data. The official fine-tuner takes ONE real dataset and cuts it into
-context/query chunks; this takes the synthetic stream (`src/prior/dataset.py`) — the same
-tasks, in the same order, as the TabICL arms with the same seed, with credit tables in the raw
+context/query chunks; this takes the synthetic stream (`src/prior/dataset.py`). Mixture arms
+are paired by seed within each backbone. Different batch sizes mean that the TabICL and
+TabPFN arms do not receive an identical ordered task stream. Credit tables use the raw
 encoding (`prior.encoding: raw`: gaps as NaN, the LGD target on [0, 1]) because TabPFN's own
 preprocessing does the rest. One task per forward pass, `train.batch_size` tasks per update
 (TabPFN-Wide, the continued-pretraining precedent in `tfm-library/papers/2026/03_Kolberg_et_al.*`,
@@ -252,6 +253,13 @@ class TabPFNTrainer:
         if str(tcfg.get("optimizer", "adamw")).lower() != "adamw":
             raise ValueError("TabPFN-3 is fine-tuned with AdamW (its own fine-tuner); "
                              f"train.optimizer={tcfg.get('optimizer')!r} is not supported for it")
+        icfg = cfg.get("init", {}) or {}
+        if str(icfg.get("strategy", "full")).lower() != "full":
+            raise ValueError("TabPFN-3 supports only init.strategy: full; "
+                             f"init.strategy={icfg.get('strategy')!r} is not implemented")
+        if float(tcfg.get("l2sp_alpha", 0.0)) != 0.0:
+            raise ValueError("TabPFN-3 does not implement L2-SP regularization; "
+                             "train.l2sp_alpha must be 0")
 
         self.cfg = cfg
         self.task = cfg["task"]
@@ -283,7 +291,6 @@ class TabPFNTrainer:
 
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.amp = bool(tcfg.get("amp", True)) and self.device.startswith("cuda")
-        icfg = cfg.get("init", {}) or {}
         self.weights_path = resolve_tabpfn_weights(self.task, icfg.get("pretrained_path"))
 
         log_section(self.log, f"CreditICL — TabPFN-3 continued pretraining — {self.task.upper()} — "

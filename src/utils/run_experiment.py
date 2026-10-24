@@ -186,9 +186,9 @@ def _benchmark_stage(exp: int, track: str, queued: set[str], train: Stage,
 def unconfigured_tracks(exp: int, tracks: list[str], variant: str | None = None) -> list[str]:
     """Tracks whose config still holds `FILL_FROM_EXP1`. Empty for a runnable experiment.
 
-    Exp2 and Exp3 ship as templates: the prior mix and (for Exp3) the winning arm are blank
-    until Exp1 has picked a winner. Submitting one anyway would run for hours and measure the
-    wrong thing, so `run_experiment 3 --submit` must refuse until the holes are filled.
+    Exp3 ships with its nonzero mixture blank until Exp1's development comparison is complete.
+    Exp2 already compares all three mixtures and has no selection placeholder. Submitting an
+    unfilled Exp3 would measure the wrong thing, so it must refuse until the hole is filled.
     """
     from src.utils.config import find_placeholders, load_yaml
 

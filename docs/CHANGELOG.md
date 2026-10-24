@@ -8,6 +8,11 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 24-10-2026
+
+- Clarify prior figures, remove redundant/empty exports, and audit Exp2 against pinned upstream losses; reject unsupported TabPFN settings and make development-only Exp3 selection explicit without changing the approved training recipes.
+- Validate 1,701 tests (28 VSC-only skips), all 12 notebooks, 19 exported figures and 39 artificial result layouts; preserve the frozen VSC Exp1 campaign.
+
 ## 23-10-2026
 
 - Rebuild the notebook story around native accepted-stream exposure, paired final effects, LGD scale-aware diagnostics and gated budget persistence; version PDFs. Validate 1,664 tests and all 12 notebooks; visually inspect 30 exports and 35 future-result test layouts.

@@ -33,13 +33,13 @@
     "index": 6,
     "stem": "06_shift_kinds",
     "name": "shift_kinds",
-    "caption": "Context against query summaries per synthetic task for cohort, covariate, prior-probability and selection shifts, 60 tasks with and 60 without each shift; the dashed line marks equality."
+    "caption": "Context against query summaries per synthetic task for cohort, covariate, prior-probability and selection shifts, 60 tasks with and 60 without each shift; the dashed line marks equality. Covariate means use the whole-table mean and standard deviation, so their opposite signs follow from centering; their distance from equality records the separation. Open gray squares mark shift-off tasks and blue circles mark shift-on tasks."
   },
   {
     "index": 7,
     "stem": "07_covariate_missingness",
     "name": "covariate_missingness",
-    "caption": "Share of missing values by covariate-score sextile in a controlled 4,000-row table, with independent and covariate-coupled missingness; realised outcomes are not inputs to the shared borrower-level mask."
+    "caption": "Missing-entry rates in six equally sized groups ordered from the lowest to highest value of one synthetic feature, repeated across six columns in 4,000 rows. Gray squares use a constant missingness probability; blue circles use feature-dependent probabilities. Both target 20% missing entries overall (dotted line); one fixed random draw creates sampling variation. No outcome labels enter the mask."
   },
   {
     "index": 8,

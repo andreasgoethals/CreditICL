@@ -9,7 +9,7 @@ sizes, correlation spectra. This module shows the parts that make the prior
 * correlated defaults (PD: the Vasicek systematic factor, mild vs aggressive `rho`);
 * reject inference (PD: the approved book in context, the rejected region in the query);
 * distribution shift (both: each task's context mean against its query mean, per kind);
-* informative missingness (both: a missing rate that depends on the outcome);
+* covariate-dependent missingness (both: no realised outcome enters the mask);
 * predictability (both: synthetic tasks and real datasets scored by the filter's own
   `predictability`, with what `tabicl` / `banded` / `off` keep).
 
@@ -109,6 +109,7 @@ def zoib_response(config_path: str, seed: int = 0):
         ax.set(xlabel="Shared recovery driver", title=title, ylim=(0, 1))
         ax.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(1))
     axes[0].set_ylabel("Probability / mean loss fraction")
+    fig.suptitle("Recovery driver and loss components")
     style.legend_below(fig, ncol=3)
     return fig
 
@@ -314,8 +315,8 @@ def reject_inference(config_path: str, n: int = 120, seed: int = 0):
 
 
 #: How each shift kind reads as a panel heading.
-_SHIFT_TITLE = {"cohort": "cohort", "covariate": "covariate", "prior_prob": "prior probability",
-                "selection": "selection (reject inference)"}
+_SHIFT_TITLE = {"cohort": "Different borrower cohorts", "covariate": "Shifted feature values",
+                "prior_prob": "Changed label prevalence", "selection": "Selected applicants"}
 
 
 def _split_means(task_obj: Any, kind: str, cut: int, feature: int | None = None) -> tuple[float, float]:
@@ -377,47 +378,52 @@ def shift_kinds(config_path: str, n: int = 40, seed: int = 0):
                     continue
                 feature = int(pick.choice(varying))
             reference.append(_split_means(t, kind, cut, feature))
-        for pts, colour, size, label in ((reference, style.MUTED, 12, "same prior, shift switched off"),
-                                         (shifted, style.CREDIT, 18, "task with this shift switched on")):
+        for j, (pts, colour, label) in enumerate(((reference, style.ORIGINAL, "Shift off"),
+                                                (shifted, style.CREDIT, "Shift on"))):
             if pts:
                 xs, ys = zip(*pts)
-                ax.scatter(xs, ys, s=size, color=colour, alpha=0.45 if colour == style.MUTED else 0.7,
-                           linewidths=0, zorder=2 if colour == style.MUTED else 3,
+                ax.scatter(xs, ys, s=style.SEED_POINT, marker=style.SOURCE_MARKERS[j],
+                           facecolors="none" if j == 0 else colour, edgecolors=colour,
+                           alpha=.7, linewidths=.7, zorder=4-j,
                            label=label if i == 0 else None)
         every = [v for pt in reference + shifted for v in pt]
         lo, hi = (min(every), max(every)) if every else (0.0, 1.0)
         pad = 0.05 * (hi - lo or 1.0)
         lo, hi = lo - pad, hi + pad
         ax.plot([lo, hi], [lo, hi], color=style.INK, lw=0.8, ls="--", zorder=1,
-                label="query = context" if i == 0 else None)
+                label="Equal labeled / prediction rows" if i == 0 else None)
         ax.set_xlim(lo, hi)
         ax.set_ylim(lo, hi)
         if kind == "covariate":
-            ax.set_xlabel("feature, context mean (SD)")
-            ax.set_ylabel("feature, query mean (SD)")
+            ax.set_xlabel("Feature mean: labeled rows (SD)")
+            ax.set_ylabel("Feature mean: prediction rows (SD)")
         else:
-            ax.set_xlabel(f"{quantity}, context rows")
-            ax.set_ylabel(f"{quantity}, query rows")
-        ax.set_title(_SHIFT_TITLE[kind], loc="left", fontsize=9)
+            ax.set_xlabel(f"{quantity.capitalize()}: labeled rows")
+            ax.set_ylabel(f"{quantity.capitalize()}: prediction rows")
+        style.title(ax, _SHIFT_TITLE[kind])
     style.legend_below(fig, ncol=3)
     return fig
 
 
 # ---------------------------------------------------------------------------
-# Both — informative missingness (MNAR)
+# Both — covariate-dependent missingness (no outcomes are used)
 # ---------------------------------------------------------------------------
 
 
-def informative_missingness(task: str, n_rows: int = 4000, seed: int = 0):
-    """Missingness versus a known covariate score; no realised outcome enters the mask."""
+def missingness_by_feature_group(n_rows: int = 4000, seed: int = 0) -> pd.DataFrame:
+    """Controlled feature-only probe: six equal-size row groups, no target input.
+
+    One standard-normal covariate is repeated across six columns. Observed mask
+    rates are grouped by this known feature, not by the internal latent propensity
+    or by an outcome. Reusing the seed pairs the stochastic ingredients.
+    """
     generator = torch.Generator().manual_seed(seed)
     # Shared feature variation makes the dependence interpretable in this controlled probe.
     score = torch.randn(n_rows, generator=generator)
     X = score[:, None].expand(-1, 6).clone()
-    style.apply()
-    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.44))
-    for beta, color, label in [(0.0, style.MUTED, "covariate-independent (coupling 0)"),
-                               (1.0, style.CREDIT, "covariate-dependent (coupling 1)")]:
+    groups = np.array_split(np.argsort(score.numpy()), 6)
+    rows = []
+    for beta in (0., 1.):
         Xn, meta = apply_informative_missingness(
             PriorRNG(seed), X.clone(),
             {"missing_col_fraction": 1.0, "missing_rate_range": [0.20, 0.20],
@@ -426,15 +432,30 @@ def informative_missingness(task: str, n_rows: int = 4000, seed: int = 0):
         if not n_ind:
             continue
         missing = Xn[:, 6:6 + n_ind].numpy().mean(axis=1)
-        values = score.numpy()
-        groups = np.array_split(np.argsort(values), 6)
-        ax.plot([values[g].mean() for g in groups], [missing[g].mean() for g in groups],
-                "o-", color=color, label=label, markersize=5)
-    ax.set_xlabel("covariate score (sextile means)")
-    ax.set_ylabel("share of values missing")
+        rows.extend(dict(coupling=beta, group=i+1, n_rows=len(g),
+                         missing_share=float(missing[g].mean())) for i, g in enumerate(groups))
+    return pd.DataFrame(rows)
+
+
+def informative_missingness(task: str, n_rows: int = 4000, seed: int = 0):
+    """Explain feature-dependent gaps without interpreting the feature as risk."""
+    frame = missingness_by_feature_group(n_rows, seed)
+    style.apply()
+    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, .48))
+    for i, (beta, label, color) in enumerate(((0., "Same probability for every row", style.ORIGINAL),
+                                            (1., "Probability depends on features", style.CREDIT))):
+        rows = frame[frame.coupling.eq(beta)]
+        ax.plot(rows.group, rows.missing_share, color=color, label=label,
+                marker=style.SOURCE_MARKERS[i], linestyle=style.SOURCE_LINES[i],
+                markersize=style.FRONTIER_MARKER)
+    ax.axhline(.2, color=style.MUTED, linestyle=":", label="20% target rate")
+    ax.set(xlabel="Rows grouped by the shared synthetic feature (six equally sized groups)",
+           ylabel="Missing feature entries", xticks=range(1, 7),
+           xticklabels=["Lowest", "2", "3", "4", "5", "Highest"],
+           title="Missing information can depend on feature values")
     ax.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(1.0, decimals=0))
     ax.set_ylim(bottom=0)
-    style.legend_below(ax, ncol=2)
+    style.legend_below(ax, ncol=1)
     return fig
 
 
@@ -590,7 +611,7 @@ def plot_predictability(scores: pd.DataFrame, config_path: str):
     ax.set_ylim(len(order) - 0.5, -0.5)
     finite_scores = scores.pseudo_r2[np.isfinite(scores.pseudo_r2)]
     ax.set_xlim(min(-.1, float(finite_scores.min())-.04), max(1., float(finite_scores.max())+.04))
-    ax.set_xlabel("ExtraTrees out-of-bag pseudo-R² (the filter's measure; 0 = no signal)")
+    ax.set_xlabel("ExtraTrees out-of-bag pseudo-R² (0 = constant-predictor score)")
     ax.grid(axis="x")
     ax.grid(axis="y", visible=False)
     style.legend_below(ax, ncol=2)

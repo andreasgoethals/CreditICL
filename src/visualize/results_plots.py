@@ -591,7 +591,8 @@ def results_summary(track: str, exp: str = "exp1") -> str:
 
     df = load_results(track, exp)
     title = f"{exp.upper()} {track.upper()} RESULTS — full-table five-fold benchmark"
-    headings = ["A. WHICH PRIOR DEVELOPMENT SELECTS", "B. HOW IT DOES ON THE HOLDOUT",
+    headings = ["A. DEVELOPMENT COMPARISON" if exp == "exp2" else "A. WHICH PRIOR DEVELOPMENT SELECTS",
+                "B. HOW IT DOES ON THE HOLDOUT",
                 "B1. CREDIT PRIOR AGAINST THE CONTROL", "B2. AGAINST MATCHING RELEASED WEIGHTS",
                 "B3. EVERY BENCHMARK METRIC", "B4. EVERY SAVED CHECKPOINT", "C. EVERY DATASET"]
     if df is None:

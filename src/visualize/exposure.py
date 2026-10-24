@@ -99,12 +99,13 @@ def accepted_stream(config, *, n=48, seed=1729, mixtures=(0., .5, 1.)):
     return pd.DataFrame(rows)
 
 
-def _ecdf(ax, values, *, label, color, linestyle="-"):
+def _ecdf(ax, values, *, label, color, linestyle="-", marker=None):
     values = np.sort(np.asarray(values, dtype=float))
     values = values[np.isfinite(values)]
     if len(values):
         ax.step(values, np.arange(1, len(values)+1)/len(values), where="post",
-                color=color, linestyle=linestyle, label=label)
+                color=color, linestyle=linestyle, label=label, marker=marker,
+                markevery=max(1, len(values)//6), markersize=style.FRONTIER_MARKER)
 
 
 def class_exposure(frame):
@@ -112,19 +113,26 @@ def class_exposure(frame):
     accepted = frame[frame.accepted]
     fig, axes = plt.subplots(1, 2, figsize=style.figsize(style.WIDTH_FULL, .55))
     handles = []
-    for mixture, rows in accepted.groupby("mixture", sort=True):
+    mixtures = sorted(accepted.mixture.unique())
+    for index, (mixture, rows) in enumerate(accepted.groupby("mixture", sort=True)):
         color = style.credit_fraction_colour(mixture)
         counts = rows.classes.value_counts(normalize=True).reindex(range(2, 11), fill_value=0)
         name = style.prior_mix_label(mixture)
-        axes[0].plot(counts.index, counts, marker="o", color=color)
+        marker = style.credit_fraction_marker(mixture)
+        line = style.credit_fraction_line(mixture)
+        # Discrete class counts are categories, not a continuous response curve.
+        offset = (index - (len(mixtures)-1)/2) * .22
+        axes[0].scatter(counts.index + offset, counts, marker=marker, color=color,
+                        s=style.EFFECT_POINT)
         binary = rows[rows.classes.eq(2)]
-        _ecdf(axes[1], binary.minority_share, label="_nolegend_", color=color)
-        handles.append(Line2D([], [], color=color, marker="o",
+        _ecdf(axes[1], binary.minority_share, label="_nolegend_", color=color,
+              linestyle=line, marker=marker)
+        handles.append(Line2D([], [], color=color, marker=marker, linestyle=line,
                               label=f"{name}: {len(rows)} tasks, binary n={len(binary)}"))
     axes[0].set(xlabel="Observed classes per accepted table", ylabel="Share of accepted tables",
-                xticks=[2, 4, 6, 8, 10], title="Production class-count exposure")
+                xticks=list(range(2, 11)), title="How many classes are delivered?")
     axes[1].set(xlabel="Minority share, binary tables only", ylabel="Cumulative share of tables",
-                xlim=(0, .5), title="Binary slice of the same stream")
+                xlim=(0, .5), title="How imbalanced are binary tables?")
     for ax in axes:
         ax.yaxis.set_major_formatter(PercentFormatter(1))
     axes[1].xaxis.set_major_formatter(PercentFormatter(1))
@@ -136,7 +144,7 @@ def acceptance_and_difficulty(frame):
     style.apply()
     fig, axes = plt.subplots(1, 2, figsize=style.figsize(style.WIDTH_FULL, .58))
     mixtures = sorted(frame.mixture.unique())
-    for source, offset, color in (("generic", -.16, style.ORIGINAL), ("credit", .16, style.CREDIT)):
+    for j, (source, offset, color) in enumerate((("generic", -.16, style.ORIGINAL), ("credit", .16, style.CREDIT))):
         for i, mixture in enumerate(mixtures):
             rows = frame[frame.source.eq(source) & frame.mixture.eq(mixture)]
             if len(rows):
@@ -147,13 +155,14 @@ def acceptance_and_difficulty(frame):
         valid = frame[frame.source.eq(source) & frame.valid]
         _ecdf(axes[1], valid.difficulty, label=f"{source}: candidates n={len(valid)}", color=color, linestyle="--")
         _ecdf(axes[1], valid[valid.accepted].difficulty,
-              label=f"{source}: accepted n={int(valid.accepted.sum())}", color=color)
+              label=f"{source}: accepted n={int(valid.accepted.sum())}", color=color,
+              marker=style.SOURCE_MARKERS[j])
     axes[0].set(xticks=range(len(mixtures)), xticklabels=[f"{m:.0%}" for m in mixtures],
                 xlabel="Configured credit mixture", ylabel="Accepted / all candidates", ylim=(0, 1.12),
-                title="Validity + configured acceptance")
+                title="Which proposed tables are kept?")
     axes[0].set_yticks([0, .25, .5, .75, 1])
     axes[1].set(xlabel="ExtraTrees OOB pseudo-R²", ylabel="Cumulative share of valid tasks",
-                title="Candidate versus delivered difficulty")
+                title="Difficulty before and after filtering")
     axes[0].yaxis.set_major_formatter(PercentFormatter(1))
     axes[1].yaxis.set_major_formatter(PercentFormatter(1))
     style.legend_below(fig, ncol=2)
@@ -166,8 +175,10 @@ def feature_exposure(frame):
     for mixture, rows in frame[frame.accepted].groupby("mixture"):
         color = style.credit_fraction_colour(mixture)
         label = f"{style.prior_mix_label(mixture)}, n={len(rows)}"
-        _ecdf(axes[0], rows.features, label=label, color=color)
-        _ecdf(axes[1], rows.low_cardinality_share, label=label, color=color)
+        encoding = dict(linestyle=style.credit_fraction_line(mixture),
+                        marker=style.credit_fraction_marker(mixture))
+        _ecdf(axes[0], rows.features, label=label, color=color, **encoding)
+        _ecdf(axes[1], rows.low_cardinality_share, label=label, color=color, **encoding)
     axes[0].set(xlabel="Non-padding features per table", ylabel="Cumulative share of accepted tables")
     axes[1].set(xlabel="Share of features with ≤20 distinct values", ylabel="Cumulative share of accepted tables")
     for ax in axes:

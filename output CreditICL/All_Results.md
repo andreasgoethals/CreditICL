@@ -74,14 +74,12 @@ Dataset semantics are benchmark metadata; a correlation screen cannot certify de
 0005.base_modelisation       DT_DECHEANCE_TERME               0.596
             0001.heloc               DefPrinBal               0.518
               0003.axa                      LTV               0.424
-0.1_data_exploration: 7 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\0.1_data_exploration
+0.1_data_exploration: 5 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\0.1_data_exploration
   01  pd_base_rates
   02  lgd_targets
   03  boundary_mass_ranking
   04  shapes
-  05  type_mix
-  06  missingness
-  07  leakage_screen
+  05  table_inventory
 ```
 
 ---
@@ -192,16 +190,17 @@ References (tfm-library pin cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a):
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: e10fd6407144ff639791ddde38353c62aa8386fbb9989e0ca9744f396eccf603.
+Local notebook-code fingerprint: 7b79ba6915dac48347bb826a25c96b56791838fd65b6e1cbcd466529359d2dab.
 No imported snapshot manifest; counts below describe files currently available locally.
 Main comparison: 0/9 downloaded completions; 0 partial traces; 9 without local output.
 Component tests: 0/15 downloaded completions; 0 partial traces; 15 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
+No local training traces are available. Coverage above is a local file inventory; current VSC state and numerical health require the run records.
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: e10fd6407144ff639791ddde38353c62aa8386fbb9989e0ca9744f396eccf603.
+Local notebook-code fingerprint: 7b79ba6915dac48347bb826a25c96b56791838fd65b6e1cbcd466529359d2dab.
 No imported snapshot manifest; counts below describe files currently available locally.
 Main comparison: 0/9 downloaded completions; 0 partial traces; 9 without local output.
 Component tests: 0/15 downloaded completions; 0 partial traces; 15 without local output.
@@ -213,8 +212,7 @@ No downloaded progress CSVs. Training health cannot be measured from this checko
 
 C · DEVELOPMENT MONITORING
 No local curves; no mixture is selected here.
-1.1_pd_training: 1 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\1.1_pd_training
-  01  training_availability
+1.1_pd_training: no figures saved.
 ```
 
 ---
@@ -224,16 +222,17 @@ No local curves; no mixture is selected here.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: e10fd6407144ff639791ddde38353c62aa8386fbb9989e0ca9744f396eccf603.
+Local notebook-code fingerprint: 7b79ba6915dac48347bb826a25c96b56791838fd65b6e1cbcd466529359d2dab.
 No imported snapshot manifest; counts below describe files currently available locally.
 Main comparison: 0/9 downloaded completions; 0 partial traces; 9 without local output.
 Component tests: 0/15 downloaded completions; 0 partial traces; 15 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
+No local training traces are available. Coverage above is a local file inventory; current VSC state and numerical health require the run records.
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: e10fd6407144ff639791ddde38353c62aa8386fbb9989e0ca9744f396eccf603.
+Local notebook-code fingerprint: 7b79ba6915dac48347bb826a25c96b56791838fd65b6e1cbcd466529359d2dab.
 No imported snapshot manifest; counts below describe files currently available locally.
 Main comparison: 0/9 downloaded completions; 0 partial traces; 9 without local output.
 Component tests: 0/15 downloaded completions; 0 partial traces; 15 without local output.
@@ -245,8 +244,7 @@ No downloaded progress CSVs. Training health cannot be measured from this checko
 
 C · DEVELOPMENT MONITORING
 No local curves; no mixture is selected here.
-1.2_lgd_training: 1 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\1.2_lgd_training
-  01  training_availability
+1.2_lgd_training: no figures saved.
 ```
 
 ---
@@ -254,8 +252,9 @@ No local curves; no mixture is selected here.
 ## 1.3_pd_results
 
 ```
+Complete final credit benchmark tables have not been downloaded. Credit effects remain withheld; OOD and component sections use their own complete-data gates. Monitoring is not substituted.
 A · DEVELOPMENT AND COMPARISON CONTRACT
-Fixed training recipes; mixtures selected on complete development results only.
+Fixed training recipes; any subsequent mixture choice uses complete development results only.
 The designated holdout has historical project exposure; it is not untouched confirmation.
 Development final table available: False.
 
@@ -276,8 +275,7 @@ D · CONDITIONAL COMPONENT REMOVALS
 roc_auc: not yet completely benchmarked
 log_loss: not yet completely benchmarked
 Dataset bootstrap intervals are descriptive; training seeds/folds are not extra datasets.
-1.3_pd_results: 1 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\1.3_pd_results
-  01  final_benchmark_availability
+1.3_pd_results: no figures saved.
 ```
 
 ---
@@ -285,8 +283,9 @@ Dataset bootstrap intervals are descriptive; training seeds/folds are not extra 
 ## 1.4_lgd_results
 
 ```
+Complete final credit benchmark tables have not been downloaded. Credit effects remain withheld; OOD and component sections use their own complete-data gates. Monitoring is not substituted.
 A · DEVELOPMENT AND COMPARISON CONTRACT
-Fixed training recipes; mixtures selected on complete development results only.
+Fixed training recipes; any subsequent mixture choice uses complete development results only.
 The designated holdout has historical project exposure; it is not untouched confirmation.
 Development final table available: False.
 
@@ -302,7 +301,7 @@ r2: not yet completely benchmarked
 Against each architecture's released weights: not yet completely benchmarked
 crps: not yet completely benchmarked
 Against each architecture's released weights: not yet completely benchmarked
-Binary/multiclass OOD subsets are diagnostics, not replacement selection endpoints.
+Native regression OOD retention is descriptive and does not select the prior mixture.
 
 D · CONDITIONAL COMPONENT REMOVALS
 r2: not yet completely benchmarked
@@ -312,8 +311,7 @@ boundary_mass_abs_err: not yet completely benchmarked
 E · DISTRIBUTIONAL ENDPOINTS
 Endpoint matching is aggregate, not conditional calibration; tolerance 1e-4; 99 quantile levels.
 Dataset bootstrap intervals are descriptive; training seeds/folds are not extra datasets.
-1.4_lgd_results: 1 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\1.4_lgd_results
-  01  final_benchmark_availability
+1.4_lgd_results: no figures saved.
 ```
 
 ---
@@ -327,15 +325,16 @@ Dataset bootstrap intervals are descriptive; training seeds/folds are not extra 
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: e10fd6407144ff639791ddde38353c62aa8386fbb9989e0ca9744f396eccf603.
+Local notebook-code fingerprint: 0e8cbfc88cafc99e133a8ccea5d9a71868a9832bbb3065ad83aa28647a1c088d.
 No imported snapshot manifest; counts below describe files currently available locally.
 Main comparison: 0/18 downloaded completions; 0 partial traces; 18 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
+No local training traces are available. Coverage above is a local file inventory; current VSC state and numerical health require the run records.
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: e10fd6407144ff639791ddde38353c62aa8386fbb9989e0ca9744f396eccf603.
+Local notebook-code fingerprint: 0e8cbfc88cafc99e133a8ccea5d9a71868a9832bbb3065ad83aa28647a1c088d.
 No imported snapshot manifest; counts below describe files currently available locally.
 Main comparison: 0/18 downloaded completions; 0 partial traces; 18 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
@@ -346,8 +345,7 @@ No downloaded progress CSVs. Training health cannot be measured from this checko
 
 C · DEVELOPMENT MONITORING
 No local curves; no mixture is selected here.
-2.1_pd_finetuning: 1 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\2.1_pd_finetuning
-  01  training_availability
+2.1_pd_finetuning: no figures saved.
 ```
 
 ---
@@ -357,15 +355,16 @@ No local curves; no mixture is selected here.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: e10fd6407144ff639791ddde38353c62aa8386fbb9989e0ca9744f396eccf603.
+Local notebook-code fingerprint: 0e8cbfc88cafc99e133a8ccea5d9a71868a9832bbb3065ad83aa28647a1c088d.
 No imported snapshot manifest; counts below describe files currently available locally.
 Main comparison: 0/18 downloaded completions; 0 partial traces; 18 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
+No local training traces are available. Coverage above is a local file inventory; current VSC state and numerical health require the run records.
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: e10fd6407144ff639791ddde38353c62aa8386fbb9989e0ca9744f396eccf603.
+Local notebook-code fingerprint: 0e8cbfc88cafc99e133a8ccea5d9a71868a9832bbb3065ad83aa28647a1c088d.
 No imported snapshot manifest; counts below describe files currently available locally.
 Main comparison: 0/18 downloaded completions; 0 partial traces; 18 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
@@ -376,8 +375,7 @@ No downloaded progress CSVs. Training health cannot be measured from this checko
 
 C · DEVELOPMENT MONITORING
 No local curves; no mixture is selected here.
-2.2_lgd_finetuning: 1 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\2.2_lgd_finetuning
-  01  training_availability
+2.2_lgd_finetuning: no figures saved.
 ```
 
 ---
@@ -385,8 +383,9 @@ No local curves; no mixture is selected here.
 ## 2.3_pd_results
 
 ```
+Complete final credit benchmark tables have not been downloaded. Credit effects remain withheld; OOD and component sections use their own complete-data gates. Monitoring is not substituted.
 A · DEVELOPMENT AND COMPARISON CONTRACT
-Fixed training recipes; mixtures selected on complete development results only.
+Both backbones and all three mixtures are fixed; no Experiment 1 winner is selected for Experiment 2.
 The designated holdout has historical project exposure; it is not untouched confirmation.
 Development final table available: False.
 
@@ -406,8 +405,7 @@ log_loss: not yet completely benchmarked
 Against each architecture's released weights: not yet completely benchmarked
 Binary/multiclass OOD subsets are diagnostics, not replacement selection endpoints.
 Dataset bootstrap intervals are descriptive; training seeds/folds are not extra datasets.
-2.3_pd_results: 1 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\2.3_pd_results
-  01  final_benchmark_availability
+2.3_pd_results: no figures saved.
 ```
 
 ---
@@ -415,8 +413,9 @@ Dataset bootstrap intervals are descriptive; training seeds/folds are not extra 
 ## 2.4_lgd_results
 
 ```
+Complete final credit benchmark tables have not been downloaded. Credit effects remain withheld; OOD and component sections use their own complete-data gates. Monitoring is not substituted.
 A · DEVELOPMENT AND COMPARISON CONTRACT
-Fixed training recipes; mixtures selected on complete development results only.
+Both backbones and all three mixtures are fixed; no Experiment 1 winner is selected for Experiment 2.
 The designated holdout has historical project exposure; it is not untouched confirmation.
 Development final table available: False.
 
@@ -436,13 +435,12 @@ r2: not yet completely benchmarked
 Against each architecture's released weights: not yet completely benchmarked
 crps: not yet completely benchmarked
 Against each architecture's released weights: not yet completely benchmarked
-Binary/multiclass OOD subsets are diagnostics, not replacement selection endpoints.
+Native regression OOD retention is descriptive and does not select the prior mixture.
 
-E · DISTRIBUTIONAL ENDPOINTS
+D · DISTRIBUTIONAL ENDPOINTS
 Endpoint matching is aggregate, not conditional calibration; tolerance 1e-4; 99 quantile levels.
 Dataset bootstrap intervals are descriptive; training seeds/folds are not extra datasets.
-2.4_lgd_results: 1 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\2.4_lgd_results
-  01  final_benchmark_availability
+2.4_lgd_results: no figures saved.
 ```
 
 ---
@@ -456,6 +454,7 @@ Dataset bootstrap intervals are descriptive; training seeds/folds are not extra 
 ```
 PD mixture frozen: False
 LGD mixture frozen: False
+Both Experiment 3 mixtures await the documented development selection. No long-budget curves or holdout contrasts are available yet.
 A · FROZEN SELECTION
 PD: mixtures [0.0, 'FILL_FROM_EXP1']; frozen=False; paired seeds [0, 1].
 LGD: mixtures [0.0, 'FILL_FROM_EXP1']; frozen=False; paired seeds [0, 1].
@@ -468,6 +467,5 @@ LGD: no selected, seed-paired local monitoring evidence.
 C · FINAL DESIGNATED-HOLDOUT EFFECTS
 PD: not yet completely benchmarked
 LGD: not yet completely benchmarked
-3.1_budget_persistence: 1 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\3.1_budget_persistence
-  01  budget_evidence_availability
+3.1_budget_persistence: no figures saved.
 ```

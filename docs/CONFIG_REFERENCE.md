@@ -267,7 +267,9 @@ non-finite gradients still stop the run. This is a project safeguard beyond the
 upstream fine-tuner's default AMP loop, not a different regression objective.
 
 **`train.l2sp_alpha: 0`** — L2-SP (`Ω(w) = (α/2)‖w − w₀‖²` toward the released weights, Real-TabPFN's
-α = 0.003) is implemented and tested but not in the design: neither recipe Exp2 follows uses it, and a
+α = 0.003) is implemented and tested for **TabICL only**, but not in the current design.
+The TabPFN trainer rejects nonzero L2-SP and any initialization strategy other than `full`;
+these options must never be silently ignored. Neither adopted recipe uses L2-SP, and a
 second axis would confound the first. A later ablation; forgetting is measured instead, on the
 out-of-domain suites, in every progress curve and benchmark.
 The drift L2-SP penalises is *measured* in every run instead (`weights.csv`: distance from the

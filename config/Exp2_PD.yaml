@@ -1,12 +1,13 @@
 # =============================================================================
 # EXPERIMENT 2 — PD — IS THE CREDIT PRIOR USEFUL FOR THE REAL MODELS? (2 x 3 x 3 = 18 arms)
 #
-# Continued pretraining of the RELEASED TabICLv2 and TabPFN-3 weights on the synthetic prior, at
-# the recipe each model's own literature uses for exactly that — no search (30-09-2026):
-#   TabICLv2: its authors' stage 3 (Muon, lr 2e-5, 10,000 steps), which continues the released
-#             model's pretraining;
-#   TabPFN-3: TabPFN-Wide (Kolberg et al. 2026), which continued released TabPFN on the synthetic
-#             TabICL prior (AdamW, lr 1e-5, weight decay 1e-4, 10,000 steps).
+# Continued pretraining of RELEASED TabICLv2 and TabPFN-3 on ALL THREE mixtures.
+# Exp1 does not select an Exp2 winner. Fixed literature-derived recipes, no search:
+#   TabICLv2: stage-3 optimizer/budget (Muon, lr 2e-5, 10,000 steps), adapted to
+#             our 1,024-row tasks and 30–90% context instead of long-context stage 3;
+#   TabPFN-3: TabPFN-Wide's v2-classifier recipe (Kolberg et al. 2026: AdamW,
+#             lr 1e-5, weight decay 1e-4, 10,000 steps), adapted to v3 and our tasks.
+# These are controlled starting recipes, not evidence of optimal hyperparameters.
 # The same recipe for every mix, so the comparison is about the prior. Every 2,500-step checkpoint is
 # scored (the learning curve); the FINAL one is the result, as both recipes fix the length.
 #

@@ -30,17 +30,9 @@ Share of rows within 1e-4 of loss 0 and loss 1 per LGD benchmark, stacked and or
 
 Rows against features for 21 processed source tables on logarithmic axes, with one named point per table; dotted lines mark the synthetic pretraining sizes of 1,024 rows and 100 features, not benchmark limits.
 
-**05_type_mix** — `type_mix`
+**05_table_inventory** — `table_inventory`
 
-Share of processed source columns marked categorical per benchmark dataset, sorted and coloured by prediction task.
-
-**06_missingness** — `missingness`
-
-Share of missing cells per processed source table, sorted and coloured by prediction task; the rates describe the available preprocessing rather than original source missingness.
-
-**07_leakage_screen** — `leakage_screen`
-
-Largest absolute single-feature Pearson correlation with the target per processed source table, labelled with its source column; the dashed line marks 0.9, and this screen is separate from the prediction-time feature policy.
+Processed source-table inventory with one aligned row per dataset: categorical columns as a share of all source columns on the left, and missing feature entries as a share of all source feature entries on the right. Percentages are written beside the marks; axes have separate percentage ranges. PD (circles) and LGD (squares) label the prediction tasks. The inventory precedes prediction-time feature exclusions and fold-fitted encoding; a zero reflects the available processed table, not necessarily complete original records.
 
 ## 0.2_prior_visualisation_pd
 
@@ -66,11 +58,11 @@ Realised positive-label rates in 80 controlled tasks at a fixed 15% applicant ta
 
 **06_shift_kinds** — `shift_kinds`
 
-Context against query summaries per synthetic task for cohort, covariate, prior-probability and selection shifts, 60 tasks with and 60 without each shift; the dashed line marks equality.
+Context against query summaries per synthetic task for cohort, covariate, prior-probability and selection shifts, 60 tasks with and 60 without each shift; the dashed line marks equality. Covariate means use the whole-table mean and standard deviation, so their opposite signs follow from centering; their distance from equality records the separation. Open gray squares mark shift-off tasks and blue circles mark shift-on tasks.
 
 **07_covariate_missingness** — `covariate_missingness`
 
-Share of missing values by covariate-score sextile in a controlled 4,000-row table, with independent and covariate-coupled missingness; realised outcomes are not inputs to the shared borrower-level mask.
+Missing-entry rates in six equally sized groups ordered from the lowest to highest value of one synthetic feature, repeated across six columns in 4,000 rows. Gray squares use a constant missingness probability; blue circles use feature-dependent probabilities. Both target 20% missing entries overall (dotted line); one fixed random draw creates sampling variation. No outcome labels enter the mask.
 
 **08_unfiltered_difficulty** — `unfiltered_difficulty`
 
@@ -88,7 +80,7 @@ Raw loss mass at 0 against mass at 1 for 500 unfiltered credit tasks, with one s
 
 **03_standardised_endpoint_ties** — `standardised_endpoint_ties`
 
-Lower- against upper-endpoint tie frequency in 500 tasks per generator after the same context-fitted affine target transformation; ties use tolerance 1e-4 in standardized units, without economic 0/1 interpretation.
+Share of rows tied at each table minimum and maximum in 500 tasks per generator, shown in separate panels with identical axes. Each point is one table after the same context-fitted target standardization, with ties defined within 1e-4 standardized units; these extrema are not economic loss zero and one.
 
 **04_zoib_response** — `zoib_response`
 
@@ -106,58 +98,40 @@ Marginal histogram distance from pooled raw credit-prior targets to each real LG
 
 ## 1.1_pd_training
 
-**01_training_availability** — `training_availability`
-
-Local training-trace availability per prediction task for loss, throughput, gradient and development-monitoring panels; no scheduler state is inferred from missing files.
+_No figures produced._
 
 ## 1.2_lgd_training
 
-**01_training_availability** — `training_availability`
-
-Local training-trace availability per prediction task for loss, throughput, gradient and development-monitoring panels; no scheduler state is inferred from missing files.
+_No figures produced._
 
 ## 1.3_pd_results
 
-**01_final_benchmark_availability** — `final_benchmark_availability`
-
-Availability notice for complete final five-fold benchmark tables; the paired-effect axes are withheld until the benchmark coverage and current-protocol gates pass.
+_No figures produced._
 
 ## 1.4_lgd_results
 
-**01_final_benchmark_availability** — `final_benchmark_availability`
-
-Availability notice for complete final five-fold benchmark tables; the paired-effect axes are withheld until the benchmark coverage and current-protocol gates pass.
+_No figures produced._
 
 # 2. Experiment 2
 
 ## 2.1_pd_finetuning
 
-**01_training_availability** — `training_availability`
-
-Local training-trace availability per prediction task for loss, throughput, gradient and development-monitoring panels; no scheduler state is inferred from missing files.
+_No figures produced._
 
 ## 2.2_lgd_finetuning
 
-**01_training_availability** — `training_availability`
-
-Local training-trace availability per prediction task for loss, throughput, gradient and development-monitoring panels; no scheduler state is inferred from missing files.
+_No figures produced._
 
 ## 2.3_pd_results
 
-**01_final_benchmark_availability** — `final_benchmark_availability`
-
-Availability notice for complete final five-fold benchmark tables; the paired-effect axes are withheld until the benchmark coverage and current-protocol gates pass.
+_No figures produced._
 
 ## 2.4_lgd_results
 
-**01_final_benchmark_availability** — `final_benchmark_availability`
-
-Availability notice for complete final five-fold benchmark tables; the paired-effect axes are withheld until the benchmark coverage and current-protocol gates pass.
+_No figures produced._
 
 # 3. Experiment 3
 
 ## 3.1_budget_persistence
 
-**01_budget_evidence_availability** — `budget_evidence_availability`
-
-Availability notice for the frozen selected-versus-control long-budget comparison, two paired seeds per task and 12.8 million synthetic tasks per run.
+_No figures produced._

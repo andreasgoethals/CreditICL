@@ -561,10 +561,6 @@ def plot_boundary_mass_sources(
             ax.scatter([rx], [ry], marker="*", s=90, color=style.STAR, zorder=5,
                        edgecolors="white", linewidths=0.7,
                        label="one real dataset" if (i == 0 and k == 0) else None)
-        # The line where the two atoms are equal. Above it a book is loss-heavy, below it
-        # recovery-heavy, and which side a prior sits on is the readable fact.
-        ax.plot([0, 1], [0, 1], color=style.MUTED, linewidth=0.8, linestyle=":", zorder=1,
-                label="equal mass at 0 and at 1" if i == 0 else None)
         ax.set_xlim(-0.02, 1.02)
         ax.set_ylim(-0.02, 1.02)
         ax.set_xlabel("Raw loss mass at 0 · full recovery")
@@ -589,11 +585,13 @@ def plot_standardised_endpoint_ties(variants):
     from src.prior.generator import standardise_on_context
 
     style.apply()
-    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, .62))
-    for i, (name, tasks) in enumerate(variants.items()):
+    if not variants:
+        raise ValueError("At least one prior is required for endpoint ties")
+    fig, axes = plt.subplots(1, len(variants), squeeze=False, sharex=True, sharey=True,
+                             figsize=style.figsize(style.WIDTH_FULL, .52))
+    for i, ((name, tasks), ax) in enumerate(zip(variants.items(), axes.flat)):
         points = []
         for task in tasks:
-            y = np.asarray(task.y, dtype=float)
             if "train_size" not in task.meta:
                 raise ValueError("A recorded context split is required for comparable standardised ties")
             n_context = int(task.meta["train_size"])
@@ -604,10 +602,12 @@ def plot_standardised_endpoint_ties(variants):
         if points:
             x, y = np.asarray(points).T
             ax.scatter(x, y, color=style.variant_colour(name, i), alpha=.45,
-                       s=style.SEED_POINT, label=f"{style.variant_label(name)} (n={len(points)})")
-    ax.set(xlabel="Lower-endpoint tie frequency", ylabel="Upper-endpoint tie frequency",
-           xlim=(-.02, 1.02), ylim=(-.02, 1.02), title="Standardised endpoint ties")
-    ax.xaxis.set_major_formatter(PercentFormatter(1))
-    ax.yaxis.set_major_formatter(PercentFormatter(1))
-    style.legend_below(fig, ncol=2)
+                       s=style.SEED_POINT, marker=style.SOURCE_MARKERS[i % 2])
+        ax.set(xlabel="Rows at the table minimum", xlim=(-.02, 1.02), ylim=(-.02, 1.02),
+               xticks=[0, .25, .5, .75, 1], yticks=[0, .25, .5, .75, 1])
+        style.title(ax, f"{style.variant_label(name).capitalize()} · {len(points)} tables")
+        ax.xaxis.set_major_formatter(PercentFormatter(1))
+        ax.yaxis.set_major_formatter(PercentFormatter(1))
+    axes[0, 0].set_ylabel("Rows at the table maximum")
+    fig.suptitle("Repeated values at each target extreme")
     return fig

@@ -30,7 +30,8 @@ all prediction-time-eligible features, and five common folds. Missing evidence
 produces one availability notice instead of a gallery of empty plots. The final
 credit/OOD frontier is not populated from short-context training monitors.
 
-Mixtures are selected from complete development results. The designated holdout
+Only Experiment 3 selects a nonzero mixture from complete Experiment 1 development results.
+Experiment 2 retains all three predeclared mixtures for each backbone. The designated holdout
 has historical project exposure; it is **not untouched confirmation**. Component
 removals are conditional on the full 50% package, not a PD/LGD double dissociation.
 Experiment 2 fixes its recipes and compares backbones separately. Experiment 3
