@@ -792,7 +792,10 @@ def test_the_run_card_answers_the_questions_a_reader_would_ask():
         "group_size",            # the micro-batch constraint
         "UPSTREAM COMPARISON",   # every deviation, in one place
         "LEAKAGE CHECK",         # what is and is not trained on
-        "not the upstream long-context curriculum",  # applies to scratch and continuation
+        "stage-1 reference only; continued training has its own table distribution",
+        "row sampling / layout",  # distinguish Exp1's fixed tables from long-context Exp2
+        "worker / prefetch",      # bound the resident generated batches
+        "efficient FP32 SDPA",    # make the long-context attention policy explicit
     ):
         assert needed in card, f"the run card does not report {needed!r}"
     assert "_log_run_card()" in src, "the card must actually be called"

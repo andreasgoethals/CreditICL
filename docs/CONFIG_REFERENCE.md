@@ -7,7 +7,7 @@ submit, so prose in it makes the settings unfindable. If you catch yourself writ
 a knob, it belongs here.
 
 Neighbours: [EXPERIMENTAL_DESIGN.md](EXPERIMENTAL_DESIGN.md) (what the experiments ask) ·
-[PRIORS.md](PRIORS.md) (how the prior is built) · [VSC.md](VSC.md) (the cluster). Original source-audit pin `de324efcca55be392feb0c01830b3b6ce364587f`; later citation checks record their pins in `src/visualize/literature.py` and RUNS.md.
+[PRIORS.md](PRIORS.md) (how the prior is built) · [VSC.md](VSC.md) (the cluster). Original source-audit pin `de324efcca55be392feb0c01830b3b6ce364587f`; the 24-10-2026 Experiment 2 audit uses TFM pin `702d9ab0b66f6639ba8d443ff9c4a91231964465`.
 
 ## Contents
 
@@ -40,7 +40,8 @@ config body already has, so a typo raises instead of doing nothing.
 crossed three filters and two intensities, 45 arms). The control is TabICLv2's prior and filter exactly;
 the current ranges use the credit-risk literature and broad modelling choices ([PRIORS.md](PRIORS.md) §5).
 Mechanism design was informed by the benchmark suite, including the designated holdout;
-it is not untouched external validation. The prior is the same in Exp0-Exp3. At
+it is not untouched external validation. The credit mechanisms are shared across Exp0-Exp3;
+table geometry is now backbone-specific in Exp2. At
 `credit_fraction: 0.0` the credit knobs have no effect, so such combinations collapse to one control
 per seed (`effective_fingerprint` in `src/utils/config.py`).
 
@@ -51,19 +52,28 @@ lever moving you cannot attribute an effect to any of them.
 
 ## 2. The prior's shape is not ours to choose
 
-`n_rows_range`, `n_features_range`, `max_features`, `n_nodes_range`, `train_frac_range`. The project
-rests on one sentence — *the only difference from TabICLv2 is the prior's credit structure* — so these
-five are copied verbatim from `scripts/train_v2_reg_stage1.sh`:
+`n_rows_range`, `n_rows_sampling`, `n_features_range`, `max_features`, `n_nodes_range` and
+`train_frac_range` specify the synthetic task distribution. Geometry is paired across mixtures
+within each backbone, while the credit package also changes targets, encoding and filtering.
+Exp1 and Exp3 retain the following stage-1 geometry from `scripts/train_v2_reg_stage1.sh`;
+Exp2's TabPFN-3 arms also retain it as a declared adaptation:
 
-| knob | ours | upstream stage 1 |
+| knob | Exp1 / Exp3 / Exp2 TabPFN-3 | upstream stage 1 |
 |---|---|---|
 | `n_rows_range` | `[1024, 1024]` | `--max_seq_len 1024`, no `--min_seq_len` |
 | `n_features_range` | `[1, 100]` | `--min_features 1 --max_features 100` |
 | `n_nodes_range` | `[2, 33]` | `--min_n_nodes 2 --max_n_nodes 32` |
 | `train_frac_range` | `[0.3, 0.9]` | `--min_train_size 0.3 --max_train_size 0.9` |
 
-**Rows are 1,024 exactly, not a range** (`sample_seq_len` returns `max_seq_len` when no min is passed);
-only the train/test split varies. With `base.implementation: upstream`, the upstream generator
+**These arms have 1,024 rows exactly, not a range**; only the train/test split varies.
+Exp2's TabICLv2 arms instead use **`[400, 60000]` with `n_rows_sampling: log_uniform`**,
+`train_frac_range: [0.79, 0.81]`, group/subgroup size 1 and micro-batch size 1. This matches
+`Prior.sample_seq_len` and the stage-3 scripts in `tfm-library/repositories/TabICL.txt`.
+Log-uniform means equal probability per multiplicative interval, with median about 4,899 rows;
+uniform sampling over the interval would be a materially different prior. The row/feature/split
+draws remain paired between 0%, 50% and 100% mixtures for each seed.
+
+With `base.implementation: upstream`, the upstream generator
 owns graph depth and control categories. `n_nodes_range`, `base.max_cat_size` and the
 `category_frequency` fields are only configurable in the small `transcribed` test backend;
 they do not override the production upstream generator. Keep the documented upstream values
@@ -74,7 +84,8 @@ than configurable through unused `eval.metrics` / `eval.ood_suites` fields. `bet
 Muon for upstream API fidelity but only affects its AdamW branch; our all-Muon group does not use it.
 Two of these had drifted (`[512,1024]` rows, `[3,50]` features), both
 making training *cheaper* — which is why nothing complained: a wrong setting that costs money gets
-found; one that saves money does not. `test_prior_shape_matches_upstream_stage_one` pins all five.
+found; one that saves money does not. Stage-1 shape tests protect those experiments; the
+long-context tests separately verify Exp2's sampling law, per-row feature caps and paired streams.
 
 ## 3. `max_features`
 
@@ -83,6 +94,12 @@ throughout all stages"; every stage script passes `--max_features 100`). It caps
 stops noise/missingness columns pushing past it. It does **not** limit inference: `TabICL.__init__`
 takes no feature-count parameter — `col_embedder` is a permutation-equivariant induced-set transformer
 with learned inducing points and no per-feature weights, so a trained checkpoint accepts any width.
+
+For Exp2's long-context TabICLv2 training, upstream `Prior.adjust_max_features` additionally
+limits width by row count: 100 through 10,240 rows, 80 through 20,000, 60 through 30,000,
+40 through 40,000, 30 through 50,000, and 20 through 60,000. The resulting per-table ceiling
+also reaches native generation and predictability filtering, where zero-padded width affects
+the seeded ExtraTrees filter. Credit mechanisms stay within the same planned feature budget.
 
 Protocol 9 retains the uncapped benchmark from 13-10-2026: `protocol.MAX_FEATURES = None`.
 All prediction-time eligible columns and all training-fold rows reach every model. The wrappers
@@ -93,36 +110,42 @@ Exp0 tests real 2,986-column PD / 601-column LGD predictions and the widest sele
 
 **Keep 100.** It is the control variable (a wider training distribution is a second difference from
 TabICLv2); training wider and then reporting a win on a wide table would measure feature width, not the
-prior. Both width and context-length extrapolation now occur at evaluation time, identically
-across synthetic-pretraining arms. Supporting wider input does not guarantee unchanged accuracy
+prior. Both width and context-length extrapolation can occur at evaluation time, with the same
+training geometry across mixtures of a backbone. Supporting wider input does not guarantee unchanged accuracy
 or that every table fits GPU memory; Exp0 checks execution on the selected largest/widest tables.
 
 ## 4. Why one stage
 
 Upstream trains in three, and what changes between them is the row count and the LR (stage 1: 500k
-steps, 1,024 rows, lr 8e-4, clip 10 → stage 3: 10k steps, up to 60k rows, lr 2e-5, clip 1). We use the stage-1 table size as a controlled compute budget, not as a claim to reproduce
-the complete released-model curriculum. The 1,024-row task size is shared by every main
-mixture and component test. Experiment 0 measures current throughput; a constant cost ratio
+steps, 1,024 rows, lr 8e-4, clip 10 → stage 3: 10k steps, up to 60k rows, lr 2e-5, clip 1).
+Exp1's main and component studies and Exp3 use the stage-1 table size as a controlled task budget,
+not as a claim to reproduce the complete released-model curriculum. Exp2 starts from released
+weights, which already completed all upstream stages; its TabICLv2 arms continue using the
+final-stage table distribution and optimizer schedule. This is additional adaptation from
+the released stage-3 checkpoint, not a restart of upstream stage 3 from stage 2.
+Experiment 0 measures current throughput; a constant cost ratio
 between upstream stages is not justified by their maximum row lengths. Full-row evaluation
 measures transfer to longer contexts and does not cap the training fold. The released model
 has seen longer contexts and far more compute, so the causal comparison is each credit arm
 against its matched control, with released weights as external references. Current Exp3 increases
-steps to 200,000 while retaining 1,024 rows per task; long-context training is a separate possible
-extension, not something the current experiment silently supplies.
+steps to 200,000 while retaining 1,024 rows per task. The new Exp2 long-context setting does not
+retroactively alter Exp1 or add a length curriculum to Exp3.
 
 ## 5. Training budget
 
-**`max_steps`** is the compute lever, and the limit is credits: at batch 64, 12,500 steps ≈ 800k
-datasets/arm (2.5% of upstream's stage 1); a B200 costs 437.5 credits/GPU-minute, so Exp1's 9 arms
-run tens of millions of credits and doubling `max_steps` doubles that. The three experiments spend
-deliberately differently — **Exp1 12,500** (a ranking), **Exp2 10,000** (continued pretraining, the
-length of both published recipes), **Exp3 200,000** (Exp1's mix at length, 2 seeds; TabICLv2's log-loss
-settles only after ~200,000 steps, EXPERIMENTAL_DESIGN §3). If the budget will not stretch, **cut
-`max_steps`, never the prior shape** — a shorter run is just shorter; a cheaper prior is a confound.
+**`max_steps`** controls update count: at batch 64, 12,500 steps give 800k datasets per run
+(2.5% of upstream's stage 1). Exp1 has nine main and fifteen component runs per track, 48 total.
+The three experiments use **Exp1 12,500**, **Exp2 10,000** and **Exp3 200,000** updates.
+Exp2 has eighteen runs per track, 36 total; Exp3 has four per track, eight total. Runtime also
+depends strongly on table geometry, generation/filtering and backend, so equal step counts do
+not imply equal cost across experiments or backbones. Any budget revision must be specified
+before comparing arms and applied consistently; never silently truncate tables or change the
+mixture because a run is expensive. Exp2's new geometry requires a fresh cost assessment (§8).
 
-**`micro_batch_size`** is a correctness constraint, not a memory setting: `Trainer.validate_micro_batch`
+**`micro_batch_size`** is constrained by task geometry as well as memory: upstream `Trainer.validate_micro_batch`
 raises if datasets in one micro-batch disagree on sequence length or train/test split, both drawn per
-group, so upstream keeps `micro == batch_size_per_gp` (Exp1/Exp3: micro 4 = group 4). Gradient
+group, so upstream keeps `micro == batch_size_per_gp` (Exp1/Exp3: micro 4 = group 4;
+Exp2 TabICLv2: micro 1 = group 1). Gradient
 accumulation then runs `ceil(batch/micro)` passes and averages them — mathematically identical to one
 big batch, only speed/memory differ. A bigger GPU does not buy a bigger micro-batch.
 
@@ -131,7 +154,19 @@ The paper describes AMP, but its scripts explicitly request float32; our optiona
 is a separate speed/precision choice, not the campaign default. TabPFN fine-tuning explicitly
 uses float16 autocast with GradScaler and retries overflow on the same batch. The attention backend is
 **pinned** (`src/models/backends.py`): PyTorch's cuDNN fused MHA graph raised on a B200 at batch 64
-under AMP, so it is excluded; flash, mem-efficient and math remain, and the run card logs which is used.
+under AMP, so it is excluded. Exp1/Exp3 retain their established backend policy. Exp2 TabICLv2 sets
+`require_efficient_attention: true`: PyTorch flash/memory-efficient SDPA are permitted, the
+quadratic math fallback is forbidden, and upstream FA3 is explicitly disabled through forward
+and backward/recomputation so installing it cannot silently cast float32 attention to float16.
+An unsupported efficient kernel must fail the capacity gate rather than consume a production run.
+
+**`batch_layout: ragged`**, **`max_workers: 4`**, **`prefetch_factor: 1`** and
+**`activation_checkpointing: true`** apply to Exp2 TabICLv2. The loader retains per-table tensors;
+the trainer assembles only the current micro-batch. This avoids padding 64 tables to the maximum
+rows and maximum width seen anywhere in that update, then duplicating that allocation in many
+prefetch queues. Slurm's worker count remains capped at four. Checkpointing recomputes activations
+during backward without dropping rows or changing the per-task objective. These safeguards still
+require CUDA tests at each row/width capacity corner and a full representative 64-task update.
 
 ## 6. `optimizer`
 
@@ -153,9 +188,11 @@ being measured.
 **`prior.credit_fraction`** — the main switch: the probability a synthetic dataset comes from our
 credit path rather than the unmodified TabICL prior. `0.0` is the control. Exp1 and Exp2 sweep
 `{0, .5, 1}`; Exp3 runs `0.0` and Exp1's chosen mix.
-Mixing rather than replacing is also the defence against the collapse Tanna 2026 reports for TabICL
-under aggressive adaptation — a model that keeps seeing the original prior keeps the distribution it
-was built for.
+Mixing rather than replacing retains native-prior exposure, a plausible defence against forgetting;
+it does not guarantee non-degradation. Tanna 2026 reports collapse under a different setting,
+per-dataset supervised adaptation, which motivates measuring retention rather than predicting the
+outcome of this synthetic continuation. The 0% arm measures additional native-prior training against
+the released weights; it is not assumed to improve or match them by construction.
 
 **`prior.encoding`** — whose prediction path a credit table imitates: `tabicl` (TabICL's — gaps filled
 with the context mean, `prediction_view`, an LGD target standardised on the context) or `raw` (the
@@ -163,10 +200,12 @@ table as recorded — gaps as NaN, the LGD target on [0, 1] — for TabPFN, whos
 the rest). The TabPFN-3 arms set `raw`; `TabPFNTrainer` refuses anything else. The control tables are
 upstream's either way.
 
-**`prior.grouping`** — upstream's batch structure (`GraphPrior.get_batch`): groups of 4 datasets share
-the row count and the context/query split, and (subgroup = group, `subgroup_size: 4`) the feature
-count; the control draws 2–10 classes per table (`max_classes: 10`). `src/prior/stream.py` builds it,
-and every arm with the same seed sees the same TabICL tables in the same slots (common random numbers).
+**`prior.grouping`** — upstream's batch structure (`GraphPrior.get_batch`): Exp1/Exp3 and Exp2
+TabPFN-3 use groups/subgroups of 4 sharing row count, context/query split and feature count.
+Exp2 TabICLv2 uses groups/subgroups of 1, so each long-context task has its own shape and split.
+The control draws 2–10 classes per table (`max_classes: 10`). `src/prior/stream.py` builds it;
+mixture arms within the same backbone and seed share shape draws and identical native tasks in
+unchanged native slots. Different backbone batch sizes do not produce an identical ordered stream.
 A credit table keeps its slot's width even when it records the period factor as a column (the column
 takes a noise column's place).
 
@@ -199,7 +238,7 @@ wide). Monotone, so every split a tree could make — and the dependence on the 
 
 **`prior.credit.missingness`** — gaps in a `missing_prob` share of tables, in a
 `missing_col_fraction_range` share of the columns, `missing_rate_range` missing each, their chance
-coupled to the target with a strength drawn from `missing_risk_coupling_range` (all wide: the
+coupled to observed borrower covariates with a strength drawn from `missing_risk_coupling_range` (all wide: the
 literature says gaps are informative, not how often). Filled with the context mean under the `tabicl`
 encoding, left NaN under `raw`; `missing_indicators: true` is refused, since TabICL's prediction path
 adds no indicator.
@@ -216,10 +255,21 @@ Exp2 continues the pretraining of the **released TabICLv2 and TabPFN-3 weights**
 original prior and ours. The recipe is a nuisance parameter that must be good enough not to confound
 "does our prior help", so each model uses optimizer/budget settings **derived from a published
 continued-pretraining recipe** (30-09-2026; the stage-A search was dropped): TabICLv2's stage 3
-settings and TabPFN-Wide's settings applied to TabPFN-3. These are adaptations: our synthetic
-tables have 1,024 rows, not TabICLv2 stage 3's long contexts, and applying a paper's settings to
-a newer model does not establish that paper's results transfer. TabICL continuation also
-keeps our context share 0.3–0.9 and group size 4, rather than stage 3's 0.79–0.81 and group size 1.
+settings and TabPFN-Wide's settings applied to TabPFN-3. Before launch, the 24-10-2026 revision
+also adopts TabICLv2's stage-3 table distribution: 400–60,000 log-uniform rows, 79–81% context,
+group/micro-batch size 1 and the row-dependent feature ceiling. All three mixtures share those
+settings. The primary evidence is `tfm-library/papers/2026/09_Qu_et_al._TabICLv2_A_better_faster_scalable_and_open_tabular_foundation_model.pdf`
+§4.1 and Appendix B.1, plus `scripts/train_v2_clf_stage3.sh`, `scripts/train_v2_reg_stage3.sh`,
+`Prior.sample_seq_len`, `Prior.adjust_max_features` and `Trainer.run_micro_batch` in
+`tfm-library/repositories/TabICL.txt`. The paper evaluated progressive large-table gains during
+pretraining; it did not evaluate this credit-targeted continuation from its final released weights.
+
+The paper's Appendix B.2 says AMP throughout and checkpointing above 20k rows, whereas the pinned
+reference scripts request float32 and `recompute False`, describing an H200 run. They enable
+FA3, whose implementation casts float32 Q/K/V to float16. Our explicit float32 efficient-SDPA,
+FA3-disabled, activation-checkpointed policy is a hardware adaptation and must pass fresh CUDA
+validation; it is not claimed to reproduce both conflicting execution descriptions verbatim.
+Applying a paper's settings to a newer model likewise does not establish that its results transfer.
 TabPFN-Wide studied the v2 classifier, cross-entropy and 40–400 rows with feature preprocessing
 disabled during training. We use v3, 1,024 rows, its official feature pipeline, and the official
 CRPS+MSE regression objective for LGD. These are explicitly project adaptations. The recipes compared below are
@@ -239,6 +289,11 @@ Kolberg's paper states "linear warm-up and cosine decay" without the warm-up's l
 TabPFN fine-tuner's. Every 2,500-step checkpoint is scored (a learning curve on real data); the final one
 is the result, since both recipes fix the length. `eval.headline_step` can name another checkpoint as the
 result, and `results_plots.load_results` honours it; no config sets it.
+Neither recipe is established as optimal. All 36 runs remain predeclared (two backbones × three
+mixtures × three seeds × two tracks), with no Exp1 winner selection. Match steps, task counts and
+planned geometry **within a backbone**, not wall-clock or cross-backbone row exposure. Native
+tables are filtered and credit tables are not; that existing package difference can change
+generation cost and difficulty, so rejection statistics and measured runtime remain outcomes.
 
 **`architecture`** — set per arm: `tabicl` (our `Trainer`, `src/train/loop.py`) or `tabpfn3`
 (`TabPFNTrainer`, `src/train/tabpfn_trainer.py`, built on TabPFN's own fine-tuning path);
@@ -282,8 +337,14 @@ per-dataset SFT drops TabZilla accuracy 0.873 → 0.567, while TabPFN survives) 
 continues at its authors' own stage-3 rate, the lowest upstream ever trained it at, and why the
 out-of-domain suites are scored for every arm.
 
-**Budget (agreed 29-09-2026: ~400 GPU-h):** 18 arms per track plus their benchmarks. Experiment 0
-measures the per-arm and per-slot hours before Experiment 2 is submitted.
+**Budget:** the 29-09-2026 estimate of roughly 400 GPU-hours described the old 1,024-row proposal
+and is obsolete for the revised Exp2. The TabICLv2 law averages about 11,895 rows per task,
+or 7.61 billion rows over 640,000 tasks, approximately 11.6 times the old row exposure. Attention
+and filtering costs are nonlinear, so that ratio is not a runtime multiplier. Fresh CPU and GPU
+Experiment 0 validation must pass before launch, including the new capacity corners and complete
+representative updates. Use their measured generation, update time and GPU memory to assess
+feasibility; one update is an initial capacity/throughput observation, not a precise campaign ETA.
+The older successful receipts and completed Exp1 runs remain evidence for their own frozen code.
 
 ## 9. A note on the LGD R² band
 

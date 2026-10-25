@@ -11,6 +11,11 @@ built exactly as upstream's `GraphPrior.get_batch` builds one (pinned dump,
     seq_lens     (B,)                  rows per table
     train_sizes  (B,)                  context rows per table (the rest are queries)
 
+With ``prior.batch_layout: ragged``, X and y are lists of per-table tensors
+instead. Rows and active features are retained without padding an entire update
+to its largest table; the trainer assembles only the current micro-batch. The
+default dense layout preserves the frozen fixed-length Experiment 1 stream.
+
 The trainer splits it into micro-batches of one group each, checks that the group shares its
 split, and trims the micro-batch to its widest real table and its row count — upstream's
 `validate_micro_batch` and `align_micro_batch`. A table therefore never reaches the model
@@ -37,7 +42,11 @@ from .generator import TaskGenerator
 from .rng import PriorRNG, one_thread
 from .stream import plan_batch
 
-Batch = tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+# Long-context training keeps tables separate until the trainer assembles one
+# micro-batch. Padding every task to the longest/widest task can multiply host
+# memory by an order of magnitude before any model computation starts.
+BatchValues = torch.Tensor | list[torch.Tensor]
+Batch = tuple[BatchValues, BatchValues, torch.Tensor, torch.Tensor, torch.Tensor]
 
 
 class PriorBatchDataset(IterableDataset):
@@ -60,6 +69,11 @@ class PriorBatchDataset(IterableDataset):
         self.source = str(self.pool_cfg.get("source", "generate"))
         if self.source not in ("generate", "pool"):
             raise ValueError(f"prior.pool.source must be 'generate' or 'pool', got {self.source!r}")
+        self.batch_layout = str(prior_cfg.get("batch_layout", "dense"))
+        if self.batch_layout not in {"dense", "ragged"}:
+            raise ValueError(f"prior.batch_layout must be 'dense' or 'ragged', got {self.batch_layout!r}")
+        if self.batch_layout == "ragged" and self.source == "pool":
+            raise ValueError("prior.batch_layout='ragged' requires live generation, not legacy pools")
 
     def _worker(self) -> tuple[int, int]:
         info = get_worker_info()
@@ -85,6 +99,14 @@ class PriorBatchDataset(IterableDataset):
                           regression=self.regression, credit_fraction=self.credit_fraction)
         with one_thread():
             tasks = [gen.sample_slot(slot) for slot in plan.slots]
+        d = torch.tensor([int(t.meta["d"]) for t in tasks], dtype=torch.long)
+        if self.batch_layout == "ragged":
+            # Preserve every row and active column; only remove padding. DataLoader
+            # recursively pins lists of tensors, and metadata retains the dense API.
+            X = [t.X[:, :max(1, int(di))].contiguous() for t, di in zip(tasks, d)]
+            y = [t.y.contiguous() for t in tasks]
+            return (X, y, d, torch.tensor(plan.seq_lens, dtype=torch.long),
+                    torch.tensor(plan.train_sizes, dtype=torch.long))
         T = max(plan.seq_lens)
         F = max(int(t.X.shape[1]) for t in tasks)
         X = torch.zeros(len(tasks), T, F)
@@ -93,7 +115,6 @@ class PriorBatchDataset(IterableDataset):
             n = t.X.shape[0]
             X[i, :n, : t.X.shape[1]] = t.X
             y[i, :n] = t.y
-        d = torch.tensor([int(t.meta["d"]) for t in tasks], dtype=torch.long)
         return (X, y, d, torch.tensor(plan.seq_lens, dtype=torch.long),
                 torch.tensor(plan.train_sizes, dtype=torch.long))
 
@@ -139,6 +160,10 @@ def build_loader(
     start_batch: int = 0,
     transform: Any = None,
 ) -> DataLoader:
+    if num_workers < 0:
+        raise ValueError("num_workers must be nonnegative")
+    if not isinstance(prefetch_factor, int) or isinstance(prefetch_factor, bool) or prefetch_factor < 1:
+        raise ValueError("prefetch_factor must be a positive integer")
     dataset = PriorBatchDataset(prior_cfg, task, batch_size, seed, start_batch=start_batch,
                                 transform=transform)
     kwargs: dict[str, Any] = {

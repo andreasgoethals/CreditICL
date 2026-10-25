@@ -190,29 +190,54 @@ References (tfm-library pin cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a):
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 7b79ba6915dac48347bb826a25c96b56791838fd65b6e1cbcd466529359d2dab.
-No imported snapshot manifest; counts below describe files currently available locally.
-Main comparison: 0/9 downloaded completions; 0 partial traces; 9 without local output.
-Component tests: 0/15 downloaded completions; 0 partial traces; 15 without local output.
+Local notebook-code fingerprint: 37e9968fd516acd281e9390f75ffcc938b06d3ba1f1b2cf6844b56a26b35ef56.
+Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
+Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
+Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
+Latest training record in that snapshot: 2026-10-24 01:21:15 CEST.
+Main comparison: 9/9 downloaded completions; 0 partial traces; 0 without local output.
+Component tests: 15/15 downloaded completions; 0 partial traces; 0 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
-No local training traces are available. Coverage above is a local file inventory; current VSC state and numerical health require the run records.
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 7b79ba6915dac48347bb826a25c96b56791838fd65b6e1cbcd466529359d2dab.
-No imported snapshot manifest; counts below describe files currently available locally.
-Main comparison: 0/9 downloaded completions; 0 partial traces; 9 without local output.
-Component tests: 0/15 downloaded completions; 0 partial traces; 15 without local output.
+Local notebook-code fingerprint: 37e9968fd516acd281e9390f75ffcc938b06d3ba1f1b2cf6844b56a26b35ef56.
+Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
+Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
+Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
+Latest training record in that snapshot: 2026-10-24 01:21:15 CEST.
+Main comparison: 9/9 downloaded completions; 0 partial traces; 0 without local output.
+Component tests: 15/15 downloaded completions; 0 partial traces; 0 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
 
 B · OPTIMISATION HEALTH
-No downloaded progress CSVs. Training health cannot be measured from this checkout.
+exp1_pd__prior-credit_fraction=0__s0: 12500 updates recorded; last recorded training loss 0.48966.
+exp1_pd__prior-credit_fraction=0__s1: 12500 updates recorded; last recorded training loss 0.49378.
+exp1_pd__prior-credit_fraction=0__s2: 12500 updates recorded; last recorded training loss 0.49396.
+exp1_pd__prior-credit_fraction=0p5__s0: 12500 updates recorded; last recorded training loss 0.36321.
+exp1_pd__prior-credit_fraction=0p5__s1: 12500 updates recorded; last recorded training loss 0.3682.
+exp1_pd__prior-credit_fraction=0p5__s2: 12500 updates recorded; last recorded training loss 0.36673.
+exp1_pd__prior-credit_fraction=1__s0: 12500 updates recorded; last recorded training loss 0.23096.
+exp1_pd__prior-credit_fraction=1__s1: 12500 updates recorded; last recorded training loss 0.2294.
+exp1_pd__prior-credit_fraction=1__s2: 12500 updates recorded; last recorded training loss 0.22894.
 
 C · DEVELOPMENT MONITORING
-No local curves; no mixture is selected here.
-1.1_pd_training: no figures saved.
+Common monitored development datasets: german, gmsc, hackerearth, lendingclub, myhom, taiwan_creditcard.
+Excluded from common monitoring mean: none.
+Monitoring uses short diagnostic contexts. It is not the full-row, five-fold final benchmark.
+Different synthetic-task losses do not rank downstream prediction quality.
+1.1_pd_training: 9 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\1.1_pd_training
+  01  main_run_coverage
+  02  component_run_coverage
+  03  training_loss
+  04  training_cost
+  05  gradient_health
+  06  development_curves
+  07  development_control_gap
+  08  development_seed_spread
+  09  monitoring_dataset_coverage
 ```
 
 ---
@@ -222,29 +247,54 @@ No local curves; no mixture is selected here.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 7b79ba6915dac48347bb826a25c96b56791838fd65b6e1cbcd466529359d2dab.
-No imported snapshot manifest; counts below describe files currently available locally.
-Main comparison: 0/9 downloaded completions; 0 partial traces; 9 without local output.
-Component tests: 0/15 downloaded completions; 0 partial traces; 15 without local output.
+Local notebook-code fingerprint: 37e9968fd516acd281e9390f75ffcc938b06d3ba1f1b2cf6844b56a26b35ef56.
+Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
+Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
+Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
+Latest training record in that snapshot: 2026-10-24 01:21:15 CEST.
+Main comparison: 9/9 downloaded completions; 0 partial traces; 0 without local output.
+Component tests: 15/15 downloaded completions; 0 partial traces; 0 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
-No local training traces are available. Coverage above is a local file inventory; current VSC state and numerical health require the run records.
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 7b79ba6915dac48347bb826a25c96b56791838fd65b6e1cbcd466529359d2dab.
-No imported snapshot manifest; counts below describe files currently available locally.
-Main comparison: 0/9 downloaded completions; 0 partial traces; 9 without local output.
-Component tests: 0/15 downloaded completions; 0 partial traces; 15 without local output.
+Local notebook-code fingerprint: 37e9968fd516acd281e9390f75ffcc938b06d3ba1f1b2cf6844b56a26b35ef56.
+Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
+Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
+Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
+Latest training record in that snapshot: 2026-10-24 01:21:15 CEST.
+Main comparison: 9/9 downloaded completions; 0 partial traces; 0 without local output.
+Component tests: 15/15 downloaded completions; 0 partial traces; 0 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
 
 B · OPTIMISATION HEALTH
-No downloaded progress CSVs. Training health cannot be measured from this checkout.
+exp1_lgd__prior-credit_fraction=0__s0: 12500 updates recorded; last recorded training loss 0.06714.
+exp1_lgd__prior-credit_fraction=0__s1: 12500 updates recorded; last recorded training loss 0.065945.
+exp1_lgd__prior-credit_fraction=0__s2: 12500 updates recorded; last recorded training loss 0.066898.
+exp1_lgd__prior-credit_fraction=0p5__s0: 12500 updates recorded; last recorded training loss 0.16169.
+exp1_lgd__prior-credit_fraction=0p5__s1: 12500 updates recorded; last recorded training loss 0.1622.
+exp1_lgd__prior-credit_fraction=0p5__s2: 12500 updates recorded; last recorded training loss 0.16202.
+exp1_lgd__prior-credit_fraction=1__s0: 12500 updates recorded; last recorded training loss 0.25305.
+exp1_lgd__prior-credit_fraction=1__s1: 12500 updates recorded; last recorded training loss 0.25382.
+exp1_lgd__prior-credit_fraction=1__s2: 12500 updates recorded; last recorded training loss 0.2536.
 
 C · DEVELOPMENT MONITORING
-No local curves; no mixture is selected here.
-1.2_lgd_training: no figures saved.
+Common monitored development datasets: base_model, base_modelisation, heloc, lgd_lendingclub.
+Excluded from common monitoring mean: none.
+Monitoring uses short diagnostic contexts. It is not the full-row, five-fold final benchmark.
+Different synthetic-task losses do not rank downstream prediction quality.
+1.2_lgd_training: 9 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\1.2_lgd_training
+  01  main_run_coverage
+  02  component_run_coverage
+  03  training_loss
+  04  training_cost
+  05  gradient_health
+  06  development_curves
+  07  development_control_gap
+  08  development_seed_spread
+  09  monitoring_dataset_coverage
 ```
 
 ---
@@ -325,8 +375,11 @@ Dataset bootstrap intervals are descriptive; training seeds/folds are not extra 
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 0e8cbfc88cafc99e133a8ccea5d9a71868a9832bbb3065ad83aa28647a1c088d.
-No imported snapshot manifest; counts below describe files currently available locally.
+Local notebook-code fingerprint: 37e9968fd516acd281e9390f75ffcc938b06d3ba1f1b2cf6844b56a26b35ef56.
+Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
+Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
+Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
+Latest training record in that snapshot: 2026-10-24 01:21:15 CEST.
 Main comparison: 0/18 downloaded completions; 0 partial traces; 18 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
@@ -334,11 +387,20 @@ No local training traces are available. Coverage above is a local file inventory
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 0e8cbfc88cafc99e133a8ccea5d9a71868a9832bbb3065ad83aa28647a1c088d.
-No imported snapshot manifest; counts below describe files currently available locally.
+Local notebook-code fingerprint: 37e9968fd516acd281e9390f75ffcc938b06d3ba1f1b2cf6844b56a26b35ef56.
+Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
+Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
+Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
+Latest training record in that snapshot: 2026-10-24 01:21:15 CEST.
 Main comparison: 0/18 downloaded completions; 0 partial traces; 18 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
+PLANNED CONTINUATION (not completed training)
+Backbone  Runs per track Tables per run           Rows per table Context share Expected row exposures
+TabICLv2               9        640,000 400–60,000 (log-uniform)       79%–81%        7,612.6 million
+TabPFN-3               9        160,000                    1,024       30%–90%          163.8 million
+Matched mixtures within each backbone; row/task budgets differ between backbones.
+0% is an extra-training control, not a guarantee against forgetting.
 
 B · OPTIMISATION HEALTH
 No downloaded progress CSVs. Training health cannot be measured from this checkout.
@@ -355,8 +417,11 @@ No local curves; no mixture is selected here.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 0e8cbfc88cafc99e133a8ccea5d9a71868a9832bbb3065ad83aa28647a1c088d.
-No imported snapshot manifest; counts below describe files currently available locally.
+Local notebook-code fingerprint: 37e9968fd516acd281e9390f75ffcc938b06d3ba1f1b2cf6844b56a26b35ef56.
+Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
+Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
+Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
+Latest training record in that snapshot: 2026-10-24 01:21:15 CEST.
 Main comparison: 0/18 downloaded completions; 0 partial traces; 18 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
@@ -364,11 +429,20 @@ No local training traces are available. Coverage above is a local file inventory
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 0e8cbfc88cafc99e133a8ccea5d9a71868a9832bbb3065ad83aa28647a1c088d.
-No imported snapshot manifest; counts below describe files currently available locally.
+Local notebook-code fingerprint: 37e9968fd516acd281e9390f75ffcc938b06d3ba1f1b2cf6844b56a26b35ef56.
+Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
+Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
+Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
+Latest training record in that snapshot: 2026-10-24 01:21:15 CEST.
 Main comparison: 0/18 downloaded completions; 0 partial traces; 18 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
+PLANNED CONTINUATION (not completed training)
+Backbone  Runs per track Tables per run           Rows per table Context share Expected row exposures
+TabICLv2               9        640,000 400–60,000 (log-uniform)       79%–81%        7,612.6 million
+TabPFN-3               9        160,000                    1,024       30%–90%          163.8 million
+Matched mixtures within each backbone; row/task budgets differ between backbones.
+0% is an extra-training control, not a guarantee against forgetting.
 
 B · OPTIMISATION HEALTH
 No downloaded progress CSVs. Training health cannot be measured from this checkout.

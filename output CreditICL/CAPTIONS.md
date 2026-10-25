@@ -28,7 +28,7 @@ Share of rows within 1e-4 of loss 0 and loss 1 per LGD benchmark, stacked and or
 
 **04_shapes** — `shapes`
 
-Rows against features for 21 processed source tables on logarithmic axes, with one named point per table; dotted lines mark the synthetic pretraining sizes of 1,024 rows and 100 features, not benchmark limits.
+Rows against features for 21 processed source tables on logarithmic axes, with one named point per table; dotted lines mark Experiment 1's synthetic training geometry of 1,024 rows and at most 100 features, not benchmark limits. Experiment 2's TabICLv2 continuation uses larger synthetic tables.
 
 **05_table_inventory** — `table_inventory`
 
@@ -98,11 +98,79 @@ Marginal histogram distance from pooled raw credit-prior targets to each real LG
 
 ## 1.1_pd_training
 
-_No figures produced._
+**01_main_run_coverage** — `main_run_coverage`
+
+Main-comparison configurations against training seeds, one cell per configured run, with completion supported by the saved summary, partial-trace percentages relative to the configured update budget and explicit absence of local records.
+
+**02_component_run_coverage** — `component_run_coverage`
+
+Five conditional component removals against three training seeds at a fixed 50% credit mixture, one cell per configured run, labelled completed, partial trace, or no local output.
+
+**03_training_loss** — `training_loss`
+
+Training loss against update for each main run, smoothed over five logged batches, with mixture medians from completed runs; dotted traces are incomplete local runs.
+
+**04_training_cost** — `training_cost`
+
+Recorded training time, synthetic tasks per second and final loss against updates per downloaded main run, grouped by prior mixture.
+
+**05_gradient_health** — `gradient_health`
+
+Recorded total and block gradient norms against training update for downloaded main runs, with clipping reference and mixture colours.
+
+**06_development_curves** — `development_curves`
+
+Development monitoring score against update for each downloaded main run, with mixture means at common supported updates and incomplete local traces shown separately.
+
+**07_development_control_gap** — `development_control_gap`
+
+Development monitoring-score differences between credit mixtures and their 0% controls, paired by training seed and exact recorded update. Lines show the mean paired difference and bands show ±1 sample standard deviation across paired seeds; all pairs must contribute at each plotted update. Zero marks equal monitoring performance. These descriptive development curves are not final cross-validation estimates.
+
+**08_development_seed_spread** — `development_seed_spread`
+
+Final recorded development monitoring scores per completed configuration and training seed, with within-configuration ranges and means; these values are separate from final full-table cross-validation.
+
+**09_monitoring_dataset_coverage** — `monitoring_dataset_coverage`
+
+Monitoring inventory with one cell per dataset and run, identifying common development cells used in means, other scored cells, entirely missing scores and unmonitored cells.
 
 ## 1.2_lgd_training
 
-_No figures produced._
+**01_main_run_coverage** — `main_run_coverage`
+
+Main-comparison configurations against training seeds, one cell per configured run, with completion supported by the saved summary, partial-trace percentages relative to the configured update budget and explicit absence of local records.
+
+**02_component_run_coverage** — `component_run_coverage`
+
+Five conditional component removals against three training seeds at a fixed 50% credit mixture, one cell per configured run, labelled completed, partial trace, or no local output.
+
+**03_training_loss** — `training_loss`
+
+Training loss against update for each main run, smoothed over five logged batches, with mixture medians from completed runs; dotted traces are incomplete local runs.
+
+**04_training_cost** — `training_cost`
+
+Recorded training time, synthetic tasks per second and final loss against updates per downloaded main run, grouped by prior mixture.
+
+**05_gradient_health** — `gradient_health`
+
+Recorded total and block gradient norms against training update for downloaded main runs, with clipping reference and mixture colours.
+
+**06_development_curves** — `development_curves`
+
+Development monitoring score against update for each downloaded main run, with mixture means at common supported updates and incomplete local traces shown separately.
+
+**07_development_control_gap** — `development_control_gap`
+
+Development monitoring-score differences between credit mixtures and their 0% controls, paired by training seed and exact recorded update. Lines show the mean paired difference and bands show ±1 sample standard deviation across paired seeds; all pairs must contribute at each plotted update. Zero marks equal monitoring performance. These descriptive development curves are not final cross-validation estimates.
+
+**08_development_seed_spread** — `development_seed_spread`
+
+Final recorded development monitoring scores per completed configuration and training seed, with within-configuration ranges and means; these values are separate from final full-table cross-validation.
+
+**09_monitoring_dataset_coverage** — `monitoring_dataset_coverage`
+
+Monitoring inventory with one cell per dataset and run, identifying common development cells used in means, other scored cells, entirely missing scores and unmonitored cells.
 
 ## 1.3_pd_results
 

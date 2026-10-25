@@ -2,7 +2,7 @@
 
     python -m src.utils.run_experiment 1            # Exp1: what is done, what is next
     python -m src.utils.run_experiment 1 --submit   # Exp1: submit whatever is ready
-    python -m src.utils.run_experiment 2 --submit   # Exp2 (only after Exp1's winner is filled in)
+    python -m src.utils.run_experiment 2 --submit   # Exp2: all three prespecified mixtures, after current Exp0 PASS
 
 WHICH EXPERIMENT, ALWAYS EXPLICIT. The experiment number is a REQUIRED argument, not a default,
 and it is printed at the top of every report — because "did I just submit Exp1 or Exp2?" is not

@@ -282,7 +282,7 @@ def plot_shapes(datasets_by_task: dict[str, dict[str, Any]]):
     ax.grid(axis="x")
     # The prior's own table: 1,024 rows and up to 100 features (config/Exp1_*.yaml).
     ax.axvline(1024, color=style.MUTED, lw=0.8, ls=":", zorder=1,
-               label="synthetic training: 1,024 rows × ≤100 features")
+               label="Exp1 training: 1,024 rows × ≤100 features")
     ax.axhline(100, color=style.MUTED, lw=0.8, ls=":", zorder=1)
     ax.margins(x=0.12, y=0.15)
     style.legend_below(ax, ncol=3)

@@ -146,13 +146,13 @@ def test_resubmit_uses_the_requested_experiment_and_checks_readiness(monkeypatch
 
 
 @pytest.mark.parametrize("track", ["LGD", "PD"])
-def test_the_tool_covers_the_whole_grid(track):
+def test_the_tool_covers_the_whole_grid(track, tmp_path):
     """One state per array index, or the spec cannot be trusted."""
     from src.utils.config import expand_with_seeds, load
     from src.utils.sweep_status import arm_states
 
     cfg = ROOT / "config" / f"Exp1_{track}.yaml"
     n = len(expand_with_seeds(load(cfg, allow_placeholders=True)))
-    states = arm_states(cfg)
+    states = arm_states(cfg, out_root=tmp_path)
     assert len(states) == n
     assert [s.index for s in states] == list(range(n))

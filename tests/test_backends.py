@@ -25,6 +25,14 @@ def test_math_is_always_kept_so_there_is_always_a_viable_kernel():
     assert "MATH" in sdpa_report()["using"]
 
 
+def test_long_context_report_matches_the_strict_kernel_policy():
+    rep = sdpa_report(require_efficient=True)
+    assert set(rep["using"]) == {"FLASH_ATTENTION", "EFFICIENT_ATTENTION"}
+    assert set(rep["excluded"]) == {"MATH", "CUDNN_ATTENTION"}
+    assert rep["upstream_flash_attention_3"] == "disabled"
+    assert "FP16" in rep["why_excluded"]
+
+
 def test_the_context_never_raises_however_it_is_called():
     """It wraps every forward pass in training. A diagnostic that can kill a three-day run is
     worse than no diagnostic, so an unknown name degrades to a no-op rather than an error."""
@@ -39,6 +47,6 @@ def test_training_pins_the_kernel_around_its_forward_pass():
 
     root = Path(__file__).resolve().parents[1]
     src = (root / "src" / "train" / "loop.py").read_text(encoding="utf-8")
-    after = src.split("with sdpa_context():", 1)
+    after = src.split("with sdpa_context(require_efficient=self.require_efficient_attention):", 1)
     assert len(after) == 2, "training never enters the pinned context"
     assert "self._loss_for(" in after[1][:200], "the forward pass must be INSIDE the context"

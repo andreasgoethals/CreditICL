@@ -802,12 +802,45 @@ def metric_over_training(track: str, exp: str = "exp1", metric: str | None = Non
     return fig
 
 
-def credit_vs_control_over_training(track: str, exp: str = "exp1", metric: str | None = None):
-    """One curve per architecture and mixture; bands describe training-seed variation.
+def _paired_control_gaps(runs: dict[str, pd.DataFrame], metric: str,
+                         datasets: list[str]) -> dict[str, pd.DataFrame]:
+    """Credit-minus-control scores, paired by seed, all other knobs and exact update.
 
-    Pooling architectures or positive mixtures would hide a paired prior effect
-    behind unrelated between-model variation. These bands are descriptive, not
-    a significance test of the difference between paired arms.
+    Each returned column is one seed's difference, never an independently averaged
+    credit or control score. Do not interpolate an unobserved monitoring update.
+    Keeping missing entries lets the plot require every paired seed at each step.
+    """
+    controls = {}
+    for name, df in runs.items():
+        if _is_control(name) and _seed_of(name) is not None:
+            key = re.sub(r"__prior-credit_fraction=[^_]+", "", name)
+            controls[key] = df
+    groups: dict[str, list[pd.Series]] = {}
+    for name, df in runs.items():
+        if _cf_value(name) <= 0 or _seed_of(name) is None:
+            continue
+        key = re.sub(r"__prior-credit_fraction=[^_]+", "", name)
+        control = controls.get(key)
+        if control is None:
+            continue
+        scores = []
+        for frame in (df, control):
+            values = _mean_metric(frame, metric, datasets=datasets)
+            score = pd.DataFrame({"step": frame["step"], "score": values})
+            scores.append(score.drop_duplicates("step", keep="last").set_index("step")["score"])
+        matched = pd.concat(scores, axis=1, join="inner").sort_index()
+        if matched.empty:
+            continue
+        gap = (matched.iloc[:, 0] - matched.iloc[:, 1]).rename(_seed_of(name))
+        groups.setdefault(_config_of(name), []).append(gap)
+    return {name: pd.concat(seeds, axis=1).sort_index() for name, seeds in groups.items()}
+
+
+def credit_vs_control_over_training(track: str, exp: str = "exp1", metric: str | None = None):
+    """Mean paired difference from 0% control, with descriptive ±1 seed SD.
+
+    Architectures and mixtures remain separate, and only exact monitoring steps
+    shared by every paired seed contribute. The band is not a confidence interval.
     """
     metric = metric or HEADLINE[track]
     runs, agg, kept, _ = _view(track, exp, metric)
@@ -815,29 +848,30 @@ def credit_vs_control_over_training(track: str, exp: str = "exp1", metric: str |
     if not runs:
         return _placeholder("no progress logs in output CreditICL/experiment_<N>/runs/ yet")
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.46))
-    grid = _common_step_grid(agg)
-    groups: dict[tuple[str, float], list] = {}
-    for name, df in agg.items():
-        curve = _curve(df, metric, kept, grid)
-        if curve is not None:
-            family = re.search(r"(?:^|__)arm=(tabicl|tabpfn3)(?:__|$)", name)
-            groups.setdefault((family.group(1) if family else "scratch", _cf_value(name)), []).append(curve)
-    for (family, share), stack in sorted(groups.items()):
+    groups = _paired_control_gaps(agg, metric, kept)
+    drawn = False
+    for name, paired in sorted(groups.items()):
+        supported = np.isfinite(paired).all(axis=1)
+        if not supported.any():
+            continue
+        drawn = True
+        share = _cf_value(name)
         colour = style.credit_fraction_colour(share)
-        med = _complete(stack, np.median)
-        lo, hi = _complete_band(stack)
-        ax.fill_between(grid, lo, hi, color=colour, alpha=0.16, lw=0)
-        ax.plot(grid, med, color=colour, lw=2.3, zorder=4,
-                ls="--" if family == "tabpfn3" else "-",
-                label=f"{style.CONTINUED_LABEL.get(family, 'scratch TabICL')} · "
-                      f"{style.prior_mix_label(share, control=True)}: "
-                      f"median of {len(stack)} seeds, inter-quartile band")
-    if not any(groups.values()):
-        _empty(ax, "no finished arm carries a development score yet")
+        mean = paired.mean(axis=1, skipna=False).where(supported)
+        sd = paired.std(axis=1, ddof=1 if paired.shape[1] > 1 else 0, skipna=False).where(supported)
+        ax.fill_between(paired.index, mean - sd, mean + sd, color=colour, alpha=0.16, lw=0)
+        ax.plot(paired.index, mean, color=colour, lw=style.EFFECT_LINE, zorder=4,
+                marker=style.credit_fraction_marker(share), markevery=max(1, len(paired) // 6),
+                markersize=style.FRONTIER_MARKER,
+                ls="--" if "__arm=tabpfn3" in name else "-",
+                label=f"{_config_label(name)} · {paired.shape[1]} paired seeds")
+    if not drawn:
+        _empty(ax, "no credit/control pair shares a finite development score at the same update")
         return fig
+    ax.axhline(0, color=style.MUTED, ls=":", zorder=1)
     ax.set_xlabel("training step")
-    ax.set_ylabel(f"development {style.metric_label(metric)}")
-    style.legend_below(ax, ncol=1)
+    ax.set_ylabel(f"Δ development {style.metric_label(metric)}\n(credit − 0% control)")
+    style.legend_below(ax, ncol=2 if len(groups) <= 2 else 1)
     return fig
 
 

@@ -1,5 +1,53 @@
 # Agents' memory — runs and dead ends
 
+## 25-10-2026 — final Exp2 verification
+
+The complete frozen-source suite passed: **1,787 passed, 28 VSC-only skips** in 20m41s.
+No local skip substitutes for the mandatory CUDA allocation checks.
+All 12 notebooks executed successfully after importing only the completed Exp1 run records.
+All 37 exported PDFs were rendered and visually inspected, including the paired control-gap
+curves; inline displays, captions, embedded/subset fonts and verbatim final summaries match.
+The final rerun removed three stale availability PDFs; absent final benchmarks produce text
+notices, not invented results. No benchmark result or checkpoint was deleted.
+Local source fingerprint is `fb8521169c961e9c8edc8f464aa2ea44d802b05c39a3c499aebe6910d73376b7`.
+The revised long-context CUDA route remains unvalidated on VSC. Preserve the running Exp1
+benchmark revision and inspect future measured update/checkpoint time against Slurm's warning
+interval before launching the more expensive Exp2 campaign.
+
+Tried: complete-suite verification after importing completed Exp1 records and adding long-table Exp2.
+Result: complete and targeted runs exposed five stale test assumptions; no production guard was relaxed.
+Why: orchestration and sweep-grid tests read real downloaded output; a caption heuristic omitted score differences; prior-equality and run-card assertions still assumed all experiments used short tables.
+Instead: isolate filesystem tests, retain semantic caption checks, test unchanged prior mechanisms separately from backbone-specific geometry, and require truthful run-card geometry/memory reporting; rerun the complete suite on frozen source.
+
+## 24-10-2026 — completed Exp1 snapshot and long-context Exp2 revision
+
+Downloads ZIP SHA256 `ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e`
+contains **48/48 completed Exp1 runs**, all 12,500 updates / 800,000 tasks, about **323.6 recorded
+training GPU-hours**. No nonfinite scored monitoring values or failed training logs were found.
+Development monitoring currently favours the 0% control; the full-table benchmark is not in this
+ZIP. Its launch is user-reported. See RUNS for the complete evidence and scope limits.
+
+This supersedes the earlier same-day unchanged-recipe note **for Exp2 TabICLv2 only**. Its proposed
+continuation now matches upstream stage-3 geometry: 400–60,000 log-uniform rows, 79–81% context,
+row-dependent feature ceilings, group/microbatch one and batch 64. Dense whole-batch padding is
+replaced by per-table tensors; activation recomputation, four workers at most, prefetch one and
+efficient FP32 SDPA bound memory. Optional upstream FA3 is disabled because it downcasts FP32
+inputs to FP16. Exp1, Exp3 and TabPFN-3 task geometry remain unchanged. The 0% arm continues on
+the installed original TabICL prior; no control is guaranteed not to degrade.
+
+Expected TabICL row exposure is about 7.6 billion per run. Old short-table Exp2 GPU-hour estimates
+are invalid. Before production, new Exp0 CPU/GPU receipts must include 28 row/feature/source
+capacity corners and two real 64-task updates. Review measured memory, timing and cost before
+authorizing the 36-run campaign. These new CUDA checks have not yet been run on VSC.
+Keep the current Exp1 benchmark checkout frozen; no pull, cleanup or environment update while
+it runs. This change does not justify retraining its completed checkpoints. Pins remain
+TFM `702d9ab0b66f6639ba8d443ff9c4a91231964465` and VSC `3bcdf55e576d10161d6189b40ac39380bbba9eca`.
+
+Tried: targeted resume tests while independent agents were still editing shared training source.
+Result: one checkpoint-resume test correctly rejected a changed training fingerprint.
+Why: the implementation changed between checkpoint creation and loading during the test.
+Instead: freeze all source edits and rerun the complete suite; do not weaken the resume guard.
+
 ## 24-10-2026 — figure readability and Experiment 2 audit
 
 Exp2 remains **36 runs**: both released backbones, all three mixtures, three seeds, both tracks.

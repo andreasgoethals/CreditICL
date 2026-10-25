@@ -70,7 +70,10 @@ def test_complete_manifest_covers_all_routes_budgets_and_benchmarks():
     assert all("--max-rows" not in s.command for s in stages)
     assert all("sbatch" not in s.command for s in stages)
     capacity = [s for s in stages if s.phase == "capacity"]
-    assert len(capacity) == 2 * 4 * 3  # two tasks, four references, credit/OOD/receipt
+    # Existing full-table benchmarks plus synthetic long-context corners and
+    # one full heterogeneous production update for each track.
+    from src.validation.long_context import CAPACITY_CORNERS
+    assert len(capacity) == 2 * 4 * 3 + 2 * (2 * len(CAPACITY_CORNERS) + 1)
     assert all("--checkpoint" not in s.command for s in capacity)
     assert all("--max-context-rows" not in s.command for s in capacity)
     assert len({s.name for s in stages}) == len(stages)  # no repeated benchmark work

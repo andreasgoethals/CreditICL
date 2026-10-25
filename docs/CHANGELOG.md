@@ -8,8 +8,14 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 25-10-2026
+
+- Verify 1,787 tests (28 VSC-only skips), all 12 notebooks and all 37 rendered figures; revised long-context CUDA validation remains pending on VSC.
+- Isolate orchestration/grid tests from downloaded runs; update geometry/logging assertions, replace stale cost estimates and warn against changing the active Exp1 checkout.
+
 ## 24-10-2026
 
+- Audit all 48 completed Exp1 runs; align proposed TabICLv2 Exp2 with upstream long-table geometry, add ragged training and mandatory capacity probes, and withdraw short-table cost estimates.
 - Clarify prior figures, remove redundant/empty exports, and audit Exp2 against pinned upstream losses; reject unsupported TabPFN settings and make development-only Exp3 selection explicit without changing the approved training recipes.
 - Validate 1,701 tests (28 VSC-only skips), all 12 notebooks, 19 exported figures and 39 artificial result layouts; preserve the frozen VSC Exp1 campaign.
 

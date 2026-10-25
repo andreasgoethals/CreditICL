@@ -115,8 +115,13 @@ def training_summary(track: str, exp: str = "exp1") -> str:
     """Notebook section order, without interpreting file absence as queue state."""
     from src.visualize import training_plots as tp
 
-    lines = ["A · PROVENANCE AND RUN COVERAGE", provenance(track, exp),
-             "\nB · OPTIMISATION HEALTH"]
+    lines = ["A · PROVENANCE AND RUN COVERAGE", provenance(track, exp)]
+    if exp == "exp2":
+        lines += ["PLANNED CONTINUATION (not completed training)",
+                  continuation_recipe(track).to_string(index=False),
+                  "Matched mixtures within each backbone; row/task budgets differ between backbones.",
+                  "0% is an extra-training control, not a guarantee against forgetting."]
+    lines.append("\nB · OPTIMISATION HEALTH")
     runs = tp.load_progress(track, exp)
     if not runs:
         lines += ["No downloaded progress CSVs. Training health cannot be measured from this checkout.",
@@ -135,6 +140,27 @@ def training_summary(track: str, exp: str = "exp1") -> str:
               "Monitoring uses short diagnostic contexts. It is not the full-row, five-fold final benchmark.",
               "Different synthetic-task losses do not rank downstream prediction quality."]
     return "\n".join(lines)
+
+
+def continuation_recipe(track: str) -> pd.DataFrame:
+    """Display the actual expanded recipe, including backbone-specific shape overrides."""
+    import math
+
+    runs = expand_with_seeds(load(paths.config_path(f"Exp2_{track.upper()}")))
+    rows = []
+    for architecture in ("tabicl", "tabpfn3"):
+        selected = [r for r in runs if r["architecture"] == architecture]
+        p, t = selected[0]["prior"], selected[0]["train"]
+        lo, hi = p["n_rows_range"]
+        law = p.get("n_rows_sampling", "uniform")
+        mean = lo if lo == hi else ((hi-lo)/math.log(hi/lo) if law == "log_uniform" else (lo+hi)/2)
+        tasks = t["max_steps"] * t["batch_size"]
+        rows.append({"Backbone": "TabICLv2" if architecture == "tabicl" else "TabPFN-3",
+                     "Runs per track": len(selected), "Tables per run": f"{tasks:,}",
+                     "Rows per table": f"{lo:,}" if lo == hi else f"{lo:,}–{hi:,} ({law.replace('_', '-')})",
+                     "Context share": "–".join(f"{v:.0%}" for v in p["train_frac_range"]),
+                     "Expected row exposures": f"{tasks*mean/1e6:,.1f} million"})
+    return pd.DataFrame(rows)
 
 
 def availability(message: str, *, title: str = "Evidence not yet available"):

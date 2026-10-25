@@ -561,18 +561,24 @@ def test_campaign_only_scores_full_contexts(track):
 
 
 @pytest.mark.parametrize("track", ["LGD", "PD"])
-def test_every_experiment_trains_on_exactly_experiment_1s_prior(track):
-    """Experiment 2 asks whether Experiment 1's credit prior helps the released models, and
-    Experiment 0 checks the code paths Exp1/Exp2 use — so their prior blocks must be Exp1's, apart
-    from the mix and the encoding (which the arms set)."""
+def test_every_experiment_preserves_experiment_1s_prior_mechanisms(track):
+    """Continuation changes declared geometry, never the credit intervention itself.
+
+    Compare resolved arms, not only YAML bodies: an arm override must not hide a
+    changed mechanism. Exact backbone geometry and mixture matching are checked
+    in test_long_context_training.
+    """
     import copy
+    from src.utils.config import expand_with_seeds
 
     def strip(prior):
         prior = copy.deepcopy(prior)
-        for key in ("credit_fraction", "encoding"):
+        for key in ("credit_fraction", "encoding", "n_rows_range", "n_rows_sampling",
+                    "train_frac_range", "grouping", "batch_layout"):
             prior.pop(key, None)
         return prior
 
     exp1 = strip(_load(f"config/Exp1_{track}.yaml")["prior"])
     for name in (f"Exp0_{track}", f"Exp2_{track}", f"Exp3_{track}"):
-        assert strip(_load(f"config/{name}.yaml")["prior"]) == exp1, f"{name} drifted from Exp1's prior"
+        for arm in expand_with_seeds(_load(f"config/{name}.yaml")):
+            assert strip(arm["prior"]) == exp1, f"{name} drifted from Exp1's prior mechanisms"

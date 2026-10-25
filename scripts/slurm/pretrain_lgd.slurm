@@ -117,7 +117,7 @@ python -m src.validation.smoke --task lgd --steps 2 || {
 # process -- 23 on gpu_b200, 17 on gpu_a100, 7 on interactive. A hard-coded 12 wastes half
 # a B200 node's cores and oversubscribes a smaller card.
 WORKERS=$(( ${SLURM_CPUS_PER_TASK:-8} - 1 ))
-echo "Dataloader workers: ${WORKERS} (from SLURM_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-unset})"
+echo "Dataloader workers requested: ${WORKERS}; trainer applies config max_workers if set"
 
 python -u scripts/pretrain.py \
     --config "${CONFIG}" \

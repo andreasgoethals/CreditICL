@@ -182,6 +182,7 @@ class Trainer:
         self.max_steps = int(tcfg.get("max_steps", 10_000))
         self.batch_size = int(tcfg.get("batch_size", 4))
         self.micro_batch_size = int(tcfg.get("micro_batch_size", self.batch_size))
+        self.require_efficient_attention = bool(tcfg.get("require_efficient_attention", False))
         # MICRO-BATCH <= GROUP SIZE, and this is NOT a memory rule.
         #
         # Datasets only share a sequence length within a GROUP — `prior.grouping.group_size`,
@@ -204,7 +205,9 @@ class Trainer:
                 f"prior.grouping.group_size={group_size}: a micro-batch would straddle two groups "
                 f"with different split points. Upstream keeps the two equal."
             )
-        if group_size > 1 and self.micro_batch_size > group_size:
+        if self.micro_batch_size > group_size and (
+            group_size > 1 or cfg.get("prior", {}).get("batch_layout") == "ragged"
+        ):
             raise ValueError(
                 f"micro_batch_size={self.micro_batch_size} exceeds "
                 f"prior.grouping.group_size={group_size}. Datasets share a sequence length only "
@@ -227,6 +230,13 @@ class Trainer:
         self.save_perm_every = int(tcfg.get("save_perm_every", 5_000))
         self.max_temp_checkpoints = int(tcfg.get("max_temp_checkpoints", 2))
         self.num_workers = int(tcfg.get("num_workers", 0))
+        # The allocation is an upper bound, not a command to keep dozens of long
+        # synthetic batches resident. Slurm's --num-workers still respects this cap.
+        if tcfg.get("max_workers") is not None:
+            self.num_workers = min(self.num_workers, int(tcfg["max_workers"]))
+        self.prefetch_factor = int(tcfg.get("prefetch_factor", 2))
+        if self.num_workers < 0 or self.prefetch_factor < 1:
+            raise ValueError("num_workers must be nonnegative and prefetch_factor positive")
         self.seed = int(cfg.get("seed", 0))
         # Seconds of job walltime left to warn against. Read from SLURM when present so
         # the number is real rather than a guess; 0 disables the warning.
@@ -490,6 +500,9 @@ class Trainer:
             f"   <- 0.0 means the CONTROL: no dataset from our prior",
             f"  n_rows_range           : {rows}   n_features_range: {feats}"
             f"   max_features: {pcfg.get('max_features')}",
+            f"  row sampling / layout  : {pcfg.get('n_rows_sampling', 'uniform')} / {pcfg.get('batch_layout', 'dense')}",
+            f"  worker / prefetch      : {self.num_workers} / {self.prefetch_factor}",
+            f"  efficient FP32 SDPA    : {self.require_efficient_attention}",
             f"  grouping               : group_size={gcfg.get('group_size')} "
             f"subgroup_size={gcfg.get('subgroup_size')}"
             f"   <- micro_batch_size must not exceed group_size",
@@ -503,15 +516,15 @@ class Trainer:
             f"   (== their batch_size_per_gp)",
             f"  max_features      ours {str(pcfg.get('max_features')):>6}   upstream    100",
             f"  max rows          ours {str(rows[-1]) if rows else '?':>6}   upstream  1,024"
-            f"   (project table distribution; not the upstream long-context curriculum)",
+            f"   (stage-1 reference only; continued training has its own table distribution)",
             f"  max_steps         ours {self.max_steps:>6}   upstream 500,000"
             f"   <- we see ~{100 * self.max_steps * self.batch_size / 35_200_000:.2f}% of "
-            f"their data",
+            f"their task count; row exposure differs for long-context training",
             "",
             "",
             "  -- RUNTIME " + "-" * 65,
-            f"  attention kernels      : {sdpa_report()['using']}"
-            f"   excluded={sdpa_report()['excluded']}"
+            f"  attention kernels      : {sdpa_report(require_efficient=self.require_efficient_attention)['using']}"
+            f"   excluded={sdpa_report(require_efficient=self.require_efficient_attention)['excluded']}"
             f"   <- pinned; PyTorch would otherwise pick per call",
             f"  amp / scaler           : {self.amp} / "
             f"{type(self.scaler).__name__ if self.scaler is not None else 'none'}",
@@ -546,6 +559,8 @@ class Trainer:
         from ..models.architecture import DEFAULT, build_model
 
         mcfg = dict(self.cfg.get("model", {}))
+        if self.cfg.get("train", {}).get("activation_checkpointing", False):
+            mcfg["recompute"] = True
         architecture = self.cfg.get("architecture", DEFAULT)
         if self.regression:
             mcfg.setdefault("num_quantiles", self.num_quantiles)
@@ -555,7 +570,7 @@ class Trainer:
         # (2), which made a 27,538,938-parameter model where upstream's is 27,552,258: a
         # different network, so "same architecture as TabICLv2" stopped being true and Exp2
         # could not warm-start from the released checkpoint (4 head tensors mismatched).
-        # A binary task simply uses the first two of the ten logits — see `_loss_for`.
+        # Binary pretraining still optimizes all ten logits, as upstream; see `_loss_for`.
         return build_model(self.task, architecture=architecture, **mcfg)
 
     def maybe_resume(self) -> None:
@@ -683,25 +698,38 @@ class Trainer:
         # to read first — if it dominates, the GPU is waiting for the prior.
         t_step = time.perf_counter()
         X, y, d, seq_lens, train_sizes = self._unpack(batch)
+        ragged = isinstance(X, (list, tuple))
+        count = len(X)
+        if count == 0 or len(y) != count or any(len(v) != count for v in (d, seq_lens, train_sizes)):
+            raise ValueError("Synthetic batch has inconsistent or empty task counts")
+        if ragged:
+            for table, target, width, rows, split in zip(X, y, d, seq_lens, train_sizes):
+                if (table.ndim != 2 or target.ndim != 1 or len(table) != int(rows)
+                        or len(target) != int(rows) or not 1 <= int(width) <= table.shape[1]
+                        or not 1 <= int(split) < int(rows)):
+                    raise ValueError("Ragged synthetic table disagrees with its shape/split metadata")
         # Validate before moving to CUDA: a negative class in one_hot aborts the
         # CUDA context and destroys the useful error. This also guards cached priors.
-        if not torch.isfinite(X).all() or not torch.isfinite(y).all():
+        if not all(torch.isfinite(t).all() for t in (list(X) + list(y) if ragged else (X, y))):
             raise ValueError("Non-finite synthetic training batch; regenerate the prior cache")
         if not self.regression:
             max_classes = max_classes_of(self.cfg.get("prior", {}))
-            if not ((y >= 0) & (y < max_classes) & (y == y.round())).all():
+            targets = y if ragged else (y,)
+            if not all(((t >= 0) & (t < max_classes) & (t == t.round())).all() for t in targets):
                 raise ValueError("Invalid synthetic class labels; regenerate the prior cache")
         # Not model.train(): that is recursive and would switch dropout back on
         # inside frozen blocks. Mirrors TabICL's `_set_training_mode`.
         set_training_mode(self.model, True, self.strategy)
         self.optimizer.zero_grad(set_to_none=True)
 
-        n_micro = math.ceil(X.shape[0] / self.micro_batch_size)
-        totals: dict[str, float] = {"loss": 0.0}
+        n_micro = math.ceil(count / self.micro_batch_size)
+        totals: dict[str, float] = {"loss": 0.0, "rows_per_update": float(seq_lens.sum()),
+                                   "query_rows_per_update": float((seq_lens - train_sizes).sum()),
+                                   "max_rows_in_update": float(seq_lens.max())}
 
         for i in range(n_micro):
             sl = slice(i * self.micro_batch_size, (i + 1) * self.micro_batch_size)
-            if X[sl].shape[0] == 0:
+            if len(X[sl]) == 0:
                 continue
             # UPSTREAM'S `validate_micro_batch` + `align_micro_batch`: one split and one row
             # count per micro-batch (one group), trimmed to the widest REAL table in it.
@@ -713,21 +741,33 @@ class Trainer:
                     "micro_batch_size divides prior.grouping.group_size"
                 )
             width = max(1, int(d[sl].max()))
-            Xi = X[sl, : int(n_rows), :width].to(self.device, non_blocking=True)
-            yi = y[sl, : int(n_rows)].to(self.device, non_blocking=True)
+            if ragged:
+                # Padding is confined to ONE micro-batch. Never materialize
+                # batch_size x longest_table x widest_table for variable lengths.
+                Xi = torch.zeros(len(X[sl]), int(n_rows), width, dtype=X[sl][0].dtype)
+                for j, table in enumerate(X[sl]):
+                    if table.shape[0] != int(n_rows):
+                        raise ValueError("Ragged table row count differs from its metadata")
+                    w = min(width, table.shape[1])
+                    Xi[j, :, :w] = table[:, :w]
+                yi = torch.stack(y[sl])
+                Xi, yi = Xi.to(self.device, non_blocking=True), yi.to(self.device, non_blocking=True)
+            else:
+                Xi = X[sl, : int(n_rows), :width].to(self.device, non_blocking=True)
+                yi = y[sl, : int(n_rows)].to(self.device, non_blocking=True)
             try:
                 # PIN THE ATTENTION KERNEL. PyTorch picks an SDPA backend per call from the
                 # shapes and dtype, and on 20-08-2026 the cuDNN fused-MHA graph raised on a
                 # B200 at batch 64 under AMP. Wrapping the forward pass makes the choice a
                 # property of the run rather than of the batch that happened to come along.
-                with sdpa_context():
+                with sdpa_context(require_efficient=self.require_efficient_attention):
                     loss, extra = self._loss_for(Xi, yi, int(ts))
-                if not torch.isfinite(loss):
-                    raise FloatingPointError(f"Non-finite training loss at step {self.step}")
-                # Weight by task count, including a shorter final micro-batch.
-                # Equal weighting of passes would over-weight those last tasks.
-                weight = Xi.shape[0] / X.shape[0]
-                self.scaler.scale(loss * weight).backward()
+                    if not torch.isfinite(loss):
+                        raise FloatingPointError(f"Non-finite training loss at step {self.step}")
+                    # Backward recomputes checkpointed activations: retain the
+                    # same kernel/precision policy through that forward replay.
+                    weight = Xi.shape[0] / count
+                    self.scaler.scale(loss * weight).backward()
                 # detach() before float(): torch warns that converting a tensor
                 # still attached to the graph can behave unexpectedly, and we only
                 # want the number for logging.
@@ -792,7 +832,7 @@ class Trainer:
         self._phase["optimizer"] += time.perf_counter() - t_opt
         self._phase["step_tail"] += (t_telem - t_tail) + (t_opt - t_clip)
 
-        self.datasets_seen += int(X.shape[0])
+        self.datasets_seen += count
         return totals
 
     # -- main ----------------------------------------------------------------
@@ -890,6 +930,7 @@ class Trainer:
             batch_size=self.local_batch_size,
             seed=self.prior_seed,
             num_workers=self.num_workers,
+            prefetch_factor=self.prefetch_factor,
             # Batch b of the stream depends on b alone (src/prior/stream.py), so starting at the
             # current step makes a resumed run see exactly the batches an uninterrupted one would.
             start_batch=self.step,

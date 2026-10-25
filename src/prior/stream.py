@@ -88,6 +88,7 @@ class SlotPlan:
     num_features: int
     num_classes: int | None  # None for regression
     use_credit: bool
+    max_features: int | None = None  # upstream's row-dependent padding/filter width
 
 
 @dataclass
@@ -104,9 +105,25 @@ class BatchPlan:
         return [s.train_size for s in self.slots]
 
 
-def _sample_seq_len(rng: np.random.Generator, lo: int, hi: int) -> int:
-    # Upstream: `max_seq_len` when there is no range, else `np.random.randint(min, max)`.
-    return int(hi) if int(lo) >= int(hi) else int(rng.integers(int(lo), int(hi)))
+def _sample_seq_len(rng: np.random.Generator, lo: int, hi: int,
+                    sampling: str = "uniform") -> int:
+    """Upstream's fixed/uniform/log-uniform row law with an isolated slot RNG.
+
+    Stage 3 uses ``int(scipy.stats.loguniform.rvs(lo, hi))``. Inverse-CDF
+    sampling is the same distribution; it does not share upstream's global RNG.
+    The old uniform/default path retains its exact draws for frozen Exp1 streams.
+    """
+    if sampling not in {"uniform", "log_uniform"}:
+        raise ValueError(f"prior.n_rows_sampling must be 'uniform' or 'log_uniform', got {sampling!r}")
+    if lo < 4 or hi < lo:
+        raise ValueError("prior.n_rows_range must satisfy 4 <= lower <= upper")
+    if lo == hi:
+        return int(hi)
+    if sampling == "log_uniform":
+        # Protect the exclusive upper endpoint against floating-point roundoff.
+        sampled = int(np.exp(rng.uniform(np.log(lo), np.log(hi))))
+        return max(lo, min(hi - 1, sampled))
+    return int(rng.integers(int(lo), int(hi)))
 
 
 def plan_batch(stream_seed: int, batch: int, cfg: dict[str, Any], batch_size: int,
@@ -116,6 +133,7 @@ def plan_batch(stream_seed: int, batch: int, cfg: dict[str, Any], batch_size: in
     group_size = max(1, int(gcfg.get("group_size", 4)))
     subgroup_size = max(1, min(int(gcfg.get("subgroup_size", group_size)), group_size))
     n_lo, n_hi = (int(v) for v in cfg.get("n_rows_range", [1024, 1024]))
+    sampling = str(cfg.get("n_rows_sampling", "uniform"))
     f_lo, f_hi = (int(v) for v in cfg.get("n_features_range", [1, 100]))
     max_features = int(cfg.get("max_features", 100))
     t_lo, t_hi = (float(v) for v in cfg.get("train_frac_range", [0.3, 0.9]))
@@ -125,7 +143,7 @@ def plan_batch(stream_seed: int, batch: int, cfg: dict[str, Any], batch_size: in
     n_groups = -(-batch_size // group_size)
     for g in range(n_groups):
         grng = _rng(stream_seed, batch, g, "group")
-        seq_len = _sample_seq_len(grng, n_lo, n_hi)
+        seq_len = _sample_seq_len(grng, n_lo, n_hi, sampling)
         # Upstream: `int(seq_len * np.random.uniform(min_train_size, max_train_size))`. Clamped
         # so both sides of the split keep rows even at the extremes of a custom range.
         train_size = int(seq_len * grng.uniform(t_lo, t_hi))
@@ -149,7 +167,8 @@ def plan_batch(stream_seed: int, batch: int, cfg: dict[str, Any], batch_size: in
                     n_cls = int(_rng(stream_seed, batch, j, "classes").integers(2, max_classes + 1))
                 plan.slots.append(SlotPlan(batch=batch, slot=j, group=g, seq_len=seq_len,
                                            train_size=train_size, num_features=num_features,
-                                           num_classes=n_cls, use_credit=use_credit))
+                                           num_classes=n_cls, use_credit=use_credit,
+                                           max_features=gp_max_features))
     return plan
 
 

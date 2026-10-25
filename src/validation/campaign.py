@@ -69,6 +69,7 @@ class Stage:
     stop_run: str | None = None
     junit: str | None = None
     report: str | None = None
+    max_seconds: float | None = None
 
 
 def plan(phase: str = "gpu") -> list[Stage]:
@@ -100,7 +101,24 @@ def plan(phase: str = "gpu") -> list[Stage]:
     if phase == "cpu":
         stages.append(Stage("notebooks", (py, "-m", "src.utils.run_notebooks", "--workers", "2"), cpu=True))
         return stages
+    from src.validation.long_context import CAPACITY_CORNERS
+
     for track in paths.TASKS:
+        # Fresh processes bound CUDA/worker state, and each successful corner is
+        # receipt-bound so a later allocation does not repeat completed probes.
+        for rows, _width in CAPACITY_CORNERS:
+            for source in ("base", "credit"):
+                name = f"long-context-{track}-{source}-{rows}"
+                folder = report / name
+                stages.append(Stage(name, (py, "-m", "src.validation.long_context",
+                    "--track", track, "--rows", str(rows), "--source", source,
+                    "--out", str(folder)), "capacity", report=str(folder / "checks.json"),
+                    max_seconds=2 * 3600))
+        name = f"long-context-{track}-mixed-batch"
+        folder = report / name
+        stages.append(Stage(name, (py, "-m", "src.validation.long_context", "--track", track,
+            "--source", "mixed", "--out", str(folder)), "capacity",
+            report=str(folder / "checks.json"), max_seconds=2 * 3600))
         config = f"config/Exp0_{track.upper()}.yaml"
         runs = expand_with_seeds(load(config))
         for run in runs:
@@ -301,6 +319,9 @@ def execute(stage: Stage, log: Path, *, timeout: float) -> dict:
                                 stderr=subprocess.STDOUT, start_new_session=(os.name == "posix"))
         try:
             while proc.poll() is None:
+                if stage.max_seconds is not None and time.monotonic() - started > stage.max_seconds:
+                    raise RuntimeError(f"{stage.name}: exceeded its {stage.max_seconds:g}s capacity guard; "
+                                       "inspect performance before another allocation")
                 if time.monotonic() - started > timeout:
                     raise ValidationDeferred(f"{stage.name}: allocation budget exhausted; completed folds remain saved")
                 if progress:

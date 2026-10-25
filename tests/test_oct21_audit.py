@@ -170,15 +170,16 @@ def test_training_comparison_keeps_architectures_and_mixtures_separate(monkeypat
         for share in (0, .5, 1):
             for seed in (0, 1):
                 name = f"exp2_pd__arm={family}__prior-credit_fraction={str(share).replace('.', 'p')}__s{seed}"
-                curves[name] = np.full(3, base + share * .01)
-    monkeypatch.setattr(tp, "_view", lambda *a: (curves, curves, [], []))
-    monkeypatch.setattr(tp, "_common_step_grid", lambda *a: np.array([0, 1, 2]))
-    monkeypatch.setattr(tp, "_curve", lambda df, *a: df)
+                curves[name] = pd.DataFrame({"step": [0, 1, 2],
+                    "real__dev__roc_auc": np.full(3, base + share * .01)})
+    monkeypatch.setattr(tp, "_view", lambda *a: (curves, curves, ["dev"], []))
     fig = tp.credit_vs_control_over_training("pd", "exp2")
-    assert len(fig.axes[0].lines) == 6
-    np.testing.assert_allclose(sorted(line.get_ydata()[0] for line in fig.axes[0].lines),
-                               [.2, .205, .21, .8, .805, .81])
-    assert all("2 seeds" in line.get_label() for line in fig.axes[0].lines)
+    differences = [line for line in fig.axes[0].lines if "paired seeds" in line.get_label()]
+    assert len(differences) == 4
+    np.testing.assert_allclose(sorted(line.get_ydata()[0] for line in differences),
+                               [.005, .005, .01, .01])
+    assert all("2 paired seeds" in line.get_label() for line in differences)
+    assert list(fig.axes[0].lines[-1].get_ydata()) == [0, 0]
     plt.close(fig)
 
 

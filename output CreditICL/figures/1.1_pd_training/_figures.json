@@ -1,0 +1,56 @@
+[
+  {
+    "index": 1,
+    "stem": "01_main_run_coverage",
+    "name": "main_run_coverage",
+    "caption": "Main-comparison configurations against training seeds, one cell per configured run, with completion supported by the saved summary, partial-trace percentages relative to the configured update budget and explicit absence of local records."
+  },
+  {
+    "index": 2,
+    "stem": "02_component_run_coverage",
+    "name": "component_run_coverage",
+    "caption": "Five conditional component removals against three training seeds at a fixed 50% credit mixture, one cell per configured run, labelled completed, partial trace, or no local output."
+  },
+  {
+    "index": 3,
+    "stem": "03_training_loss",
+    "name": "training_loss",
+    "caption": "Training loss against update for each main run, smoothed over five logged batches, with mixture medians from completed runs; dotted traces are incomplete local runs."
+  },
+  {
+    "index": 4,
+    "stem": "04_training_cost",
+    "name": "training_cost",
+    "caption": "Recorded training time, synthetic tasks per second and final loss against updates per downloaded main run, grouped by prior mixture."
+  },
+  {
+    "index": 5,
+    "stem": "05_gradient_health",
+    "name": "gradient_health",
+    "caption": "Recorded total and block gradient norms against training update for downloaded main runs, with clipping reference and mixture colours."
+  },
+  {
+    "index": 6,
+    "stem": "06_development_curves",
+    "name": "development_curves",
+    "caption": "Development monitoring score against update for each downloaded main run, with mixture means at common supported updates and incomplete local traces shown separately."
+  },
+  {
+    "index": 7,
+    "stem": "07_development_control_gap",
+    "name": "development_control_gap",
+    "caption": "Development monitoring-score differences between credit mixtures and their 0% controls, paired by training seed and exact recorded update. Lines show the mean paired difference and bands show \u00b11 sample standard deviation across paired seeds; all pairs must contribute at each plotted update. Zero marks equal monitoring performance. These descriptive development curves are not final cross-validation estimates."
+  },
+  {
+    "index": 8,
+    "stem": "08_development_seed_spread",
+    "name": "development_seed_spread",
+    "caption": "Final recorded development monitoring scores per completed configuration and training seed, with within-configuration ranges and means; these values are separate from final full-table cross-validation."
+  },
+  {
+    "index": 9,
+    "stem": "09_monitoring_dataset_coverage",
+    "name": "monitoring_dataset_coverage",
+    "caption": "Monitoring inventory with one cell per dataset and run, identifying common development cells used in means, other scored cells, entirely missing scores and unmonitored cells."
+  }
+]

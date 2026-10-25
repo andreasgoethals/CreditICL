@@ -53,7 +53,7 @@ def validate_resume_config(old: dict[str, Any], current: dict[str, Any]) -> None
                 "scheduler", "warmup_proportion", "gradient_clipping", "l2sp_alpha", "loss_weights",
                 "cosine_num_cycles", "cosine_amplitude_decay", "cosine_lr_end", "n_estimators", "amp",
                 "regression_loss_weights", "activation_checkpointing", "dtype",
-                "cautious_weight_decay", "num_quantiles"):
+                "cautious_weight_decay", "num_quantiles", "require_efficient_attention"):
         if old_train.get(key, missing) != new_train.get(key, missing):
             changed.append(f"train.{key}")
     if changed:

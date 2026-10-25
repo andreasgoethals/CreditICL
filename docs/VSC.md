@@ -122,11 +122,17 @@ them: `--signal=B:USR1@600` fires 600 s before the wall → a `trap` forwards it
 **not**) → `_install_stop_signals` in `src/train/loop.py` catches it, finishes the step, writes a
 checkpoint → `pretrain.py` returns **exit 64** ("saved, not finished") → the job script **resubmits its
 own array index** → `maybe_resume` picks up the newest checkpoint. `--requeue` covers a node failure
-where no signal arrives; `save_temp_every: 250` bounds an ungraceful kill to ~10 min. The trained child
+where no signal arrives; `save_temp_every: 250` bounds an ungraceful kill to 250 updates (roughly
+ten minutes for the observed short-table runs, not for long-context Exp2). The trained child
 must be backgrounded and `wait`ed on — a foreground child blocks the trap until too late.
 
 **Consequence: an arm may take longer than the walltime and still complete** — the 72 h ceiling is a
 scheduling detail, not a design constraint.
+
+Before launching long-context Exp2, compare the measured 64-task update time plus checkpoint-copy
+time with the 600-second warning interval. The stop handler completes the current update first;
+the old short-table timing does not establish that this fits. A capacity PASS alone is insufficient
+to choose checkpoint cadence, warning time or a campaign budget.
 
 > The self-resubmit only fires on the graceful exit 64. A hard crash (a process abort) does **not**
 > self-resubmit and leaves no summary — those arms are recovered by `sweep_status` below.
@@ -279,28 +285,32 @@ does not implement the current experiment design. Production scripts also enforc
 
 ## 9. Compute budget
 
-Measured on B200, batch 64, micro-batch 4, the config's prior shape:
+Completed Exp1 training on B200, batch 64 and micro-batch 4, with explicit projections below:
 
 | | value |
 |---|---|
 | B200 GPU-hour | 26,250 GPU credits plus host CPU/memory charges; verify current Turin billing |
-| one Exp1 arm, 12,500 steps | ~5.5 GPU-h (0.63 steps/s, measured 24-09-2026 on the arms without the `banded` filter, which the redesign dropped) |
-| **Exp1, 24 arms/track (9 main + 15 component)** (45 until 28-09-2026) | measure the revised 48-run campaign in Exp0; the 24-09 run took ~1,354 GPU-h for 90 arms, its banded-filter arms 5-7x the rest |
-| one Exp3 arm, 200,000 steps | ~88 GPU-h at the same speed; 4 arms/track (control + Exp1's mix, 2 seeds) ≈ 700 GPU-h |
+| one Exp1 arm, 12,500 steps | **6.43–7.38 training GPU-h**, measured in the completed 24-10-2026 snapshot |
+| **Exp1, 24 arms/track (9 main + 15 component)** (45 until 28-09-2026) | **323.616 recorded training GPU-h** for all 48 completed arms, excluding startup and benchmarks; see [RUNS, 24-10-2026](RUNS.md#24-10-2026--exp1-training-complete--all-48-runs-successful) |
+| one Exp3 arm, 200,000 steps | approximately 103–118 training GPU-h by linear extrapolation from Exp1; eight arms total ≈ 823–945 GPU-h, before overhead and benchmarks; requires a measured long-run cost check |
 | TabICLv2's own full pretraining | 24.5 GPU-days per model (the paper's figure) |
 
 The revised configurations generate tasks live in every experiment. Exp1 uses 12,500 updates,
 2.5% of upstream's 500k-step first stage; Exp3 increases updates while retaining 1,024-row tasks.
-Neither reproduces upstream's complete curriculum. The historical speeds above are planning
-references, not measurements of the corrected pipeline. Queue delays, simultaneous allocations,
-and the new full-row benchmarks must be added to training time.
+Neither reproduces upstream's complete curriculum. Exp1 times describe its frozen completed
+campaign; the Exp3 extrapolation is not a measured long run. Wall-clock completion also depends
+on queue delays and concurrent allocations, and benchmarks add their own runtime.
 
 For Experiment 2 (measured in Experiment 0 before it is committed): 18 arms per track (2 models × 3
 mixes × 3 seeds), 10,000 steps each, using upstream TabICL and an adapted TabPFN-Wide recipe — no search
-since 30-09-2026. A TabICLv2 arm costs about what an Exp1 arm costs per step (same shapes, batch 64), a
-TabPFN-3 arm 16 tasks per step through TabPFN's own preprocessing. The old ~400 GPU-hour estimate
-is provisional. `python -m src.validation.verify` extrapolates training hours from the new six
-diagnostic runs. Benchmark probes measure selected tables only: their times do not establish
+since 30-09-2026. The 24-10 revision changes TabICLv2 to 400–60,000 log-uniform rows, 79–81%
+context and one task per microbatch, retaining 64 tasks per update. Its expected row exposure is
+about 7.6 billion per arm, 11.6 times the former 1,024-row proposal; this is **not** a runtime ratio.
+TabPFN-3 retains 16 tasks per update and 1,024 rows through its own preprocessing. The old ~400
+GPU-hour estimate is **obsolete**. Never extrapolate TabICLv2 Exp2 cost from Exp0's 1,024-row
+route checks. Fresh capacity and representative-batch probes must establish feasibility first;
+one representative update gives a timing observation, not a reliable 36-run campaign ETA.
+Benchmark probes measure selected tables only: their times do not establish
 the runtime of the complete publication benchmark matrix.
 
 ## 10. Experiment 0: run it first
@@ -312,14 +322,27 @@ checks, and six 600-step runs with forced stop/resume. It scores every model rou
 widest and median-size tables in each domain/track (duplicates removed), using all eligible rows
 and five folds. It is a capacity and correctness gate, not the publication benchmark matrix.
 
+The revised TabICLv2 Exp2 recipe adds **30 mandatory GPU stages**: seven row/feature capacity
+corners for both tracks and both priors (28), followed by a complete, sampled 64-task update per
+track (2). They use released weights, activation recomputation, float32 efficient SDPA, four
+loader workers at most and one prefetched batch per worker. No mathematical-attention fallback
+or implicit FA3 float16 conversion is allowed. Every stage requires a finite, nonzero optimizer
+update, records memory and timing, and has a two-hour guard. Diagnostic weights are discarded.
+
+**While the frozen Exp1 benchmark is active, do not pull changes, reset output or rerun these
+setup commands in its checkout.** Finish and preserve that campaign first. Validate the revised
+code for Exp2 in a separate checkout/output root or after preserving Exp1's code and receipts.
+The previous Exp0 PASS remains evidence for its own frozen Exp1 revision; it cannot validate
+the new larger-table implementation. No Exp1 retraining is required by this change.
+
 ```bash
 cd "$VSC_DATA/CreditICL"
 git pull --ff-only
 source scripts/slurm/_activate_env.sh
-# Optional intentional clean restart; deletes generated output and our trained checkpoints:
-# Remove identified GPU scratch before deleting the attempt records containing its job IDs.
-python -m src.utils.clean_run --reset-exp0-gpu --clean
-python -m src.utils.clean_run --reset-output --clean
+# Each invocation has an isolated attempt directory. Preserve completed experiment output.
+# Only for a separately intended destructive reset, after inspecting the cleanup plan:
+# python -m src.utils.clean_run --reset-exp0-gpu --clean
+# python -m src.utils.clean_run --reset-output --clean
 bash scripts/slurm/update_env.sh
 # Refresh the existing pinned OOD list without the old 50,000-row download cap:
 python -m src.utils.fetch_ood
@@ -377,8 +400,10 @@ python -m src.utils.preflight --require-exp0
 python -m src.validation.verify
 ```
 
-Only PASS authorizes proceeding with the separate Experiment 1 submission. The verifier estimates
-training hours from the short runs; it cannot predict queue delay. Download the small tier plus the
+Only a current PASS authorizes new production submissions. Preserve already completed Exp1 runs;
+they do not need retraining because Exp2's recipe changed. The verifier estimates short-route
+training hours only; long-context TabICL Exp2 cost stays unknown until representative throughput
+is measured, and queue delay is never predicted. Download the small tier plus the
 benchmark/report files from project storage, retaining the attempt directory structure. Checkpoint
 binaries can remain on VSC; the local verifier reports that omission and VSC preflight verifies them
 in place. Run `python -m src.validation.verify --root "/path/to/parent"`, where that parent contains

@@ -69,10 +69,21 @@ block and a `sweep:` block that lists exactly the knobs it crosses. Full rationa
 
 | # | question | how | arms/track |
 |---|---|---|---|
-| **0** | **Does the revised pipeline run correctly?** | CPU + GPU Slurm jobs: full portable tests, CUDA checks, six stop/resume runs and full-row probes | 3 |
+| **0** | **Does the revised pipeline run correctly?** | CPU + GPU Slurm jobs: portable tests, CUDA/save/resume checks, full-table benchmarks and 30 long-context capacity/throughput probes | 3 training routes |
 | **1** | **Does the prior help at matched compute?** | three mixtures × three seeds, plus five component removals × three seeds; 12,500 steps | 24 |
 | **2** | **Does continued pretraining help released models?** | TabICLv2 and TabPFN-3, three mixes × three seeds using upstream or adapted literature recipes, 10,000 steps | 18 |
 | **3** | **Does the effect persist with longer training?** | scratch TabICL, Exp1's chosen mix vs control, two seeds, 200,000 steps | 4 |
+
+Counts include seeds and both prediction tasks: **Exp1 = (3 mixtures + 5 component removals) × 3 seeds × 2 tasks = 48 runs**;
+**Exp2 = 2 released backbones × 3 mixtures × 3 seeds × 2 tasks = 36 runs**.
+The component removals are compared with the main 50% mixture; they are not additional mixture levels.
+
+Exp2's TabICLv2 arm uses the upstream final-stage table distribution: **400–60,000 rows,
+log-uniform, 79–81% context**, with the upstream row-dependent synthetic feature ceiling.
+TabPFN-3 keeps 1,024-row tasks. The 0%-credit continuation is the original-TabICL-prior control;
+released weights are a separate reference. No continuation is guaranteed to avoid forgetting.
+Both credit data and 25 native OOD datasets per task are benchmarked with all eligible rows/features
+and five folds. The larger TabICL recipe needs new CPU/GPU validation and measured cost before launch.
 
 `credit_fraction` is the master switch: the share of each batch drawn from our credit-targeted path,
 the rest from the unmodified TabICL prior. `0.0` is the control every arm is measured against.
@@ -197,6 +208,11 @@ python scripts/evaluate.py --task lgd --models linear,catboost
 
 **On VSC** — validate the current code in a CPU job, then a GPU job:
 
+**While the current Exp1 benchmark is running, keep its checkout and environment frozen.**
+Do not pull, update packages, reset output or use the setup commands below in that checkout
+until it finishes. The revised Exp2 needs fresh validation afterwards; completed Exp1
+checkpoints and benchmarks remain evidence for their recorded revision.
+
 ```bash
 bash scripts/slurm/update_env.sh
 python -m src.utils.fetch_ood
@@ -232,7 +248,7 @@ all in **[docs/VSC.md](docs/VSC.md)**.
 ## Conventions
 
 - **Library pin.** Literature claims are written against a recorded `tfm-library` commit (currently
-  **`de324ef`**, audit 13-10-2026); record the pin whenever a result depends on it (`git submodule status`).
+  **`702d9ab`**, continued-pretraining audit 24-10-2026); record the pin whenever a result depends on it (`git submodule status`).
 - **Cite code dumps by symbol name, never line number** — the dumps are refreshed and lines drift.
 - **Distinguish evaluated from supported.** A mechanism existing in a paper's code is not that paper
   having measured it; several of this project's premises turned on exactly this.

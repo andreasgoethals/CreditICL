@@ -4,7 +4,7 @@
     python -m src.validation.verify --root D:/x  # a downloaded copy elsewhere (the folder holding output CreditICL)
 
 Every item is PASS, WARN or FAIL with the evidence, and the last section turns the measured
-speeds and sizes into what Experiments 1-3 will cost — GPU-hours, project storage, and whether
+speeds and sizes into estimates where the measured workload is comparable — GPU-hours, project storage, and whether
 a benchmark slot fits its walltime — the reason Experiment 0 runs the real protocol rather than a
 toy one. Reads only. Download both tiers into one `output CreditICL/` (docs/VSC.md §10): the small
 one ($VSC_DATA: logs, run records, the checks report) and the big one WITHOUT its checkpoints
@@ -211,14 +211,30 @@ def verify(out_root: Path, *, big_root: Path | None = None) -> Verdicts:
         v.add(PASS if worst < 0.8 * walltime else WARN, "benchmark slots fit their walltime",
               f"longest slot {worst:.2f} h of a {walltime:.0f} h limit (a requeue re-runs a slot from the start)")
 
-    print("\n--- WHAT THE REAL EXPERIMENTS WILL COST (from these measurements) " + "-" * 20)
-    # (experiment, arm kind in Exp0, steps, arms over both tracks, kept checkpoints per arm)
+    print("\n--- TRAINING COST ESTIMATES (only comparable short-route workloads) " + "-" * 20)
+    _print_legacy_training_costs(speeds, _checkpoint_mb(exp0 / "report" / "checks.json"))
+    for key, hours in sorted(costs.items()):
+        print(f"  {key:<40} {sum(hours) / len(hours):5.2f} h per benchmark slot")
+    return v
+
+
+def _long_context_cost_notice(label: str) -> None:
+    print(f"  {label}: GPU-hours unknown; the 1,024-row Exp0 route does not measure the "
+          "400–60,000-row workload. Measure representative long-context throughput first; "
+          "a single capacity-test update is not a reliable campaign estimate.")
+
+
+def _print_legacy_training_costs(speeds: dict, sizes: dict) -> None:
+    """Keep historical route estimates from becoming a false long-context campaign ETA."""
+    # (experiment, arm kind in Exp0, steps, arms per track, kept checkpoints per arm)
     plan = [("Exp1", "scratch_tabicl", 12_500, 9, 5 + 2), ("Exp2", "finetune_tabicl", 10_000, 9, 4 + 2),
             ("Exp2", "finetune_tabpfn3", 10_000, 9, 4 + 2), ("Exp3", "scratch_tabicl", 200_000, 4, 8 + 2)]
-    sizes = _checkpoint_mb(exp0 / "report" / "checks.json")
     totals: dict[str, list[float]] = {}
     for exp, arm, steps, arms_per_track, kept in plan:
         for track in ("pd", "lgd"):
+            if exp == "Exp2" and arm == "finetune_tabicl":
+                _long_context_cost_notice(f"{exp} {track} {arm}")
+                continue
             sps = speeds.get((track, arm))
             if not sps:
                 continue
@@ -230,10 +246,39 @@ def verify(out_root: Path, *, big_root: Path | None = None) -> Verdicts:
             print(f"  {exp} {track} {arm:<17} {sps:.3f} steps/s -> {hours:6.1f} h per arm of {steps:,} steps, "
                   f"x{arms_per_track} arms; checkpoints ~{gb:.1f} GB")
     for exp, (hours, gb) in totals.items():
-        print(f"  {exp} total: ~{hours:,.0f} GPU-h of training, ~{gb:.0f} GB of checkpoints on project storage")
-    for key, hours in sorted(costs.items()):
-        print(f"  {key:<40} {sum(hours) / len(hours):5.2f} h per benchmark slot")
-    return v
+        label = "TabPFN subtotal only" if exp == "Exp2" else "total"
+        print(f"  {exp} {label}: ~{hours:,.0f} GPU-h of training, ~{gb:.0f} GB of checkpoints on project storage")
+    print("  Exp2 total: unknown until representative TabICL long-context throughput is measured.")
+
+
+def _print_training_costs(exp: int, variant: str, track: str, runs: list[dict], summaries: dict) -> None:
+    """Extrapolate compatible short routes, with an explicit gap for long-context TabICL."""
+    if exp == 2:
+        groups = [("TabICL", [r for r in runs if r["architecture"] != "tabpfn3"]),
+                  ("TabPFN", [r for r in runs if r["architecture"] == "tabpfn3"])]
+    else:
+        groups = [("", runs)]
+    unknown_long_context = False
+    for backbone, group in groups:
+        if not group:
+            continue
+        label = f"Exp{exp}{variant} {track}" + (f" {backbone}" if backbone else "")
+        if exp == 2 and backbone == "TabICL":
+            _long_context_cost_notice(label)
+            unknown_long_context = True
+            continue
+        total, measured = 0.0, 0
+        for run in group:
+            arm = "finetune_tabpfn3" if exp == 2 else "scratch_tabicl"
+            summary = summaries.get(arm, {})
+            if summary.get("completed") and summary.get("steps", 0) > 0:
+                total += summary["train_seconds_total"] / summary["steps"] * run["train"]["max_steps"] / 3600
+                measured += 1
+        if measured == len(group):
+            qualifier = "; subtotal only" if exp == 2 else ""
+            print(f"  {label}: {len(group)} runs, about {total:.1f} GPU-h (short-run extrapolation{qualifier})")
+    if unknown_long_context:
+        print(f"  Exp2 {track} total: unknown; the TabPFN subtotal excludes TabICL long-context training.")
 
 
 def verify_validation(out_root: Path, *, big_root: Path | None = None) -> Verdicts:
@@ -320,16 +365,7 @@ def verify_validation(out_root: Path, *, big_root: Path | None = None) -> Verdic
                     summaries[run["arm"]] = json.loads(file.read_text(encoding="utf-8"))
             for exp, variant in ((1, ""), (1, "_ablations"), (2, ""), (3, "")):
                 runs = expand_with_seeds(load(f"config/Exp{exp}_{track.upper()}{variant}.yaml", allow_placeholders=True))
-                total, measured = 0., 0
-                for run in runs:
-                    arm = ("scratch_tabicl" if exp != 2 else
-                           "finetune_tabpfn3" if run["architecture"] == "tabpfn3" else "finetune_tabicl")
-                    summary = summaries.get(arm, {})
-                    if summary.get("completed") and summary.get("steps", 0) > 0:
-                        total += summary["train_seconds_total"] / summary["steps"] * run["train"]["max_steps"] / 3600
-                        measured += 1
-                if measured == len(runs):
-                    print(f"  Exp{exp}{variant} {track}: {len(runs)} runs, about {total:.1f} GPU-h (short-run extrapolation)")
+                _print_training_costs(exp, variant, track, runs, summaries)
         return v
     except (OSError, ValueError, KeyError, TypeError) as exc:
         v.add(FAIL, "validation receipt", str(exc))

@@ -47,6 +47,17 @@ EXCLUDED = ("CUDNN_ATTENTION",)
 PREFERRED = ("FLASH_ATTENTION", "EFFICIENT_ATTENTION", "MATH")
 
 
+@contextlib.contextmanager
+def _efficient_sdpa_context(chosen):
+    from torch.nn.attention import sdpa_kernel
+    from tabicl._model.attention import flash_attn3_toggle
+
+    # Optional upstream FA3 casts FP32 inputs to FP16. This recipe explicitly
+    # uses FP32 SDPA, independent of whether the optional package is installed.
+    with flash_attn3_toggle(False), sdpa_kernel(chosen):
+        yield
+
+
 def _backends() -> dict[str, Any]:
     """Every SDPA backend this torch build knows, by name. Empty if torch is too old."""
     try:
@@ -56,7 +67,7 @@ def _backends() -> dict[str, Any]:
     return {n: getattr(SDPBackend, n) for n in (*PREFERRED, *EXCLUDED) if hasattr(SDPBackend, n)}
 
 
-def sdpa_report() -> dict[str, Any]:
+def sdpa_report(*, require_efficient: bool = False) -> dict[str, Any]:
     """What is available, what we will use, and what we are deliberately leaving out.
 
     Meant to be logged verbatim at the start of every run. `available` is what the build
@@ -64,11 +75,17 @@ def sdpa_report() -> dict[str, Any]:
     with the reason, so a future reader does not have to guess whether it was a choice.
     """
     have = _backends()
+    preferred = PREFERRED[:-1] if require_efficient else PREFERRED
+    excluded = (*EXCLUDED, "MATH") if require_efficient else EXCLUDED
     return {
         "available": sorted(have),
-        "using": [n for n in PREFERRED if n in have],
-        "excluded": [n for n in EXCLUDED if n in have],
+        "using": [n for n in preferred if n in have],
+        "excluded": [n for n in excluded if n in have],
+        "upstream_flash_attention_3": "disabled" if require_efficient else "upstream default",
         "why_excluded": (
+            "Long-context training requires memory-efficient FP32 SDPA: no quadratic MATH "
+            "fallback, no cuDNN kernel, and no upstream FA3 downcast to FP16."
+            if require_efficient else
             "cuDNN fused MHA is 4.8% slower than flash at our shape (24.11 vs 23.01 ms bf16, "
             "job 11523286) and raised `mha_graph.execute(...).is_good()` at a 16x larger pass "
             "on the same card (job 11521108). Not a threat to training, which never builds "
@@ -77,13 +94,22 @@ def sdpa_report() -> dict[str, Any]:
     }
 
 
-def sdpa_context(only: str | None = None):
+def sdpa_context(only: str | None = None, *, require_efficient: bool = False):
     """Restrict attention to the backends we trust — or to exactly one, for diagnosis.
 
-    A no-op context when torch is too old or nothing matched, so this can wrap a forward pass
-    unconditionally: **a diagnostic that can kill a three-day run is worse than no diagnostic.**
+    The historical diagnostic path permits a no-op on unsupported builds. Long-context
+    training instead fails closed when efficient kernels are unavailable.
     """
     have = _backends()
+    if require_efficient:
+        if only is not None:
+            raise ValueError("An exact diagnostic backend cannot override efficient attention")
+        chosen = [have[n] for n in ("FLASH_ATTENTION", "EFFICIENT_ATTENTION") if n in have]
+        if not chosen:
+            raise RuntimeError("Long-context training requires an efficient CUDA attention backend")
+        # Never fall back to a quadratic attention matrix on a long synthetic table.
+        # Unsupported dtype/device/kernel combinations fail here instead of exhausting RAM.
+        return _efficient_sdpa_context(chosen)
     if not have:
         return contextlib.nullcontext()
     if only is not None:

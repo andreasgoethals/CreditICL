@@ -21,7 +21,7 @@
     "index": 4,
     "stem": "04_shapes",
     "name": "shapes",
-    "caption": "Rows against features for 21 processed source tables on logarithmic axes, with one named point per table; dotted lines mark the synthetic pretraining sizes of 1,024 rows and 100 features, not benchmark limits."
+    "caption": "Rows against features for 21 processed source tables on logarithmic axes, with one named point per table; dotted lines mark Experiment 1's synthetic training geometry of 1,024 rows and at most 100 features, not benchmark limits. Experiment 2's TabICLv2 continuation uses larger synthetic tables."
   },
   {
     "index": 5,

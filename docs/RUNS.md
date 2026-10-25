@@ -167,6 +167,64 @@ The one thing to do differently.
 
 ## Runs
 
+## 24-10-2026 — Exp1 training complete — all 48 runs successful
+
+**Submitted** original arrays on 22–23 October; exact submission receipts not included | **jobs** 11728997 (main LGD), 11728998 (main PD), 11728999 (LGD components), 11729000 (PD components) | **cluster** Mindwell `gpu_b200`
+**Validated commit** a073d7d | **source fingerprint** 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5 | **training fingerprint** 0d328e50ce06778731c5ba5218a61222b9cf396c8b8d767cb3e8a58f7473e69b | **GPUs** one B200 per task | **walltime** 12h requested; recorded training 6.43–7.38h per task
+
+### Configuration
+
+- **Config files** `Exp1_PD.yaml`, `Exp1_LGD.yaml`, `Exp1_PD_ablations.yaml`, `Exp1_LGD_ablations.yaml`. All 48 resolved configurations match the approved recipes, with the expected Slurm override from 12 to 23 data workers.
+- **The levers** 0/0.5/1 credit fraction x three seeds x two tracks = 18 main runs. Five component removals at fraction 0.5 x three seeds x two tracks = 30 component runs.
+- **Budget** every run completes 12,500 updates x batch 64 = 800,000 synthetic tables. Total 600,000 updates / 38,400,000 tables. Tables have 1,024 rows, 1–100 features, context fraction 0.3–0.9; Muon, peak LR 0.0008, micro-batch 4, float32.
+- **Init** scratch TabICL throughout. Every summary reports `completed=true`, `resumed_at=null`, no stopping signal. No run settings were changed by this output audit.
+
+### Results
+
+| Group | Completed / planned | Median training hours | Range, hours | Sampled mean GPU utilization |
+|---|---|---|---|---|
+| Main LGD | 9 / 9 | 6.512 | 6.443–6.631 | 88.06% |
+| Main PD | 9 / 9 | 6.981 | 6.848–7.376 | 84.22% |
+| LGD components | 15 / 15 | 6.518 | 6.431–6.667 | 87.44% |
+| PD components | 15 / 15 | 6.918 | 6.787–7.022 | 84.63% |
+
+- **Completion evidence** all 48 job logs end `END status=OK`; each run logs a final checkpoint save at update 12,500. Last successful footer: 24-10-2026 01:21:15 CEST. Previously held `11728997_6` finished 23-10-2026 21:36:32 CEST. No fresh `sacct` output was supplied.
+- **Progress curve** all 1,248 expected observations are present (26 per run, updates 0 through 12,500 every 500), with progress protocol 8 / feature policy `application-pd_default-lgd_v5`. Scored monitoring values, actual training losses, telemetry and weight diagnostics are finite. Losses on different synthetic mixtures are not directly comparable generalization measures.
+- **Out-of-domain** monitoring contains the configured OOD tasks; production credit/OOD benchmark results are absent. The user reports launching the benchmark, but the ZIP contains no benchmark job ID, log or CSV to verify its live progress independently.
+- **Throughput / cost** summed recorded training time is 323.616 GPU-hours, excluding activation/smoke overhead; this is not a SAM-credit accounting statement. Maximum sampled allocated GPU memory: 19.709 GiB.
+- **Files** Downloads `output CreditICL.zip`, 8,126,272 bytes, SHA-256 `ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e`; 847 files / 45,301,000 uncompressed bytes. No checkpoint binaries are included: their remote content was not independently verified.
+- **Exp0 preservation** CPU/GPU PASS receipts remain bound to the frozen source/environment; all 128 available receipt-bound files match their hashes, while 48 project-tier artifacts remain outside this DATA-only archive. One older successful CPU attempt and 125 older frozen-source notebook PDFs remain; these are provenance/presentation artifacts, not duplicate Exp1 runs.
+
+Development monitoring at the final update (equal weight per configured development dataset,
+then mean and sample standard deviation across the three seeds):
+
+| Credit-prior fraction | PD ROC-AUC, 6 development datasets | LGD R², 4 development datasets |
+|---|---|---|
+| 0% matched base-prior control | 0.7511 ± 0.0016 | 0.3356 ± 0.0026 |
+| 50% credit | 0.7448 ± 0.0013 | 0.3311 ± 0.0027 |
+| 100% credit | 0.7359 ± 0.0015 | 0.2982 ± 0.0059 |
+
+The corresponding initial means were PD ROC-AUC 0.5052 and LGD R² −0.0042, identical
+across mixtures within each seed. All three seeds have the same direction relative to
+the control at the final update. These are fixed monitoring subsets with at most 4,096
+context rows and 2,048 scored rows, **not the full-table five-fold benchmark**. They show
+learning, but do not currently establish a gain from credit specialization. No confirmatory
+test datasets enter this aggregation; the final benchmark and component analyses are pending.
+
+### Bugs and anomalies
+
+- No training exception, OOM, failed footer or nonfinite scored metric was found. The only nonfinite numeric cells are 48 initial `train_loss=nan` entries at update zero, before a training loss exists: expected missing observations.
+- All 48 jobs report the known Python module-load fallback warning, followed by successful project-venv/dependency checks.
+- Top-level logs contain 4,032 recurring sklearn probability-sum warnings in multiclass monitoring. The previously reproduced float32-to-float64 rounding mechanism remains applicable; finite/nonnegative/near-unit matrix checks pass. Raw probabilities are absent, so exact residuals cannot be reconstructed. This is not evidence requiring checkpoint deletion or retraining.
+
+### Interpretation
+
+Training completed as configured. Generalization gains and retention still require complete credit and native multiclass/regression OOD five-fold benchmarking, with paired seeds and complete cells. The new evidence does not justify retraining.
+
+### Next
+
+Keep the VSC checkout and outputs frozen during benchmarking; collect benchmark logs, CSVs and receipts from both tiers afterwards. Validate the revised Exp2 code separately before launching it. No cleanup, installation, submission or remote mutation was performed by this audit.
+
 ## 23-10-2026 — Exp1 first production snapshot — 21 complete, 13 running, one Slurm launch hold
 
 **Submitted** exact submission timestamps not supplied; four arrays cover both main grids and component tests | **jobs** 11728997 (main LGD), 11728998 (main PD), 11728999 (LGD components), 11729000 (PD components) | **cluster** Mindwell `gpu_b200`; live jobs on r11g17/r11g22 at 09:14 CEST

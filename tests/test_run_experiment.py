@@ -205,7 +205,7 @@ def test_exp3_refuses_to_run_while_still_a_template(fake_tree, capsys):
     assert "sbatch" not in out, "nothing may be submitted for an unconfigured experiment"
 
 
-def test_one_invocation_drives_one_experiment_only():
+def test_one_invocation_drives_one_experiment_only(fake_tree):
     """`plan` takes a single experiment, not a list — the tool cannot be pointed at 'all
     experiments' by accident."""
     import inspect

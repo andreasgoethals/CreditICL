@@ -18,16 +18,17 @@ real data pushed through `TabICLClassifier` / `TabICLRegressor`. Both ends are u
   ensemble member standardising and 4-SD-clipping the features on the context rows, class labels
   rotated between members, a regression target standardised on the context (`y_scaler_`).
 
-So the credit path ends in the same place as the control — standardised features, no indicator
-columns, labels of random identity, a standardised LGD target, no constant columns, the same
-sanity check and filter — and it gets there by upstream's PREDICTION code: its last step is
+The TabICL credit path uses standardised features, no indicator columns, labels of random
+identity, a standardised LGD target and no constant columns. Its last encoding step is
 `prediction_view`, upstream's own `UniqueFeatureFilter` + `PreprocessingPipeline("none")` fitted
 on the context rows, and an LGD target is standardised on the context as `y_scaler_` does. A
 credit table therefore reaches the model in training exactly as a real table of the same values
 would at prediction (`tests/test_train_predict_consistency.py`). The control stays upstream's
-training encoding, untouched; without a shift the two differ by sampling noise only. What the
-credit path adds is credit STRUCTURE, never a different encoding. The details, and what changed
-on 28-09-2026, are in each step below.
+training encoding, including its whole-table scaling and target clipping. Those differences
+are part of the prior intervention, together with converters, targets and the configured
+base-only predictability filter; the comparison does not isolate target shape alone. For
+TabPFN, `encoding: raw` instead leaves credit missing values and targets for its own
+preprocessing. Every source still passes the hard validity and classification-split checks.
 """
 
 from __future__ import annotations
@@ -43,7 +44,7 @@ from .noise_features import add_noise_features
 from .preprocess import process_features, standard_scaling
 from .rng import PriorRNG
 from .shift import apply_shift
-from .stream import SlotPlan, max_classes_of, slot_seed
+from .stream import SlotPlan, _sample_seq_len, adjust_max_features, max_classes_of, slot_seed
 from .targets.lgd import apply_lgd_target, apply_lgd_zoib
 from .targets.pd import apply_informative_missingness, apply_pd_target, max_selection_drop
 
@@ -354,7 +355,7 @@ class TaskGenerator:
         if self.base_impl == "upstream":
             X, y = upstream.sample_control(
                 regression=self.regression, seq_len=plan.seq_len, num_features=plan.num_features,
-                max_features=self.max_features, num_classes=int(plan.num_classes or 2), seed=seed,
+                max_features=self._slot_width(plan), num_classes=int(plan.num_classes or 2), seed=seed,
             )
             meta["base_impl"] = "upstream.GraphSCM"
         else:
@@ -370,7 +371,7 @@ class TaskGenerator:
             else:
                 y = cols["y_0"].float().reshape(-1)
                 y = rng.randperm(n_cls)[y.long().clamp(0, n_cls - 1)].float()
-            X = self._permute_and_pad(rng, X)
+            X = self._permute_and_pad(rng, X, max_features=self._slot_width(plan))
             meta["base_impl"] = "transcribed"
         meta["target"] = "base_regression" if self.regression else "base_classification"
         if not self.regression:
@@ -379,6 +380,7 @@ class TaskGenerator:
 
     def _credit_candidate(self, plan: SlotPlan, rng: PriorRNG, seed: int, meta: dict) -> tuple:
         n_rows = plan.seq_len
+        max_features = self._slot_width(plan)
         informative, n_noise = split_noise_budget(
             plan.num_features, float(self.credit_noise_cfg.get("fraction", 0.0)) if self.credit_noise_cfg else 0.0
         )
@@ -415,13 +417,13 @@ class TaskGenerator:
                 # The literature's LGD process reads the features (its three predictors each get
                 # a direction in feature space), so they are processed first.
                 X = process_features(X)
-                X, y, tmeta = apply_lgd_zoib(rng.fork("target"), X, y_latent, tcfg.get("zoib", {}) or {}, self.max_features)
+                X, y, tmeta = apply_lgd_zoib(rng.fork("target"), X, y_latent, tcfg.get("zoib", {}) or {}, max_features)
             else:
                 y, tmeta = apply_lgd_target(rng.fork("target"), y_latent, tcfg)
                 X = process_features(X)
         else:
             X = process_features(X)
-            X, y, tmeta = apply_pd_target(rng.fork("target"), X, y_latent, self.credit_target_cfg, self.max_features)
+            X, y, tmeta = apply_pd_target(rng.fork("target"), X, y_latent, self.credit_target_cfg, max_features)
         meta.update(tmeta)
 
         # THE SLOT'S WIDTH IS FIXED. A target that ADDS a column (the period factor, recorded as a
@@ -449,7 +451,7 @@ class TaskGenerator:
 
         # Irrelevant columns, inside the slot's feature budget (see `split_noise_budget`).
         if n_noise > 0:
-            X, nmeta = add_noise_features(rng.fork("noise"), X, self.credit_noise_cfg, self.max_features, n_add=n_noise)
+            X, nmeta = add_noise_features(rng.fork("noise"), X, self.credit_noise_cfg, max_features, n_add=n_noise)
             meta.update(nmeta)
 
         if X.shape[0] < n_rows:
@@ -467,7 +469,7 @@ class TaskGenerator:
             X, y, smeta = apply_shift(rng.fork("shift"), X, y, self.shift_cfg, plan.train_size / n_rows)
             meta.update(smeta)
         # Shifts see real features, never the constant padding columns.
-        X = self._permute_and_pad(rng.fork("columns"), X)
+        X = self._permute_and_pad(rng.fork("columns"), X, max_features=max_features)
         # Otherwise the rows go in a random order, so the split is random: upstream's rows are
         # i.i.d. and a cross-validation fold is a random split. The PD mechanism stacks vintages
         # in contiguous row blocks (`sample_cohort_factor`); until 28-09-2026 nothing reshuffled
@@ -502,7 +504,7 @@ class TaskGenerator:
         # values (`SimpleImputer` fitted in `fit`), and no indicator column.
         if self.credit_missing_cfg and rng.fork("missing-enabled").boolean(float(self.credit_missing_cfg.get("missing_prob", 1.0))):
             filled, mmeta = apply_informative_missingness(
-                rng.fork("missing"), X[:, :width], self.credit_missing_cfg, self.max_features, fit_rows=plan.train_size,
+                rng.fork("missing"), X[:, :width], self.credit_missing_cfg, max_features, fit_rows=plan.train_size,
                 fill="nan" if self.encoding == "raw" else "mean")
             X = X.clone()
             X[:, :width] = filled
@@ -543,20 +545,36 @@ class TaskGenerator:
             meta["num_classes"] = 2
         return X, y
 
-    def _permute_and_pad(self, rng: PriorRNG, X: torch.Tensor) -> torch.Tensor:
+    def _slot_width(self, plan: SlotPlan) -> int:
+        """Use upstream's row-dependent padding width before predictability filtering.
+
+        ExtraTrees includes padded columns in its seeded feature permutations. Padding a
+        60k-row task to 100 columns instead of upstream's 20 can therefore change which
+        tasks pass the filter, even when the real columns are identical.
+        """
+        configured = getattr(plan, "max_features", None)
+        width = self.max_features if configured is None else int(configured)
+        if not 1 <= int(plan.num_features) <= width <= self.max_features:
+            raise ValueError("Slot feature count must fit its padding width and configured ceiling")
+        return width
+
+    def _permute_and_pad(self, rng: PriorRNG, X: torch.Tensor,
+                         max_features: int | None = None) -> torch.Tensor:
+        width = self.max_features if max_features is None else int(max_features)
         X = X[..., rng.randperm(X.shape[1])]
-        if X.shape[1] < self.max_features:
-            X = torch.nn.functional.pad(X, (0, self.max_features - X.shape[1]), value=0.0)
-        return X[..., : self.max_features]
+        if X.shape[1] < width:
+            X = torch.nn.functional.pad(X, (0, width - X.shape[1]), value=0.0)
+        return X[..., :width]
 
     # -- stand-alone draws (plots, reports) --------------------------------------
     def sample_shape(self) -> tuple[int, int]:
         """One `(n_rows, n_features)` draw from the configured ranges."""
         lo, hi = (int(v) for v in self.n_rows_range)
-        n_rows = hi if lo >= hi else self.rng.randint(lo, hi)
+        n_rows = _sample_seq_len(self.rng.np, lo, hi, self.cfg.get("n_rows_sampling", "uniform"))
         f_lo, f_hi = (int(v) for v in self.n_features_range)
-        n_features = int(round(self.rng.uniform(f_lo, max(f_lo, min(f_hi, self.max_features)))))
-        return n_rows, max(1, n_features)
+        width = min(self.max_features, adjust_max_features(n_rows, self.max_features))
+        n_features = int(round(self.rng.uniform(f_lo, max(f_lo, min(f_hi, width)))))
+        return n_rows, max(1, min(n_features, width))
 
     def sample(self, shape: tuple[int, int] | None = None, *, num_classes: int | None = None) -> SyntheticTask:
         """A stand-alone task through the training code path. `num_classes` pins the class
@@ -581,7 +599,8 @@ class TaskGenerator:
         self._standalone += 1
         plan = SlotPlan(batch=self._standalone, slot=0, group=0, seq_len=n_rows,
                         train_size=train_size, num_features=n_features, num_classes=n_cls,
-                        use_credit=use_credit)
+                        use_credit=use_credit,
+                        max_features=min(self.max_features, adjust_max_features(n_rows, self.max_features)))
         task = self.sample_slot(plan)
         task.meta["train_size"] = train_size
         return task
