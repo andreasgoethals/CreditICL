@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import copy
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import numpy as np
@@ -109,8 +114,7 @@ def test_ragged_batch_does_not_pad_short_wide_tables_to_the_largest_shape(monkey
     assert [len(t) for t in y] == lengths.tolist() == [60000, 400]
 
 
-def test_ragged_loader_resume_and_worker_count_preserve_every_value(lgd_cfg):
-    cfg = copy.deepcopy(lgd_cfg["prior"])
+def _assert_ragged_worker_replay(cfg):
     cfg.update(batch_layout="ragged", n_rows_sampling="log_uniform",
                credit_fraction=.5, grouping={"group_size": 1, "subgroup_size": 1})
     direct = build_loader(cfg, "lgd", 2, 31, num_workers=0)
@@ -125,6 +129,31 @@ def test_ragged_loader_resume_and_worker_count_preserve_every_value(lgd_cfg):
         _assert_batches_equal(expected, next(worker_iterator))
     finally:
         worker_iterator._shutdown_workers()
+
+
+def test_ragged_loader_resume_and_worker_count_preserve_every_value(lgd_cfg, tmp_path):
+    # Upstream orders feature groups using string hashes. Setting the environment
+    # inside this interpreter cannot change its hash seed. Start the probe under
+    # the same fixed seed as pretrain.py/Exp0, including Windows-spawned workers.
+    # Keep the exact tensor equality and stop/resume assertions in the probe.
+    root = Path(__file__).resolve().parents[1]
+    config = tmp_path / "prior.json"
+    config.write_text(json.dumps(lgd_cfg["prior"]), encoding="utf-8")
+    probe = tmp_path / "worker_probe.py"
+    probe.write_text(
+        "import json, runpy, sys\n"
+        "from pathlib import Path\n"
+        "if __name__ == '__main__':\n"
+        f"    sys.path.insert(0, {str(root)!r})\n"
+        f"    checks = runpy.run_path({str(Path(__file__).resolve())!r})\n"
+        "    checks['_assert_ragged_worker_replay'](\n"
+        "        json.loads(Path(sys.argv[1]).read_text(encoding='utf-8')))\n",
+        encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, str(probe), str(config)], cwd=root,
+        env={**os.environ, "PYTHONHASHSEED": "0"},
+        capture_output=True, text=True, timeout=180)
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("kwargs", [{"num_workers": -1}, {"prefetch_factor": 0},

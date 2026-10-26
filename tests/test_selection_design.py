@@ -11,7 +11,7 @@ from src.utils.config import expand_with_seeds, load, run_name
 
 def _development_cells(track="pd", scores=None):
     cfg = load(selection.ROOT / f"config/Exp1_{track.upper()}.yaml")
-    scores = scores or {0.0: .8, .5: .7, 1.0: .6}
+    scores = scores or {0.0: .8, .25: .65, .5: .7, 1.0: .6}
     metric = "roc_auc" if track == "pd" else "r2"
     return pd.DataFrame([
         {"dataset": dataset, "model": "crediticl", "info_run_name": run_name(run),
@@ -32,10 +32,18 @@ def test_exp3_candidate_remains_nonzero_when_control_wins(track):
 
 
 def test_exp3_exact_tie_has_deterministic_rule_not_seed_spread_rule():
-    cells = _development_cells(scores={0.: .6, .5: .7, 1.: .7})
+    cells = _development_cells(scores={0.: .6, .25: .65, .5: .7, 1.: .7})
     ranking = selection.development_ranking(cells, "pd")
     ranking.loc[ranking.configuration.str.endswith("=1"), "std"] = 100.
     assert selection.exp3_candidate(ranking.iloc[::-1], "pd")["credit_fraction"] == .5
+
+
+def test_quarter_mixture_can_win_only_after_its_development_cells_are_complete():
+    cells = _development_cells(scores={0.: .6, .25: .8, .5: .7, 1.: .7})
+    choice = selection.exp3_candidate(selection.development_ranking(cells, "pd"), "pd")
+    assert choice["credit_fraction"] == .25
+    incomplete = cells[~cells.info_run_name.str.contains("credit_fraction=0p25")]
+    assert selection.exp3_candidate(selection.development_ranking(incomplete, "pd"), "pd") is None
 
 
 def test_exp3_choice_ignores_holdout_ood_reference_and_historical_scores():
@@ -79,7 +87,7 @@ def test_cli_filters_historical_and_newer_unrecognised_protocols(tmp_path, monke
     from src.eval import results
     _allow_current_receipts(monkeypatch)
     current = _development_cells()
-    other = _development_cells(scores={0.: .1, .5: .2, 1.: .99})
+    other = _development_cells(scores={0.: .1, .25: .15, .5: .2, 1.: .99})
     mixed = pd.concat([current, other.assign(protocol=PROTOCOL - 1),
                        other.assign(protocol=PROTOCOL + 1)], ignore_index=True)
     file = tmp_path / "results.csv"
@@ -93,8 +101,8 @@ def test_cli_filters_historical_and_newer_unrecognised_protocols(tmp_path, monke
     assert selection.main(["--track", "pd"]) == 0
     text = capsys.readouterr().out
     assert "credit_fraction=0.5;" in text
-    assert "Neither credit mixture beats the control" in text
-    assert "must not re-rank" in text and "Exp2 uses all three" in text
+    assert "No credit mixture beats the control" in text
+    assert "must not re-rank" in text and "Exp2 uses all four" in text
 
 
 def test_cli_refuses_no_current_ranking_even_with_receipts(monkeypatch, capsys):

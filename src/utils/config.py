@@ -167,7 +167,10 @@ def load(path: str | Path, *, allow_placeholders: bool = False) -> dict[str, Any
         # Resolve the parent's sweep before applying the child's body. Otherwise
         # an inherited sweep silently re-expands a lever the child fixes (e.g.
         # the 50% mixture in component ablations).
-        cfg = _deep_merge(apply_sweep_block(load_yaml(resolved.parent / prior_file)), cfg)
+        parent = apply_sweep_block(load_yaml(resolved.parent / prior_file))
+        # Array ordering belongs to a campaign, not to its inherited prior.
+        parent.pop("array_append", None)
+        cfg = _deep_merge(parent, cfg)
 
     if not allow_placeholders:
         holes = find_placeholders(cfg)
@@ -309,6 +312,7 @@ def expand_grid(cfg: dict[str, Any]) -> list[dict[str, Any]]:
     """
     # A shallow copy: popping `arms` below must not change the caller's config.
     cfg = dict(apply_sweep_block(cfg))
+    cfg.pop("array_append", None)
     # ARM PRESETS: `arms:` names sets of dotted overrides, and the sweep axis `arm:` picks one per
     # run — for arms that are not a cross product (Experiment 2: Muon exists for TabICL, not for
     # TabPFN). Held out of the axis walk, then applied per run after the sweep values.
@@ -435,7 +439,10 @@ def expand_with_seeds(cfg: dict[str, Any]) -> list[dict[str, Any]]:
     levers rather than in seed. That way a truncated array still covers the
     whole lever grid at one seed instead of one lever at every seed.
     """
-    cfg = apply_sweep_block(cfg)
+    cfg = dict(apply_sweep_block(cfg))
+    append = cfg.pop("array_append", [])
+    if not isinstance(append, list) or any(not isinstance(p, dict) or not p for p in append):
+        raise ValueError("array_append must be a list of nonempty dotted-assignment mappings")
     seeds = cfg.get("seeds", [cfg.get("seed", 0)])
     if not isinstance(seeds, list):
         seeds = [seeds]
@@ -456,6 +463,17 @@ def expand_with_seeds(cfg: dict[str, Any]) -> list[dict[str, Any]]:
                 continue
             seen.add(key)
             runs.append(point)
+
+    if append:
+        def matches(run, pattern):
+            return all(_get_path(run, key) == value for key, value in pattern.items())
+
+        for pattern in append:
+            if not any(matches(run, pattern) for run in runs):
+                raise ValueError(f"array_append matches no expanded run: {pattern}")
+        # Stable partition: existing seed/lever ordering is retained on each
+        # side. This prevents a grid extension from relabelling completed CSVs.
+        runs.sort(key=lambda run: any(matches(run, p) for p in append))
 
     for i, run in enumerate(runs):
         run["_grid"]["array_index"] = i

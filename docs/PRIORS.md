@@ -240,7 +240,7 @@ L2-SP, freeze strategy) are in [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md).
 | | prior | init | steps |
 |---|---|---|---|
 | **Exp0** | Exp1's prior, `credit_fraction` 0 / 0.5 / 1 and the Exp2 paths — a debug suite, no result | scratch and released | 600 |
-| **Exp1** | `credit_fraction` 0 / 0.5 / 1 of the literature-grounded credit prior × 3 seeds = 9 arms per track (45 until 28-09-2026) | scratch | 12,500 |
+| **Exp1** | `credit_fraction` 0 / 0.25 / 0.5 / 1 of the literature-grounded credit prior × 3 seeds = 12 main arms per track; 25% added after the original campaign | scratch | 12,500 |
 | **Exp2** | Exp1's prior. TabICLv2 and TabPFN-3 × `credit_fraction` 0 / 0.5 / 1 × 3 seeds = 18 arms per track, with recipes adapted from published continued pretraining | released TabICLv2 and TabPFN-3 | 10,000 |
 | **Exp3** | Exp1's prior: the control and the mix Exp1 selects × 2 paired seeds | scratch | 200,000 |
 

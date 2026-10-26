@@ -7,7 +7,7 @@
 #  checkpoints phase 1 wrote — that ordering is a fact about the data, not a convention.
 #
 #      python -m src.utils.sweep_status --config config/Exp1_PD.yaml    # must say all done
-#      python -m src.eval.benchmark_status --exp 1 --track pd --count   # array size (Exp1: 49)
+#      python -m src.eval.benchmark_status --exp 1 --track pd --count   # array size (Exp1: 64)
 #      sbatch --clusters=mindwell --export=ALL,EXP=1,TRACK=pd  scripts/slurm/benchmark.slurm
 #      sbatch --clusters=mindwell --export=ALL,EXP=1,TRACK=lgd scripts/slurm/benchmark.slurm
 #
@@ -52,7 +52,7 @@
 # reference models. No capped-context slots are scheduled. Other experiments:
 #     python -m src.eval.benchmark_status --exp N --track T --count
 # and pass --array=0-<count-1>%8. Indices past the last slot exit in seconds.
-#SBATCH --array=0-48%8
+#SBATCH --array=0-63%8
 
 sleep $((RANDOM % 30 + 1))
 

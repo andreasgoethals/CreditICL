@@ -70,13 +70,16 @@ block and a `sweep:` block that lists exactly the knobs it crosses. Full rationa
 | # | question | how | arms/track |
 |---|---|---|---|
 | **0** | **Does the revised pipeline run correctly?** | CPU + GPU Slurm jobs: portable tests, CUDA/save/resume checks, full-table benchmarks and 30 long-context capacity/throughput probes | 3 training routes |
-| **1** | **Does the prior help at matched compute?** | three mixtures × three seeds, plus five component removals × three seeds; 12,500 steps | 24 |
+| **1** | **Does the prior help at matched compute?** | four mixtures × three seeds, plus five component removals × three seeds; 12,500 steps | 27 |
 | **2** | **Does continued pretraining help released models?** | TabICLv2 and TabPFN-3, four mixes × three seeds using upstream or adapted literature recipes, 10,000 steps | 24 |
 | **3** | **Does the effect persist with longer training?** | scratch TabICL, Exp1's chosen mix vs control, two seeds, 200,000 steps | 4 |
 
-Counts include seeds and both prediction tasks: **Exp1 = (3 mixtures + 5 component removals) × 3 seeds × 2 tasks = 48 runs**;
+Counts include seeds and both prediction tasks: **Exp1 = (4 mixtures + 5 component removals) × 3 seeds × 2 tasks = 54 runs**;
 **Exp2 = 2 released backbones × 4 mixtures × 3 seeds × 2 tasks = 48 runs**.
 The component removals are compared with the main 50% mixture; they are not additional mixture levels.
+The 25% Exp1 extension was approved on 26-10-2026 after the initial 48-run campaign. It appends
+indices 9–11 per task, preserving existing run names and benchmark tags. Completed runs stay valid;
+the extra six runs and their benchmarks remain to be done. Figures sort mixtures numerically.
 
 Exp2's TabICLv2 arm uses the upstream final-stage table distribution: **400–60,000 rows,
 log-uniform, 79–81% context**, with the upstream row-dependent synthetic feature ceiling.

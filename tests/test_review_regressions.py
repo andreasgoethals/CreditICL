@@ -114,7 +114,7 @@ def test_reference_winner_cannot_hide_a_tie_between_prior_mixtures():
         assert rank.iloc[0].configuration == "catboost"
         assert not rank.iloc[0].within_seed_spread_of_best
         tied = rank[rank.within_seed_spread_of_best]
-        assert len(tied) == 2 and set(tied.training_seeds) == {3}
+        assert len(tied) == 3 and set(tied.training_seeds) == {3}
 
 
 def test_learning_curves_use_common_steps_and_never_pool_architectures(monkeypatch):

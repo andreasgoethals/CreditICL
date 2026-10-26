@@ -29,7 +29,7 @@ def test_current_exp2_reports_unknown_long_context_cost_and_only_tabpfn_subtotal
 
 
 @pytest.mark.parametrize("exp,variant,count,hours", [
-    (1, "", 9, "62.5"),
+    (1, "", 12, "83.3"),
     (1, "_ablations", 15, "104.2"),
     (3, "", 4, "444.4"),
 ])

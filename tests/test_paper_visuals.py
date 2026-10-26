@@ -180,7 +180,7 @@ def test_local_coverage_distinguishes_partial_absent_complete(tmp_path, monkeypa
     (a / "summary.json").write_text(json.dumps({"completed": True, "steps": 12500}))
     (b / "progress.csv").write_text("step,train_loss\n100,0.2\n")
     actual = campaign.coverage("pd")
-    assert actual.state.value_counts().to_dict() == {"absent": 7, "completed": 1, "partial": 1}
+    assert actual.state.value_counts().to_dict() == {"absent": 10, "completed": 1, "partial": 1}
     assert len(campaign.coverage("pd", components=True)) == 15
     assert "not a live scheduler" in campaign.provenance("pd")
 

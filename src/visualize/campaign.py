@@ -48,10 +48,16 @@ def coverage(track: str, exp: str = "exp1", *, components: bool = False) -> pd.D
         if exp == "exp2" and not components:
             label = ("TabPFN-3" if "tabpfn3" in run["_run_name"] else "TabICLv2") + " · " + label
         rows.append({"run": run["_run_name"], "seed": run["seed"],
-                     "label": label,
+                     "label": label, "credit_fraction": float(run["prior"]["credit_fraction"]),
+                     "architecture": str(run.get("architecture", "tabicl")),
                      "state": "completed" if complete else "partial" if folder.is_dir() else "absent",
                      "steps": steps, "budget": run["train"]["max_steps"]})
-    return pd.DataFrame(rows)
+    frame = pd.DataFrame(rows)
+    # The quarter-mixture is appended in the launch grid to preserve old array
+    # identities; figures show the scientific dose order, not submission order.
+    if not components and len(frame):
+        frame = frame.sort_values(["architecture", "credit_fraction", "seed"], kind="stable")
+    return frame.reset_index(drop=True)
 
 
 def provenance(track: str, exp: str = "exp1") -> str:
@@ -116,6 +122,10 @@ def training_summary(track: str, exp: str = "exp1") -> str:
     from src.visualize import training_plots as tp
 
     lines = ["A · PROVENANCE AND RUN COVERAGE", provenance(track, exp)]
+    if exp == "exp1":
+        lines += ["Four main mixtures: 0%, 25%, 50%, 100%; three seeds each.",
+                  "The 25% mixture is an extension approved after the initial 48-run campaign; "
+                  "six new runs bring the planned total to 54, preserving completed results."]
     if exp == "exp2":
         lines += ["PLANNED CONTINUATION (not completed training)",
                   continuation_recipe(track).to_string(index=False),

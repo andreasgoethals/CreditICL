@@ -171,7 +171,16 @@ def write_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_suffix(path.suffix + ".tmp")
     temp.write_text(json.dumps(data, indent=2, default=str) + "\n", encoding="utf-8")
-    temp.replace(path)
+    for attempt in range(5):
+        try:
+            temp.replace(path)
+            return
+        except PermissionError as exc:
+            # Windows readers/scanners can briefly deny an atomic rename. Keep
+            # the previous valid receipt intact and retry only these errors.
+            if getattr(exc, "winerror", None) not in (5, 32, 33) or attempt == 4:
+                raise
+            time.sleep(0.05 * 2 ** attempt)
 
 
 @contextmanager

@@ -67,7 +67,7 @@ def _fingerprint(files: list[Path], *, planned_selection: bool = False) -> str:
             text = json.dumps([(c["cell_type"], "".join(c["source"])) for c in nb["cells"]], ensure_ascii=False)
         if planned_selection and path.relative_to(REPO_ROOT).as_posix() in (
                 "config/Exp3_PD.yaml", "config/Exp3_LGD.yaml"):
-            # Exp3 deliberately chooses between the already-tested 50% and 100%
+            # Exp3 deliberately chooses between the configured 25%, 50% and 100%
             # mixtures AFTER Exp1. That one planned choice is not a code change.
             # Every other recipe value (and any untested mixture) remains hashed.
             import yaml
@@ -78,7 +78,7 @@ def _fingerprint(files: list[Path], *, planned_selection: bool = False) -> str:
             if (isinstance(values, list) and len(values) == 2
                     and type(values[0]) in (int, float) and values[0] == 0
                     and (values[1] == "FILL_FROM_EXP1" or
-                         (type(values[1]) in (int, float) and values[1] in (.5, 1.0)))):
+                         (type(values[1]) in (int, float) and values[1] in (.25, .5, 1.0)))):
                 sweep["prior.credit_fraction"] = [0.0, "FILL_FROM_EXP1"]
             text = json.dumps(cfg, sort_keys=True)
         digest.update(text.encode())

@@ -23,7 +23,7 @@ def leaves(obj, prefix=""):
 def test_five_component_tests_share_the_main_training_and_evaluation_budget(track):
     main = expand_with_seeds(load(f"config/Exp1_{track.upper()}.yaml"))
     runs = expand_with_seeds(load(f"config/Exp1_{track.upper()}_ablations.yaml"))
-    assert len(main) == 9 and len(runs) == 15
+    assert len(main) == 12 and len(runs) == 15
     assert Counter(r["arm"] for r in runs) == dict.fromkeys(
         ["no_macro_target", "no_informative_missingness", "no_shift", "no_tail_warp", "base_cardinality"], 3)
     permitted = {

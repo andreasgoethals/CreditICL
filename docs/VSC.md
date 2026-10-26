@@ -291,7 +291,8 @@ Completed Exp1 training on B200, batch 64 and micro-batch 4, with explicit proje
 |---|---|
 | B200 GPU-hour | 26,250 GPU credits plus host CPU/memory charges; verify current Turin billing |
 | one Exp1 arm, 12,500 steps | **6.43–7.38 training GPU-h**, measured in the completed 24-10-2026 snapshot |
-| **Exp1, 24 arms/track (9 main + 15 component)** (45 until 28-09-2026) | **323.616 recorded training GPU-h** for all 48 completed arms, excluding startup and benchmarks; see [RUNS, 24-10-2026](RUNS.md#24-10-2026--exp1-training-complete--all-48-runs-successful) |
+| **Completed original Exp1, 24 arms/track (9 main + 15 component)** | **323.616 recorded training GPU-h** for all 48 completed arms, excluding startup and benchmarks; see [RUNS, 24-10-2026](RUNS.md#24-10-2026--exp1-training-complete--all-48-runs-successful) |
+| **Exp1 extension approved 26-10-2026: 3 more arms/track** | 25% credit, three seeds, indices 9–11; six additional runs make 54 total. Earlier per-arm timings imply roughly 39–44 training GPU-h, excluding queue, startup and benchmarking. Preserve the completed runs. |
 | one Exp3 arm, 200,000 steps | approximately 103–118 training GPU-h by linear extrapolation from Exp1; eight arms total ≈ 823–945 GPU-h, before overhead and benchmarks; requires a measured long-run cost check |
 | TabICLv2's own full pretraining | 24.5 GPU-days per model (the paper's figure) |
 
@@ -408,7 +409,7 @@ the GPU receipt binds that exact CPU receipt. Rerunning CPU invalidates an older
 Exp0 reference probes are isolated and are never published as complete production results.
 The launcher refuses production work if tests, code, configurations, packages, inputs or artifacts
 changed after validation. The sole planned exception is filling Exp3's `FILL_FROM_EXP1` with the
-already-tested 50% or 100% mixture after development-set selection; all other recipe changes still
+already-tested 25%, 50% or 100% mixture after development-set selection; all other recipe changes still
 invalidate validation. Each training run records its fully resolved choice.
 
 After completion:
@@ -451,7 +452,7 @@ September's `manifests/` and `results/` remain readable as historical records un
 its trained checkpoints remain at `<staging>/CreditICL/checkpoints/<run>/`.
 
 **Do not delete these old checkpoints or resubmit the September sweep.** That 45-arm-per-track
-campaign completed, including its benchmark. Today's Exp1 has 9 main and 15 component runs per track
+campaign completed, including its benchmark. Today's Exp1 has 12 main and 15 component runs per track
 and uses a changed prior,
 optimizer settings, dataset partition, and evaluation protocol, so the old outputs do not count
 as completion of the new design. Validate the revised pipeline through Exp0 before launching it.

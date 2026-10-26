@@ -92,7 +92,7 @@ def test_a_mean_sd_pair_is_data_not_a_sweep():
 
     assert is_literal_list("alpha0_mean_sd", [-0.54, 1.0])
     assert not is_literal_list("alpha0", [-0.54, 1.0])
-    assert len(expand_with_seeds(load(ROOT / "config" / "Exp1_LGD.yaml"))) == 9
+    assert len(expand_with_seeds(load(ROOT / "config" / "Exp1_LGD.yaml"))) == 12
 
 
 # -- the ZOIB process ------------------------------------------------------------------------

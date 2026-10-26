@@ -329,7 +329,9 @@ def check(exp: int, track: str, index: int, *, write: bool = False, **kwargs) ->
         if not receipt.is_file():
             return False
         old = json.loads(receipt.read_text(encoding="utf-8"))
-        return old.get("request") == wanted and old.get("files") == {
+        from src.utils.benchmark_compat import compatible_requests
+
+        return compatible_requests(old.get("request"), wanted) and old.get("files") == {
             k: digest(p) for k, p in files.items()
         }
     for domain, file in files.items():

@@ -88,7 +88,7 @@ def test_current_report_requires_the_whole_configured_matrix(tmp_path, monkeypat
     for model in REFERENCE_MODELS.split(","):
         _write(tmp_path / "reference/pd" / f"results_reference_pd_{model}.csv", cells(model))
     result = rp.load_results("pd")
-    assert len(result) == (9 + 4) * len(datasets) * 5
+    assert len(result) == (12 + 4) * len(datasets) * 5
     missing = tmp_path / "1/pd/results_exp1bench_pd_a0.csv"
     saved = missing.read_bytes()
     missing.unlink()

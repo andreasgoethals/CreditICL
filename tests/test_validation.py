@@ -28,7 +28,7 @@ def test_attempt_rejects_unsafe_names(name):
 
 
 @pytest.mark.parametrize("task", ["PD", "LGD"])
-@pytest.mark.parametrize("choice", [0.5, 1.0])
+@pytest.mark.parametrize("choice", [0.25, 0.5, 1.0])
 def test_planned_exp3_selection_preserves_validation_but_recipe_edits_do_not(tmp_path, monkeypatch, task, choice):
     from src.utils.preflight import source_fingerprint
 
@@ -485,7 +485,7 @@ def test_exp1_default_plan_includes_main_and_component_runs(monkeypatch, isolate
     output = capsys.readouterr().out
     for task in paths.TASKS:
         assert f"exp1-{task}-train" in output and f"exp1ablations-{task}-train" in output
-    assert output.count("0/9") == 2 and output.count("0/15") == 2
+    assert output.count("0/12") == 2 and output.count("0/15") == 2
     assert "VARIANT=ablations" in output
 
 

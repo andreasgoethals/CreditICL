@@ -61,7 +61,7 @@ def test_final_ood_loader_reads_final_native_protocol_files_and_requires_all_mod
     # A malformed monitoring file must not enter the final-checkpoint analysis.
     (results / "ood_results_exp1bench_pd_a0_s100.csv").write_text("unrelated monitor")
     result = analysis.load_ood_results("pd")
-    assert result is not None and len(result) == (9 + 4) * 3 * 5
+    assert result is not None and len(result) == (12 + 4) * 3 * 5
     (results / "ood_results_exp1bench_pd_a8.csv").unlink()
     with pytest.warns(UserWarning, match="missing model"):
         assert analysis.load_ood_results("pd") is None

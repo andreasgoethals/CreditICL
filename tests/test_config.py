@@ -229,11 +229,13 @@ def test_run_names_are_unique(path):
 
 
 @pytest.mark.parametrize("path", CONFIGS)
-def test_seeds_are_crossed_outermost(path):
-    """A cut-short array should cover the lever grid at one seed, not one lever
-    at every seed. That only holds if seed is the outer loop."""
-    runs = expand_with_seeds(_load(path))
-    n_seeds = len(_load(path)["seeds"])
+def test_seeds_are_crossed_outermost_before_campaign_extensions(path):
+    """New campaigns cover levers before seeds; explicit append-only extensions
+    preserve completed indices (covered by test_exp1_quarter_extension)."""
+    cfg = _load(path)
+    cfg.pop("array_append", None)
+    runs = expand_with_seeds(cfg)
+    n_seeds = len(cfg["seeds"])
     per_seed = len(runs) // n_seeds
     assert {r["seed"] for r in runs[:per_seed]} == {runs[0]["seed"]}
 
@@ -334,8 +336,8 @@ def test_exp1_defines_many_priors_and_exp3_exactly_one():
         n_priors = 1
         for _, values in axes:
             n_priors *= len(values)
-        # 3 credit fractions (redesigned 28-09-2026; was 3 x 3 filters x 2 intensities = 18).
-        assert n_priors == 3, f"{track}: expected 3 Exp1 priors, got {n_priors}"
+        # Four fractions; the 25% extension preserves the original three arms' ordering.
+        assert n_priors == 4, f"{track}: expected 4 Exp1 priors, got {n_priors}"
 
         exp3 = [(k, v) for k, v in sweep_axes(_load(f"config/Exp3_{track}.yaml")) if k != "seeds"]
         assert exp3 == [("prior.credit_fraction", [0.0, PLACEHOLDER])], (

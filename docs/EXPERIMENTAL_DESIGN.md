@@ -40,7 +40,7 @@ Temporal deployment and crossed-task selectivity are not tested by the current f
 targeting) was designed but **not built** — see [§3](#3-the-experiments). Without it we cannot
 fully separate "credit-specific structure" from "any added realism". The proposed crossed
 mechanism ablation ([§5.2](#52-the-double-dissociation)) is also **not implemented** by the current
-three-mixture grid. Gains on PD and LGD alone do not establish a double dissociation or rule out
+four-mixture grid. Gains on PD and LGD alone do not establish a double dissociation or rule out
 generic realism, difficulty or architecture interactions.
 
 ## 2. Verified premises
@@ -104,8 +104,8 @@ calibration change postdates the September campaign and must not be attributed t
 | | **Exp0 — does it run?** | **Exp1 — does the prior help, all else equal?** | **Exp2 — is it useful for the real models?** | **Exp3 — run long** |
 |---|---|---|---|---|
 | start | the three paths below | from scratch | the released TabICLv2 and TabPFN-3 weights | from scratch |
-| swept | `arm {scratch TabICL, fine-tuned TabICLv2, fine-tuned TabPFN-3}` | `credit_fraction {0, .5, 1} × 3 seeds` | `arm {TabICLv2, TabPFN-3} × credit_fraction {0, .25, .5, 1} × 3 seeds` | `credit_fraction {0, Exp1's mix}` × 2 seeds |
-| arms/track | 3 | 24 (9 main + 15 component) | 24 | 4 |
+| swept | `arm {scratch TabICL, fine-tuned TabICLv2, fine-tuned TabPFN-3}` | `credit_fraction {0, .25, .5, 1} × 3 seeds` | `arm {TabICLv2, TabPFN-3} × credit_fraction {0, .25, .5, 1} × 3 seeds` | `credit_fraction {0, Exp1's mix}` × 2 seeds |
+| arms/track | 3 | 27 (12 main + 15 component) | 24 | 4 |
 | steps | 600 | 12,500 | 10,000 | 200,000 |
 | rows/task | route checks plus explicit long-context capacity probes | 1,024 | TabICLv2: 400–60,000, log-uniform; TabPFN-3: 1,024 | 1,024 |
 | optimizer | as the path it checks | Muon (upstream stage 1) | upstream TabICL and an adapted TabPFN-Wide recipe | Muon |
@@ -150,7 +150,11 @@ Selection remains predeclared development ROC-AUC (PD) and R² (LGD). Log-loss a
 boundary-mass/CRPS comparisons are secondary hypothesis tests, reported alongside those primary
 metrics rather than used to change the winning mixture after seeing results.
 
-This adds 15 runs per track to the nine main runs, 48 in total. Component groups follow the
+The 26-10-2026 extension adds 25% credit, with three seeds per task: 12 main runs plus
+15 component runs per task, 54 total. It was approved after the original 48-run campaign,
+so it is reported as an extension rather than retroactively predeclared. The new training
+indices 9–11 are appended; old resolved recipes, run names and benchmark tags are preserved.
+Component groups follow the
 controlled-ablation principle in `tfm-library/papers/text/2026/05_Bouadi_et_al._Shaping_the_Prior_How_Synthetic_Task_Distributions_Determine_Tabular_Foundation_Model_Quality.txt`;
 that paper studies general classification, not the credit-risk mechanisms here.
 
@@ -214,10 +218,108 @@ previous 1,024-row proposal. This is a material compute change: the old roughly 
 Exp2 estimate is obsolete. Runtime must be projected from the revised representative GPU
 updates and generation/filtering timings before launch; row count alone is not a runtime model.
 
+**26-10-2026 evidence review: budget and forgetting protection.** The configured 10,000 updates
+are a proposed common budget within each backbone, not an established optimum. TabICLv2 trained
+500,000 + 40,000 + 10,000 updates per model (550,000 total; batch 64), whereas TabPFN-Wide chose
+10,000 after convergence observations for a *v2 classifier*, 40–400 rows and extreme width.
+Neither study tested credit CPT of the released v3 regressor. The original TabPFNv2 Nature paper
+reports about two million updates at batch 64; the v3 report reports over eight trillion tokens
+without enough information to recover its optimizer-update count. Do not equate tokens, rows,
+table instances, microbatches or optimizer updates.
+
+The original TabICLv2 curriculum, per classifier or regressor, is:
+
+| Stage | Updates | Rows per synthetic table | Context fraction | Peak learning rate |
+|---|---:|---|---|---:|
+| 1: learn the general task distribution | 500,000 | 1,024 | 30–90% | 8e-4 |
+| 2: extend context length | 40,000 | 400–10,240, log-uniform | about 80% | 1e-4 |
+| 3: extend it further at a smaller rate | 10,000 | 400–60,000, log-uniform | about 80% | 2e-5 |
+
+With global batch 64 this is 35.2 million table instances per model. These are successive
+optimization phases, distinct from the column/row/ICL modules in the architecture. The
+three architectural stages in the TabPFN3 report do not disclose a three-phase training
+curriculum. TabPFN2.5 and 3.5 likewise do not give enough original batch/schedule information
+to derive an update count; the older v2 count must not be transferred to those releases.
+
+Stage-3 TabICL sampling already mixes short, medium and long tables: roughly 19% are at most
+1,024 rows and 35% exceed 10,240 under its 400–60,000 log-uniform law. These are table shares,
+not row shares. Repeating all three original stages would restart a large, high-learning-rate
+training campaign from weights that already completed it. Retain stage-3-style continuation as
+the main TabICL proposal. A short, low-rate transition may be piloted if stability requires it;
+do not automatically restore the original stage-1 learning rate or introduce a second geometry
+change only in credit arms.
+
+The latest reports do not establish one universal curriculum:
+
+| Primary report (under `tfm-library/papers/text/`) | Verified training evidence | Consequence for this project |
+|---|---|---|
+| `2026/09_Qu_et_al._TabICLv2_A_better_faster_scalable_and_open_tabular_foundation_model.txt` | 500k/40k/10k stages, batch 64; Muon, lower LR for longer tables | Direct geometry precedent for the released TabICL model, not optimal credit-CPT evidence |
+| `2026/09_Team_et_al._Xiaomi_TabLDM_A_Tabular_Foundation_Model_Technical_Report.txt` | Explicitly follows TabICL's curriculum: classifier 500k/40k/10k, regressor 300k/40k/10k | Corroborates reuse within this architecture family, not an independent universal rule |
+| `2026/09_Tao_et_al._Mitra_v2_Technical_Report.txt` | About 14k updates, effective batch 2,048, BF16; several continuation attempts failed to improve or harmed retention | Update counts require task-volume context; more training is not guaranteed to help |
+| `2026/08_Eo_et_al._EXAONE_Tabular_1.0_Technical_Report.txt` | About 30m classification/10m regression table instances; BF16, Muon/AdamW and EMA; objective-dependent schedules | Optimizer/precision choices vary; EMA is not itself proof of retention |
+| `2026/05_Hosseinzadeh_et_al._TabDPT_Turbo_Efficient_In_Context_Learning_for_Tabular_Prediction.txt` | Real-data pretraining, shared context, different regression objective | A useful alternative family, not a drop-in synthetic-CPT schedule |
+| `2026/09_Zhang_et_al._LimiX_2_A_Contextual_Mechanism_Network_Towards_General_Structured_Data_Intelligence.txt` | Synthetic mechanism prior with joint target/feature masking objectives | Similar synthetic-data motivation does not imply identical loss or curriculum |
+
+TabPFN's v2.5, v3 and v3.5 reports were checked as well. V3 explicitly adopts TabICLv2's
+column/row/ICL architecture, but changes the classifier decoder, attention, normalization, prior
+and training/inference transformations. Its full pretraining schedule is not disclosed. V3.5
+adds Fourier/ECDF features and a larger joint classification/regression backbone; it does not
+justify changing this project's pinned v3 model. A longer-table TabPFN3 pilot is therefore a
+reasonable hypothesis, but copying Muon, LR, precision or loss from TabICL is not justified.
+Its public 9.1.0 fine-tuning path remains the implementation reference. Before selecting a
+different production recipe, compare short/long geometry at equal task/update budgets within
+TabPFN3 and measure actual memory, time, finite gradients and development learning curves.
+Do not use the final holdout or OOD benchmark to select the recipe.
+
+**Forgetting measures: implemented versus proposed.** The active grid trains all parameters and
+varies generic-prior replay (100%, 75%, 50%, 0% at credit shares 0%, 25%, 50%, 100%). This is native
+prior replay for TabICL only; TabPFN3's native generator is unavailable. Released weights are the
+no-update reference. Weight decay is already 0.01 for Exp1 and Exp2 TabICL, and 0.0001 for Exp2
+TabPFN; it shrinks weights toward zero, unlike L2-SP's penalty toward the released weights.
+Gradient clipping bounds an individual update's gradient norm, not cumulative forgetting.
+Rewarming itself can temporarily worsen source performance even with correct code, as
+[Gupta et al. (2023)](https://arxiv.org/abs/2308.04014) found for Pythia continuation. This is
+general-model evidence for measuring the no-credit control, not a tabular learning-rate rule.
+
+For a supplementary method study, prefer one explicit starting-weight penalty first: Real-TabPFN
+(`2025/07_Garg_et_al._Real_TabPFN_Improving_Tabular_Foundation_Models_via_Continued_Pre_training_With_Real_World_Data.txt`)
+uses L2-SP in real-data CPT of v2; it does not isolate the penalty's benefit in an ablation.
+This is a direct implementation precedent, not proof that L2-SP outperforms LoRA or replay.
+The original [L2-SP study (Li et al., 2018)](https://proceedings.mlr.press/v80/li18a.html)
+evaluated convolutional-network transfer, so its stronger results also need a tabular test.
+Its coefficient 0.003 and LR 3e-7 are v2-specific empirical choices, not portable constants.
+Our TabICL path supports L2-SP but leaves it off; the TabPFN
+path rejects nonzero L2-SP until separately implemented and tested. A predeclared supplementary
+0%/50% comparison across both models, tracks and three seeds would add **24 runs per method**,
+not change the main 48. No such grid has been enabled by this review.
+
+LoRA or an ICL-stack-only strategy are alternatives to test, not automatic protections.
+TabSTAR's LoRA results concern downstream real-data adaptation (including a text encoder);
+Rubachev's PEFT comparison concerns v2 per-dataset fine-tuning. Neither establishes superiority
+for v3 synthetic CPT. Head-only tuning also differs because v3 uses an attention-based classifier
+decoder. Before a PEFT comparison, explicitly enumerate trainable tensors, preserve packed-QKV
+semantics, verify zero initial adapter effect and nonzero adapter gradients, keep frozen tensors
+unchanged, and exercise training/checkpoint/resume/benchmark equivalence on both GPU backbones.
+No silent fallback to full tuning is acceptable. Selection must use development evidence;
+report final credit and native OOD effects against both the released and continued 0% controls.
+
+General language-model evidence also depends on the adaptation setting. [Biderman et al.
+(2024)](https://arxiv.org/abs/2405.09673) found a learning/retention trade-off for LoRA in
+code/math continuation; [Oncel et al. (2026)](https://arxiv.org/abs/2609.23916) found comparable
+knowledge acquisition with sufficiently high-rank LoRA in time-incremental web-data CPT.
+Neither establishes a tabular rank, target-module set or optimal learning rate. These primary
+papers were checked separately from the pinned library. They support a measured method pilot,
+not a claim that freezing weights guarantees no forgetting.
+
+Sources for this review use TFM pin `702d9ab0b66f6639ba8d443ff9c4a91231964465`. Repository
+snapshots checked include `TabICL.txt` stage scripts and `Trainer.configure_optimizer`,
+`TabPFN .txt` fine-tuning/preprocessing, `TabSTAR.txt` `wrap_with_lora`, Rubachev's `LoraMHA`
+and TabTune's `inject_lora`. No source snapshot or submodule was edited.
+
 **Exp3** runs Experiment 1's best nonzero credit mix long, against its 0% control, from scratch:
 the choice maximises development ROC-AUC (PD) or R² (LGD), averaging folds and training seeds.
 Exact numerical ties choose the smaller credit share; seed spread is reported descriptively and
-does not change that rule. If neither credit mix exceeds the control's development mean, the
+does not change that rule. If no credit mix exceeds the control's development mean, the
 candidate is not an established improvement: review whether the long-budget study merits its
 cost, and describe a study that proceeds as testing whether an effect emerges at longer budgets.
 Never substitute a duplicate 0% arm for the nonzero candidate.
@@ -489,7 +591,9 @@ are preserved. This closes known exclusions; it does not certify every anonymise
    within 0.001 on 49.2% of 594 rows, not the historical 57%. Source dictionaries and LGD target
    definitions remain necessary; weak univariate prediction does not certify absence of leakage.
 6. **Exp2's reported checkpoint** — resolved 30-09-2026: with no search there is no chosen checkpoint;
-   the final one (10,000 steps, the recipes' own length) is the result, the others a learning curve.
+   the final one (currently proposed as 10,000 steps) is the result, the others a learning curve.
+   The 26-10 review does not establish 10,000 as optimal; freeze any pilot-informed replacement
+   budget for all mixtures of a backbone before the production comparison.
    `eval.headline_step`, if a config sets it, is honoured by `results_plots.load_results`.
 7. **Full-row evaluation** — user decision 13-10-2026: no capped-context comparison. All eligible
    rows participate in five-fold CV. Every prediction-time-eligible column is retained, including

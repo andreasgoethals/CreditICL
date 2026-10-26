@@ -10,6 +10,11 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 26-10-2026
 
+- Verify 1,830 portable tests (30 VSC-only skips), execute all 12 notebooks/37 PDFs, and visually inspect the changed four-mixture coverage figures.
+- Run the cross-worker replay test under the production Python hash seed, including Windows-spawned workers.
+- Retry transient Windows receipt-publishing locks without overwriting valid reports or hiding permanent errors.
+- Add the approved 25% Exp1 extension (six runs, 54 total), preserving completed array identities and narrowly compatible benchmark receipts; update notebook coverage and selection.
+- Audit current TFM reports: distinguish the proposed 10k CPT budget from evidence, explain stage-3 length mixing, and keep L2-SP/PEFT proposals separate from the active grid.
 - Add Exp2's requested 25% mixture (48 runs); keep Exp1 unchanged and give four-mixture plots distinct encodings.
 - Synchronize TabPFN trainer/executor autocast; verify CUDA modes and observe TabICL long-context attention dtypes and TF32 policy in Exp0.
 - Add a tested CPU/GPU Exp0-only reset across both storage tiers and identified scratch jobs, preserving production results.

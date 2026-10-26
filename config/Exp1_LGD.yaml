@@ -1,5 +1,5 @@
 # =============================================================================
-# EXPERIMENT 1 — LGD — DOES A REALISTIC CREDIT PRIOR HELP? (3 mixes x 3 seeds = 9 arms)
+# EXPERIMENT 1 — LGD — DOES A REALISTIC CREDIT PRIOR HELP? (4 mixes x 3 seeds = 12 arms)
 #
 # Every knob below carries at most a one-line note. The REASONING — why each
 # value, what evidence backs it, what upstream does — lives in
@@ -26,8 +26,12 @@ architecture: tabicl # the upstream TabICL class; see src/models/architecture.py
 # evaluation datasets, so the one lever left is how much of it is in the mix.
 # ----------------------------------------------------------------------------
 sweep:
-  prior.credit_fraction: [0.0, 0.5, 1.0] # share of each batch from our prior; 0.0 = the control
+  prior.credit_fraction: [0.0, 0.5, 1.0, 0.25] # append 25%: preserve the completed arms' indices 0-8; new arms 9-11
   seeds: [0, 1, 2] # repeats; arms with the same seed share their base tasks and initial weights
+
+# Append all quarter-mixture seeds after the original nine runs; seeds normally
+# form the outer loop, so extending the fraction list alone would change a3-a8.
+array_append: [{prior.credit_fraction: 0.25}]
 
 # ----------------------------------------------------------------------------
 # THE PRIOR — the parts that are NOT swept

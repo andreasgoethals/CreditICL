@@ -36,14 +36,24 @@ Any setting may be a single value or a list; a list means one run per value, and
 train.lr: 1.0e-5, ...}`), applied after the sweep (`apply_arm_preset`). An override must name a key the
 config body already has, so a typo raises instead of doing nothing.
 
-**Exp1 sweeps `credit_fraction {0, .5, 1}` × 3 seeds = 9 arms** (since 28-09-2026; before, it also
-crossed three filters and two intensities, 45 arms). The control is TabICLv2's prior and filter exactly;
+**Exp1 sweeps `credit_fraction {0, .25, .5, 1}` × 3 seeds = 12 main arms**. The 25% extension
+was approved on 26-10-2026 after the initial nine-main-arm campaign; its three seeds are appended
+at indices 9–11 so old run names and benchmark tags remain unchanged. The five component
+removals still add 15 arms per task. The control is TabICLv2's prior and filter exactly;
 the current ranges use the credit-risk literature and broad modelling choices ([PRIORS.md](PRIORS.md) §5).
 Mechanism design was informed by the benchmark suite, including the designated holdout;
 it is not untouched external validation. The credit mechanisms are shared across Exp0-Exp3;
 table geometry is now backbone-specific in Exp2. At
 `credit_fraction: 0.0` the credit knobs have no effect, so such combinations collapse to one control
 per seed (`effective_fingerprint` in `src/utils/config.py`).
+
+`array_append: [{prior.credit_fraction: 0.25}]` implements this extension as a stable partition
+after crossing seeds. Without it, the ordinary seed-outermost expansion would shift the old
+indices 3–8. This is launch metadata, removed from resolved recipes and not inherited through
+`prior_file`; it does not change task generation or optimization. Invalid/unmatched patterns fail.
+The receipt compatibility check permits only this reviewed change to grid counts, launcher array
+size and selection messages. All data, checkpoint, package, evaluation-setting and result-file
+hashes still have to match. Unknown code revisions remain invalid; this is not a force-reuse flag.
 
 **One knob, one home:** a knob in `sweep:` must not also appear in the config body —
 `apply_sweep_block` writes over the body, so a body literal is dead text that reads like a setting.
@@ -71,7 +81,7 @@ Exp2's TabICLv2 arms instead use **`[400, 60000]` with `n_rows_sampling: log_uni
 `Prior.sample_seq_len` and the stage-3 scripts in `tfm-library/repositories/TabICL.txt`.
 Log-uniform means equal probability per multiplicative interval, with median about 4,899 rows;
 uniform sampling over the interval would be a materially different prior. The row/feature/split
-draws remain paired between 0%, 50% and 100% mixtures for each seed.
+draws remain paired between 0%, 25%, 50% and 100% mixtures for each seed.
 
 With `base.implementation: upstream`, the upstream generator
 owns graph depth and control categories. `n_nodes_range`, `base.max_cat_size` and the
@@ -134,7 +144,8 @@ retroactively alter Exp1 or add a length curriculum to Exp3.
 ## 5. Training budget
 
 **`max_steps`** controls update count: at batch 64, 12,500 steps give 800k datasets per run
-(2.5% of upstream's stage 1). Exp1 has nine main and fifteen component runs per track, 48 total.
+(2.5% of upstream's stage 1). Exp1 now has twelve main and fifteen component runs per track,
+54 total; only the six newly approved 25% runs extend the completed 48-run campaign.
 The three experiments use **Exp1 12,500**, **Exp2 10,000** and **Exp3 200,000** updates.
 Exp2 has 24 runs per track, 48 total; Exp3 has four per track, eight total. Runtime also
 depends strongly on table geometry, generation/filtering and backend, so equal step counts do
@@ -325,7 +336,7 @@ upstream fine-tuner's default AMP loop, not a different regression objective.
 α = 0.003) is implemented and tested for **TabICL only**, but not in the current design.
 The TabPFN trainer rejects nonzero L2-SP and any initialization strategy other than `full`;
 these options must never be silently ignored. Neither adopted recipe uses L2-SP, and a
-second axis would confound the first. A later ablation; forgetting is measured instead, on the
+second axis adds a separate method question and compute budget. A later ablation; forgetting is measured instead, on the
 out-of-domain suites, in every progress curve and benchmark.
 The drift L2-SP penalises is *measured* in every run instead (`weights.csv`: distance from the
 released weights per block).
@@ -335,8 +346,9 @@ one adaptation method per backbone. Evidence on per-dataset fine-tuning does not
 best method for synthetic CPT. We use the authors' stage-3 learning rate for TabICLv2 and measure
 out-of-domain retention for every arm; neither choice guarantees an absence of forgetting.
 
-**26-10-2026 review and scope.** The user requested a fourth, 25%-credit mixture in Exp2;
-the completed Exp1 grid is unchanged. This makes 48 continuation runs, including 12 original-prior
+**26-10-2026 review and scope.** The user requested a fourth, 25%-credit mixture in Exp2,
+then also approved its addition to Exp1 as six extra runs, preserving the completed runs.
+Exp2 has 48 continuation runs, including 12 generic-prior
 controls. Here 0% means the unmodified TabICL prior for both backbones; it does not reconstruct
 TabPFN's original pretraining distribution. Continued training can degrade performance even under
 that control, so retention must be measured against untouched released weights, not assumed.

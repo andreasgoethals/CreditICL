@@ -355,11 +355,12 @@ def test_prior_ranking_reads_protocol_three_fold_rows():
                              "seed": 0, "fold": fold, "status": "ok", "protocol": PROTOCOL,
                              "roc_auc": 0.8 if credit else 0.7})
     ranking = development_ranking(pd.DataFrame(rows), "pd")
-    assert len(ranking) == 3 and set(ranking.training_seeds) == {3}
+    assert len(ranking) == 4 and set(ranking.training_seeds) == {3}
     assert ranking.iloc[0]["mean"] == pytest.approx(0.8)
     # One fold missing makes that configuration incomplete, never quietly averaged.
     ranking = development_ranking(pd.DataFrame(rows[1:]), "pd")
-    assert len(ranking) == 2
+    assert len(ranking) == 3
+    assert not ranking.configuration.eq("exp1_pd__prior-credit_fraction=0").any()
 
 
 def test_the_learning_curve_draws_every_saved_checkpoint(tmp_path, monkeypatch):

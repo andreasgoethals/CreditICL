@@ -34,11 +34,12 @@
 # picks the checkpoint up. See docs/VSC.md.
 #SBATCH --requeue
 #SBATCH --signal=B:USR1@600
-# 0-8 = the 9 arms of Exp1 (3 credit mixes x 3 seeds). %8 caps how many run at once: gpu_b200 has 24 GPUs TOTAL
+# 0-11 = 4 credit mixes x 3 seeds. The 25% extension is 9-11; completed 0-8 retain their identities.
+# %8 caps how many run at once: gpu_b200 has 24 GPUs TOTAL
 # shared with every other user, and both MaxSubmitJobsPerUser and MaxTRESPerUser apply.
 # Check yours before raising it:
 #     sacctmgr show qos normal format=Name,MaxSubmitJobsPerUser%15,MaxTRESPerUser%30
-#SBATCH --array=0-8%8
+#SBATCH --array=0-11%8
 
 # Jitter the start so concurrent tasks do not hammer the filesystem at once.
 sleep $((RANDOM % 30 + 1))

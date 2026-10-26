@@ -190,27 +190,29 @@ References (tfm-library pin cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a):
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: fd000a9db513c4e0741b57678d4386b5c2198a8945e438da03f33fbb9c7a5f05.
+Local notebook-code fingerprint: ad03047e882b2000efb8800c4daef73f8ef5e0a07fe46a9e6044d8c1f3d65654.
 Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
 Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
 Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
 Latest training record in that snapshot: 2026-10-24 01:21:15 CEST.
-Main comparison: 9/9 downloaded completions; 0 partial traces; 0 without local output.
+Main comparison: 9/12 downloaded completions; 0 partial traces; 3 without local output.
 Component tests: 15/15 downloaded completions; 0 partial traces; 0 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: fd000a9db513c4e0741b57678d4386b5c2198a8945e438da03f33fbb9c7a5f05.
+Local notebook-code fingerprint: ad03047e882b2000efb8800c4daef73f8ef5e0a07fe46a9e6044d8c1f3d65654.
 Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
 Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
 Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
 Latest training record in that snapshot: 2026-10-24 01:21:15 CEST.
-Main comparison: 9/9 downloaded completions; 0 partial traces; 0 without local output.
+Main comparison: 9/12 downloaded completions; 0 partial traces; 3 without local output.
 Component tests: 15/15 downloaded completions; 0 partial traces; 0 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
+Four main mixtures: 0%, 25%, 50%, 100%; three seeds each.
+The 25% mixture is an extension approved after the initial 48-run campaign; six new runs bring the planned total to 54, preserving completed results.
 
 B · OPTIMISATION HEALTH
 exp1_pd__prior-credit_fraction=0__s0: 12500 updates recorded; last recorded training loss 0.48966.
@@ -247,27 +249,29 @@ Different synthetic-task losses do not rank downstream prediction quality.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: fd000a9db513c4e0741b57678d4386b5c2198a8945e438da03f33fbb9c7a5f05.
+Local notebook-code fingerprint: ad03047e882b2000efb8800c4daef73f8ef5e0a07fe46a9e6044d8c1f3d65654.
 Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
 Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
 Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
 Latest training record in that snapshot: 2026-10-24 01:21:15 CEST.
-Main comparison: 9/9 downloaded completions; 0 partial traces; 0 without local output.
+Main comparison: 9/12 downloaded completions; 0 partial traces; 3 without local output.
 Component tests: 15/15 downloaded completions; 0 partial traces; 0 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: fd000a9db513c4e0741b57678d4386b5c2198a8945e438da03f33fbb9c7a5f05.
+Local notebook-code fingerprint: ad03047e882b2000efb8800c4daef73f8ef5e0a07fe46a9e6044d8c1f3d65654.
 Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
 Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
 Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
 Latest training record in that snapshot: 2026-10-24 01:21:15 CEST.
-Main comparison: 9/9 downloaded completions; 0 partial traces; 0 without local output.
+Main comparison: 9/12 downloaded completions; 0 partial traces; 3 without local output.
 Component tests: 15/15 downloaded completions; 0 partial traces; 0 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
+Four main mixtures: 0%, 25%, 50%, 100%; three seeds each.
+The 25% mixture is an extension approved after the initial 48-run campaign; six new runs bring the planned total to 54, preserving completed results.
 
 B · OPTIMISATION HEALTH
 exp1_lgd__prior-credit_fraction=0__s0: 12500 updates recorded; last recorded training loss 0.06714.
@@ -375,7 +379,7 @@ Dataset bootstrap intervals are descriptive; training seeds/folds are not extra 
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: fd000a9db513c4e0741b57678d4386b5c2198a8945e438da03f33fbb9c7a5f05.
+Local notebook-code fingerprint: ad03047e882b2000efb8800c4daef73f8ef5e0a07fe46a9e6044d8c1f3d65654.
 Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
 Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
 Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
@@ -387,7 +391,7 @@ No local training traces are available. Coverage above is a local file inventory
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: fd000a9db513c4e0741b57678d4386b5c2198a8945e438da03f33fbb9c7a5f05.
+Local notebook-code fingerprint: ad03047e882b2000efb8800c4daef73f8ef5e0a07fe46a9e6044d8c1f3d65654.
 Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
 Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
 Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
@@ -417,7 +421,7 @@ No local curves; no mixture is selected here.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: fd000a9db513c4e0741b57678d4386b5c2198a8945e438da03f33fbb9c7a5f05.
+Local notebook-code fingerprint: ad03047e882b2000efb8800c4daef73f8ef5e0a07fe46a9e6044d8c1f3d65654.
 Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
 Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
 Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
@@ -429,7 +433,7 @@ No local training traces are available. Coverage above is a local file inventory
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: fd000a9db513c4e0741b57678d4386b5c2198a8945e438da03f33fbb9c7a5f05.
+Local notebook-code fingerprint: ad03047e882b2000efb8800c4daef73f8ef5e0a07fe46a9e6044d8c1f3d65654.
 Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
 Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
 Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5

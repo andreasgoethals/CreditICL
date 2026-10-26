@@ -93,7 +93,7 @@ def test_each_arm_is_scored_by_the_wrapper_of_its_architecture():
 def test_experiment_1_uses_full_tables_only():
     from src.eval.benchmark_status import n_slots, slot_for
     total = n_slots(1, "pd")
-    assert total == 9 * 5 + 4
+    assert total == 12 * 5 + 4
     assert all(slot_for(1, "pd", i).context is None for i in range(total))
     assert slot_for(1, "pd", total).kind == "none"
 

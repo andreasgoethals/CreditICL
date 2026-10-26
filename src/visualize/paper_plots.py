@@ -363,7 +363,7 @@ def results_summary(track, exp="exp1"):
 def budget_selected(track):
     cfg = load(paths.config_path(f"Exp3_{track.upper()}"), allow_placeholders=True)
     values = cfg["prior"]["credit_fraction"]
-    return len(values) == 2 and values[0] == 0 and values[1] in (.5, 1.)
+    return len(values) == 2 and values[0] == 0 and values[1] in (.25, .5, 1.)
 
 
 def budget_summary():

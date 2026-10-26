@@ -1,5 +1,64 @@
 # Agents' memory — runs and dead ends
 
+## 26-10-2026 — approved Exp1 extension and CPT evidence review
+
+User explicitly approved 25% credit for Exp1 after the original 48-run campaign. The main grid
+now has 12 runs/track; components remain 15/track, for 54 total. `array_append` preserves the old
+indices 0–8 and appends quarter-mixture seeds at 9–11. Resolved training recipes, checkpoint/run
+names and benchmark tags for the existing runs remain unchanged. The metadata is stripped from
+prior-file inheritance, so component studies stay at 50%. Display order is 0/25/50/100.
+
+A narrowly reviewed receipt transition accepts the changed grid counts, selection messages and
+default benchmark array size only when every scientific setting, other source digest, input,
+package, checkpoint and result digest agrees. It cannot approve unknown historical code or
+changed data. The 50b3d7e-to-extension source pairs are explicit; later edits fail closed again.
+No completed training or benchmark output was removed, no training implementation/precision or
+Exp2 optimizer setting changed, and no VSC job was submitted.
+
+The expanded research review confirms 550k original TabICLv2 updates (500k/40k/10k), with
+stage 3 already mixing 400–60k rows log-uniformly. The proposed 10k continuation budget is not
+an established credit-CPT optimum. TabPFN3 publishes its architecture and prior description,
+not its full original update/batch/curriculum schedule. TabPFN-Wide is v2 classification evidence.
+Contemporary Mitra-v2, EXAONE, Xiaomi-TabLDM, LimiX2, TabDPT-Turbo and TabPFN2.5/3/3.5 reports
+show materially different recipes. Main Exp2 stays at 48 full-update runs. L2-SP is recommended
+as a separately validated method comparison before a broad LoRA/freezing grid; none is enabled.
+Any pilot selection must exclude the final holdout/OOD benchmark.
+
+Tried: append 25% to the sweep list without changing ordinary seed-outermost expansion.
+Result: regression checks detected reassigned old array indices and benchmark arm identities.
+Why: a fourth mixture inserts an arm inside every seed group rather than after the completed nine.
+Instead: explicitly append the extension after seed expansion; test old resolved recipes and tags,
+missing-arm submission, quarter-mixture selection, numeric plot order and strict receipt reuse.
+
+Tried: the first full suite after extending the main grid (19m22s).
+Result: 1,802 passes, six obsolete three-mixture/count assertions, one transient Windows rename denial,
+and 30 expected VSC-only skips. No training/numerical regression was reported.
+Why: fixtures still expected nine runs/two nonzero mixtures; Windows briefly denied a receipt replacement.
+Instead: update explicit expected counts and reject incomplete four-mixture evidence; retry only
+bounded Windows access/sharing errors during atomic receipt publication, retaining the old receipt.
+Permanent permission failures still raise. Add success, bounded-failure and non-Windows-error tests.
+
+Tried: full suite with unrestricted Python hash randomization (18m24s).
+Result: 1,829 passed; the ragged-loader worker equality check failed on Windows; 30 VSC skips.
+Why: upstream orders feature groups through a string set; newly spawned workers used different
+hash seeds from the test interpreter. The same test passed with the production hash seed 0.
+Instead: run this exact-equality probe in a fresh interpreter with PYTHONHASHSEED=0, inherited
+by workers. Production pretrain/Exp0/notebook launchers already set this before Python starts;
+do not change the upstream prior or weaken equality to hide the test-harness difference.
+
+Verification: **1,830 passed, 30 VSC-only skips** in the final complete suite (17m53s), with
+PYTHONHASHSEED=0 and Git Bash on PATH; the 64 focused checks also passed with the parent hash
+seed unset. All 12 notebooks executed and saved 37 PDFs. Both changed coverage figures and
+the prior endpoint-tie/missingness figures were inspected visually; PDF text comparison found
+changes only in the two coverage figures. No template deviation.
+Source fingerprint: `652fe453abc5d9c189e71433a006d41f0f96f92a7597c3bba81420fdffb2751a`.
+Training fingerprint remains `cf48209f392f2cba239123eb408b942e39a9ce1df976de7db0b66b6b0d59330d`.
+TFM pin: `702d9ab0b66f6639ba8d443ff9c4a91231964465`; VSC pin:
+`3bcdf55e576d10161d6189b40ac39380bbba9eca`. Both submodules are unchanged. Fresh cluster
+CPU/GPU validation and long-context capacity measurements remain required for revised Exp2.
+Read-only pins: TFM `702d9ab0b66f6639ba8d443ff9c4a91231964465`,
+VSC `3bcdf55e576d10161d6189b40ac39380bbba9eca`.
+
 ## 26-10-2026 — four-mixture Exp2 and precision review
 
 User requested 25% credit in Exp2 and authorized pushes. Exp2 now has 48 runs (two models,

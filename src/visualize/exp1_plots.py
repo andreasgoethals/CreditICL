@@ -1,6 +1,6 @@
 """Descriptive prior diagnostics; no selection or tuning on benchmark target histograms.
 
-Experiment 1 compares three mixtures and five component removals. These figures describe
+Experiment 1 compares four mixtures and five component removals. These figures describe
 synthetic mechanisms and their differences from previously inspected credit datasets.
 Standardized control regression targets have no loss-fraction scale and cannot be used
 in LGD boundary-mass comparisons.

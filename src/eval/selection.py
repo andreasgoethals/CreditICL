@@ -144,12 +144,12 @@ def main(argv=None) -> int:
           f"{choice['metric']}={choice['mean']:.6f}, 0% control={choice['control_mean']:.6f}, "
           f"difference={choice['difference_from_control']:+.6f}.")
     if choice["difference_from_control"] <= 0:
-        print("Neither credit mixture beats the control on the development mean. "
+        print("No credit mixture beats the control on the development mean. "
               "This candidate tests whether a credit effect emerges with more training; "
               "it is not an established improvement. Review whether Exp3 merits its cost.")
     print("The candidate is the best nonzero mixture; exact score ties prefer the smaller credit share. "
           "Seed spread describes stability, not a significance test. OOD retention is reported "
-          "descriptively and must not re-rank this development-only choice. Exp2 uses all three "
+          "descriptively and must not re-rank this development-only choice. Exp2 uses all four "
           "mixtures and needs no selected winner. No config was changed and no job was submitted.")
     return 0
 
