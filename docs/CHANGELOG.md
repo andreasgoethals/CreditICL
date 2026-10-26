@@ -8,8 +8,18 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 26-10-2026
+
+- Add Exp2's requested 25% mixture (48 runs); keep Exp1 unchanged and give four-mixture plots distinct encodings.
+- Synchronize TabPFN trainer/executor autocast; verify CUDA modes and observe TabICL long-context attention dtypes and TF32 policy in Exp0.
+- Add a tested CPU/GPU Exp0-only reset across both storage tiers and identified scratch jobs, preserving production results.
+- Review LoRA/partial tuning against upstream repositories; retain full updates for the main prior comparison and document a separate PEFT validation design.
+- Verify all 1,795 portable cases (including a Bash-enabled recheck), rerun 12 notebooks/37 figures; 30 VSC checks still require the cluster.
+- Diagnose the blocked VSC pull and reused old Exp0 receipt; distinguish valid Exp1 output, superseded validation and pending long-context validation.
+
 ## 25-10-2026
 
+- Record successful completion of all 128 Exp1 benchmark tasks; identify missing project-tier result files and the fresh validation needed for Exp2.
 - Verify 1,787 tests (28 VSC-only skips), all 12 notebooks and all 37 rendered figures; revised long-context CUDA validation remains pending on VSC.
 - Isolate orchestration/grid tests from downloaded runs; update geometry/logging assertions, replace stale cost estimates and warn against changing the active Exp1 checkout.
 

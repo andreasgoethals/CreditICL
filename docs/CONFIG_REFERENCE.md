@@ -136,7 +136,7 @@ retroactively alter Exp1 or add a length curriculum to Exp3.
 **`max_steps`** controls update count: at batch 64, 12,500 steps give 800k datasets per run
 (2.5% of upstream's stage 1). Exp1 has nine main and fifteen component runs per track, 48 total.
 The three experiments use **Exp1 12,500**, **Exp2 10,000** and **Exp3 200,000** updates.
-Exp2 has eighteen runs per track, 36 total; Exp3 has four per track, eight total. Runtime also
+Exp2 has 24 runs per track, 48 total; Exp3 has four per track, eight total. Runtime also
 depends strongly on table geometry, generation/filtering and backend, so equal step counts do
 not imply equal cost across experiments or backbones. Any budget revision must be specified
 before comparing arms and applied consistently; never silently truncate tables or change the
@@ -257,7 +257,7 @@ original prior and ours. The recipe is a nuisance parameter that must be good en
 continued-pretraining recipe** (30-09-2026; the stage-A search was dropped): TabICLv2's stage 3
 settings and TabPFN-Wide's settings applied to TabPFN-3. Before launch, the 24-10-2026 revision
 also adopts TabICLv2's stage-3 table distribution: 400–60,000 log-uniform rows, 79–81% context,
-group/micro-batch size 1 and the row-dependent feature ceiling. All three mixtures share those
+group/micro-batch size 1 and the row-dependent feature ceiling. All four mixtures share those
 settings. The primary evidence is `tfm-library/papers/2026/09_Qu_et_al._TabICLv2_A_better_faster_scalable_and_open_tabular_foundation_model.pdf`
 §4.1 and Appendix B.1, plus `scripts/train_v2_clf_stage3.sh`, `scripts/train_v2_reg_stage3.sh`,
 `Prior.sample_seq_len`, `Prior.adjust_max_features` and `Trainer.run_micro_batch` in
@@ -289,7 +289,7 @@ Kolberg's paper states "linear warm-up and cosine decay" without the warm-up's l
 TabPFN fine-tuner's. Every 2,500-step checkpoint is scored (a learning curve on real data); the final one
 is the result, since both recipes fix the length. `eval.headline_step` can name another checkpoint as the
 result, and `results_plots.load_results` honours it; no config sets it.
-Neither recipe is established as optimal. All 36 runs remain predeclared (two backbones × three
+Neither recipe is established as optimal. All 48 runs are specified before Exp2 (two backbones × four
 mixtures × three seeds × two tracks), with no Exp1 winner selection. Match steps, task counts and
 planned geometry **within a backbone**, not wall-clock or cross-backbone row exposure. Native
 tables are filtered and credit tables are not; that existing package difference can change
@@ -330,12 +330,52 @@ out-of-domain suites, in every progress curve and benchmark.
 The drift L2-SP penalises is *measured* in every run instead (`weights.csv`: distance from the
 released weights per block).
 
-**Why no partial freezing or LoRA:** Rubachev 2025 found full fine-tuning matches every
-parameter-efficient variant on TabPFNv2 while converging fastest; searching the whole TabICL dump for
-"lora" returns zero matches; and fine-tuning TabICL is documented as fragile (Tanna 2026: full
-per-dataset SFT drops TabZilla accuracy 0.873 → 0.567, while TabPFN survives) — which is why TabICLv2
-continues at its authors' own stage-3 rate, the lowest upstream ever trained it at, and why the
-out-of-domain suites are scored for every arm.
+**Why full updates in the main experiment:** this isolates the synthetic-prior comparison under
+one adaptation method per backbone. Evidence on per-dataset fine-tuning does not establish the
+best method for synthetic CPT. We use the authors' stage-3 learning rate for TabICLv2 and measure
+out-of-domain retention for every arm; neither choice guarantees an absence of forgetting.
+
+**26-10-2026 review and scope.** The user requested a fourth, 25%-credit mixture in Exp2;
+the completed Exp1 grid is unchanged. This makes 48 continuation runs, including 12 original-prior
+controls. Here 0% means the unmodified TabICL prior for both backbones; it does not reconstruct
+TabPFN's original pretraining distribution. Continued training can degrade performance even under
+that control, so retention must be measured against untouched released weights, not assumed.
+The new 25% point is specified before Exp2 training, but after Exp1 monitoring was seen;
+it is a design extension, not an independently preregistered confirmation.
+
+We keep full-parameter updates as the main comparison. Rubachev's paper evaluates supervised
+per-dataset adaptation of TabPFNv2, not synthetic CPT of TabICLv2 or TabPFN-3: its similar PEFT/full
+scores and faster full-update convergence support a baseline, not a universal optimum. Read-only
+repository checks include `replace_with_loras` / `LoraMHA` in
+`tfm-library/repositories/On Finetuning Tabular Foundation Models.txt`, `inject_lora` and
+`merge_lora` in `tfm-library/repositories/TabTune.txt`, plus TabICL's `Trainer.configure_optimizer`
+and installed TabPFN 9.1.0 `FinetunedTabPFNBase`. A generic nn.Linear-only injector does not
+automatically cover packed attention parameters. Those repositories are implementation references,
+not evidence that their defaults optimize this experiment.
+
+A later separate PEFT comparison should freeze the released backbone and add zero-initial-output
+Q/V adapters with explicit coverage of packed QKV tensors (preserving K). Rank, scaling, optimizer
+and LR must be declared and validated rather than copied from full-update Muon. Compare against
+matched full updates and untouched weights, with identical task streams and OOD retention. Required
+checks include zero-adapter prediction equivalence, unchanged frozen weights, nonzero adapter
+gradients, exact save/resume and merged-export predictions. LoRA reduces trainable state but still
+backpropagates through attention; it does not remove long-context activation costs. No adapter grid
+or new package is enabled in the main campaign. Head/normalization-only and last-block tuning
+are cheaper alternatives to test later, not interchangeable implementations of full CPT.
+
+**Precision, explicitly:** TabICL parameters and Q/K/V are FP32, with TF32 matmul permitted as
+upstream; this is not strict IEEE FP32 arithmetic for every matrix operation. Its upstream scripts
+also enable FA3, which can cast Q/K/V to FP16. Our FA3-disabled efficient-SDPA path is an adaptation.
+Exp0 now observes actual Q/K/V dtypes throughout forward/recomputation and records the TF32 flag.
+TabPFN uses FP32 parameters, CUDA FP16 autocast and GradScaler like its 9.1.0 fine-tuner. The
+trainer now synchronizes the nested executor's autocast flag before every fit, so `amp: false`
+and the FP32 overflow replay really disable both autocast owners. Portable tests exercise an
+ambient autocast conflict; mandatory VSC tests exercise both CUDA modes. Precision correctness
+on the target allocation remains conditional on those GPU tests passing.
+
+**Gradient clipping:** after task averaging and AMP unscaling, rescale the whole parameter-gradient
+vector to norm at most 1, retaining its direction. This bounds extreme gradients; it neither clips
+individual predictions nor guarantees that an optimizer's final parameter update has norm below 1.
 
 **Budget:** the 29-09-2026 estimate of roughly 400 GPU-hours described the old 1,024-row proposal
 and is obsolete for the revised Exp2. The TabICLv2 law averages about 11,895 rows per task,
@@ -349,7 +389,8 @@ The older successful receipts and completed Exp1 runs remain evidence for their 
 ## 9. A note on the LGD R² band
 
 The docs quote "published LGD R² ≈ 0.04–0.15 linear, 0.10–0.25 beta, 0.20–0.43 tree ensembles."
-**That range came from this project's own brief, not a verified source** — it is used only as a sanity
-band and must be cited or dropped before it appears in a paper. Our own measurements so far: CatBoost
-0.376 on Freddie and 0.501 on heloc (inside the tree band), but `lgd_lendingclub` scores 0.71–0.76,
-well outside it — most likely a feature derived from the recovery amount is surviving the recipe.
+**That range came from this project's own brief, not a verified source** and must not be presented
+as a literature result. Earlier notes recorded CatBoost R² of 0.376 on Freddie, 0.501 on heloc and
+0.71–0.76 on `lgd_lendingclub`, before the subsequent feature/protocol corrections. Those historical
+numbers neither describe the current benchmark nor establish leakage from score magnitude alone.
+Use the current versioned benchmark artifacts for results and the dataset audit for feature claims.

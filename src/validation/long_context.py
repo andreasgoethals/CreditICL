@@ -14,6 +14,7 @@ import copy
 import math
 import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from src.utils.config import expand_with_seeds, load
@@ -22,6 +23,30 @@ from src.utils.config import expand_with_seeds, load
 # stage-3 table. These are physical capacity checks, not sampled effect estimates.
 CAPACITY_CORNERS = ((400, 100), (10240, 100), (20000, 80), (30000, 60),
                     (40000, 40), (50000, 30), (60000, 20))
+
+
+@contextmanager
+def observe_fp32_attention():
+    """Check actual Q/K/V dtypes through forward AND activation recomputation."""
+    import torch
+    from torch.nn import functional as F
+
+    original = F.scaled_dot_product_attention
+    observations = {"calls": 0, "qkv_dtype": "torch.float32"}
+
+    def checked(query, key, value, *args, **kwargs):
+        if any(t.dtype != torch.float32 for t in (query, key, value)):
+            raise RuntimeError("Long-context attention silently changed from FP32")
+        observations["calls"] += 1
+        return original(query, key, value, *args, **kwargs)
+
+    F.scaled_dot_product_attention = checked
+    try:
+        yield observations
+        if not observations["calls"]:
+            raise RuntimeError("No SDPA calls observed; the precision check did not exercise attention")
+    finally:
+        F.scaled_dot_product_attention = original
 
 
 def diagnostic_config(track: str, *, rows: int | None = None,
@@ -124,7 +149,8 @@ def run_probe(track: str, out: Path, *, rows: int | None = None,
                 torch.cuda.synchronize()
                 torch.cuda.reset_peak_memory_stats()
                 started = time.perf_counter()
-                stats = trainer.train_step(batch)
+                with observe_fp32_attention() as precision:
+                    stats = trainer.train_step(batch)
                 torch.cuda.synchronize()
                 update_seconds = time.perf_counter() - started
                 peak_bytes = torch.cuda.max_memory_allocated()
@@ -153,6 +179,8 @@ def run_probe(track: str, out: Path, *, rows: int | None = None,
                             loss=float(stats["loss"]), updated_parameter_tensors=changed,
                             workers=train["num_workers"], prefetch_factor=train["prefetch_factor"],
                             loaded_weights=trainer.load_report,
+                            observed_attention=precision,
+                            tf32_matmul_allowed=torch.backends.cuda.matmul.allow_tf32,
                             attention="FP32 SDPA; efficient backends required; upstream FA3 disabled",
                             activation_checkpointing=train["activation_checkpointing"],
                             diagnostic_peak_lr=train["lr"],

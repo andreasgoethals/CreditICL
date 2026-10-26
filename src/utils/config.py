@@ -113,7 +113,7 @@ def load_yaml(path: str | Path) -> dict[str, Any]:
 #: wrong arm.
 PLACEHOLDER = "FILL_FROM_EXP1"
 #: Every placeholder a template may hold: Exp3's development-selected mix. Experiment 2 has
-#: none: it compares all three mixtures with fixed literature-derived training recipes.
+#: none: it compares all four mixtures with fixed literature-derived training recipes.
 PLACEHOLDERS = (PLACEHOLDER,)
 
 

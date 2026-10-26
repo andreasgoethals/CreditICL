@@ -71,11 +71,11 @@ block and a `sweep:` block that lists exactly the knobs it crosses. Full rationa
 |---|---|---|---|
 | **0** | **Does the revised pipeline run correctly?** | CPU + GPU Slurm jobs: portable tests, CUDA/save/resume checks, full-table benchmarks and 30 long-context capacity/throughput probes | 3 training routes |
 | **1** | **Does the prior help at matched compute?** | three mixtures × three seeds, plus five component removals × three seeds; 12,500 steps | 24 |
-| **2** | **Does continued pretraining help released models?** | TabICLv2 and TabPFN-3, three mixes × three seeds using upstream or adapted literature recipes, 10,000 steps | 18 |
+| **2** | **Does continued pretraining help released models?** | TabICLv2 and TabPFN-3, four mixes × three seeds using upstream or adapted literature recipes, 10,000 steps | 24 |
 | **3** | **Does the effect persist with longer training?** | scratch TabICL, Exp1's chosen mix vs control, two seeds, 200,000 steps | 4 |
 
 Counts include seeds and both prediction tasks: **Exp1 = (3 mixtures + 5 component removals) × 3 seeds × 2 tasks = 48 runs**;
-**Exp2 = 2 released backbones × 3 mixtures × 3 seeds × 2 tasks = 36 runs**.
+**Exp2 = 2 released backbones × 4 mixtures × 3 seeds × 2 tasks = 48 runs**.
 The component removals are compared with the main 50% mixture; they are not additional mixture levels.
 
 Exp2's TabICLv2 arm uses the upstream final-stage table distribution: **400–60,000 rows,

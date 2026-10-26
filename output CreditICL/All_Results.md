@@ -92,8 +92,8 @@ fresh live unfiltered diagnostic; binary PD / raw credit LGD
 A · ILLUSTRATIVE PRIOR EXPOSURE — PD
 Source: fresh live unfiltered diagnostic; binary PD / raw credit LGD; seed 0; draws per generator: original=500, credit=500
 These are diagnostic generator draws, not recovered production training samples.
-original: binary minority-share median 33.89%; share below 10% 14.00%.
-credit: binary minority-share median 4.98%; share below 10% 67.00%.
+original: binary minority-share median 33.15%; share below 10% 15.40%.
+credit: binary minority-share median 4.93%; share below 10% 67.20%.
 Binary illustration forces two classes; production generic tasks draw 2–10 classes.
 
 B · ACCEPTED PRODUCTION-ROUTE AUDIT
@@ -109,8 +109,8 @@ Candidates include invalid attempts; credit bypasses only the statistical filter
 C · CONTROLLED MECHANISMS AND DIFFICULTY
 The applicant outcome is generated before underwriting selection.
 Missingness uses covariates and a shared borrower draw, never realised outcomes.
-original prior: n=120, median ExtraTrees OOB pseudo-R² 0.393.
-credit prior: n=120, median ExtraTrees OOB pseudo-R² -0.035.
+original prior: n=120, median ExtraTrees OOB pseudo-R² 0.317.
+credit prior: n=120, median ExtraTrees OOB pseudo-R² -0.053.
 real: n=14, median ExtraTrees OOB pseudo-R² 0.024.
 Difficulty scores above use unfiltered draws; accepted-stream diagnostics are separately labelled. The figures are generator diagnostics, not downstream performance.
 References (tfm-library pin cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a):
@@ -138,7 +138,7 @@ A · ILLUSTRATIVE PRIOR EXPOSURE — LGD
 Source: fresh live unfiltered diagnostic; binary PD / raw credit LGD; seed 0; draws per generator: original=500, credit=500
 These are diagnostic generator draws, not recovered production training samples.
 original: endpoint ties are on a generic target scale; they are not economic mass at loss 0 or 1.
-credit: raw economic boundary-mass median 54.79%; range 6.45%–95.12%.
+credit: raw economic boundary-mass median 53.71%; range 12.50%–95.12%.
 Common standardized view: context-fitted affine transformation; 1e-4 tolerance at each table's standardized minimum/maximum.
 Affine scaling preserves atoms; the raw credit family need not cover every real portfolio.
 
@@ -147,8 +147,8 @@ The active target is zero-and-one-inflated beta (ZOIB); dormant loss modes are n
 
 C · DIFFICULTY AND MARGINAL COMPARISON
 Marginal histogram distance compares raw credit draws with real targets only; it is not transfer efficacy.
-original prior: n=120, median ExtraTrees OOB pseudo-R² 0.877.
-credit prior: n=120, median ExtraTrees OOB pseudo-R² 0.021.
+original prior: n=120, median ExtraTrees OOB pseudo-R² 0.824.
+credit prior: n=120, median ExtraTrees OOB pseudo-R² 0.012.
 real: n=7, median ExtraTrees OOB pseudo-R² 0.319.
 Difficulty scores above use unfiltered draws; accepted-stream diagnostics are separately labelled. The figures are generator diagnostics, not downstream performance.
 
@@ -160,9 +160,9 @@ Only loss-fraction targets on [0, 1] are comparable; standardized controls are o
 Lower is better. This is a descriptive comparison, not a selection criterion.
 
   variant            mean   closest real dataset       farthest real dataset
-  credit            0.362   base_modelisation  0.201   lgd_lendingclub   0.563
+  credit            0.357   base_modelisation  0.195   lgd_lendingclub   0.560
 
-Closest to real data: credit (mean 0.362).
+Closest to real data: credit (mean 0.357).
 This is a raw credit-versus-real marginal comparison, not a two-prior efficacy ranking.
 Marginal resemblance does not establish conditional prediction quality; only the
 matched final benchmark measures transfer.
@@ -190,7 +190,7 @@ References (tfm-library pin cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a):
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 37e9968fd516acd281e9390f75ffcc938b06d3ba1f1b2cf6844b56a26b35ef56.
+Local notebook-code fingerprint: fd000a9db513c4e0741b57678d4386b5c2198a8945e438da03f33fbb9c7a5f05.
 Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
 Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
 Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
@@ -202,7 +202,7 @@ Final credit/OOD benchmarking is a separate completion gate; monitoring is not i
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 37e9968fd516acd281e9390f75ffcc938b06d3ba1f1b2cf6844b56a26b35ef56.
+Local notebook-code fingerprint: fd000a9db513c4e0741b57678d4386b5c2198a8945e438da03f33fbb9c7a5f05.
 Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
 Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
 Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
@@ -247,7 +247,7 @@ Different synthetic-task losses do not rank downstream prediction quality.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 37e9968fd516acd281e9390f75ffcc938b06d3ba1f1b2cf6844b56a26b35ef56.
+Local notebook-code fingerprint: fd000a9db513c4e0741b57678d4386b5c2198a8945e438da03f33fbb9c7a5f05.
 Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
 Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
 Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
@@ -259,7 +259,7 @@ Final credit/OOD benchmarking is a separate completion gate; monitoring is not i
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 37e9968fd516acd281e9390f75ffcc938b06d3ba1f1b2cf6844b56a26b35ef56.
+Local notebook-code fingerprint: fd000a9db513c4e0741b57678d4386b5c2198a8945e438da03f33fbb9c7a5f05.
 Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
 Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
 Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
@@ -375,30 +375,30 @@ Dataset bootstrap intervals are descriptive; training seeds/folds are not extra 
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 37e9968fd516acd281e9390f75ffcc938b06d3ba1f1b2cf6844b56a26b35ef56.
+Local notebook-code fingerprint: fd000a9db513c4e0741b57678d4386b5c2198a8945e438da03f33fbb9c7a5f05.
 Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
 Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
 Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
 Latest training record in that snapshot: 2026-10-24 01:21:15 CEST.
-Main comparison: 0/18 downloaded completions; 0 partial traces; 18 without local output.
+Main comparison: 0/24 downloaded completions; 0 partial traces; 24 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
 No local training traces are available. Coverage above is a local file inventory; current VSC state and numerical health require the run records.
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 37e9968fd516acd281e9390f75ffcc938b06d3ba1f1b2cf6844b56a26b35ef56.
+Local notebook-code fingerprint: fd000a9db513c4e0741b57678d4386b5c2198a8945e438da03f33fbb9c7a5f05.
 Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
 Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
 Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
 Latest training record in that snapshot: 2026-10-24 01:21:15 CEST.
-Main comparison: 0/18 downloaded completions; 0 partial traces; 18 without local output.
+Main comparison: 0/24 downloaded completions; 0 partial traces; 24 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
 PLANNED CONTINUATION (not completed training)
 Backbone  Runs per track Tables per run           Rows per table Context share Expected row exposures
-TabICLv2               9        640,000 400–60,000 (log-uniform)       79%–81%        7,612.6 million
-TabPFN-3               9        160,000                    1,024       30%–90%          163.8 million
+TabICLv2              12        640,000 400–60,000 (log-uniform)       79%–81%        7,612.6 million
+TabPFN-3              12        160,000                    1,024       30%–90%          163.8 million
 Matched mixtures within each backbone; row/task budgets differ between backbones.
 0% is an extra-training control, not a guarantee against forgetting.
 
@@ -417,30 +417,30 @@ No local curves; no mixture is selected here.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 37e9968fd516acd281e9390f75ffcc938b06d3ba1f1b2cf6844b56a26b35ef56.
+Local notebook-code fingerprint: fd000a9db513c4e0741b57678d4386b5c2198a8945e438da03f33fbb9c7a5f05.
 Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
 Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
 Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
 Latest training record in that snapshot: 2026-10-24 01:21:15 CEST.
-Main comparison: 0/18 downloaded completions; 0 partial traces; 18 without local output.
+Main comparison: 0/24 downloaded completions; 0 partial traces; 24 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
 No local training traces are available. Coverage above is a local file inventory; current VSC state and numerical health require the run records.
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 37e9968fd516acd281e9390f75ffcc938b06d3ba1f1b2cf6844b56a26b35ef56.
+Local notebook-code fingerprint: fd000a9db513c4e0741b57678d4386b5c2198a8945e438da03f33fbb9c7a5f05.
 Downloaded archive: output CreditICL.zip; local download time 2026-10-24 10:07:39 Europe/Brussels.
 Archive SHA-256: ddddb3b064c7d971520bffb626b2e7c67cfbceb6b81fab5133992e4dd4453c0e
 Recorded executable fingerprint: 20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5
 Latest training record in that snapshot: 2026-10-24 01:21:15 CEST.
-Main comparison: 0/18 downloaded completions; 0 partial traces; 18 without local output.
+Main comparison: 0/24 downloaded completions; 0 partial traces; 24 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
 PLANNED CONTINUATION (not completed training)
 Backbone  Runs per track Tables per run           Rows per table Context share Expected row exposures
-TabICLv2               9        640,000 400–60,000 (log-uniform)       79%–81%        7,612.6 million
-TabPFN-3               9        160,000                    1,024       30%–90%          163.8 million
+TabICLv2              12        640,000 400–60,000 (log-uniform)       79%–81%        7,612.6 million
+TabPFN-3              12        160,000                    1,024       30%–90%          163.8 million
 Matched mixtures within each backbone; row/task budgets differ between backbones.
 0% is an extra-training control, not a guarantee against forgetting.
 
@@ -459,7 +459,7 @@ No local curves; no mixture is selected here.
 ```
 Complete final credit benchmark tables have not been downloaded. Credit effects remain withheld; OOD and component sections use their own complete-data gates. Monitoring is not substituted.
 A · DEVELOPMENT AND COMPARISON CONTRACT
-Both backbones and all three mixtures are fixed; no Experiment 1 winner is selected for Experiment 2.
+Both backbones and all four mixtures (0%, 25%, 50%, 100%) are fixed; no Experiment 1 winner is selected for Experiment 2.
 The designated holdout has historical project exposure; it is not untouched confirmation.
 Development final table available: False.
 
@@ -489,7 +489,7 @@ Dataset bootstrap intervals are descriptive; training seeds/folds are not extra 
 ```
 Complete final credit benchmark tables have not been downloaded. Credit effects remain withheld; OOD and component sections use their own complete-data gates. Monitoring is not substituted.
 A · DEVELOPMENT AND COMPARISON CONTRACT
-Both backbones and all three mixtures are fixed; no Experiment 1 winner is selected for Experiment 2.
+Both backbones and all four mixtures (0%, 25%, 50%, 100%) are fixed; no Experiment 1 winner is selected for Experiment 2.
 The designated holdout has historical project exposure; it is not untouched confirmation.
 Development final table available: False.
 

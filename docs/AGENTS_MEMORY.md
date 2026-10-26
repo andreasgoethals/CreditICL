@@ -1,5 +1,72 @@
 # Agents' memory — runs and dead ends
 
+## 26-10-2026 — four-mixture Exp2 and precision review
+
+User requested 25% credit in Exp2 and authorized pushes. Exp2 now has 48 runs (two models,
+four mixtures, three seeds, two tasks); completed Exp1 remains unchanged. Mixtures are Bernoulli
+task probabilities, not exact per-update quotas. Full-parameter CPT remains the main design:
+Rubachev's per-dataset TabPFNv2 PEFT comparison does not establish a LoRA advantage for synthetic
+CPT of v3/TabICLv2. Reviewed `LoraMHA`/`replace_with_loras`, TabTune `inject_lora`, TabICL stage-3
+scripts, and installed TabPFN 9.1.0 fine-tuning source; no adapter grid or dependency added.
+
+Found and fixed: TabPFN `amp: false` could leave internal estimator autocast enabled. Both flags
+now agree before executor construction, with an explicit outer FP16/disabled context. Exp0 tests
+exercise both CUDA modes; long-context probes observe actual FP32 Q/K/V, including recomputation,
+and record permitted TF32 matmul. This is not a claim to duplicate upstream FA3/AMP behavior.
+`clean_run --reset-exp0` is the new full validation-only reset on both tiers, preserving Exp1-3
+and shared references; use before a fresh CPU/GPU pair, never between them. No cluster run was
+launched in this review; fresh GPU validation remains required.
+
+Verification: all **1,795 portable tests** passed across the full suite and a Bash-enabled
+recheck. The first full invocation reported 1,764 passes, 2 missing-Bash failures and 59 skips;
+all 31 non-VSC failed/skipped cases then passed with installed Git Bash on PATH. The remaining
+30 tests require the VSC/CUDA allocation. Separately, all 97 Slurm tests and all 19 scoped cleanup
+tests passed. All 12 notebooks reran (37 PDF figures); changed rendered plots and the four-mixture
+style key were visually inspected. Local Exp0 cleanup found zero files; completed Exp1 remains.
+Final executable source fingerprint: `10356de6f4e26275f5607c5fcbed9f63f3f229adf1e3ec4e3df9d5451e0ea0c6`.
+Read-only pins: TFM `702d9ab0b66f6639ba8d443ff9c4a91231964465`, VSC `3bcdf55e576d10161d6189b40ac39380bbba9eca`.
+
+Tried: the complete local pytest run from a PowerShell process without Git Bash on PATH.
+Result: 1,764 passed, two shell-contract failures and 29 shell skips, plus 30 expected VSC skips.
+Why: Bash was installed but unavailable to that Python process; the failing checks correctly refused to bypass Slurm validation.
+Instead: prepend the existing Git `bin` directory to PATH, then rerun all 31 affected cases; all passed without changing or weakening the tests.
+
+Tried: a new quarter-mixture regression test asserted exactly one quarter of every batch was credit.
+Result: the focused suite found 17 credit tasks in a 64-task batch; 284 other tests passed.
+Why: the established stream samples independent per-slot Bernoulli decisions, not fixed quotas.
+Instead: test nested mixture membership, identical shared control tasks and configured fractions; preserve the production sampling law.
+
+## 26-10-2026 — failed pull and reused validation receipt
+
+| Job | Configuration | Outcome |
+|---|---|---|
+| 11737746 | GPU Exp0, old checkout `a073d7d` | reused GPU PASS from 11724030; exited OK at 08:33:21 CET without new validation stages |
+
+The latest Downloads ZIP (`8a919090384f00c60c8c6bbba442a1de8bcdced0b60761eb88c5e165d0b80b5b`)
+still contains 48 completed Exp1 summaries and successful benchmark logs, but no production
+benchmark CSVs/journals/receipts. Old CPU/GPU receipts have fingerprint `20f0e981...`, not the
+revised Exp2 `fb852116...`. Preserve the valid Exp1 evidence. Only CPU attempt 62378918 is
+superseded among the three validation directories; empty lock files are normal coordination files.
+Local output has no Exp0 attempts to clean. See RUNS for the audit and update sequence.
+
+Tried: pull updated code, then submit GPU Exp0 and verify in separate command blocks.
+Result: pull aborted; the later commands still succeeded against the old checkout and its receipts.
+Why: executed tracked notebooks and All_Results.md blocked the merge; validation checks the installed revision, not whether origin contains a newer design.
+Instead: wait for an idle checkout, stash only those generated tracked changes, pull, assert the intended source fingerprint, then submit fresh CPU followed by GPU validation.
+
+## 25-10-2026 — Exp1 benchmark completion snapshot
+
+| Jobs | Configuration | Outcome |
+|---|---|---|
+| 11734956 / 11734957 / 11734971 / 11734972 | main LGD/PD 49 slots each; component LGD/PD 15 each; five-fold credit + native OOD | 128/128 successful footers; no failed cells in logs |
+
+Downloads `output CreditICL (1).zip` SHA256 `b978b33762131959adb5adfa1b5fd4c63685b94f49e322483e090a93543d1ac9`
+contains the benchmark logs, but not project-tier benchmark CSVs/journals/receipts.
+Collect those before numerical conclusions. Point-only CatBoost/linear `crps=nan` is expected.
+Existing Exp0 PASS receipts are still for source `20f0e981...`; they do not validate revised
+long-context Exp2. Confirm an idle checkout, update, then run CPU Exp0 and GPU Exp0 in order.
+Preserve completed Exp1 outputs. Full evidence and limitations are in RUNS, 25-10-2026.
+
 ## 25-10-2026 — final Exp2 verification
 
 The complete frozen-source suite passed: **1,787 passed, 28 VSC-only skips** in 20m41s.

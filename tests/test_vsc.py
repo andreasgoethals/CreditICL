@@ -32,6 +32,12 @@ def test_cuda_stack_executes_and_backpropagates():
     assert torch.isfinite(loss) and torch.isfinite(x.grad).all()
 
 
+@pytest.mark.parametrize("amp", [False, True])
+def test_tabpfn_nested_training_precision(monkeypatch, amp):
+    from test_exp2_precision import assert_task_precision
+    assert_task_precision(monkeypatch, "cuda", amp)
+
+
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
 def test_prior_sampling_preserves_the_training_cuda_rng(device):
     from src.prior.upstream import seeded

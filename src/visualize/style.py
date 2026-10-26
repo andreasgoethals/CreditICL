@@ -455,7 +455,7 @@ def credit_fraction_marker(fraction: float) -> str:
     """A marker per credit fraction, so cf 0.5 and cf 1 separate by SHAPE as well as by shade —
     two blues of similar weight are hard to tell apart in a small scatter."""
     f = float(fraction)
-    return "o" if f <= 0 else ("^" if f >= 1 else "s")
+    return "o" if f <= 0 else ("^" if f >= 1 else ("D" if f == .25 else "s"))
 
 
 #: Ordered styles for a lever's values when the lever is not the credit fraction (filter mode,
@@ -467,7 +467,7 @@ LEVEL_STYLES = [("#1e293b", "-"), ("#475569", "--"), ("#7b8799", ":"), ("#334155
 def credit_fraction_colour(fraction: float) -> str:
     """Neutral control, amber mixture, blue credit; match the marker/line key.
 
-    The three experimental conditions must be distinguishable at paper width.
+    The experimental conditions must be distinguishable at paper width.
     Intermediate fractions interpolate through the amber midpoint, not through
     the former near-identical blue greys. Shape carries identity in greyscale.
     """
@@ -481,8 +481,8 @@ def credit_fraction_colour(fraction: float) -> str:
 
 
 def credit_fraction_line(fraction: float) -> str:
-    """Redundant encoding of the three main mixtures for overlapping curves."""
-    return "--" if fraction <= 0 else ("-" if fraction >= 1 else "-.")
+    """Redundant encoding of the four mixtures for overlapping curves."""
+    return "--" if fraction <= 0 else ("-" if fraction >= 1 else (":" if fraction == .25 else "-."))
 
 
 #: How a metric reads on an axis, in a heading or a legend — the paper's spelling, not the CSV

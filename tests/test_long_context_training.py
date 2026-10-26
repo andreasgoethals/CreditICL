@@ -145,10 +145,10 @@ def test_exp2_geometry_and_controls_are_matched_within_backbone(track):
     from src.utils.config import expand_with_seeds, load
 
     runs = expand_with_seeds(load(f'config/Exp2_{track}.yaml'))
-    assert len(runs) == 18
+    assert len(runs) == 24
     for architecture in ('tabicl', 'tabpfn3'):
         selected = [r for r in runs if r['architecture'] == architecture]
-        assert {r['prior']['credit_fraction'] for r in selected} == {0., .5, 1.}
+        assert {r['prior']['credit_fraction'] for r in selected} == {0., .25, .5, 1.}
         prior = [dict(r['prior']) for r in selected]
         for p in prior:
             p.pop('credit_fraction')

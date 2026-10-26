@@ -167,6 +167,104 @@ The one thing to do differently.
 
 ## Runs
 
+## 26-10-2026 — GPU submission reused old validation after the pull failed
+
+**Evidence.** Terminal attachment `990a68c9-e1da-4763-9b81-d427c8562787/Pasted text.txt`
+and Downloads `output CreditICL.zip`, 28,497,143 bytes, SHA256
+`8a919090384f00c60c8c6bbba442a1de8bcdced0b60761eb88c5e165d0b80b5b`.
+The ZIP was read in place; no output was imported, deleted or overwritten.
+
+**Job and revision.** GPU job **11737746**, Mindwell B200, 24 CPUs / 180 GiB requested,
+logged commit **a073d7d**, dirty checkout. The preceding pull from a073d7d to d6cd9ce
+aborted because executed notebooks and tracked `output CreditICL/All_Results.md` had local changes.
+The separate submission command therefore ran the old code. Its log at 08:33:07 CET prints
+the existing PASS for `gpu_20261021T123317Z_j11724030_f8a32d10`, then exits OK at
+08:33:21 CET. It did not execute new validation stages. These log times are not scheduler billing.
+
+**Configuration and results.** No new training configuration was executed. CPU job 62382230
+and GPU job 11724030 remain the active PASS evidence for source `20f0e981...`.
+The revised Exp2 source is `fb8521169c961e9c8edc8f464aa2ea44d802b05c39a3c499aebe6910d73376b7`
+and has not been validated on VSC by this submission. The printed short-run Exp2 cost projections
+come from the old verifier and do not estimate the revised 400–60,000-row TabICL configuration.
+Dependencies passed (TabPFN 9.1.0, pinned TabICL 2.1.1, CatBoost 1.2.10, torch 2.11.0+cu128).
+
+**Exp1 audit.** All 48 training summaries remain completed. The production log scan covers
+496 files, with no traceback, failed footer or positive failed-cell count. The 176 successful
+Exp1 job footers comprise 48 training jobs and 128 benchmark array tasks. Actual production
+benchmark CSVs/journals/receipts are still absent: collect the project-tier experiment_1/benchmark
+and reference/benchmark folders before numerical comparison or publication claims.
+
+**Cleanliness.** Three Exp0 attempt directories are present: superseded CPU 62378918,
+accepted CPU 62382230 and accepted GPU 11724030. Archive the superseded attempt and its log
+outside active output once idle, retaining the accepted pair as Exp1 provenance. The new GPU
+submission adds only a redundant successful top-level log. Empty lock files are coordination
+artifacts, not failed runs; do not unlink them while processes could hold locks. The local working
+output contains completed Exp1 records and current generated figures, no Exp0 attempt tree.
+No broad reset is appropriate now that Exp1 is complete.
+
+**Next steps.** Confirm no active CreditICL jobs, preserve tracked notebook/report edits with
+a scoped Git stash, pull successfully, verify the intended source fingerprint and run CPU Exp0,
+then GPU Exp0. Inspect long-context capacity/throughput results before launching Exp2 (36 runs at
+the time of this audit; extended to 48 later on 26 October when the user requested 25% credit).
+No executable source, configuration, environment or submodule was changed in this audit.
+Read-only pins: TFM `702d9ab0b66f6639ba8d443ff9c4a91231964465`,
+VSC `3bcdf55e576d10161d6189b40ac39380bbba9eca`.
+
+**Later 26-10-2026 follow-up.** The user requested a clean current-code validation pair. The new
+`--reset-exp0` utility can remove the superseded/old successful Exp0 attempts on both tiers while
+retaining all Exp1 outputs. The historical PASS outcomes above remain provenance; deleting their
+active receipt files does not invalidate the completed Exp1 training. New precision checks and
+the four-mixture Exp2 grid require fresh CPU/GPU validation. No remote deletion was performed here.
+
+## 25-10-2026 — Exp1 benchmark jobs completed; project-tier results still to collect
+
+**Evidence** Downloads `output CreditICL (1).zip`, downloaded 25-10-2026 10:28,
+28,495,863 bytes, 1,359 files; SHA256
+`b978b33762131959adb5adfa1b5fd4c63685b94f49e322483e090a93543d1ac9`.
+This is an output snapshot, not a live scheduler query.
+
+### Configuration and completion
+
+| Job array | Work | Array indices | Successful log footers |
+|---|---|---|---|
+| 11734956 | main LGD checkpoints and references | 0–48 | 49/49 |
+| 11734957 | main PD checkpoints and references | 0–48 | 49/49 |
+| 11734971 | LGD component checkpoints | 0–14 | 15/15 |
+| 11734972 | PD component checkpoints | 0–14 | 15/15 |
+
+Each main grid covers nine arms at five saved checkpoints plus four released/classical
+references; components use their final checkpoint. The logs report all 35 LGD credit cells,
+70 PD credit cells and 125 OOD cells per respective evaluation completed successfully:
+seven LGD / fourteen PD credit datasets and 25 native OOD datasets per track, five folds.
+All 48 training summaries still report completion at 12,500 updates.
+Environment checks record TabPFN 9.1.0, TabICL 2.1.1 at commit
+`8f1aa2098c894ab91dba15209cf2002ba4be6c6c`, CatBoost 1.2.10 and CUDA torch 2.11.0+cu128.
+The included Exp0 CPU/GPU PASS receipts retain source `20f0e98161f9e988b5eaf0d2775fb34406547844bafbbd90a653fb9bbe7e44c5`.
+
+### Bugs and interpretation
+
+No error traceback, ERROR marker, failed footer or positive failed-cell count was found
+across 480 Experiment 1/reference logs. The 140 matched nonfinite metric log lines are
+duplicated `crps=nan` entries for CatBoost/linear point predictions, where distributional
+metrics are unavailable; this is not a failed prediction. Module fallback warnings are
+followed by successful dependency checks. Full rows are explicitly logged, including
+425,943/425,943 context rows for a large PD fold.
+
+All 128 benchmark array tasks have successful completion evidence. However, the actual
+benchmark CSVs, fold journals and receipts live in project storage and are absent from
+this DATA-tier ZIP. Numerical completeness, paired effects and publication conclusions
+still require those artifacts; log success alone does not replace their verification.
+No code fix or Exp1 rerun is justified by this inspection.
+
+### Next
+
+Collect `experiment_1/benchmark` and `reference/benchmark` from the project-tier output root.
+Confirm no CreditICL jobs remain active before updating the shared checkout. The revised
+Exp2 long-context implementation needs fresh CPU and GPU Exp0 validation; the old PASS
+receipts do not approve it. Review capacity timings before submitting its 36 runs.
+No output was deleted and no cluster job was submitted by this audit. Local reference pins:
+TFM `702d9ab0b66f6639ba8d443ff9c4a91231964465`, VSC `3bcdf55e576d10161d6189b40ac39380bbba9eca`.
+
 ## 24-10-2026 — Exp1 training complete — all 48 runs successful
 
 **Submitted** original arrays on 22–23 October; exact submission receipts not included | **jobs** 11728997 (main LGD), 11728998 (main PD), 11728999 (LGD components), 11729000 (PD components) | **cluster** Mindwell `gpu_b200`

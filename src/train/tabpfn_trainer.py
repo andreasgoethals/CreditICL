@@ -309,10 +309,13 @@ class TabPFNTrainer:
         # A later forward moves parameters but would strand those moments on CPU.
         self.model = self.est.models_[0].to(self.device)
         self.model.train()
+        self.est.use_autocast_ = self.amp
         n_params = sum(p.numel() for p in self.model.parameters())
         self.log.info("TabPFN-3 %s: %s parameters, %d members per forward, AMP %s",
                       "regressor" if self.regression else "classifier", f"{n_params:,}",
                       self.n_estimators, self.amp)
+        self.log.info("precision: FP32 parameters; CUDA FP16 autocast=%s; GradScaler=%s",
+                      self.amp, self.amp)
         self.optimizer = build_optimizer(self.model, tcfg)
         self.scheduler = build_scheduler(self.optimizer, tcfg, self.max_steps)
         self.scaler = torch.amp.GradScaler("cuda") if self.amp else None
@@ -474,9 +477,14 @@ class TabPFNTrainer:
             # share one class count the way a single fine-tuning dataset does.
             self.est.n_classes_ = int(prepared["n_classes"])
             self.est.classes_ = torch.arange(self.est.n_classes_)
+        # The batched executor owns a second autocast context. Its automatic
+        # inference choice must not override the configured training precision.
+        # Set this before fit constructs that executor, including FP32 retries.
+        self.est.use_autocast_ = self.amp
         self.est.fit_from_preprocessed(batch.X_context, batch.y_context, batch.cat_indices,
                                        batch.configs, performance_options=self.performance)
-        autocast = (torch.amp.autocast("cuda", enabled=True) if self.amp else nullcontext())
+        autocast = torch.amp.autocast(torch.device(self.device).type,
+                                     enabled=self.amp, dtype=torch.float16)
         with autocast, sdpa_kernel_context():
             if self.regression:
                 return regression_loss(self.est, batch, self.n_estimators, self.loss_weights)

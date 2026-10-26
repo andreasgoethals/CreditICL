@@ -104,8 +104,8 @@ calibration change postdates the September campaign and must not be attributed t
 | | **Exp0 — does it run?** | **Exp1 — does the prior help, all else equal?** | **Exp2 — is it useful for the real models?** | **Exp3 — run long** |
 |---|---|---|---|---|
 | start | the three paths below | from scratch | the released TabICLv2 and TabPFN-3 weights | from scratch |
-| swept | `arm {scratch TabICL, fine-tuned TabICLv2, fine-tuned TabPFN-3}` | `credit_fraction {0, .5, 1} × 3 seeds` | `arm {TabICLv2, TabPFN-3} × credit_fraction {0, .5, 1} × 3 seeds` | `credit_fraction {0, Exp1's mix}` × 2 seeds |
-| arms/track | 3 | 24 (9 main + 15 component) | 18 | 4 |
+| swept | `arm {scratch TabICL, fine-tuned TabICLv2, fine-tuned TabPFN-3}` | `credit_fraction {0, .5, 1} × 3 seeds` | `arm {TabICLv2, TabPFN-3} × credit_fraction {0, .25, .5, 1} × 3 seeds` | `credit_fraction {0, Exp1's mix}` × 2 seeds |
+| arms/track | 3 | 24 (9 main + 15 component) | 24 | 4 |
 | steps | 600 | 12,500 | 10,000 | 200,000 |
 | rows/task | route checks plus explicit long-context capacity probes | 1,024 | TabICLv2: 400–60,000, log-uniform; TabPFN-3: 1,024 | 1,024 |
 | optimizer | as the path it checks | Muon (upstream stage 1) | upstream TabICL and an adapted TabPFN-Wide recipe | Muon |
@@ -122,7 +122,7 @@ The revised Exp2 also requires new GPU probes of the TabICLv2 row/feature capaci
 for both priors and both tracks, plus representative 64-task updates using the real ragged loader.
 These execute complete forward/backward/optimizer updates; the existing route checks separately
 cover save/resume and prediction. Fresh CPU and GPU
-PASS receipts for this revision are required before launching the 36-run continuation campaign;
+PASS receipts for this revision are required before launching the 48-run continuation campaign;
 the older successful Exp0 receipts describe the frozen Exp1 campaign only.
 
 **Exp1** measures the prior package's effect: the same architecture trained from scratch on
@@ -154,8 +154,8 @@ This adds 15 runs per track to the nine main runs, 48 in total. Component groups
 controlled-ablation principle in `tfm-library/papers/text/2026/05_Bouadi_et_al._Shaping_the_Prior_How_Synthetic_Task_Distributions_Determine_Tabular_Foundation_Model_Quality.txt`;
 that paper studies general classification, not the credit-risk mechanisms here.
 
-**Exp2 compares all three mixtures (0%, 50%, 100%) for both released models**, with three seeds:
-18 runs per track, 36 total. It does not select a winning mixture from Exp1. Finish and benchmark
+**Exp2 compares four mixtures (0%, 25%, 50%, 100%) for both released models**, with three seeds:
+24 runs per track, 48 total. It does not select a winning mixture from Exp1. Finish and benchmark
 Exp1 first to assess its evidence and cost before the next campaign, while keeping this comparison
 fixed. The submission gate requires validated Exp0, not an Exp1 selection artifact.
 
@@ -168,7 +168,7 @@ TabICLv2 continuation with its authors' stage-3 table distribution:** 400–60,0
 log-uniformly, 79–81% context, group/micro-batch size 1, global batch 64 and 10,000 updates.
 Muon uses lr 2e-5, weight decay 0.01, 1% warm-up, cosine to 1e-7 and gradient clipping 1.
 The upstream feature ceiling falls from 100 to 80/60/40/30/20 as tables grow beyond
-10,240/20,000/30,000/40,000/50,000 rows. This law applies identically to all three mixtures;
+10,240/20,000/30,000/40,000/50,000 rows. This law applies identically to all four mixtures;
 it is a synthetic training law, not a benchmark feature cap.
 Evidence: `tfm-library/repositories/TabICL.txt`, `scripts/train_v2_clf_stage3.sh`,
 `scripts/train_v2_reg_stage3.sh`, `Prior.sample_seq_len`, `Prior.adjust_max_features`,

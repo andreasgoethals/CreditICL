@@ -86,7 +86,7 @@ def test_a_placeholder_keeps_a_config_a_template(tmp_path):
 def test_each_arm_is_scored_by_the_wrapper_of_its_architecture():
     from src.eval.benchmark_status import slot_for
 
-    models = {slot_for(2, "pd", i).model for i in range(18)}
+    models = {slot_for(2, "pd", i).model for i in range(24 * 4)}
     assert models == {"crediticl", "tabpfn3"}
 
 
@@ -102,7 +102,7 @@ def test_the_main_benchmark_scores_both_models_and_the_reference_column():
     from src.eval.benchmark_status import n_slots, slot_for
 
     total = n_slots(2, "lgd")
-    assert total == 18 * 4 + 4
+    assert total == 24 * 4 + 4
     assert slot_for(2, "lgd", total - 1).tag == "reference_lgd_linear"
 
 

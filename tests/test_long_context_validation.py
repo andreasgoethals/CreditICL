@@ -10,6 +10,38 @@ from src.validation import campaign
 from src.validation import long_context as lc
 
 
+def test_precision_probe_observes_attention_and_restores_on_error():
+    from torch.nn import functional as F
+
+    original = F.scaled_dot_product_attention
+    q = torch.randn(1, 1, 8, 4, requires_grad=True)
+    with lc.observe_fp32_attention() as report:
+        F.scaled_dot_product_attention(q, q, q).sum().backward()
+    assert report['calls'] == 1 and torch.isfinite(q.grad).all()
+    assert F.scaled_dot_product_attention is original
+    with pytest.raises(RuntimeError, match='changed from FP32'):
+        with lc.observe_fp32_attention():
+            half = q.to(torch.bfloat16)
+            F.scaled_dot_product_attention(half, half, half)
+    assert F.scaled_dot_product_attention is original
+    with pytest.raises(RuntimeError, match='No SDPA calls'):
+        with lc.observe_fp32_attention():
+            pass
+    assert F.scaled_dot_product_attention is original
+
+
+def test_precision_probe_observes_real_tabicl_forward_and_backward(tmp_path, lgd_cfg):
+    from src.train.loop import Trainer
+    from test_long_context_training import _batch, _cfg
+
+    with Trainer(_cfg(lgd_cfg), tmp_path / 'observed', device='cpu') as trainer:
+        with lc.observe_fp32_attention() as report:
+            stats = trainer.train_step(_batch())
+    assert report['calls'] > 3  # multiple attention blocks and microbatches
+    assert report['qkv_dtype'] == 'torch.float32'
+    assert torch.isfinite(torch.tensor(stats['loss']))
+
+
 @pytest.mark.parametrize("track", ["pd", "lgd"])
 def test_full_batch_probe_keeps_production_tables_and_model_recipe(track):
     production = next(c for c in expand_with_seeds(load(f"config/Exp2_{track.upper()}.yaml"))

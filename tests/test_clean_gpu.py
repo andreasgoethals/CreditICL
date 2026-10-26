@@ -67,6 +67,53 @@ def test_gpu_reset_deletes_both_tiers_and_preserves_cpu_and_inputs(idle):
     assert clean_run.reset_exp0_gpu() == (0, 0)
 
 
+def test_full_exp0_reset_clears_both_tiers_and_only_identified_scratch(idle, monkeypatch):
+    scratch = idle / "scratch"
+    monkeypatch.setenv("VSC_SCRATCH_GPFS1", str(scratch))
+    removed, kept = [], []
+    for root in {paths.outputs_dir(), paths.big_outputs_dir()}:
+        for name in (f"validation/{CPU}/report/validation.json",
+                     f"validation/{ATTEMPT}/checkpoints/a/step-1.ckpt",
+                     "report/cpu_validation.json", "report/validation.json",
+                     "report/unrecognised-old-diagnostic.json"):
+            removed.append(put(root / "experiment_0" / name))
+        kept.extend(put(root / name) for name in (
+            "experiment_1/checkpoints/a/step-12500.ckpt", "experiment_1/runs/a/summary.json",
+            "experiment_2/benchmark/results.csv", "reference/benchmark/results.csv", "README.md"))
+        removed.append(put(root.parent / "slurm-crediticl-exp0-cpu-62319803.err"))
+        kept.append(put(root.parent / "checkpoints/tabicl-released.ckpt"))
+    for job in ("62319803", "11689448"):
+        removed.append(put(scratch / "CreditICL/jobs" / job / "work.pt"))
+    kept.append(put(scratch / "CreditICL/jobs/11111/production.pt"))
+    assert clean_run.reset_exp0()[0] == len(removed)
+    assert all(p.exists() for p in removed)
+    assert clean_run.main(["--reset-exp0", "--clean"]) == 0
+    assert all(not p.exists() for p in removed)
+    assert all(p.read_bytes() == b"evidence" for p in kept)
+    assert clean_run.reset_exp0() == (0, 0)
+
+
+def test_full_exp0_reset_refuses_active_job_and_links_before_deleting(idle, monkeypatch):
+    victim = put(paths.outputs_dir() / "experiment_0/report/cpu_validation.json")
+    monkeypatch.setenv("SLURM_JOB_ID", "123")
+    with pytest.raises(RuntimeError, match="login node"):
+        clean_run.reset_exp0(clean=True)
+    monkeypatch.delenv("SLURM_JOB_ID")
+    outside = idle / "outside"
+    protected = put(outside / "keep.ckpt")
+    link = paths.big_outputs_dir() / "experiment_0/linked"
+    link.parent.mkdir(parents=True, exist_ok=True)
+    alias(link, outside)
+    with pytest.raises(RuntimeError, match="linked"):
+        clean_run.reset_exp0(clean=True)
+    assert victim.exists() and protected.exists()
+
+
+def test_exp0_reset_scope_cannot_be_combined_with_full_reset(idle):
+    with pytest.raises(SystemExit):
+        clean_run.main(["--reset-exp0", "--reset-output", "--clean"])
+
+
 def test_gpu_reset_cleans_only_scratch_jobs_identified_as_gpu(idle, monkeypatch):
     scratch = idle / "gpfs"
     monkeypatch.setenv("VSC_SCRATCH_GPFS1", str(scratch))

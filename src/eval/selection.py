@@ -1,4 +1,4 @@
-"""Development-only ranking for Exp3; Exp2 compares all three mixtures independently."""
+"""Development-only ranking for Exp3; Exp2 compares all four mixtures independently."""
 from __future__ import annotations
 
 import argparse

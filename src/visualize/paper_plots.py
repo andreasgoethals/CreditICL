@@ -325,7 +325,7 @@ def results_summary(track, exp="exp1"):
     metrics = ("roc_auc", "log_loss") if track == "pd" else ("r2", "crps", "boundary_mass_abs_err")
     dev = final_credit(track, exp, "development")
     lines = ["A · DEVELOPMENT AND COMPARISON CONTRACT",
-             ("Both backbones and all three mixtures are fixed; no Experiment 1 winner is selected for Experiment 2."
+             ("Both backbones and all four mixtures (0%, 25%, 50%, 100%) are fixed; no Experiment 1 winner is selected for Experiment 2."
               if exp == "exp2" else "Fixed training recipes; any subsequent mixture choice uses complete development results only."),
              "The designated holdout has historical project exposure; it is not untouched confirmation.",
              f"Development final table available: {dev is not None}.",

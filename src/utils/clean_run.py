@@ -10,6 +10,7 @@
     python -m src.utils.clean_run --experiment 0 --clean --checkpoints   only experiment_0
     python -m src.utils.clean_run --reset-output --clean    ALL generated output on both tiers
     python -m src.utils.clean_run --reset-exp0-gpu --clean  GPU validation attempts only
+    python -m src.utils.clean_run --reset-exp0 --clean      CPU/GPU validation only, both tiers
 
 Clears the `output CreditICL/` tree (`src/utils/paths.py`) on BOTH storage tiers: the small
 half on `$VSC_DATA` (logs, run records, benchmark scores, figures) and, when asked, the big
@@ -301,9 +302,18 @@ def _apply_reset_plan(files: list, directories: list[Path], roots_seen: set[Path
 
 
 def reset_exp0_gpu(*, clean: bool = False) -> tuple[int, int]:
-    """Remove only identifiable GPU validation output; preserve CPU records and inputs.
+    return _reset_exp0(clean=clean, gpu_only=True)
 
-    Scratch job IDs come from the fixed GPU attempt/log names, never from a path
+
+def reset_exp0(*, clean: bool = False) -> tuple[int, int]:
+    """Clear validation from both tiers, preserving all production experiments."""
+    return _reset_exp0(clean=clean, gpu_only=False)
+
+
+def _reset_exp0(*, clean: bool, gpu_only: bool) -> tuple[int, int]:
+    """Reset all validation or only its GPU phase, preserving production and inputs.
+
+    Scratch job IDs come from fixed validation attempt/log names, never from a path
     stored in a receipt. Custom work-root overrides and unidentified jobs survive.
     """
     current = (paths.outputs_dir(), paths.big_outputs_dir())
@@ -312,6 +322,8 @@ def reset_exp0_gpu(*, clean: bool = False) -> tuple[int, int]:
     projects = {p.parent.resolve() for p in current}
     candidates: dict[Path, Path] = {}
     jobs: set[str] = set()
+    phase_pattern = "gpu" if gpu_only else "(?:cpu|gpu)"
+    label = "GPU" if gpu_only else "Experiment 0"
 
     def check_path(item: Path, anchor: Path) -> None:
         if item == anchor or not item.is_relative_to(anchor):
@@ -332,25 +344,29 @@ def reset_exp0_gpu(*, clean: bool = False) -> tuple[int, int]:
         if not project.is_dir():
             continue
         for item in project.iterdir():
-            match = re.fullmatch(r"slurm-(?:crediticl|cicl)-exp0-gpu-(\d+)\.(?:out|err)", item.name)
+            match = re.fullmatch(r"slurm-(?:crediticl|cicl)-exp0-" + phase_pattern + r"-(\d+)\.(?:out|err)", item.name)
             if match:
                 candidates[item] = project
                 jobs.add(match[1])
         for name in (paths.OUTPUT_NAME, "output", "outputCreditICL", "output_CreditICL"):
             exp = project / name / "experiment_0"
             for item in children(exp / "validation", project):
-                match = re.fullmatch(r"gpu_\d{8}T\d{6}Z_j(\d+)_[0-9a-f]{8}", item.name)
+                match = re.fullmatch(phase_pattern + r"_\d{8}T\d{6}Z_j(\d+)_[0-9a-f]{8}", item.name)
                 if match:
-                    candidates[item] = project
+                    if gpu_only:
+                        candidates[item] = project
                     jobs.add(match[1])
             for item in children(exp / "logs", project):
-                match = re.fullmatch(r"exp0_gpu_\d{8}_\d{6}_j(\d+)\.log", item.name)
+                match = re.fullmatch(r"exp0_" + phase_pattern + r"_\d{8}_\d{6}_j(\d+)\.log", item.name)
                 if match:
-                    candidates[item] = project
+                    if gpu_only:
+                        candidates[item] = project
                     jobs.add(match[1])
             for item in children(exp / "report", project):
-                if item.name in {"validation.json", "validation.json.tmp"}:
+                if gpu_only and item.name in {"validation.json", "validation.json.tmp"}:
                     candidates[item] = project
+            if not gpu_only:
+                candidates[exp] = project
 
     scratch = os.environ.get("VSC_SCRATCH_GPFS1") or os.environ.get("VSC_SCRATCH")
     if scratch and paths.on_vsc():
@@ -369,9 +385,9 @@ def reset_exp0_gpu(*, clean: bool = False) -> tuple[int, int]:
         if not item.exists():
             continue
         if any(p.resolve().is_relative_to(item) or item.is_relative_to(p.resolve()) for p in inputs):
-            raise RuntimeError(f"Input data or released weights overlap GPU output: {item}")
+            raise RuntimeError(f"Input data or released weights overlap validation output: {item}")
         anchors.add(anchor)
-        print(f"GPU reset target: {item}")
+        print(f"{label} reset target: {item}")
         tree = [item, *_safe_tree(item)] if item.is_dir() else [item]
         for path in tree:
             if path.is_dir():
@@ -381,9 +397,9 @@ def reset_exp0_gpu(*, clean: bool = False) -> tuple[int, int]:
                     info = path.stat()
                     files.append((path, anchor, (info.st_size, info.st_mtime_ns, info.st_ino)))
             else:
-                raise RuntimeError(f"Unexpected GPU output type: {path}")
+                raise RuntimeError(f"Unexpected validation output type: {path}")
     total = sum(info[0] for _, _, info in files)
-    print(f"GPU reset: {len(files)} generated files, {total / 1e9:.3f} GB.")
+    print(f"{label} reset: {len(files)} generated files, {total / 1e9:.3f} GB.")
     if jobs and paths.on_vsc() and not scratch:
         print("No scratch location configured; only the two permanent output tiers were checked.")
     if clean:
@@ -512,6 +528,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="fresh campaign: ALL generated output on both tiers, including trained checkpoints and validation attempts")
     parser.add_argument("--reset-exp0-gpu", action="store_true",
                         help="GPU validation attempts, checkpoints/results, logs and matching scratch jobs; preserve CPU output")
+    parser.add_argument("--reset-exp0", action="store_true",
+                        help="all CPU/GPU Experiment 0 output on both tiers and matching scratch jobs; preserve Experiments 1-3")
     parser.add_argument("--stale", action="store_true",
                         help="only failed job logs and generated figures/summaries; preserve all "
                              "checkpoints, successful/unfinished logs, results and caches")
@@ -526,13 +544,13 @@ def main(argv: list[str] | None = None) -> int:
                              "from them and trains nothing. Never touches the released weights.")
     args = parser.parse_args(argv)
 
-    if args.reset_output or args.reset_exp0_gpu:
+    if args.reset_output or args.reset_exp0_gpu or args.reset_exp0:
         if args.stale or args.experiment is not None or args.processed or args.prior_cache or args.checkpoints:
             parser.error("reset options define their own output scope; combine only with --clean")
-        if args.reset_output and args.reset_exp0_gpu:
-            parser.error("choose either --reset-output or --reset-exp0-gpu")
+        if sum((args.reset_output, args.reset_exp0_gpu, args.reset_exp0)) > 1:
+            parser.error("choose only one reset scope")
         try:
-            reset = reset_exp0_gpu if args.reset_exp0_gpu else reset_output
+            reset = reset_exp0 if args.reset_exp0 else (reset_exp0_gpu if args.reset_exp0_gpu else reset_output)
             reset(clean=args.clean)
         except (OSError, RuntimeError) as exc:
             print(f"Reset refused: {exc}")

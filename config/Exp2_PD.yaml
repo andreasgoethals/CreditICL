@@ -1,7 +1,7 @@
 # =============================================================================
-# EXPERIMENT 2 — PD — IS THE CREDIT PRIOR USEFUL FOR THE REAL MODELS? (2 x 3 x 3 = 18 arms)
+# EXPERIMENT 2 — PD — IS THE CREDIT PRIOR USEFUL FOR THE REAL MODELS? (2 x 4 x 3 = 24 arms)
 #
-# Continued pretraining of RELEASED TabICLv2 and TabPFN-3 on ALL THREE mixtures.
+# Continued pretraining of RELEASED TabICLv2 and TabPFN-3 on FOUR mixtures (0%, 25%, 50%, 100%).
 # Exp1 does not select an Exp2 winner. Fixed literature-derived recipes, no search:
 #   TabICLv2: stage-3 table distribution and optimizer (400–60,000 rows log-uniform,
 #             79–81% context, Muon lr 2e-5, 10,000 updates), from released weights;
@@ -30,7 +30,7 @@ architecture: tabicl # overridden by every arm
 # ----------------------------------------------------------------------------
 sweep:
   arm: [tabicl, tabpfn3] # the two released foundation models
-  prior.credit_fraction: [0.0, 0.5, 1.0] # share of each batch from our prior; 0.0 = continued pretraining on the control prior
+  prior.credit_fraction: [0.0, 0.25, 0.5, 1.0] # share of each batch from our prior; 0.0 = continued pretraining on the control prior
   seeds: [0, 1, 2] # repeats
 
 arms: # one set of overrides per arm; `sweep.arm` picks one per run (src/utils/config.py)

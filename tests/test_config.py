@@ -408,13 +408,13 @@ def test_exp2_sweeps_the_mixture_because_that_is_its_question():
     for track in ("LGD", "PD"):
         axes = dict(sweep_axes(_load(f"config/Exp2_{track}.yaml")))
         mixture = axes["prior.credit_fraction"]
+        assert mixture == [0., .25, .5, 1.]
         assert 0.0 in mixture and 1.0 in mixture, f"{track}: mixture must span 0..1, got {mixture}"
         assert sorted(axes["arm"]) == ["tabicl", "tabpfn3"]
 
 
-def test_exp2_is_cheaper_than_exp3():
-    """The point of Exp2 is that it is cheap. If its budget ever matched Exp3's there would be
-    no claim left to make."""
+def test_exp2_uses_fewer_tasks_than_exp3_not_a_runtime_guarantee():
+    """Long tables can cost more despite fewer updates; this checks task counts only."""
     for track in ("LGD", "PD"):
         two = _load(f"config/Exp2_{track}.yaml")["train"]
         three = _load(f"config/Exp3_{track}.yaml")["train"]

@@ -301,7 +301,7 @@ Neither reproduces upstream's complete curriculum. Exp1 times describe its froze
 campaign; the Exp3 extrapolation is not a measured long run. Wall-clock completion also depends
 on queue delays and concurrent allocations, and benchmarks add their own runtime.
 
-For Experiment 2 (measured in Experiment 0 before it is committed): 18 arms per track (2 models × 3
+For Experiment 2 (measured in Experiment 0 before it is committed): 24 arms per track (2 models × 4
 mixes × 3 seeds), 10,000 steps each, using upstream TabICL and an adapted TabPFN-Wide recipe — no search
 since 30-09-2026. The 24-10 revision changes TabICLv2 to 400–60,000 log-uniform rows, 79–81%
 context and one task per microbatch, retaining 64 tasks per update. Its expected row exposure is
@@ -309,11 +309,29 @@ about 7.6 billion per arm, 11.6 times the former 1,024-row proposal; this is **n
 TabPFN-3 retains 16 tasks per update and 1,024 rows through its own preprocessing. The old ~400
 GPU-hour estimate is **obsolete**. Never extrapolate TabICLv2 Exp2 cost from Exp0's 1,024-row
 route checks. Fresh capacity and representative-batch probes must establish feasibility first;
-one representative update gives a timing observation, not a reliable 36-run campaign ETA.
+one representative update gives a timing observation, not a reliable 48-run campaign ETA.
 Benchmark probes measure selected tables only: their times do not establish
 the runtime of the complete publication benchmark matrix.
 
 ## 10. Experiment 0: run it first
+
+For the 26-10-2026 four-mixture Exp2 revision, start a fresh validation pair after a successful
+pull and with no CreditICL jobs queued or running. Preserve generated tracked notebook edits with
+`git stash push -- notebooks "output CreditICL"` if they block the pull; do not
+reset the entire repository or stash/untrack the expensive experiment outputs. Chain the pull,
+source check and submission with `&&` (or use a Bash subshell with `set -e`) so a failed update
+cannot be followed by a submission on old code.
+
+The scoped cleanup is `python -m src.utils.clean_run --reset-exp0` to inspect, followed by
+`python -m src.utils.clean_run --reset-exp0 --clean` to remove **only Experiment 0** on DATA and
+PROJECT storage (including diagnostic checkpoints and CPU/GPU Slurm logs), plus scratch jobs
+identified by those validation names. It refuses an active allocation/queue, links and escaped
+paths. Production experiments, shared reference benchmarks, datasets and released weights survive.
+Locally the same option targets the one local output tree; Downloads ZIPs are separate evidence.
+This deliberately removes old successful validation too, for a clean current-code pair; their
+historical outcome remains recorded in RUNS. Do this before CPU validation, never between CPU
+and GPU. After a diagnosed GPU failure with unchanged code, `--reset-exp0-gpu` is the narrower
+option that preserves CPU validation. Do not reset a DEFERRED attempt: it should resume.
 
 Experiment 0 consists of **CPU then GPU validation** (two scripts). The CPU job rebuilds preprocessing,
 checks every credit/OOD table and all five folds, audits dependencies and runs the portable tests.
@@ -371,7 +389,7 @@ the allocation is still alive. A cancelled job may leave it behind. The launcher
 TERM/INT/HUP, report `END status=INTERRUPTED` and retain scratch/evidence; the controller
 publishes DEFERRED when it can catch termination. Only a complete, matching PASS receipt
 unlocks production. A shell footer, including an old `END status=OK`, is insufficient.
-Local edits must first be committed and pushed by Andreas before VSC's `git pull` can
+Local edits must first be committed and pushed (agent pushes authorized by Andreas on 26-10-2026) before VSC's `git pull` can
 retrieve them; compare `python -c "from src.utils.preflight import source_fingerprint; print(source_fingerprint())"`
 on both machines before the clean CPU submission.
 

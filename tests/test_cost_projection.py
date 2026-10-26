@@ -22,10 +22,10 @@ def test_current_exp2_reports_unknown_long_context_cost_and_only_tabpfn_subtotal
 
     assert f"Exp2 {track} TabICL: GPU-hours unknown" in text
     assert "single capacity-test update is not a reliable campaign estimate" in text
-    assert f"Exp2 {track} TabPFN: 9 runs, about 125.0 GPU-h (short-run extrapolation; subtotal only)" in text
+    assert f"Exp2 {track} TabPFN: 12 runs, about 166.7 GPU-h (short-run extrapolation; subtotal only)" in text
     assert f"Exp2 {track} total: unknown" in text
-    assert "18 runs, about" not in text
-    assert "TabICL: 9 runs, about" not in text
+    assert "24 runs, about" not in text
+    assert "TabICL: 12 runs, about" not in text
 
 
 @pytest.mark.parametrize("exp,variant,count,hours", [

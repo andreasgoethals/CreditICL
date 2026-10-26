@@ -111,10 +111,10 @@ def test_exp2_grid_does_not_depend_on_exp1_winner(track):
     cfg = load(selection.ROOT / f"config/Exp2_{track.upper()}.yaml")
     runs = expand_with_seeds(cfg)
     assert unconfigured_tracks(2, [track]) == []
-    assert len(runs) == 18
+    assert len(runs) == 24
     for architecture in ("tabicl", "tabpfn3"):
         group = [r for r in runs if r["architecture"] == architecture]
-        assert len(group) == 9
+        assert len(group) == 12
         assert {(r["prior"]["credit_fraction"], r["seed"]) for r in group} == {
-            (fraction, seed) for fraction in (0., .5, 1.) for seed in (0, 1, 2)}
+            (fraction, seed) for fraction in (0., .25, .5, 1.) for seed in (0, 1, 2)}
         assert all(r["init"]["strategy"] == "full" and r["init"]["pretrained_path"] for r in group)
