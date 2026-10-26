@@ -254,14 +254,15 @@ def request(exp: int, track: str, index: int, seeds: tuple[int, ...] = (0,), n_f
     if slot.kind == "arm":
         run = runs[slot.arm]
         name = run_name(run)
-        from src.train.checkpoint import validate_resume_config, validate_training_fingerprint
+        from src.train.checkpoint import validate_resume_config
+        from src.utils.completed_runs import validate_completed_training
 
         saved_config = json.loads(paths.run_config_path(name).read_text(encoding="utf-8"))
         if not {"task", "prior", "train"} <= saved_config.keys():
             raise ValueError(f"Incomplete saved training configuration for {name}")
         validate_resume_config(saved_config, run)
         summary = json.loads(paths.run_summary_path(name).read_text(encoding="utf-8"))
-        validate_training_fingerprint(summary)
+        validate_completed_training(summary, run, saved_config)
         final = int(run["train"]["max_steps"])
         if not summary.get("completed") or summary.get("steps") != final:
             raise ValueError(f"Training is not complete for {name}")

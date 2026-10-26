@@ -33,12 +33,26 @@ def source_fingerprint() -> str:
 
 def training_fingerprint() -> str:
     """Version the training implementation separately from benchmark/config edits."""
+    return training_fingerprint_for(training_implementation_fingerprint())
+
+
+def training_implementation_fingerprint() -> str:
+    """Training source only; dependency versions are added by training_fingerprint_for."""
     from src.utils.paths import REPO_ROOT
 
     files = [REPO_ROOT / "pyproject.toml"]
     for directory in ("src/models", "src/prior", "src/train"):
         files.extend((REPO_ROOT / directory).rglob("*.py"))
-    implementation = _fingerprint(files)
+    return _fingerprint(files)
+
+
+def training_fingerprint_for(implementation: str) -> str:
+    """Bind a reviewed source digest to the CURRENT training dependency versions.
+
+    This also lets completed-run compatibility reconstruct a historical digest
+    without accepting a change to the packages that produced those weights.
+    Checkpoint resume always calls training_fingerprint(), for current source.
+    """
     # Resume is an update-rule contract, including the installed upstream code.
     versions = {}
     for name in ("torch", "tabicl", "tabpfn", "numpy", "scipy", "scikit-learn"):

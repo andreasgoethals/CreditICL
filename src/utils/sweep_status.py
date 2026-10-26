@@ -94,10 +94,12 @@ def arm_states(config: Path, out_root: Path | None = None) -> list[ArmState]:
         # `out_root` mirrors `pretrain.py --out-root`: everything of the arm in <root>/<name>/.
         out_dir = Path(out_root) / name if out_root else paths.run_dir(name)
         saved_config = out_dir / "config.json"
+        saved = None
         if saved_config.is_file():
             from src.train.checkpoint import validate_resume_config
 
-            validate_resume_config(json.loads(saved_config.read_text(encoding="utf-8")), run)
+            saved = json.loads(saved_config.read_text(encoding="utf-8"))
+            validate_resume_config(saved, run)
         summary = out_dir / "summary.json"
         ckpt = (_latest_checkpoint_name(out_dir / "checkpoints") if out_root else
                 _latest_checkpoint_name(paths.run_checkpoints_dir(name))
@@ -111,9 +113,9 @@ def arm_states(config: Path, out_root: Path | None = None) -> list[ArmState]:
             # Legacy summaries remain inspectable without forcing completed work
             # to rerun. A recorded but different implementation is incompatible.
             if "training_fingerprint" in data:
-                from src.train.checkpoint import validate_training_fingerprint
+                from src.utils.completed_runs import validate_completed_training
 
-                validate_training_fingerprint(data)
+                validate_completed_training(data, run, saved)
             # `completed` was added on 24-08-2026. An older summary that reached max_steps is
             # still done; treating a missing key as "not done" would redo finished work.
             steps = data.get("steps")

@@ -2,7 +2,7 @@
 
 Do not turn this into a general ignore-code option. The reviewed transition only
 changes selection messages, the launcher's default array range, and the receipt
-comparison call. Evaluation, inputs, packages, checkpoints and result digests
+comparison and completed-run provenance calls. Evaluation, inputs, packages, checkpoints and result digests
 must still agree. A later edit to any of those three files fails closed again.
 """
 from __future__ import annotations
@@ -11,14 +11,14 @@ import copy
 
 
 # Filled with SHA-256 of the exact reviewed before/after files (LF and CRLF).
-# The old revision is 50b3d7e; this is provenance, not a Git/network dependency.
+# Reviewed old revisions: a073d7d, 50b3d7e and a18efa8. No Git/network dependency.
 REVIEWED_TRANSITIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     'src/eval/benchmark_status.py': (
-        frozenset(['007019fbd1ad4f53cf5be434ececfb34280db431fabc30f2801e7afb1f6856ed', '89ea0d838855bc6ded19d131a5d3ee68018bc4588435abf981b541377c4bde20']),
-        frozenset(['095b1b144eeea4f28870b51422db6a2a99921b01cf009cc8edf2c1f76960b7a8', 'ad2477a1a2dea9021766004748f77760516878d406bc4a06f5acc3fd59b08cef']),
+        frozenset(['007019fbd1ad4f53cf5be434ececfb34280db431fabc30f2801e7afb1f6856ed', '095b1b144eeea4f28870b51422db6a2a99921b01cf009cc8edf2c1f76960b7a8', '89ea0d838855bc6ded19d131a5d3ee68018bc4588435abf981b541377c4bde20', 'ad2477a1a2dea9021766004748f77760516878d406bc4a06f5acc3fd59b08cef']),
+        frozenset(['3e00a8cf280276213ebd24d27f1ee6e321d75175abd98780d69982563a57cb23', 'b84e09b9de10c20021c6d95340384322a9601716aa9663163d6cd000532e2c53']),
     ),
     'src/eval/selection.py': (
-        frozenset(['1d50a171d2c787bff9176b4909dffb09e39342398e8a71d180d34ab22f64a19a', '52d495780ae9a9b7a23cb78c16324377a36aca59dc8b50cf76545a504b3ea816']),
+        frozenset(['1d50a171d2c787bff9176b4909dffb09e39342398e8a71d180d34ab22f64a19a', '4d6376184777ba73899f106ff575cc5a7c6a3f92f797d4cf24fab9360649aaab', '52d495780ae9a9b7a23cb78c16324377a36aca59dc8b50cf76545a504b3ea816', 'f8f2ae5ca8b1780d375da43d920144173df5c9f16219ef62610bd742abbf591a']),
         frozenset(['24523f3fcbaa8cf6a930bdeefac220aa66019677bc640dc57dfdea9dc1cffbd4', 'adfcf8fc8ee6a25b3cd8b721fa0701112b001a9cb4ea1a6c172240dfce9d5b5c']),
     ),
     'scripts/slurm/benchmark.slurm': (

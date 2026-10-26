@@ -1,5 +1,47 @@
 # Agents' memory — runs and dead ends
 
+## 26-10-2026 — completed Exp1 provenance during the extension
+
+The reattached `exp0_gpu_20261026_083258_j11737746.log` confirms the already-recorded
+old-checkout receipt reuse, not validation of the quarter-mixture extension. No new
+cluster run is evidenced by this upload.
+
+Tried: preparing the missing-arm commands against the actual completed Exp1 records.
+Result: the planner rejected their recorded training fingerprint after Exp2-only source additions.
+Why: completion and evaluation reused the strict checkpoint-resume check; the extension fixture
+omitted the historical fingerprint, so it never exercised the real record format.
+Instead: a narrowly reviewed completion/evaluation exception binds the a073d7d source to the
+current dependency versions, the exact reviewed destination training-source digest, 16 original
+PD/LGD recipes, seeds 0/1/2 and completed 12,500-step/800,000-table summaries. It requires the
+saved configuration; unknown code, packages, recipes and partial runs still fail closed.
+Checkpoint resume retains its original strict check. All 48 saved recipes were compared with
+the current resolved recipes, and no output or checkpoint was changed. Benchmark reuse also
+allows the reviewed a073d7d/50b3d7e/a18efa8 provenance-only transitions; scoring code, inputs,
+packages, checkpoint bytes and result bytes must still agree. Current VSC validation remains
+required before submissions. Andreas's read-only VSC check at 14:30 reports training fingerprint
+`0d328e50ce06778731c5ba5218a61222b9cf396c8b8d767cb3e8a58f7473e69b`, torch 2.11.0+cu128,
+TabICL 2.1.1, TabPFN 9.1.0, NumPy 2.5.2, SciPy 1.18.1 and scikit-learn 1.9.0.
+Reconstructing the historical fingerprint from that metadata and the reviewed source matches
+exactly. Reading the actual 48 imported summaries/configs with those dependency identities
+recognises 9/12 main and 15/15 component runs per task, missing only main indices 9–11.
+This was a local read-only reconstruction, not a fresh VSC validation or checkpoint-file audit.
+
+CPT LR/L2-SP choices remain proposals for discussion; this fix does not change any training,
+checkpoint frequency, precision, prior, benchmark protocol or notebook source.
+Verification: focused provenance/extension checks, 121 passed. Full portable suite: 1,895 passed,
+one changelog-format failure and 30 VSC-only skips in 20m57s; the duplicate date heading was
+merged and all 69 affected documentation/notebook tests then passed. No training, evaluation
+or orchestration test failed.
+Executable fingerprint: `264c70dd8f5aff5acd72776366520de3765cf0a51383f9c761c8f8aef1eed5a0`.
+TFM pin `702d9ab0b66f6639ba8d443ff9c4a91231964465`; VSC pin
+`3bcdf55e576d10161d6189b40ac39380bbba9eca`. No notebook/visualization source changed.
+
+Tried: the full portable suite with the newly added changelog entry.
+Result: one formatting failure; all 1,895 other portable cases passed.
+Why: the entry introduced a second heading for the existing 26-10-2026 chapter.
+Instead: merge the bullet into that chapter and rerun the affected documentation/notebook checks.
+
+
 ## 26-10-2026 — approved Exp1 extension and CPT evidence review
 
 User explicitly approved 25% credit for Exp1 after the original 48-run campaign. The main grid

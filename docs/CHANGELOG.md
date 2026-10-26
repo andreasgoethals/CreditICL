@@ -10,6 +10,7 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 26-10-2026
 
+- Preserve the reviewed completed Exp1 campaign when adding the quarter-mixture runs; keep checkpoint resume and unknown source/package changes blocked.
 - Verify 1,830 portable tests (30 VSC-only skips), execute all 12 notebooks/37 PDFs, and visually inspect the changed four-mixture coverage figures.
 - Run the cross-worker replay test under the production Python hash seed, including Windows-spawned workers.
 - Retry transient Windows receipt-publishing locks without overwriting valid reports or hiding permanent errors.

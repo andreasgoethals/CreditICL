@@ -39,13 +39,18 @@ def test_extension_preserves_old_run_recipes_and_benchmark_tags(track, monkeypat
 @pytest.mark.parametrize("track", ["pd", "lgd"])
 def test_completed_original_campaign_submits_only_the_three_new_arms(track, isolated_output, monkeypatch):
     from src.utils import paths, run_experiment
+    from src.utils.completed_runs import HISTORICAL_IMPLEMENTATION
+    from src.utils.preflight import training_fingerprint_for
 
     monkeypatch.setattr(run_experiment, "queued_job_names", set)
     runs = expand_with_seeds(load(f"config/Exp1_{track.upper()}.yaml"))
     for run in runs[:9]:
         summary = paths.run_summary_path(run["_run_name"])
         summary.parent.mkdir(parents=True, exist_ok=True)
-        summary.write_text(json.dumps({"steps": 12500, "completed": True}))
+        summary.write_text(json.dumps({"steps": 12500, "completed": True,
+                                       "datasets_seen": 800000,
+                                       "training_fingerprint": training_fingerprint_for(HISTORICAL_IMPLEMENTATION)}))
+        paths.run_config_path(run["_run_name"]).write_text(json.dumps(run))
     stage = next(s for s in run_experiment.plan(1, [track], single_cluster=True)
                  if s.name == f"exp1-{track}-train")
     assert stage.done == 9 and stage.total == 12
