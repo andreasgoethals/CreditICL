@@ -236,6 +236,12 @@ FRONTIER_MARKER = 5
 SEED_MARKERS = ("o", "s", "^")
 SOURCE_MARKERS = ("s", "o")
 SOURCE_LINES = ("--", "-")
+TRACE_LINE = .65
+CURVE_MARKER = 3
+MILESTONE_MARKER = "o"
+RATE_MARKERS = ("o", "D")
+METHOD_COLORS = {"full_wd": ORIGINAL, "no_decay": CREDIT, "l2sp": REFERENCE,
+                 "diagscale": QUERY, "lora": EXTERNAL}
 
 #: Named colormaps, both colour-blind-safe and monotone in lightness so they survive a greyscale
 #: photocopy — `CMAP_SEQ` for one-directional intensity (a correlation magnitude, a density),

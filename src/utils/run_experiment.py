@@ -184,19 +184,19 @@ def _benchmark_stage(exp: int, track: str, queued: set[str], train: Stage,
 
 
 def unconfigured_tracks(exp: int, tracks: list[str], variant: str | None = None) -> list[str]:
-    """Tracks whose config still holds `FILL_FROM_EXP1`. Empty for a runnable experiment.
-
-    Exp3 ships with its nonzero mixture blank until Exp1's development comparison is complete.
-    Exp2 already compares all four mixtures and has no selection placeholder. Submitting an
-    unfilled Exp3 would measure the wrong thing, so it must refuse until the hole is filled.
-    """
-    from src.utils.config import find_placeholders, load_yaml
+    """Refuse unresolved recipes or missing/stale development-selection receipts."""
+    from src.utils.config import find_placeholders, load_yaml, load
 
     blocked = []
     for track in tracks:
         cfg = load_yaml(_config(exp, track, variant))
-        if find_placeholders(cfg):
-            blocked.append(track)
+        try:
+            if find_placeholders(cfg):
+                blocked.append(track)
+            elif exp == 3:
+                load(_config(exp, track, variant))
+        except (ValueError, OSError) as exc:
+            blocked.append(f"{track}: {exc}")
     return blocked
 
 
@@ -231,8 +231,8 @@ def render(stages: list[Stage], exp: int, blocked_tracks: list[str] | None = Non
     if blocked_tracks:
         lines += [
             f"  EXPERIMENT {exp} IS NOT CONFIGURED YET: {', '.join(blocked_tracks)} still hold a",
-            "  placeholder (FILL_FROM_EXP1). Run what decides it (Experiment 1), fill the value into",
-            f"  config/Exp{exp}_*.yaml, then run this again. Nothing will be submitted.",
+            "  missing or stale development-selection receipt. Follow the selection command above.",
+            "  No job was submitted.",
             "=" * 78,
         ]
         return "\n".join(lines)

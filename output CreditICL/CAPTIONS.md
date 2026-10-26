@@ -184,11 +184,15 @@ _No figures produced._
 
 ## 2.1_pd_finetuning
 
-_No figures produced._
+**01_registered_continuation_design** — `registered_continuation_design`
+
+Registered continuation design: two released backbones, two prediction tasks, four credit-prior mixtures, two learning rates per backbone and three training seeds; eight checkpoint evaluations use full eligible tables and shared five-fold splits.
 
 ## 2.2_lgd_finetuning
 
-_No figures produced._
+**01_registered_continuation_design** — `registered_continuation_design`
+
+Registered continuation design: two released backbones, two prediction tasks, four credit-prior mixtures, two learning rates per backbone and three training seeds; eight checkpoint evaluations use full eligible tables and shared five-fold splits.
 
 ## 2.3_pd_results
 
@@ -200,6 +204,8 @@ _No figures produced._
 
 # 3. Experiment 3
 
-## 3.1_budget_persistence
+## 3.1_retention
 
-_No figures produced._
+**01_registered_retention_design** — `registered_retention_design`
+
+Number of runs and retained checkpoints in the 50% credit retention design: four additional methods across both backbones and tasks, three main seeds, 36 development-only pilots and 12 reused full-CPT baselines from Experiment 2.

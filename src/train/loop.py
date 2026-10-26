@@ -226,6 +226,7 @@ class Trainer:
         self.log_grad_every = int(_lcfg.get("log_grad_every", 0) or 0)
         # Drift from the initial weights; defaults to the gradient cadence.
         self.log_weights_every = int(_lcfg.get("log_weights_every", self.log_grad_every) or 0)
+        self.keep_steps = tuple(int(s) for s in tcfg.get("keep_steps", ()))
         self.save_temp_every = int(tcfg.get("save_temp_every", 500))
         self.save_perm_every = int(tcfg.get("save_perm_every", 5_000))
         self.max_temp_checkpoints = int(tcfg.get("max_temp_checkpoints", 2))
@@ -326,8 +327,8 @@ class Trainer:
         # pretrained weights are loaded and before a single step: w0 is the starting point,
         # and any later snapshot is a different regulariser.
         self.l2sp_alpha = float(tcfg_for_l2sp.get("l2sp_alpha", 0.0) or 0.0)
-        if self.l2sp_alpha < 0:
-            raise ValueError(f"train.l2sp_alpha must be >= 0, got {self.l2sp_alpha}")
+        if not math.isfinite(self.l2sp_alpha) or self.l2sp_alpha < 0:
+            raise ValueError(f"train.l2sp_alpha must be finite and >= 0, got {self.l2sp_alpha}")
         if self.l2sp_alpha > 0 and self.strategy == "scratch":
             raise ValueError(
                 "train.l2sp_alpha > 0 with init.strategy='scratch': L2-SP penalises distance "
@@ -356,6 +357,14 @@ class Trainer:
             100 * self.freeze_report["trainable_fraction"],
         )
 
+        from src.models.adapters import inject
+
+        self.adapter_report = inject(self.model, tcfg, seed=int(cfg.get("seed", 0)))
+        if self.adapter_report["method"] != "full":
+            self.log.info("adapter parameters: %s", self.adapter_report)
+            self.freeze_report.update(strategy=self.adapter_report["method"],
+                trainable_params=self.adapter_report["trainable"],
+                trainable_fraction=self.adapter_report["trainable"] / self.adapter_report["total"])
         self.model = self.model.to(self.device)
         self._l2sp_ref = {name: value.to(self.device) for name, value in self._l2sp_ref.items()}
         # build_optimizer BEFORE wrapping: it splits parameters by shape for Muon, and
@@ -368,7 +377,7 @@ class Trainer:
                 "DISTRIBUTED: world_size=%d  batch %d -> %d per rank  (effective batch unchanged)",
                 self.dist.world_size, self.batch_size, self.local_batch_size,
             )
-        self.scheduler = build_scheduler(self.optimizer, tcfg, self.max_steps)
+        self.scheduler = build_scheduler(self.optimizer, tcfg, int(tcfg.get("schedule_total_steps", self.max_steps)))
 
         self.amp = bool(tcfg.get("amp", False)) and self.device.startswith("cuda")
         # Upstream's trainer enables TF32 for every float32 matmul and convolution
@@ -910,10 +919,13 @@ class Trainer:
         total = 0.0
         for name, param in self.model.named_parameters():
             ref = self._l2sp_ref.get(name)
-            if ref is None or param.grad is None:
+            if ref is None or not param.requires_grad:
                 continue
             delta = param.detach() - ref
-            param.grad.add_(delta, alpha=self.l2sp_alpha)
+            if param.grad is None:
+                param.grad = delta * self.l2sp_alpha
+            else:
+                param.grad.add_(delta, alpha=self.l2sp_alpha)
             total += float(delta.pow(2).sum())
         return 0.5 * self.l2sp_alpha * total
 
@@ -1104,7 +1116,7 @@ class Trainer:
                 prog_loss_sum, prog_loss_n = 0.0, 0
 
             is_temp = self.save_temp_every > 0 and self.step % self.save_temp_every == 0
-            is_perm = self.save_perm_every > 0 and self.step % self.save_perm_every == 0
+            is_perm = self.step in self.keep_steps or (self.save_perm_every > 0 and self.step % self.save_perm_every == 0)
             if is_temp or is_perm or self.step == self.max_steps or self._stop_requested:
                 self._save()
 
@@ -1128,6 +1140,7 @@ class Trainer:
             "train_seconds_total": round(self._train_seconds(), 1),
             "resumed_at": self.resumed_at,
             "freeze": self.freeze_report,
+            "adaptation": self.adapter_report,
             "pretrained_load": self.load_report,
         }
         self.log.info("finished: %s", json.dumps({k: v for k, v in summary.items() if k != "freeze"}))
@@ -1222,11 +1235,11 @@ class Trainer:
         removed = prune_checkpoints(
             self.ckpt_dir,
             save_perm_every=self.save_perm_every,
-            max_temp=self.max_temp_checkpoints,
+            max_temp=self.max_temp_checkpoints, keep_steps=self.keep_steps,
         )
         from src.utils.working_storage import publish_checkpoint
 
-        publish_checkpoint(self.ckpt_dir, self.step, permanent_every=self.save_perm_every,
+        publish_checkpoint(self.ckpt_dir, self.step, permanent_every=self.save_perm_every, keep_steps=self.keep_steps,
                            final=self.step >= self.max_steps, stopped=bool(self._stop_requested))
         self.log.info(
             "checkpoint saved at step %d%s",

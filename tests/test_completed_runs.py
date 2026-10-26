@@ -103,3 +103,27 @@ def test_historical_completion_never_authorizes_checkpoint_resume():
 def test_current_training_fingerprint_is_unchanged_by_helper_extraction():
     assert preflight.training_implementation_fingerprint() == compat.REVIEWED_IMPLEMENTATION
     assert preflight.training_fingerprint() == preflight.training_fingerprint_for(compat.REVIEWED_IMPLEMENTATION)
+
+
+@pytest.mark.parametrize("track", ["PD", "LGD"])
+def test_previous_revision_preserves_all_27_recipes_and_only_their_exact_resume(track):
+    from src.train.checkpoint import validate_training_fingerprint
+    runs = [r for variant in ("", "_ablations")
+            for r in expand_with_seeds(load(f"config/Exp1_{track}{variant}.yaml"))]
+    assert len(runs) == 27
+    for run in runs:
+        fingerprint = preflight.training_fingerprint_for(compat.PREVIOUS_IMPLEMENTATION)
+        completed = dict(steps=12500, completed=True, datasets_seen=800000,
+                         training_fingerprint=fingerprint)
+        compat.validate_completed_training(completed, run, copy.deepcopy(run))
+        checkpoint = dict(step=250, extra={"datasets_seen": 16000},
+                          crediticl_config=copy.deepcopy(run), training_fingerprint=fingerprint)
+        validate_training_fingerprint(checkpoint, current_config=run)
+        bad = copy.deepcopy(checkpoint)
+        bad["extra"]["datasets_seen"] -= 1
+        with pytest.raises(ValueError, match="training code differs"):
+            validate_training_fingerprint(bad, current_config=run)
+        bad = copy.deepcopy(checkpoint)
+        bad["crediticl_config"]["seed"] = 99
+        with pytest.raises(ValueError, match="training code differs"):
+            validate_training_fingerprint(bad, current_config=run)

@@ -102,7 +102,7 @@ def test_the_main_benchmark_scores_both_models_and_the_reference_column():
     from src.eval.benchmark_status import n_slots, slot_for
 
     total = n_slots(2, "lgd")
-    assert total == 24 * 4 + 4
+    assert total == 48 * 8 + 4
     assert slot_for(2, "lgd", total - 1).tag == "reference_lgd_linear"
 
 

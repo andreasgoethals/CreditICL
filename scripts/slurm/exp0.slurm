@@ -56,4 +56,4 @@ echo "Log            : ${LOG}"
 nvidia-smi || true
 echo "=========================================="
 
-run_exp0_validation --phase gpu --resume
+run_exp0_validation --phase gpu --resume-if-current

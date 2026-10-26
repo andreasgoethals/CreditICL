@@ -404,7 +404,7 @@ def check_determinism(rep: Report) -> None:
 
 def check_orchestration(rep: Report) -> None:
     """The jobs resubmit themselves and `run_experiment` reads the queue: the SLURM tools must be
-    there, and the planner must plan every experiment — Exp3 refusing until Exp1 chose its mix."""
+    there, and the planner must plan every experiment — Exp3 refusing until development selection is frozen."""
     import shutil
 
     from src.utils.run_experiment import unconfigured_tracks
@@ -434,7 +434,7 @@ def check_configs(rep: Report) -> None:
         text = (ROOT / "scripts" / "slurm" / f"{script}.slurm").read_text(encoding="utf-8")
         m = re.search(r"#SBATCH --array=0-(\d+)", text)
         header[script] = int(m.group(1)) + 1 if m else None
-    for exp, variant in ((0, None), (1, None), (1, "ablations"), (2, None), (3, None)):
+    for exp, variant in ((0, None), (1, None), (1, "ablations"), (2, None), (3, None), (3, "pilots")):
         for track in ("pd", "lgd"):
             name = f"Exp{exp}_{track.upper()}{'_' + variant if variant else ''}"
             path = ROOT / "config" / f"{name}.yaml"

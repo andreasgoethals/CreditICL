@@ -349,4 +349,7 @@ def checkpoint_steps(cfg: dict[str, Any]) -> list[int]:
     final = int(tcfg["max_steps"])
     every = int(tcfg.get("save_perm_every", 0) or 0)
     kept = list(range(every, final, every)) if every > 0 else []
-    return [final] + [s for s in kept if s != final]
+    explicit = tcfg.get("keep_steps", [])
+    if any(type(s) is not int or s <= 0 or s > final for s in explicit):
+        raise ValueError("keep_steps must contain positive integers no larger than max_steps")
+    return [final] + sorted(set(kept + explicit) - {final})

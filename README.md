@@ -62,20 +62,22 @@ so imbalance there is **uncontrolled, not missing**.
 
 ## The three experiments
 
-Each experiment is one flat config, `config/Exp{1,2,3}_{PD,LGD}.yaml`, carrying an inline `prior:`
-block and a `sweep:` block that lists exactly the knobs it crosses. Full rationale in
+Each experiment has a task config, `config/Exp{1,2,3}_{PD,LGD}.yaml`, with a `sweep:` block
+listing the knobs it crosses. Exp3 inherits Exp2's prior and geometry through `prior_file`.
+Full rationale in
 [EXPERIMENTAL_DESIGN](docs/EXPERIMENTAL_DESIGN.md); every value in
 [CONFIG_REFERENCE](docs/CONFIG_REFERENCE.md).
 
 | # | question | how | arms/track |
 |---|---|---|---|
-| **0** | **Does the revised pipeline run correctly?** | CPU + GPU Slurm jobs: portable tests, CUDA/save/resume checks, full-table benchmarks and 30 long-context capacity/throughput probes | 3 training routes |
+| **0** | **Does the revised pipeline run correctly?** | CPU + GPU Slurm jobs: portable tests, CUDA/save/resume checks, full-table benchmarks, 34 long-context probes and 16 retention-method round trips | 3 base training routes |
 | **1** | **Does the prior help at matched compute?** | four mixtures × three seeds, plus five component removals × three seeds; 12,500 steps | 27 |
-| **2** | **Does continued pretraining help released models?** | TabICLv2 and TabPFN-3, four mixes × three seeds using upstream or adapted literature recipes, 10,000 steps | 24 |
-| **3** | **Does the effect persist with longer training?** | scratch TabICL, Exp1's chosen mix vs control, two seeds, 200,000 steps | 4 |
+| **2** | **Does continued pretraining transfer?** | two released backbones × four mixtures × two peak rates × three seeds, 10,000 updates | 48 |
+| **3** | **Which constraints preserve generality?** | fixed 50% mixture; no decay, L2-SP, DiagScale, Q/V LoRA; three seeds | 24 new + 6 reused; 18 pilots |
 
 Counts include seeds and both prediction tasks: **Exp1 = (4 mixtures + 5 component removals) × 3 seeds × 2 tasks = 54 runs**;
-**Exp2 = 2 released backbones × 4 mixtures × 3 seeds × 2 tasks = 48 runs**.
+**Exp2 = 2 backbones × 4 mixtures × 2 rates × 3 seeds × 2 tasks = 96 runs**.
+**Exp3 = 48 new main runs + 12 reused Exp2 baselines + 36 development-only pilots**.
 The component removals are compared with the main 50% mixture; they are not additional mixture levels.
 The 25% Exp1 extension was approved on 26-10-2026 after the initial 48-run campaign. It appends
 indices 9–11 per task, preserving existing run names and benchmark tags. Completed runs stay valid;
@@ -120,10 +122,10 @@ knowing:
   sides differ only by design, not by draw. `--prior-source generate` builds live instead.
 - **Notebooks** — twelve, in four numbered chapters ([reading order](notebooks/README.md)):
   benchmark/prior diagnostics; Experiment 1 training and matched-budget effects;
-  Experiment 2 adaptation within each backbone; and a gated Experiment 3 budget-persistence chapter.
+  Experiment 2 adaptation within each backbone; and Experiment 3 retention methods with development-only pilot selection.
   Logic lives in `src/visualize/`. Every figure is a saved A4 vector PDF with a descriptive caption.
   Final panels require complete current-protocol benchmark cells; monitoring and local file absence
-  are never presented as final efficacy or live queue state. Mixtures are selected on development;
+  are never presented as final efficacy or live queue state. Exp3 settings are selected on development;
   designated-holdout historical exposure is disclosed. Official notebook PDFs are committed.
 
 ## Repository layout
@@ -211,14 +213,14 @@ python scripts/evaluate.py --task lgd --models linear,catboost
 
 **On VSC** — validate the current code in a CPU job, then a GPU job:
 
-**While the current Exp1 benchmark is running, keep its checkout and environment frozen.**
+**While any CreditICL job is queued or running, keep its checkout and environment frozen.**
 Do not pull, update packages, reset output or use the setup commands below in that checkout
 until it finishes. The revised Exp2 needs fresh validation afterwards; completed Exp1
 checkpoints and benchmarks remain evidence for their recorded revision.
 
 ```bash
-bash scripts/slurm/update_env.sh
-python -m src.utils.fetch_ood
+source scripts/slurm/_activate_env.sh &&
+python -m src.utils.preflight &&
 sbatch --clusters=wice scripts/slurm/exp0_cpu.slurm
 # After the CPU job passes:
 python -m src.utils.preflight --require-exp0-cpu && sbatch --clusters=mindwell scripts/slurm/exp0.slurm
@@ -227,15 +229,38 @@ python -m src.utils.preflight --require-exp0
 python -m src.utils.run_experiment 1 --submit
 ```
 
-The last command includes the main grid and component ablations. Repeat it after training to
-submit only missing benchmarks; repeat after an interruption to resume incomplete runs.
+Use `update_env.sh` or `fetch_ood` only when preparing a missing environment/cache or resolving
+a prerequisite failure, before CPU validation. This implementation adds no packages. The current
+VSC dependency audit already passed; do not routinely upgrade that environment. The guarded
+pull and Exp0-only cleanup sequence is in [VSC](docs/VSC.md).
+
+After Exp1's extension and benchmarks, continue without changing the validated code:
+
+```bash
+python -m src.utils.run_experiment 2 --single-cluster --submit
+# Repeat after training to submit missing benchmarks; after the required final benchmarks:
+python -m src.experiments.selection --stage learning-rate
+python -m src.utils.run_experiment 3 --variant pilots --single-cluster --submit
+# Repeat the pilot planner after training; after all pilot development benchmarks:
+python -m src.experiments.selection --stage adapters
+python -m src.utils.run_experiment 3 --single-cluster --submit
+# Repeat the main planner after training to submit missing benchmarks.
+```
+
+Selection uses complete development folds only. Exp2 retains every mixture/rate. Exp3 freezes
+the full-model rate and adapter settings in hashed receipts; no YAML edit or retraining of the
+12 reused Exp2 baselines is needed. Its eight-checkpoint figures report credit and native OOD
+trajectories separately. See [the registered design](docs/EXPERIMENTAL_DESIGN.md).
+
+The Experiment 1 planner includes its main grid and component ablations. Repeat each experiment's
+planner after training to submit only missing benchmarks, or after an interruption to resume incomplete runs.
 The older pool-building launchers refuse submission. Experiment 0 uses selected full-row,
 full-feature tables and wide-input model probes (2,986 PD / 601 LGD columns); the complete five-fold credit/OOD benchmark runs
 in Experiments 1–3. Every eligible column is retained; the synthetic training width is not an
 inference limit. The GPU validation job requires the updated CPU job's PASS receipt first.
 
 Freeze code, configuration, dependencies and inputs from the CPU submission through GPU
-completion. The GPU script resumes the same verified campaign on resubmission; it saves every
+completion. The GPU script resumes a matching verified campaign, or starts fresh when the code/CPU receipt has changed; it saves every
 finished benchmark fold immediately and reuses completed stages. `DEFERRED` (exit 64) means the
 allocation ended: resubmit `scripts/slurm/exp0.slurm` without pulling, resetting or rerunning CPU.
 `FAILED` requires inspecting the reported error. A two-hour limit per benchmark cell stops an

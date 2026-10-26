@@ -82,9 +82,9 @@ def checkpoint_work_dir(permanent: Path) -> Path:
 
 
 def publish_checkpoint(folder: Path, step: int, *, permanent_every: int,
-                       final: bool, stopped: bool) -> None:
+                       final: bool, stopped: bool, keep_steps=()) -> None:
     marker = folder / "destination.txt"
-    if not marker.is_file() or not (final or stopped or (permanent_every > 0 and step % permanent_every == 0)):
+    if not marker.is_file() or not (final or stopped or step in keep_steps or (permanent_every > 0 and step % permanent_every == 0)):
         return
     destination = Path(marker.read_text(encoding="utf-8"))
     atomic_copy(folder / f"step-{step}.ckpt", destination / f"step-{step}.ckpt")

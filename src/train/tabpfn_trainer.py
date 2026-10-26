@@ -44,6 +44,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import math
 import signal
 import time
 import zlib
@@ -257,9 +258,8 @@ class TabPFNTrainer:
         if str(icfg.get("strategy", "full")).lower() != "full":
             raise ValueError("TabPFN-3 supports only init.strategy: full; "
                              f"init.strategy={icfg.get('strategy')!r} is not implemented")
-        if float(tcfg.get("l2sp_alpha", 0.0)) != 0.0:
-            raise ValueError("TabPFN-3 does not implement L2-SP regularization; "
-                             "train.l2sp_alpha must be 0")
+        if not math.isfinite(float(tcfg.get("l2sp_alpha", 0.0))) or float(tcfg.get("l2sp_alpha", 0.0)) < 0:
+            raise ValueError("train.l2sp_alpha must be finite and nonnegative")
 
         self.cfg = cfg
         self.task = cfg["task"]
@@ -281,6 +281,7 @@ class TabPFNTrainer:
         self.n_estimators = int(tcfg.get("n_estimators", 2))
         self.grad_clip = float(tcfg.get("gradient_clipping", 1.0))
         self.log_every = int(tcfg.get("log_every", 50))
+        self.keep_steps = tuple(int(s) for s in tcfg.get("keep_steps", ()))
         self.save_temp_every = int(tcfg.get("save_temp_every", 250))
         self.save_perm_every = int(tcfg.get("save_perm_every", 2500))
         self.max_temp_checkpoints = int(tcfg.get("max_temp_checkpoints", 2))
@@ -308,6 +309,15 @@ class TabPFNTrainer:
         # load_state_dict casts moments to the parameters' CURRENT device.
         # A later forward moves parameters but would strand those moments on CPU.
         self.model = self.est.models_[0].to(self.device)
+        from src.models.adapters import inject
+
+        self.l2sp_alpha = float(tcfg.get("l2sp_alpha", 0))
+        # Capture the RELEASED starting point before any resume, never the resumed state.
+        self._l2sp_ref = ({n: p.detach().clone() for n, p in self.model.named_parameters()}
+                          if self.l2sp_alpha else {})
+        self.adapter_report = inject(self.model, tcfg, seed=self.seed)
+        if self.adapter_report["method"] != "full":
+            self.log.info("adapter parameters: %s", self.adapter_report)
         self.model.train()
         self.est.use_autocast_ = self.amp
         n_params = sum(p.numel() for p in self.model.parameters())
@@ -317,7 +327,7 @@ class TabPFNTrainer:
         self.log.info("precision: FP32 parameters; CUDA FP16 autocast=%s; GradScaler=%s",
                       self.amp, self.amp)
         self.optimizer = build_optimizer(self.model, tcfg)
-        self.scheduler = build_scheduler(self.optimizer, tcfg, self.max_steps)
+        self.scheduler = build_scheduler(self.optimizer, tcfg, int(tcfg.get("schedule_total_steps", self.max_steps)))
         self.scaler = torch.amp.GradScaler("cuda") if self.amp else None
         self.amp_retries = 0
         self.full_precision_retries = 0
@@ -364,7 +374,13 @@ class TabPFNTrainer:
 
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-        save_tabpfn_model(self.est, tmp, additional_fields={
+        from src.models.adapters import checkpoint_fields
+
+        adapter_fields = checkpoint_fields(self.model) if getattr(self.model, "_crediticl_adapter", None) else {}
+        if adapter_fields and getattr(self.est, "znorm_space_bardist_", None) is not None:
+            adapter_fields["state_dict"].update({"criterion." + k: v for k, v in
+                                                self.est.znorm_space_bardist_.state_dict().items()})
+        save_tabpfn_model(self.est, tmp, additional_fields={**adapter_fields,
             "training_fingerprint": training_fingerprint(),
             "crediticl_run_name": self.run_name, "crediticl_step": self.step,
             "crediticl_config": self.cfg, **(extra or {})})
@@ -385,10 +401,10 @@ class TabPFNTrainer:
                       "full_precision_retries": self.full_precision_retries},
         })
         removed = prune_checkpoints(self.ckpt_dir, save_perm_every=self.save_perm_every,
-                                    max_temp=self.max_temp_checkpoints)
+                                    max_temp=self.max_temp_checkpoints, keep_steps=self.keep_steps)
         from src.utils.working_storage import publish_checkpoint
 
-        publish_checkpoint(self.ckpt_dir, self.step, permanent_every=self.save_perm_every,
+        publish_checkpoint(self.ckpt_dir, self.step, permanent_every=self.save_perm_every, keep_steps=self.keep_steps,
                            final=self.step >= self.max_steps, stopped=bool(self._stop_requested))
         self.log.info("checkpoint saved at step %d -> %s%s", self.step, path.name,
                       f" (pruned {len(removed)} old temp checkpoints)" if removed else "")
@@ -411,7 +427,7 @@ class TabPFNTrainer:
         if old_steps is not None and int(old_steps) != self.max_steps:
             self.log.warning("max_steps CHANGED on resume: %s -> %s; the schedule is rebuilt",
                              old_steps, self.max_steps)
-        state = {k: v for k, v in payload["state_dict"].items() if not k.startswith("criterion.")}
+        state = {k: v for k, v in payload.get("crediticl_training_state", payload["state_dict"]).items() if not k.startswith("criterion.")}
         missing, unexpected = self.model.load_state_dict(state, strict=False)
         if unexpected or missing:
             raise RuntimeError(f"{path}: state dict mismatch (missing {len(missing)}, "
@@ -562,6 +578,19 @@ class TabPFNTrainer:
             except BaseException:
                 self.optimizer.zero_grad(set_to_none=True)
                 raise
+        penalty = 0.0
+        if self.l2sp_alpha:
+            with torch.no_grad():
+                for name, parameter in self.model.named_parameters():
+                    if parameter.requires_grad:
+                        difference = parameter.float() - self._l2sp_ref[name].float()
+                        penalty += float(difference.square().sum()) * (self.l2sp_alpha / 2)
+                        if parameter.grad is None:
+                            parameter.grad = (difference * self.l2sp_alpha).to(parameter.dtype)
+                        else:
+                            parameter.grad.add_(difference, alpha=self.l2sp_alpha)
+            if not math.isfinite(penalty):
+                raise FloatingPointError("non-finite L2-SP penalty")
         if self.telemetry.due_grad(self.step + 1):
             row = self.telemetry.sample_grads(self.model)
             row.update({"step": self.step + 1, "datasets_seen": self.datasets_seen + len(prepared), "kind": "grad"})
@@ -580,7 +609,7 @@ class TabPFNTrainer:
         self.optimizer.zero_grad(set_to_none=True)
         self.scheduler.step()
         self.datasets_seen += len(prepared)
-        return {"loss": total / len(usable), "tasks": float(len(usable)), "amp_retries": float(retries),
+        return {"loss": total / len(usable), "l2sp_penalty": penalty, "tasks": float(len(usable)), "amp_retries": float(retries),
                 "full_precision_retry": float(full_precision)}
 
     # -- the loop --------------------------------------------------------------------------
@@ -669,7 +698,7 @@ class TabPFNTrainer:
                 prog_sum, prog_n = 0.0, 0
                 self.model.train()
             is_temp = self.save_temp_every > 0 and self.step % self.save_temp_every == 0
-            is_perm = self.save_perm_every > 0 and self.step % self.save_perm_every == 0
+            is_perm = self.step in self.keep_steps or (self.save_perm_every > 0 and self.step % self.save_perm_every == 0)
             if is_temp or is_perm or self.step == self.max_steps or self._stop_requested:
                 self._save()
             if self._stop_requested:
@@ -687,6 +716,7 @@ class TabPFNTrainer:
             "elapsed_s": round(time.time() - started, 1),
             "train_seconds_total": round(self._train_seconds(), 1), "resumed_at": self.resumed_at,
             "architecture": "tabpfn3", "released_weights": str(self.weights_path),
+            "adaptation": self.adapter_report,
         }
         self.log.info("finished: %s", json.dumps(summary))
         if self.telemetry.enabled:

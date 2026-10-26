@@ -1,0 +1,8 @@
+[
+  {
+    "index": 1,
+    "stem": "01_registered_continuation_design",
+    "name": "registered_continuation_design",
+    "caption": "Registered continuation design: two released backbones, two prediction tasks, four credit-prior mixtures, two learning rates per backbone and three training seeds; eight checkpoint evaluations use full eligible tables and shared five-fold splits."
+  }
+]

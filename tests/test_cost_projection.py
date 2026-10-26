@@ -22,16 +22,15 @@ def test_current_exp2_reports_unknown_long_context_cost_and_only_tabpfn_subtotal
 
     assert f"Exp2 {track} TabICL: GPU-hours unknown" in text
     assert "single capacity-test update is not a reliable campaign estimate" in text
-    assert f"Exp2 {track} TabPFN: 12 runs, about 166.7 GPU-h (short-run extrapolation; subtotal only)" in text
+    assert f"Exp2 {track} TabPFN: 24 runs, about 333.3 GPU-h (short-run extrapolation; subtotal only)" in text
     assert f"Exp2 {track} total: unknown" in text
-    assert "24 runs, about" not in text
-    assert "TabICL: 12 runs, about" not in text
+    assert "48 runs, about" not in text
+    assert "TabICL: 24 runs, about" not in text
 
 
 @pytest.mark.parametrize("exp,variant,count,hours", [
     (1, "", 12, "83.3"),
     (1, "_ablations", 15, "104.2"),
-    (3, "", 4, "444.4"),
 ])
 def test_compatible_scratch_route_projection_is_unchanged(exp, variant, count, hours, capsys):
     runs = expand_with_seeds(load(f"config/Exp{exp}_PD{variant}.yaml", allow_placeholders=True))
@@ -62,8 +61,16 @@ def test_legacy_report_cannot_project_long_context_from_complete_short_routes(ca
     for track in ("pd", "lgd"):
         assert f"Exp2 {track} finetune_tabicl: GPU-hours unknown" in text
         assert f"Exp2 {track} finetune_tabpfn3" in text
-    assert "Exp2 TabPFN subtotal only: ~100 GPU-h" in text
+    assert "Exp2 TabPFN subtotal only: ~267 GPU-h" in text
     assert "Exp2 total: unknown" in text
     assert "Exp2 total: ~" not in text
-    assert "Exp1 total: ~125 GPU-h" in text
-    assert "Exp3 total: ~889 GPU-h" in text
+    assert "Exp1 total: ~167 GPU-h" in text
+    assert "Exp3 total: unknown" in text
+
+
+def test_retention_does_not_reuse_from_scratch_timing(capsys):
+    runs = expand_with_seeds(load("config/Exp3_PD.yaml", allow_placeholders=True))
+    _print_training_costs(3, "", "pd", runs, _summaries())
+    text = capsys.readouterr().out
+    assert "24 new runs; GPU-hours unknown" in text
+    assert "about" not in text

@@ -16,7 +16,7 @@ from uuid import uuid4
 import pandas as pd
 from filelock import FileLock
 
-from src.utils.atomic_output import write_csv
+from src.utils.atomic_output import replace_complete, write_csv
 from src.utils.logging_setup import get_logger
 
 DEADLINE_ENV = "CREDITICL_EVAL_DEADLINE"
@@ -39,7 +39,7 @@ def atomic_json(path, data):
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(tmp, path)
+        replace_complete(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
 

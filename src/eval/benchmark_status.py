@@ -210,10 +210,10 @@ def request(exp: int, track: str, index: int, seeds: tuple[int, ...] = (0,), n_f
     models = [slot.model]
     kind = "regression" if track == "lgd" else "classification"
     credit = sorted(set(cfg["eval"]["dev_datasets"] + cfg["eval"]["holdout_datasets"]))
-    ood = sorted(d.name for d in list_ood_datasets(kind))
+    ood = sorted(d.name for d in list_ood_datasets(kind)) if cfg["eval"].get("include_ood", True) else []
     if not credit or not set(credit).issubset(list_datasets(track)):
         raise ValueError("Not all configured credit datasets are available")
-    if len(ood) < N_PER_TASK:
+    if cfg["eval"].get("include_ood", True) and len(ood) < N_PER_TASK:
         raise ValueError(f"OOD cache needs at least {N_PER_TASK} {kind} datasets")
     if exp == 0:
         credit, ood = diagnostic_datasets(track)
@@ -224,6 +224,8 @@ def request(exp: int, track: str, index: int, seeds: tuple[int, ...] = (0,), n_f
         ROOT / "src/data/pipeline.py", ROOT / "src/data/dataset_preprocessing.py",
         ROOT / "pyproject.toml",
     ]
+    if cfg.get("design") in {"retention", "retention_pilot"}:
+        sources.append(ROOT / "src/models/adapters.py")
     code = {p.relative_to(ROOT).as_posix(): digest(p) for p in sorted(sources)}
     data = {"protocol": PROTOCOL, "track": track, "kind": kind, "models": models,
             "seeds": list(seeds), "n_folds": n_folds, "credit": credit, "ood": ood,
@@ -273,6 +275,8 @@ def request(exp: int, track: str, index: int, seeds: tuple[int, ...] = (0,), n_f
                     checkpoint_sha256=input_digest(checkpoint))
     files = {"credit": paths.benchmark_dir_for(slot.tag, track) / f"results_{slot.tag}.csv",
              "ood": paths.benchmark_dir_for(slot.tag, "ood") / f"ood_results_{slot.tag}.csv"}
+    if not cfg["eval"].get("include_ood", True):
+        files.pop("ood")
     return slot.tag, data, files
 
 

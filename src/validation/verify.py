@@ -227,8 +227,8 @@ def _long_context_cost_notice(label: str) -> None:
 def _print_legacy_training_costs(speeds: dict, sizes: dict) -> None:
     """Keep historical route estimates from becoming a false long-context campaign ETA."""
     # (experiment, arm kind in Exp0, steps, arms per track, kept checkpoints per arm)
-    plan = [("Exp1", "scratch_tabicl", 12_500, 9, 5 + 2), ("Exp2", "finetune_tabicl", 10_000, 9, 4 + 2),
-            ("Exp2", "finetune_tabpfn3", 10_000, 9, 4 + 2), ("Exp3", "scratch_tabicl", 200_000, 4, 8 + 2)]
+    plan = [("Exp1", "scratch_tabicl", 12_500, 12, 5 + 2), ("Exp2", "finetune_tabicl", 10_000, 24, 8 + 2),
+            ("Exp2", "finetune_tabpfn3", 10_000, 24, 8 + 2)]
     totals: dict[str, list[float]] = {}
     for exp, arm, steps, arms_per_track, kept in plan:
         for track in ("pd", "lgd"):
@@ -249,10 +249,15 @@ def _print_legacy_training_costs(speeds: dict, sizes: dict) -> None:
         label = "TabPFN subtotal only" if exp == "Exp2" else "total"
         print(f"  {exp} {label}: ~{hours:,.0f} GPU-h of training, ~{gb:.0f} GB of checkpoints on project storage")
     print("  Exp2 total: unknown until representative TabICL long-context throughput is measured.")
+    print("  Exp3 total: unknown; retention treatments replaced the former long scratch experiment.")
 
 
 def _print_training_costs(exp: int, variant: str, track: str, runs: list[dict], summaries: dict) -> None:
     """Extrapolate compatible short routes, with an explicit gap for long-context TabICL."""
+    if exp == 3:
+        print(f"  Exp3{variant} {track}: {len(runs)} new runs; GPU-hours unknown. "
+              "Retention-method throughput must be measured separately; scratch timings do not apply.")
+        return
     if exp == 2:
         groups = [("TabICL", [r for r in runs if r["architecture"] != "tabpfn3"]),
                   ("TabPFN", [r for r in runs if r["architecture"] == "tabpfn3"])]

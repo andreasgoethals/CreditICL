@@ -445,9 +445,10 @@ class WeightTracker:
             return
         try:
             import torch
+            from src.models.adapters import measured_parameters
 
             with torch.no_grad():
-                self._init = {n: p.detach().float().clone() for n, p in model.named_parameters()}
+                self._init = {n: p.detach().float().clone() for n, p in measured_parameters(model)}
             self._prev = {n: t.clone() for n, t in self._init.items()}
         except Exception as exc:  # noqa: BLE001 — never fatal
             log.debug("weight snapshot failed: %s", exc)
@@ -467,11 +468,12 @@ class WeightTracker:
             return {}
         try:
             import torch
+            from src.models.adapters import measured_parameters
 
             sq: dict[str, dict[str, float]] = {}
             current: dict[str, Any] = {}
             with torch.no_grad():
-                for name, param in model.named_parameters():
+                for name, param in measured_parameters(model):
                     w0 = self._init.get(name)
                     if w0 is None or w0.shape != param.shape:
                         continue

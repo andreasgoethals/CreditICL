@@ -44,7 +44,7 @@ def test_l2sp_needs_a_starting_point(lgd_cfg, tmp_path):
 
 def test_a_negative_alpha_is_rejected(lgd_cfg, tmp_path):
     """A negative alpha would push the weights AWAY from where they started."""
-    with pytest.raises(ValueError, match="must be >= 0"):
+    with pytest.raises(ValueError, match="finite and >= 0"):
         _trainer(lgd_cfg, tmp_path, l2sp_alpha=-1.0)
 
 

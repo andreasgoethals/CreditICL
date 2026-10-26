@@ -137,6 +137,8 @@ def tabpfn_checkpoint_identity(path: str | Path) -> dict[str, Any]:
         if payload.get("crediticl_run_name") is not None:
             ident = {"run_name": payload["crediticl_run_name"],
                      "checkpoint_step": int(payload.get("crediticl_step", -1))}
+        if payload.get("crediticl_adapter"):
+            ident["adaptation"] = payload["crediticl_adapter"]["method"]
         _IDENTITY_CACHE[key] = ident
     return dict(_IDENTITY_CACHE[key])
 
@@ -479,6 +481,11 @@ class TabPFNBaseline(_TFMBaseline):
         self.report.extra["weights_source"] = "given checkpoint" if given else "local file"
         if given:
             self.report.extra.update(tabpfn_checkpoint_identity(given))
+        if self.report.extra.get("adaptation") == "diagscale":
+            from src.models.adapters import inference_class
+
+            TabPFNClassifier = inference_class(TabPFNClassifier)
+            TabPFNRegressor = inference_class(TabPFNRegressor)
         common = dict(
             model_path=str(local_input(version)),
             device=device,
@@ -582,11 +589,17 @@ class TabICLBaseline(_TFMBaseline):
         if self.task == "pd":
             from tabicl import TabICLClassifier
 
+            if getattr(self, "_crediticl_adapter", "full") == "diagscale":
+                from src.models.adapters import inference_class
+                TabICLClassifier = inference_class(TabICLClassifier)
             self._model = TabICLClassifier(device=device, random_state=self.seed, **extra)
             self._model.fit(X, y.astype(int))
         else:
             from tabicl import TabICLRegressor
 
+            if getattr(self, "_crediticl_adapter", "full") == "diagscale":
+                from src.models.adapters import inference_class
+                TabICLRegressor = inference_class(TabICLRegressor)
             self._model = TabICLRegressor(device=device, random_state=self.seed, **extra)
             self._model.fit(X, y)
         install(self._model)

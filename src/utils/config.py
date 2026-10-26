@@ -55,6 +55,7 @@ NO_EXPAND_EXACT: frozenset[str] = frozenset(
         "holdout_datasets",  # the frozen holdout split
         "metrics",  # a list of metrics to compute, all of them, in one run
         "betas",  # optimizer (beta1, beta2)
+        "keep_steps",  # explicit permanent checkpoint milestones
         "context_caps",  # the capped-context evaluations, all of them, beside the full one
     }
 )
@@ -107,13 +108,10 @@ def load_yaml(path: str | Path) -> dict[str, Any]:
     return data
 
 
-#: What an unfilled Exp3 config still contains. Exp1 chooses a nonzero credit prior
-#: setting, and until it has run there is nothing to put in these slots. A YAML default
-#: would be worse than a hole: it would submit, run for hours, and quietly measure the
-#: wrong arm.
+#: Historical template sentinel. Keep rejecting it in older user configs;
+#: the current fixed-mixture Exp3 instead requires frozen development receipts.
 PLACEHOLDER = "FILL_FROM_EXP1"
-#: Every placeholder a template may hold: Exp3's development-selected mix. Experiment 2 has
-#: none: it compares all four mixtures with fixed literature-derived training recipes.
+#: Current runnable configs contain none of these legacy placeholders.
 PLACEHOLDERS = (PLACEHOLDER,)
 
 
@@ -182,6 +180,13 @@ def load(path: str | Path, *, allow_placeholders: bool = False) -> dict[str, Any
                 f"chosen value. Refusing to expand it, because a config that runs with a "
                 f"placeholder wastes GPU-hours measuring nothing."
             )
+    if cfg.get("design") in {"retention", "retention_pilot"}:
+        from src.experiments.selection import load_selection
+
+        selection = load_selection(cfg["design"], optional=allow_placeholders, for_analysis=allow_placeholders)
+        if selection is not None:
+            cfg["_selection"] = selection
+            cfg["selection_provenance"] = selection["receipt_digest"]
     return apply_sweep_block(cfg)
 
 
@@ -317,11 +322,19 @@ def expand_grid(cfg: dict[str, Any]) -> list[dict[str, Any]]:
     # run — for arms that are not a cross product (Experiment 2: Muon exists for TabICL, not for
     # TabPFN). Held out of the axis walk, then applied per run after the sweep values.
     presets = cfg.pop("arms", None)
+    selection = cfg.pop("_selection", None)
+
+    def resolved(run):
+        run = apply_arm_preset(run, presets)
+        if run.get("design"):
+            from src.experiments.design import apply_design
+            run = apply_design(run, selection)
+        return run
     axes = sweep_axes(cfg)
     if not axes:
         out = copy.deepcopy(cfg)
         out["_grid"] = {"index": 0, "total": 1, "assignments": {}, "tag": "base", "hash": _hash({})}
-        return [apply_arm_preset(out, presets)]
+        return [resolved(out)]
 
     paths = [p for p, _ in axes]
     value_lists = [v for _, v in axes]
@@ -341,7 +354,7 @@ def expand_grid(cfg: dict[str, Any]) -> list[dict[str, Any]]:
             "tag": grid_tag(assignments),
             "hash": _hash(assignments),
         }
-        expanded.append(apply_arm_preset(out, presets))
+        expanded.append(resolved(out))
     return expanded
 
 
@@ -419,9 +432,8 @@ def effective_fingerprint(run: dict[str, Any]) -> str:
     for key in ("_grid", "_run_name"):
         probe.pop(key, None)
     prior = probe.get("prior") or {}
-    # A TEMPLATE MUST NOT CRASH THE DEDUPER. Exp3 ships with `FILL_FROM_EXP1` where
-    # its selected mixture goes, and `float()` on that raised — so `--list` was unusable on exactly
-    # the configs a person is most likely to be inspecting. An unresolvable value cannot be
+    # Legacy templates used `FILL_FROM_EXP1`; `float()` on it broke --list.
+    # An unresolvable value cannot be
     # compared to 0.0, so it is treated as "not the control" and nothing is collapsed.
     try:
         is_control = float(prior.get("credit_fraction", 0.0)) == 0.0

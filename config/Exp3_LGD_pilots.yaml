@@ -1,0 +1,24 @@
+# Development-only pilots; each is the first 2,500 updates of a 10,000-update schedule.
+prior_file: Exp2_LGD.yaml
+experiment: exp3pilots_lgd
+design: retention_pilot
+lr_index: 0
+prior:
+  credit_fraction: 0.5
+sweep:
+  arm: [tabicl, tabpfn3]
+  method: [l2sp, diagscale, lora]
+  candidate: [0, 1, 2]
+  seeds: [991]
+train:
+  max_steps: 2500
+  keep_steps: [2500]
+  save_perm_every: 2500
+progress:
+  n_ood: 0
+  every_datasets: 0
+  # Pilot selection uses the complete development benchmark, never monitoring subsets.
+eval:
+  holdout_datasets: []
+  include_reference_slots: false
+  include_ood: false

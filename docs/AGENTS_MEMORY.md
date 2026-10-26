@@ -1,5 +1,80 @@
 # Agents' memory — runs and dead ends
 
+## 26-10-2026 — GPU continuation refusal and approved Exp2/Exp3 implementation
+
+New evidence supersedes the earlier submission-only entry below: Downloads `output CreditICL.zip`
+(26,856,748 bytes, SHA256 `b64ae347e49e68b14a371292233c6650d6d2c8d925b8cf004ef306cf7c8dcc53`)
+and Andreas's scheduler output show GPU **11739875 FAILED 1:0 after 00:00:29**.
+CPU **62431090 PASS** includes 1,876 tests, no failures, one skip. The GPU loaded packages and
+then refused to resume the stale 21-10 campaign; it did not reach training or benchmarking.
+The archive still contains 48 completed Exp1 summaries, 12,500 steps each, and no completed
+25% extension. Checkpoint bytes and current remote job state were not independently read.
+
+Tried: submitting the current GPU wrapper after current CPU validation.
+Result: `Experiment 0 continuation REFUSED: Code/config/tests/packages changed`.
+Why: unconditional `--resume` selected an old GPU receipt instead of starting a new campaign.
+Instead: `--resume-if-current` resumes only matching campaigns, otherwise creates a new isolated
+campaign. Explicit `--resume` remains strict; matching failed stages still need correction.
+
+User now authorizes implementation. Exp2 = 96 runs (2 models × 2 tasks × 4 mixtures × 2 rates ×
+3 seeds), 10k updates, permanent steps 125/250/500/1k/2.5k/5k/7.5k/10k. Exp3 fixes 50% credit:
+36 development-only 2,500-update pilots (10k-schedule prefix), then 48 new 10k runs and 12 reused
+Exp2 full-CPT baselines. Methods are no weight decay, L2-SP, query-only DiagScale and rank-16 Q/V
+LoRA. Frozen hashed receipts choose rates/strengths using development only, without editing YAML.
+Native OOD is evaluated unchanged; multiclass tasks retain their native labels.
+
+Exp1 configs remain unchanged. Compatibility is bounded to the reviewed original completed
+48-run source and previous `19a76cc` source/recipes/dependencies; only the latter admits exact
+partial-run resume. Do not widen these exceptions or reset Experiment 1 output. All six 25%
+extension identities remain append-only. Fresh Exp0 CPU and GPU validation is required.
+TFM pin `702d9ab0b66f6639ba8d443ff9c4a91231964465`; VSC pin
+`3bcdf55e576d10161d6189b40ac39380bbba9eca`. Both submodules remain unmodified.
+
+Final portable suite: **1,928 passed, 32 VSC-only skipped**, 1,013.12 seconds. The 16
+released-weight method/task/backbone CPU stop/resume/prediction probes also passed; all four
+L2-SP routes were repeated after checking unused-parameter regularization. These do not certify
+CUDA precision or long-table capacity. The launch recipe uses `--single-cluster` for Exp2/Exp3
+so new runs stay on the Mindwell B200 allocation tested by Exp0. Reviewed executable source:
+`4b31d59be2048f41f894db9a26c49919f759e65e9fdfae4305dd52e27ae164d0`.
+All 12 notebooks executed successfully and saved 40 PDFs, captions and section-ordered printed
+summaries. Every final PDF was rendered and pixel-identical to its visually reviewed version;
+the three design figures and LGD endpoint-tie panel were inspected again. Nonempty future
+result layouts were checked with explicit test fixtures, never published as research results.
+
+Tried: the old configuration/plot assertions after replacing long-scratch Exp3 and expanding Exp2.
+Result: the first complete suite exposed obsolete grid counts, placeholder assumptions and notebook names.
+Why: tests still encoded the retired design; one new caption also missed the descriptive-caption rule.
+Instead: retain the scientific safeguards, update the expected design, make the caption concrete,
+and rerun the complete suite after the focused checks.
+
+Tried: repeating all notebooks while the full suite and native model probes were running on Windows.
+Result: one spawned LGD-plot worker raised WinError 6 and BrokenProcessPool; 11/12 notebooks completed.
+Why: a multiprocessing handle failed; concurrent runs were present, but the exact OS cause is not established.
+Instead: perform the final notebook run and full test suite sequentially and inspect the regenerated PDFs.
+
+Tried: the full suite after successful sequential execution of all 12 notebooks.
+Result: 1,922 tests passed; one benchmark-resume test hit Windows access denied during atomic JSON replacement.
+Why: Windows denied replacing the existing file; sharing contention is likely, but no locking process was identified. The previous complete file survived.
+Instead: use bounded retries for Windows sharing errors in JSON/CSV publication, test transient and
+permanent failures explicitly, and rerun verification. This is not a reported VSC training failure.
+
+## 26-10-2026 — current Exp0 CPU pass and GPU submission
+
+Evidence: terminal attachment `5dd82437-9175-46aa-92be-9fb495f153b4/Pasted text.txt`.
+The pull reached `19a76cc`; source fingerprint
+`264c70dd8f5aff5acd72776366520de3765cf0a51383f9c761c8f8aef1eed5a0` was checked.
+
+| Job | Configuration | Observed outcome | Headline |
+|---|---|---|---|
+| 62431090, wICE | `scripts/slurm/exp0_cpu.slurm` | CPU gate PASS | Receipt `cpu_20261026T141139Z_j62431090_fbb2a984`; all stages/artifacts current |
+| 11739875, Mindwell | `scripts/slurm/exp0.slurm` | Submitted | No GPU completion result in this transcript |
+
+The 48 local Exp1 summaries still report completed 12,500-step runs. The six-run quarter-mixture
+extension must wait for the current GPU gate. This evidence does not validate the proposed second
+Exp2 learning rates, early checkpoint schedule or replacement Exp3 methods, which are not implemented.
+The user explicitly retained design/review-only scope. Targeted compatibility/training-contract checks:
+129 passed. No runnable code, output or environment changed. Full run details are in `RUNS.md`.
+
 ## 26-10-2026 — completed Exp1 provenance during the extension
 
 The reattached `exp0_gpu_20261026_083258_j11737746.log` confirms the already-recorded

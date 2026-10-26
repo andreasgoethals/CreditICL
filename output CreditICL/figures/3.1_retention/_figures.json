@@ -1,0 +1,8 @@
+[
+  {
+    "index": 1,
+    "stem": "01_registered_retention_design",
+    "name": "registered_retention_design",
+    "caption": "Number of runs and retained checkpoints in the 50% credit retention design: four additional methods across both backbones and tasks, three main seeds, 36 development-only pilots and 12 reused full-CPT baselines from Experiment 2."
+  }
+]

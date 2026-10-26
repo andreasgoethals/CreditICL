@@ -46,10 +46,10 @@ def coverage(track: str, exp: str = "exp1", *, components: bool = False) -> pd.D
         label = (COMPONENTS[run["arm"]] if run.get("arm") in COMPONENTS
                  else style.prior_mix_label(run["prior"]["credit_fraction"]))
         if exp == "exp2" and not components:
-            label = ("TabPFN-3" if "tabpfn3" in run["_run_name"] else "TabICLv2") + " · " + label
+            label = ("TabPFN-3" if "tabpfn3" in run["_run_name"] else "TabICLv2") + " · " + label + f" · LR {run['train']['lr']:g}"
         rows.append({"run": run["_run_name"], "seed": run["seed"],
                      "label": label, "credit_fraction": float(run["prior"]["credit_fraction"]),
-                     "architecture": str(run.get("architecture", "tabicl")),
+                     "architecture": str(run.get("architecture", "tabicl")), "lr_index": run.get("lr_index", 0),
                      "state": "completed" if complete else "partial" if folder.is_dir() else "absent",
                      "steps": steps, "budget": run["train"]["max_steps"]})
     frame = pd.DataFrame(rows)
@@ -92,8 +92,12 @@ def component_coverage(track: str):
     return _coverage_map(frame, "Conditional component-run coverage")
 
 
-def main_coverage(track: str, exp: str = "exp1"):
-    return _coverage_map(coverage(track, exp), "Main-run coverage in local records")
+def main_coverage(track: str, exp: str = "exp1", *, backbone=None):
+    frame = coverage(track, exp)
+    if backbone is not None:
+        frame = frame[frame.architecture.eq(backbone)].copy()
+        frame["label"] = frame.label.str.split(" · ", n=1).str[-1]
+    return _coverage_map(frame, "Main-run coverage in local records" + (f" · {backbone}" if backbone else ""))
 
 
 def _coverage_map(frame, title):
@@ -166,7 +170,8 @@ def continuation_recipe(track: str) -> pd.DataFrame:
         mean = lo if lo == hi else ((hi-lo)/math.log(hi/lo) if law == "log_uniform" else (lo+hi)/2)
         tasks = t["max_steps"] * t["batch_size"]
         rows.append({"Backbone": "TabICLv2" if architecture == "tabicl" else "TabPFN-3",
-                     "Runs per track": len(selected), "Tables per run": f"{tasks:,}",
+                     "Runs per track": len(selected), "Peak LRs": ", ".join(f"{lr:g}" for lr in sorted({r["train"]["lr"] for r in selected}, reverse=True)),
+                     "Weight decay": t["weight_decay"], "Updates": t["max_steps"], "Tables per run": f"{tasks:,}",
                      "Rows per table": f"{lo:,}" if lo == hi else f"{lo:,}–{hi:,} ({law.replace('_', '-')})",
                      "Context share": "–".join(f"{v:.0%}" for v in p["train_frac_range"]),
                      "Expected row exposures": f"{tasks*mean/1e6:,.1f} million"})

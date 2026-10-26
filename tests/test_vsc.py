@@ -32,6 +32,18 @@ def test_cuda_stack_executes_and_backpropagates():
     assert torch.isfinite(loss) and torch.isfinite(x.grad).all()
 
 
+@pytest.mark.parametrize("method", ["lora", "diagscale"])
+def test_adapter_initialisation_preserves_cpu_and_cuda_random_streams(method):
+    from test_adapters import tiny_model
+    from src.models.adapters import inject
+    model = tiny_model("tabicl", "pd").cuda()
+    cpu = torch.get_rng_state().clone()
+    cuda = [s.clone() for s in torch.cuda.get_rng_state_all()]
+    inject(model, {"adaptation": method}, seed=777)
+    assert torch.equal(cpu, torch.get_rng_state())
+    assert all(torch.equal(a, b) for a, b in zip(cuda, torch.cuda.get_rng_state_all()))
+
+
 @pytest.mark.parametrize("amp", [False, True])
 def test_tabpfn_nested_training_precision(monkeypatch, amp):
     from test_exp2_precision import assert_task_precision

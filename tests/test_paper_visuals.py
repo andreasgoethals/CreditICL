@@ -117,6 +117,26 @@ def test_released_comparators_remain_separate_within_backbones(monkeypatch):
     assert "TabPFN-3" in paper.label("exp2_pd__arm=tabpfn3__prior-credit_fraction=0p5")
 
 
+def test_two_rate_frontier_uses_unambiguous_shared_marker_legend(monkeypatch):
+    rows = []
+    for model in ("tabicl", "tabpfn3"):
+        for rate in (0, 1):
+            for fraction in (0, .25, .5, 1):
+                tag = str(fraction).replace(".", "p")
+                name = f"exp2_pd__arm={model}__lr_index={rate}__prior-credit_fraction={tag}"
+                rows += _cells(name, .65+.03*fraction+.01*rate)
+    table = pd.DataFrame(rows)
+    monkeypatch.setattr(paper, "final_credit", lambda *a: table)
+    monkeypatch.setattr(paper.analysis, "load_ood_results", lambda *a: table)
+    fig = paper.retention_frontier("pd", "exp2")
+    fig.canvas.draw()
+    labels = [text.get_text() for text in fig.legends[0].texts]
+    assert len(labels) == 5
+    assert labels[-2:] == ["Higher peak LR", "Lower peak LR"]
+    assert "2e-05 / 1e-05" in fig.axes[0].get_title(loc="left")
+    assert "1e-05 / 1e-06" in fig.axes[1].get_title(loc="left")
+
+
 def test_endpoint_panel_omits_point_only_models(monkeypatch, final_tables):
     extra = pd.DataFrame(_cells("linear", .5))
     extra[["pred_mass_at_0", "pred_mass_at_1"]] = np.nan
@@ -185,11 +205,13 @@ def test_local_coverage_distinguishes_partial_absent_complete(tmp_path, monkeypa
     assert "not a live scheduler" in campaign.provenance("pd")
 
 
-def test_budget_template_never_selects_mixture_or_infers_gain():
-    assert not paper.budget_selected("pd") and not paper.budget_selected("lgd")
-    fig = paper.budget_gain("pd")
-    assert not fig.axes[0].has_data()
-    assert "awaits" in fig.axes[0].texts[1].get_text()
+def test_retention_design_does_not_present_hypothetical_outcomes():
+    from src.visualize.continuation import design_figure
+    fig = design_figure(3)
+    assert not any(ax.has_data() for ax in fig.axes)
+    text = ' '.join(t.get_text() for ax in fig.axes for t in ax.texts)
+    assert '48 additional main runs' in text and '36 development-only pilots' in text
+    assert 'not results' in fig._suptitle.get_text()
 
 
 def test_unfiltered_difficulty_has_no_dormant_banded_overlay_or_clipped_scores():
@@ -217,21 +239,6 @@ def test_feature_inventory_counts_policy_without_certifying_timing():
     assert counts.excluded.iloc[0] >= 1
     assert "not independently certified" in counts.timing_status.iloc[0]
     assert "recoveries" in set(excluded.source_column)
-
-
-def test_budget_gain_uses_common_updates_without_extrapolating(monkeypatch):
-    from src.visualize import training_plots as tp
-    monkeypatch.setattr(paper, "budget_selected", lambda *a: True)
-    control = "exp3_pd__prior-credit_fraction=0__s0"
-    treatment = "exp3_pd__prior-credit_fraction=0p5__s0"
-    a = pd.DataFrame({"step": [100, 200], "real__gmsc__roc_auc": [.6, .7]})
-    b = pd.DataFrame({"step": [100, 200, 300], "real__gmsc__roc_auc": [.65, .75, .8]})
-    monkeypatch.setattr(tp, "load_progress", lambda *args: {control: a, treatment: b})
-    fig = paper.budget_gain("pd")
-    paired = next(line for line in fig.axes[0].lines if line.get_label() == "paired seed 0")
-    assert list(paired.get_xdata()) == [6400, 12800]
-    assert paired.get_ydata() == pytest.approx([.05, .05])
-    assert any(12_800_000 in line.get_xdata() for line in fig.axes[0].lines)
 
 
 def test_exp2_endpoint_panels_do_not_pool_backbones(monkeypatch):

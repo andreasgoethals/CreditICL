@@ -164,8 +164,7 @@ python -m src.utils.run_experiment 1 --submit   # submit whatever is ready
 ```
 
 The experiment number is required (never a default) and printed at the top, so "Exp1 or Exp2?" is
-answered on the page. `run_experiment 3` refuses to run while its config still holds the
-placeholder `FILL_FROM_EXP1` (Experiment 1's mix). Guarantees, each tested: benchmark cannot start before training finishes; a drain
+answered on the page. `run_experiment 3` refuses missing or stale development-selection receipts. Guarantees, each tested: benchmark cannot start before training finishes; a drain
 costs only what was pending; a re-run never doubles a queued job (matched on the Slurm job name); a
 unavailable `squeue` blocks submission until the queue can be checked, preventing duplicate jobs.
 
@@ -293,30 +292,30 @@ Completed Exp1 training on B200, batch 64 and micro-batch 4, with explicit proje
 | one Exp1 arm, 12,500 steps | **6.43–7.38 training GPU-h**, measured in the completed 24-10-2026 snapshot |
 | **Completed original Exp1, 24 arms/track (9 main + 15 component)** | **323.616 recorded training GPU-h** for all 48 completed arms, excluding startup and benchmarks; see [RUNS, 24-10-2026](RUNS.md#24-10-2026--exp1-training-complete--all-48-runs-successful) |
 | **Exp1 extension approved 26-10-2026: 3 more arms/track** | 25% credit, three seeds, indices 9–11; six additional runs make 54 total. Earlier per-arm timings imply roughly 39–44 training GPU-h, excluding queue, startup and benchmarking. Preserve the completed runs. |
-| one Exp3 arm, 200,000 steps | approximately 103–118 training GPU-h by linear extrapolation from Exp1; eight arms total ≈ 823–945 GPU-h, before overhead and benchmarks; requires a measured long-run cost check |
+| Exp2 / current Exp3 | Runtime remains to be measured on the validated long-context/adapter paths; do not extrapolate fixed 1,024-row Exp1 throughput. The old 200k scratch Exp3 is abandoned. |
 | TabICLv2's own full pretraining | 24.5 GPU-days per model (the paper's figure) |
 
 The revised configurations generate tasks live in every experiment. Exp1 uses 12,500 updates,
-2.5% of upstream's 500k-step first stage; Exp3 increases updates while retaining 1,024-row tasks.
+2.5% of upstream's 500k-step first stage; Exp2/3 adapt released weights for 10k updates.
 Neither reproduces upstream's complete curriculum. Exp1 times describe its frozen completed
-campaign; the Exp3 extrapolation is not a measured long run. Wall-clock completion also depends
+campaign; they do not measure the new Exp2/Exp3 recipes. Wall-clock completion also depends
 on queue delays and concurrent allocations, and benchmarks add their own runtime.
 
-For Experiment 2 (measured in Experiment 0 before it is committed): 24 arms per track (2 models × 4
-mixes × 3 seeds), 10,000 steps each, using upstream TabICL and an adapted TabPFN-Wide recipe — no search
-since 30-09-2026. The 24-10 revision changes TabICLv2 to 400–60,000 log-uniform rows, 79–81%
+For Experiment 2 (capacity measured in Experiment 0 before launch): 48 arms per track (2 models × 4
+mixes × 2 rates × 3 seeds), 10,000 steps each, using upstream TabICL and TabPFN's differentiable
+fine-tuning interface on synthetic tasks. The 24-10 revision changes TabICLv2 to 400–60,000 log-uniform rows, 79–81%
 context and one task per microbatch, retaining 64 tasks per update. Its expected row exposure is
 about 7.6 billion per arm, 11.6 times the former 1,024-row proposal; this is **not** a runtime ratio.
 TabPFN-3 retains 16 tasks per update and 1,024 rows through its own preprocessing. The old ~400
 GPU-hour estimate is **obsolete**. Never extrapolate TabICLv2 Exp2 cost from Exp0's 1,024-row
 route checks. Fresh capacity and representative-batch probes must establish feasibility first;
-one representative update gives a timing observation, not a reliable 48-run campaign ETA.
+one representative update gives a timing observation, not a reliable 96-run campaign ETA.
 Benchmark probes measure selected tables only: their times do not establish
 the runtime of the complete publication benchmark matrix.
 
 ## 10. Experiment 0: run it first
 
-For the 26-10-2026 four-mixture Exp2 revision, start a fresh validation pair after a successful
+For the 26-10-2026 two-rate Exp2 and retention-method Exp3 revision, start a fresh validation pair after a successful
 pull and with no CreditICL jobs queued or running. Preserve generated tracked notebook edits with
 `git stash push -- notebooks "output CreditICL"` if they block the pull; do not
 reset the entire repository or stash/untrack the expensive experiment outputs. Chain the pull,
@@ -341,37 +340,42 @@ checks, and six 600-step runs with forced stop/resume. It scores every model rou
 widest and median-size tables in each domain/track (duplicates removed), using all eligible rows
 and five folds. It is a capacity and correctness gate, not the publication benchmark matrix.
 
-The revised TabICLv2 Exp2 recipe adds **30 mandatory GPU stages**: seven row/feature capacity
+The revised TabICLv2 recipes add **34 mandatory long-context GPU stages**: seven row/feature capacity
 corners for both tracks and both priors (28), followed by a complete, sampled 64-task update per
-track (2). They use released weights, activation recomputation, float32 efficient SDPA, four
+track (2), and a 60k-row stage for both DiagScale and LoRA on each track (4).
+Another **16 native method round trips** cover training, forced stop/resume, frozen weights and
+checkpoint prediction for four methods, two tasks and both backbones. The long-context stages
+use released weights, activation recomputation, float32 efficient SDPA, four
 loader workers at most and one prefetched batch per worker. No mathematical-attention fallback
-or implicit FA3 float16 conversion is allowed. Every stage requires a finite, nonzero optimizer
-update, records memory and timing, and has a two-hour guard. Diagnostic weights are discarded.
+or implicit FA3 float16 conversion is allowed. Each long-context stage requires a finite, nonzero
+optimizer update, records memory and timing, and has a two-hour guard; the smaller method round
+trips have a 30-minute guard. Diagnostic weights are discarded.
 
-**While the frozen Exp1 benchmark is active, do not pull changes, reset output or rerun these
+**While any CreditICL job is queued or running, do not pull changes, reset output or rerun these
 setup commands in its checkout.** Finish and preserve that campaign first. Validate the revised
 code for Exp2 in a separate checkout/output root or after preserving Exp1's code and receipts.
 The previous Exp0 PASS remains evidence for its own frozen Exp1 revision; it cannot validate
 the new larger-table implementation. No Exp1 retraining is required by this change.
 
 ```bash
-cd "$VSC_DATA/CreditICL"
-git pull --ff-only
-source scripts/slurm/_activate_env.sh
-# Each invocation has an isolated attempt directory. Preserve completed experiment output.
-# Only for a separately intended destructive reset, after inspecting the cleanup plan:
-# python -m src.utils.clean_run --reset-exp0-gpu --clean
-# python -m src.utils.clean_run --reset-output --clean
-bash scripts/slurm/update_env.sh
-# Refresh the existing pinned OOD list without the old 50,000-row download cap:
-python -m src.utils.fetch_ood
+cd "$VSC_DATA/CreditICL" &&
+git stash push -m "Saved notebook outputs before Exp2-3 update" -- notebooks "output CreditICL/figures" "output CreditICL/CAPTIONS.md" "output CreditICL/All_Results.md" &&
+git pull --ff-only &&
+git submodule update --init --recursive &&
+source scripts/slurm/_activate_env.sh &&
+python -m src.utils.preflight &&
+python -m src.utils.clean_run --reset-exp0 &&
+python -m src.utils.clean_run --reset-exp0 --clean &&
 sbatch --clusters=wice scripts/slurm/exp0_cpu.slurm
 # Wait for CPU COMPLETED/PASS before submitting the GPU job:
 python -m src.utils.preflight --require-exp0-cpu && sbatch --clusters=mindwell scripts/slurm/exp0.slurm
 ```
 
-`update_env.sh` installs this project's requirements/extras and verifies all transitive dependencies
-and `pip check`. CPU and GPU jobs must use that same environment. Preprocessing cache v8 retains
+The 26-10 implementation adds no dependencies. Do not update working packages or refresh inputs
+as a routine step: the latest VSC attempt already passed its dependency audit. If the prerequisite
+check reports a real package mismatch, `update_env.sh` installs this project's requirements/extras
+and verifies all transitive dependencies and `pip check`; resolve that before starting CPU validation.
+CPU and GPU jobs must use the same environment. Preprocessing cache v8 retains
 borrower groups and percentage corrections, fixes Freddie missing-value codes and preserves distinct
 extreme feature values. OOD cache v3 retains the same pinned dataset IDs
 but restores full rows; a failed refresh cannot silently substitute another dataset.
@@ -408,9 +412,8 @@ attempts remain until an explicit reset. CPU completion is recorded in `cpu_vali
 the GPU receipt binds that exact CPU receipt. Rerunning CPU invalidates an older GPU PASS.
 Exp0 reference probes are isolated and are never published as complete production results.
 The launcher refuses production work if tests, code, configurations, packages, inputs or artifacts
-changed after validation. The sole planned exception is filling Exp3's `FILL_FROM_EXP1` with the
-already-tested 25%, 50% or 100% mixture after development-set selection; all other recipe changes still
-invalidate validation. Each training run records its fully resolved choice.
+changed after validation. Exp3's planned choices are stored in hashed selection receipts;
+no YAML edit is required or exempted. Each training run records its fully resolved choice.
 
 After completion:
 
@@ -467,16 +470,44 @@ python -m zipfile -c "$VSC_DATA/CreditICL/benchmark-results.zip" "$STG/results"
 Download `benchmark-results.zip` from the repository directory. The run logs alone are not a
 substitute for checking every result cell in those CSVs.
 
-## 12. Experiments 1, 2 and 3: the commands
+## 12. Experiments 1, 2 and 3: current commands
+
+After pulling a reviewed change, run CPU Exp0 and then GPU Exp0 for that revision. Never pull
+while a campaign is active. `exp0.slurm` continues only matching code/packages/inputs/CPU receipts;
+a stale previous campaign starts a fresh isolated attempt. `DEFERRED` can be resubmitted without
+changes; a current `FAILED` needs diagnosis. Preserve Exp1 outputs throughout.
 
 ```bash
-# Experiment 1 (after Experiment 0 passed): train, then benchmark (full rows, five folds).
-python -m src.utils.run_experiment 1 --submit          # again later: it submits what is left
-
-# Experiment 2: continued pretraining using the controlled TabICL and adapted TabPFN recipes.
-python -m src.utils.run_experiment 2 --submit
-
-# Experiment 3: once Experiment 1 has chosen its mix on the development datasets, fill FILL_FROM_EXP1
-# in config/Exp3_PD.yaml and config/Exp3_LGD.yaml, commit, pull on the cluster, then:
-python -m src.utils.run_experiment 3 --submit
+sbatch --clusters=wice scripts/slurm/exp0_cpu.slurm
+# Once CPU completes successfully:
+python -m src.utils.preflight --require-exp0-cpu && sbatch --clusters=mindwell scripts/slurm/exp0.slurm
+# Once GPU completes successfully:
+python -m src.utils.preflight --require-exp0 && python -m src.validation.verify
+python -m src.utils.run_experiment 1 --submit
+python -m src.utils.run_experiment 2 --single-cluster --submit
 ```
+
+Each experiment planner is safe to repeat: it skips completed/queued arms and waits for training
+before benchmarking. Exp1 includes only missing quarter-mixture work if the other 48 runs and
+benchmarks are already complete. Run Exp2 after the Exp1 extension; repeat its planner after
+training to submit the missing eight-checkpoint benchmarks. All rows/features/five folds remain.
+For Exp2/Exp3, keep `--single-cluster`: these commands use the Mindwell B200 allocation validated
+by Exp0. The planner's optional historical LGD split across wICE A100s is not validated by a B200
+capacity result and is not the launch recipe here.
+
+```bash
+# After complete Exp2 final results for both 50% learning rates and all three seeds:
+python -m src.experiments.selection --stage learning-rate
+python -m src.utils.run_experiment 3 --variant pilots --single-cluster --submit
+# Repeat the pilot planner after training; once all development pilot benchmarks finish:
+python -m src.experiments.selection --stage adapters
+python -m src.utils.run_experiment 3 --single-cluster --submit
+# Repeat the main planner after training for benchmarks.
+```
+
+The former 200k-update scratch Exp3 is abandoned. Current Exp3 has 36 short development-only
+pilots, 48 new full runs and 12 reused Exp2 baselines. Selection receipts avoid configuration
+edits between validation and training. Never delete Exp1 or Exp2 baseline checkpoints while
+these comparisons are active. Check project capacity before launching: retained checkpoints,
+rolling resume files and full-table benchmark journals all consume project storage. The 24-hour
+Exp0 allocation is a limit, not a prediction of total campaign duration.

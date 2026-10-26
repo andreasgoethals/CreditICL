@@ -592,20 +592,16 @@ def test_optim_docstring_matches_the_configs():
     doc = (root / "src" / "train" / "optim.py").read_text(encoding="utf-8")
     doc = doc[: doc.index('"""', 3)]
 
-    chosen = {
-        p.name: load(p, allow_placeholders=True)["train"]["optimizer"].lower()
-        for p in (root / "config").glob("Exp*.yaml")
-    }
-    # PRETRAINING IS MUON, CONTINUED PRETRAINING IS ADAMW, and the split is deliberate. Exp1
-    # and Exp3 train from scratch and must match how the released weights were made. Exp2
-    # continues FROM those weights, and follows the continued-pretraining recipes it takes its
-    # rates and L2-SP from (Real-TabPFN, TabPFN-Wide, upstream's `_finetune`), all AdamW.
-    pretrain = {v for k, v in chosen.items() if k.startswith(("Exp1", "Exp3"))}
-    assert pretrain == {"muon"}, f"Exp1/Exp3 must match upstream's optimiser, got {pretrain}"
-    cpt = {v for k, v in chosen.items() if k.startswith("Exp2")}
-    assert cpt == {"adamw"}, f"Exp2 continued pretraining should use AdamW, got {cpt}"
-    for name in pretrain | cpt:
-        assert name.upper() in doc.upper(), f"configs use {name!r}; the docstring never says so"
+    from src.utils.config import expand_with_seeds
+    chosen = set()
+    for exp in (1, 2, 3):
+        runs = expand_with_seeds(load(root / 'config' / f'Exp{exp}_PD.yaml', allow_placeholders=True))
+        for run in runs:
+            expected = 'adamw' if run['architecture'] == 'tabpfn3' or run['train'].get('adaptation') in ('lora', 'diagscale') else 'muon'
+            assert run['train']['optimizer'] == expected
+            chosen.add(expected)
+    for name in chosen:
+        assert name.upper() in doc.upper()
 
 
 def test_the_benchmark_measures_the_optimizer_that_is_actually_configured():
@@ -667,7 +663,7 @@ def test_batch_and_features_match_upstream():
     import yaml
 
     root = Path(__file__).resolve().parents[1]
-    for name in ("Exp1_LGD", "Exp1_PD", "Exp3_LGD", "Exp3_PD"):
+    for name in ("Exp1_LGD", "Exp1_PD"):
         cfg = yaml.safe_load((root / "config" / f"{name}.yaml").read_text(encoding="utf-8"))
         assert cfg["train"]["batch_size"] == 64, f"{name}: upstream uses --batch_size 64"
         assert cfg["prior"]["max_features"] == 100, f"{name}: upstream uses --max_features 100"

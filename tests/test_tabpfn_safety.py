@@ -28,6 +28,8 @@ def tiny_trainer(*, scale=None, device='cpu'):
     trainer.est = SimpleNamespace(use_autocast_=bool(scale))
     trainer.step = trainer.datasets_seen = trainer.skipped_tasks = trainer.amp_retries = 0
     trainer.full_precision_retries = 0
+    trainer.l2sp_alpha = 0.
+    trainer._l2sp_ref = {}
     trainer.grad_clip = 1.
     trainer.log = logging.getLogger('test_amp')
     trainer.telemetry = SimpleNamespace(due_grad=lambda _: False)

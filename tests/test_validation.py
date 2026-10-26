@@ -28,32 +28,23 @@ def test_attempt_rejects_unsafe_names(name):
 
 
 @pytest.mark.parametrize("task", ["PD", "LGD"])
-@pytest.mark.parametrize("choice", [0.25, 0.5, 1.0])
-def test_planned_exp3_selection_preserves_validation_but_recipe_edits_do_not(tmp_path, monkeypatch, task, choice):
+def test_exp3_selection_receipts_do_not_change_code_but_any_recipe_edit_does(tmp_path, monkeypatch, task):
     from src.utils.preflight import source_fingerprint
-
     monkeypatch.setattr(paths, "REPO_ROOT", tmp_path)
     (tmp_path / "pyproject.toml").write_text("")
     folder = tmp_path / "config"
     folder.mkdir()
     file = folder / f"Exp3_{task}.yaml"
-    template = "sweep:\n  prior.credit_fraction: [0.0, FILL_FROM_EXP1]\ntrain:\n  max_steps: 200000\n"
+    template = "design: retention\nprior:\n  credit_fraction: 0.5\ntrain:\n  max_steps: 10000\n"
     file.write_text(template)
     original = source_fingerprint()
-    file.write_text(template.replace("FILL_FROM_EXP1", str(choice)))
+    receipts = tmp_path / "output CreditICL" / "experiment_3" / "selection"
+    receipts.mkdir(parents=True)
+    (receipts / "adapters.json").write_text('{"choices": {}}')
     assert source_fingerprint() == original
-    file.write_text(template.replace("200000", "200001"))
-    assert source_fingerprint() != original
-    file.write_text(template.replace("FILL_FROM_EXP1", "0.75"))
-    assert source_fingerprint() != original
-    file.write_text(template.replace("FILL_FROM_EXP1", "0.0"))
-    assert source_fingerprint() != original
-    file.write_text(template)
-    other = folder / f"Exp1_{task}.yaml"
-    other.write_text(template)
-    before = source_fingerprint()
-    other.write_text(template.replace("FILL_FROM_EXP1", str(choice)))
-    assert source_fingerprint() != before
+    for before, after in (("0.5", "0.25"), ("10000", "10001"), ("retention", "cpt")):
+        file.write_text(template.replace(before, after))
+        assert source_fingerprint() != original
 
 
 def test_complete_manifest_covers_all_routes_budgets_and_benchmarks():
@@ -73,7 +64,7 @@ def test_complete_manifest_covers_all_routes_budgets_and_benchmarks():
     # Existing full-table benchmarks plus synthetic long-context corners and
     # one full heterogeneous production update for each track.
     from src.validation.long_context import CAPACITY_CORNERS
-    assert len(capacity) == 2 * 4 * 3 + 2 * (2 * len(CAPACITY_CORNERS) + 1)
+    assert len(capacity) == 2 * 4 * 3 + 2 * (2 * len(CAPACITY_CORNERS) + 3)
     assert all("--checkpoint" not in s.command for s in capacity)
     assert all("--max-context-rows" not in s.command for s in capacity)
     assert len({s.name for s in stages}) == len(stages)  # no repeated benchmark work

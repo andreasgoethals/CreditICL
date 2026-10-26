@@ -230,6 +230,8 @@ python scripts/evaluate.py \
     --seeds "${SEEDS}" \
     --tag "${TAG}" ${CTX_ARGS[@]+"${CTX_ARGS[@]}"}
 
+INCLUDE_OOD=$(python -c "from src.utils.config import load; print(int(load('${CONFIG}')['eval'].get('include_ood', True)))")
+if [[ "$INCLUDE_OOD" == "1" ]]; then
 echo "=== out of domain ==="
 # A prior that helps credit by destroying generality has to be visible, not inferred.
 python scripts/evaluate_ood.py \
@@ -240,6 +242,7 @@ python scripts/evaluate_ood.py \
     --seeds "${SEEDS}" \
     --tag "${TAG}" ${CTX_ARGS[@]+"${CTX_ARGS[@]}"}
 
+fi
 python -m src.eval.benchmark_status "${STATUS_ARGS[@]}" --write
 
 echo "arm ${ARM} step ${STEP} benchmarked."

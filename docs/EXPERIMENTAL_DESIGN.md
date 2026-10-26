@@ -89,267 +89,143 @@ a *family* over boundary mass and base rate, not a single shape — else it over
 
 ## 3. The experiments
 
-All share the same real datasets and the same frozen evaluation ([§5](#5-evaluation)).
-`credit_fraction` is the master switch throughout: the share of each batch drawn from our
-credit-targeted path, the rest from the unmodified TabICL prior; `0.0` is the control. **The credit
-mechanisms are the same in every experiment; table geometry is matched within each backbone.**
-Experiment 2's TabICLv2 continuation uses its upstream final-stage table distribution; the other
-scheduled arms retain 1,024-row tasks. Current mechanism ranges use literature and broad assumptions
-([PRIORS.md](PRIORS.md) §5), but mechanism design was informed by these benchmark datasets.
-The designated holdout was previously inspected. Removing the 28-09 numerical calibration on
-29-09 does not undo that design exposure; external confirmation requires new data. That short-lived
-calibration change postdates the September campaign and must not be attributed to its checkpoints.
+The 26-10-2026 implementation replaces the proposed long from-scratch Experiment 3 with
+retention ablations. Experiment 1's resolved recipes, task budgets and array identities remain
+unchanged, including the appended 25% mixture. This change does not require retraining Exp1.
 
-
-| | **Exp0 — does it run?** | **Exp1 — does the prior help, all else equal?** | **Exp2 — is it useful for the real models?** | **Exp3 — run long** |
-|---|---|---|---|---|
-| start | the three paths below | from scratch | the released TabICLv2 and TabPFN-3 weights | from scratch |
-| swept | `arm {scratch TabICL, fine-tuned TabICLv2, fine-tuned TabPFN-3}` | `credit_fraction {0, .25, .5, 1} × 3 seeds` | `arm {TabICLv2, TabPFN-3} × credit_fraction {0, .25, .5, 1} × 3 seeds` | `credit_fraction {0, Exp1's mix}` × 2 seeds |
-| arms/track | 3 | 27 (12 main + 15 component) | 24 | 4 |
-| steps | 600 | 12,500 | 10,000 | 200,000 |
-| rows/task | route checks plus explicit long-context capacity probes | 1,024 | TabICLv2: 400–60,000, log-uniform; TabPFN-3: 1,024 | 1,024 |
-| optimizer | as the path it checks | Muon (upstream stage 1) | upstream TabICL and an adapted TabPFN-Wide recipe | Muon |
-| asks | every path works on the cluster; what a real arm and a real benchmark slot cost | the prior package's effect at a small matched task budget | whether the knowledge helps models trained at full scale, and at what out-of-domain cost | whether Exp1's effect holds at a longer budget |
-
-**Exp0** uses two Slurm allocations: `exp0_cpu.slurm` checks every input, package, split and portable
-test; `exp0.slurm` then checks CUDA, all six training/save/resume routes and both upstream trainer
-equivalence checks. Each GPU route completes 600 steps with forced SIGUSR1 stop/resume. All model
-routes are benchmarked on selected largest/widest/median-size credit and OOD tables, with full rows
-and five folds. The complete benchmark matrix belongs to Experiments 1–3. CPU and GPU PASS receipts
-bind code, packages, inputs and output hashes; either missing/currently failed receipt blocks production.
-Diagnostic reference scores stay isolated from publication results.
-The revised Exp2 also requires new GPU probes of the TabICLv2 row/feature capacity corners,
-for both priors and both tracks, plus representative 64-task updates using the real ragged loader.
-These execute complete forward/backward/optimizer updates; the existing route checks separately
-cover save/resume and prediction. Fresh CPU and GPU
-PASS receipts for this revision are required before launching the 48-run continuation campaign;
-the older successful Exp0 receipts describe the frozen Exp1 campaign only.
-
-**Exp1** measures the prior package's effect: the same architecture trained from scratch on
-each mix, with the same optimizer updates and task budget. With so little training (2.5 % of upstream's stage 1) the arms are not
-expected to reach the released model; the question is the contrast between mixes. Every training table
-has 1,024 rows (TabICLv2's stage-1 budget), while evaluation uses every eligible row in the real
-table with five-fold CV. Each fold fits on four folds and predicts the fifth; there is no scheduled
-1,024-row context comparison. This tests transfer to larger contexts and must not be described as
-reproducing upstream's full multi-stage, long-context training curriculum.
-
-The component study was accepted on 13-10-2026: five removals at the fixed 50% mixture,
-three paired seeds each, in `Exp1_{PD,LGD}_ablations.yaml`. Remove separately (1) the macroeconomic
-term in the target, (2) the dependence of missingness on borrower covariates (retain missing values),
-(3) context/query shifts, (4) the marginal tail warp, and (5) the credit categorical ceiling
-(restore the upstream categorical sampler, whose legacy effective ceiling is nine). Architecture, optimizer and task budget stay fixed. These are
-predeclared mechanism comparisons against the main 50% arm, not candidates selected on holdout
-performance. Only final ablation checkpoints are scored; main arms supply the learning curves.
-Random streams for targets, marginals, noise, shifts, row order and missingness are independent.
-Removing a postprocessing component therefore does not advance unrelated random draws. The
-categorical-ceiling removal changes the upstream sampled graph distribution and is a distributional
-ablation; it does not promise identical latent graphs or labels. Selection can alter realised class
-rates legitimately; the advertised PD range describes applicants, not accepted books.
-
-Selection remains predeclared development ROC-AUC (PD) and R² (LGD). Log-loss and LGD
-boundary-mass/CRPS comparisons are secondary hypothesis tests, reported alongside those primary
-metrics rather than used to change the winning mixture after seeing results.
-
-The 26-10-2026 extension adds 25% credit, with three seeds per task: 12 main runs plus
-15 component runs per task, 54 total. It was approved after the original 48-run campaign,
-so it is reported as an extension rather than retroactively predeclared. The new training
-indices 9–11 are appended; old resolved recipes, run names and benchmark tags are preserved.
-Component groups follow the
-controlled-ablation principle in `tfm-library/papers/text/2026/05_Bouadi_et_al._Shaping_the_Prior_How_Synthetic_Task_Distributions_Determine_Tabular_Foundation_Model_Quality.txt`;
-that paper studies general classification, not the credit-risk mechanisms here.
-
-**Exp2 compares four mixtures (0%, 25%, 50%, 100%) for both released models**, with three seeds:
-24 runs per track, 48 total. It does not select a winning mixture from Exp1. Finish and benchmark
-Exp1 first to assess its evidence and cost before the next campaign, while keeping this comparison
-fixed. The submission gate requires validated Exp0, not an Exp1 selection artifact.
-
-Exp2 asks whether the effect survives where it matters: the released, fully trained models, whose
-pretraining continues on our prior. Two models, because a result for one architecture could be an
-accident of it: TabICLv2 (open prior, trained through our own trainer, verified equal to upstream's)
-and TabPFN-3 (trained through TabPFN's own fine-tuning path, `src/train/tabpfn_trainer.py`).
-**Recipes are fixed rather than searched. Before Exp2 starts, the 24-10-2026 revision aligns
-TabICLv2 continuation with its authors' stage-3 table distribution:** 400–60,000 rows sampled
-log-uniformly, 79–81% context, group/micro-batch size 1, global batch 64 and 10,000 updates.
-Muon uses lr 2e-5, weight decay 0.01, 1% warm-up, cosine to 1e-7 and gradient clipping 1.
-The upstream feature ceiling falls from 100 to 80/60/40/30/20 as tables grow beyond
-10,240/20,000/30,000/40,000/50,000 rows. This law applies identically to all four mixtures;
-it is a synthetic training law, not a benchmark feature cap.
-Evidence: `tfm-library/repositories/TabICL.txt`, `scripts/train_v2_clf_stage3.sh`,
-`scripts/train_v2_reg_stage3.sh`, `Prior.sample_seq_len`, `Prior.adjust_max_features`,
-`GraphPrior.get_batch` and `Trainer.configure_optimizer`.
-
-The primary paper, `tfm-library/papers/2026/09_Qu_et_al._TabICLv2_A_better_faster_scalable_and_open_tabular_foundation_model.pdf`
-§4.1 and Appendix B.1, reports progressive gains from its longer-table stages, especially on
-large datasets. That supports preserving long-context exposure during adaptation; it does not
-establish an optimal credit-prior recipe. Upstream stage 3 starts from stage-2 weights, whereas
-our continuation starts from the already released stage-3 checkpoint. All mixtures, including
-the **0% native-prior control**, therefore measure further training of an already trained model.
-Correct continuation does not guarantee non-degradation: stochastic updates and rewarming can
-reduce credit or OOD performance. Report the control against the released weights, then the
-credit mixtures against both, rather than assuming the control must improve.
-
-The execution policy is explicit: float32, activation checkpointing, ragged CPU batches,
-at most four generation workers, prefetch factor one, and efficient PyTorch attention only.
-The new long-context path disables upstream FA3 to prevent an implicit float16 conversion and
-refuses the quadratic attention-matrix fallback. These choices preserve rows and the objective
-while bounding memory; CUDA execution must still pass the capacity probes. The paper's Appendix
-B.2 describes AMP and checkpointing above 20k rows, while the pinned stage scripts request
-float32 and no checkpointing for their H200 reference run. Our hardware policy is an adaptation,
-not a claim that those two source descriptions are identical.
-
-TabPFN-3 retains an adaptation of how
-TabPFN-Wide continued the released TabPFN-v2 classifier on the synthetic TabICL prior — AdamW, lr 1e-5, weight decay
-1e-4, linear warm-up and cosine decay, clipping 1, batch 16, 10,000 steps, where its validation AUC
-plateaus (`papers/2026/03_Kolberg`, "Continued Pre-Training"; they too fixed the length rather than
-selecting a checkpoint). The stage-A search that used to choose among candidates bracketing these values
-is dropped. TabPFN-Wide did not evaluate TabPFN-3 or LGD regression: extending its schedule to those models/tasks is our experimental choice, which Exp0 validates technically, not scientifically. The exact installed TabPFN 9.1.0 loss and preprocessing are used. In addition, CreditPFN's grid on real-data continued pretraining is
-not finished and is a different setting (real tables), and a search would have cost as much as half of
-the comparison. The same recipe for every mix keeps the comparison about the prior; every 2,500-step
-checkpoint is scored as a learning curve, and the final one is the result. L2-SP and partial freezing are
-not in the design (a later ablation). TabPFN's prior is not public, so its control continues on
-TabICL's prior, not an unavailable exact TabPFN pretraining distribution. Its tasks remain 1,024
-rows with 30–90% context. Extending TabICL's long-context schedule to TabPFN is not justified by
-the same evidence and is not silently included. The experiment tests a fixed recipe within
-each backbone; it does not claim either recipe yields the best possible performance.
-
-The long-context TabICL row law has mean about 11,895 and median about 4,899 rows. Its 640,000
-tasks therefore expose about 7.61 billion rows in expectation, versus 0.66 billion under the
-previous 1,024-row proposal. This is a material compute change: the old roughly 400 GPU-hour
-Exp2 estimate is obsolete. Runtime must be projected from the revised representative GPU
-updates and generation/filtering timings before launch; row count alone is not a runtime model.
-
-**26-10-2026 evidence review: budget and forgetting protection.** The configured 10,000 updates
-are a proposed common budget within each backbone, not an established optimum. TabICLv2 trained
-500,000 + 40,000 + 10,000 updates per model (550,000 total; batch 64), whereas TabPFN-Wide chose
-10,000 after convergence observations for a *v2 classifier*, 40–400 rows and extreme width.
-Neither study tested credit CPT of the released v3 regressor. The original TabPFNv2 Nature paper
-reports about two million updates at batch 64; the v3 report reports over eight trillion tokens
-without enough information to recover its optimizer-update count. Do not equate tokens, rows,
-table instances, microbatches or optimizer updates.
-
-The original TabICLv2 curriculum, per classifier or regressor, is:
-
-| Stage | Updates | Rows per synthetic table | Context fraction | Peak learning rate |
-|---|---:|---|---|---:|
-| 1: learn the general task distribution | 500,000 | 1,024 | 30–90% | 8e-4 |
-| 2: extend context length | 40,000 | 400–10,240, log-uniform | about 80% | 1e-4 |
-| 3: extend it further at a smaller rate | 10,000 | 400–60,000, log-uniform | about 80% | 2e-5 |
-
-With global batch 64 this is 35.2 million table instances per model. These are successive
-optimization phases, distinct from the column/row/ICL modules in the architecture. The
-three architectural stages in the TabPFN3 report do not disclose a three-phase training
-curriculum. TabPFN2.5 and 3.5 likewise do not give enough original batch/schedule information
-to derive an update count; the older v2 count must not be transferred to those releases.
-
-Stage-3 TabICL sampling already mixes short, medium and long tables: roughly 19% are at most
-1,024 rows and 35% exceed 10,240 under its 400–60,000 log-uniform law. These are table shares,
-not row shares. Repeating all three original stages would restart a large, high-learning-rate
-training campaign from weights that already completed it. Retain stage-3-style continuation as
-the main TabICL proposal. A short, low-rate transition may be piloted if stability requires it;
-do not automatically restore the original stage-1 learning rate or introduce a second geometry
-change only in credit arms.
-
-The latest reports do not establish one universal curriculum:
-
-| Primary report (under `tfm-library/papers/text/`) | Verified training evidence | Consequence for this project |
+| Experiment | Question | Production training runs |
 |---|---|---|
-| `2026/09_Qu_et_al._TabICLv2_A_better_faster_scalable_and_open_tabular_foundation_model.txt` | 500k/40k/10k stages, batch 64; Muon, lower LR for longer tables | Direct geometry precedent for the released TabICL model, not optimal credit-CPT evidence |
-| `2026/09_Team_et_al._Xiaomi_TabLDM_A_Tabular_Foundation_Model_Technical_Report.txt` | Explicitly follows TabICL's curriculum: classifier 500k/40k/10k, regressor 300k/40k/10k | Corroborates reuse within this architecture family, not an independent universal rule |
-| `2026/09_Tao_et_al._Mitra_v2_Technical_Report.txt` | About 14k updates, effective batch 2,048, BF16; several continuation attempts failed to improve or harmed retention | Update counts require task-volume context; more training is not guaranteed to help |
-| `2026/08_Eo_et_al._EXAONE_Tabular_1.0_Technical_Report.txt` | About 30m classification/10m regression table instances; BF16, Muon/AdamW and EMA; objective-dependent schedules | Optimizer/precision choices vary; EMA is not itself proof of retention |
-| `2026/05_Hosseinzadeh_et_al._TabDPT_Turbo_Efficient_In_Context_Learning_for_Tabular_Prediction.txt` | Real-data pretraining, shared context, different regression objective | A useful alternative family, not a drop-in synthetic-CPT schedule |
-| `2026/09_Zhang_et_al._LimiX_2_A_Contextual_Mechanism_Network_Towards_General_Structured_Data_Intelligence.txt` | Synthetic mechanism prior with joint target/feature masking objectives | Similar synthetic-data motivation does not imply identical loss or curriculum |
+| 0 | Do the current code, inputs, native model routes and hardware paths pass validation? | Diagnostic CPU job, then resumable GPU campaign; no research arms |
+| 1 | Does the credit prior package help a scratch TabICL at a matched budget? | 54 = (4 mixtures + 5 component removals) × 3 seeds × 2 tasks |
+| 2 | How does credit-biased continuation affect each released backbone? | 96 = 2 backbones × 4 mixtures × 2 peak rates × 3 seeds × 2 tasks |
+| 3 | Which update constraints trade credit adaptation against OOD retention? | 48 new main runs + 12 reused Exp2 baselines; 36 separate pilots |
 
-TabPFN's v2.5, v3 and v3.5 reports were checked as well. V3 explicitly adopts TabICLv2's
-column/row/ICL architecture, but changes the classifier decoder, attention, normalization, prior
-and training/inference transformations. Its full pretraining schedule is not disclosed. V3.5
-adds Fourier/ECDF features and a larger joint classification/regression backbone; it does not
-justify changing this project's pinned v3 model. A longer-table TabPFN3 pilot is therefore a
-reasonable hypothesis, but copying Muon, LR, precision or loss from TabICL is not justified.
-Its public 9.1.0 fine-tuning path remains the implementation reference. Before selecting a
-different production recipe, compare short/long geometry at equal task/update budgets within
-TabPFN3 and measure actual memory, time, finite gradients and development learning curves.
-Do not use the final holdout or OOD benchmark to select the recipe.
+### 3.1 Experiment 1: preserved evidence
 
-**Forgetting measures: implemented versus proposed.** The active grid trains all parameters and
-varies generic-prior replay (100%, 75%, 50%, 0% at credit shares 0%, 25%, 50%, 100%). This is native
-prior replay for TabICL only; TabPFN3's native generator is unavailable. Released weights are the
-no-update reference. Weight decay is already 0.01 for Exp1 and Exp2 TabICL, and 0.0001 for Exp2
-TabPFN; it shrinks weights toward zero, unlike L2-SP's penalty toward the released weights.
-Gradient clipping bounds an individual update's gradient norm, not cumulative forgetting.
-Rewarming itself can temporarily worsen source performance even with correct code, as
-[Gupta et al. (2023)](https://arxiv.org/abs/2308.04014) found for Pythia continuation. This is
-general-model evidence for measuring the no-credit control, not a tabular learning-rate rule.
+Four credit shares (0%, 25%, 50%, 100%) and five component removals at 50%, with three seeds
+per PD/LGD task, use 12,500 updates of 64 tables of 1,024 rows. The original campaign contained
+48 runs; six quarter-mixture runs were appended. Existing completed-run provenance is accepted
+only for explicitly reviewed source/package/recipe combinations. Original historical completion
+permission does not authorize arbitrary checkpoint resume. Unchanged Exp1 runs from `19a76cc`
+may resume across this patch under an additional exact-source and recipe check.
 
-For a supplementary method study, prefer one explicit starting-weight penalty first: Real-TabPFN
-(`2025/07_Garg_et_al._Real_TabPFN_Improving_Tabular_Foundation_Models_via_Continued_Pre_training_With_Real_World_Data.txt`)
-uses L2-SP in real-data CPT of v2; it does not isolate the penalty's benefit in an ablation.
-This is a direct implementation precedent, not proof that L2-SP outperforms LoRA or replay.
-The original [L2-SP study (Li et al., 2018)](https://proceedings.mlr.press/v80/li18a.html)
-evaluated convolutional-network transfer, so its stronger results also need a tabular test.
-Its coefficient 0.003 and LR 3e-7 are v2-specific empirical choices, not portable constants.
-Our TabICL path supports L2-SP but leaves it off; the TabPFN
-path rejects nonzero L2-SP until separately implemented and tested. A predeclared supplementary
-0%/50% comparison across both models, tracks and three seeds would add **24 runs per method**,
-not change the main 48. No such grid has been enabled by this review.
+### 3.2 Experiment 2: full continued pretraining
 
-LoRA or an ICL-stack-only strategy are alternatives to test, not automatic protections.
-TabSTAR's LoRA results concern downstream real-data adaptation (including a text encoder);
-Rubachev's PEFT comparison concerns v2 per-dataset fine-tuning. Neither establishes superiority
-for v3 synthetic CPT. Head-only tuning also differs because v3 uses an attention-based classifier
-decoder. Before a PEFT comparison, explicitly enumerate trainable tensors, preserve packed-QKV
-semantics, verify zero initial adapter effect and nonzero adapter gradients, keep frozen tensors
-unchanged, and exercise training/checkpoint/resume/benchmark equivalence on both GPU backbones.
-No silent fallback to full tuning is acceptable. Selection must use development evidence;
-report final credit and native OOD effects against both the released and continued 0% controls.
+Every run starts from released weights, updates the full model, and uses a fixed 10,000-update
+budget. Four mixtures are evaluated at both rates; neither Exp1's winning mixture nor OOD scores
+select the grid. The fixed primary checkpoint is update 10,000. Updates
+125, 250, 500, 1,000, 2,500, 5,000, 7,500 and 10,000 are permanently retained and benchmarked.
+Released weights are a shared step-zero reference. Earlier points describe trajectories, not
+post-hoc alternative headline checkpoints.
 
-General language-model evidence also depends on the adaptation setting. [Biderman et al.
-(2024)](https://arxiv.org/abs/2405.09673) found a learning/retention trade-off for LoRA in
-code/math continuation; [Oncel et al. (2026)](https://arxiv.org/abs/2609.23916) found comparable
-knowledge acquisition with sufficiently high-rank LoRA in time-incremental web-data CPT.
-Neither establishes a tabular rank, target-module set or optimal learning rate. These primary
-papers were checked separately from the pinned library. They support a measured method pilot,
-not a claim that freezing weights guarantees no forgetting.
+| Setting | TabICLv2 | TabPFN-3 |
+|---|---|---|
+| Tables per update | 64, one-table gradient accumulation | 16, one preprocessed task at a time |
+| Rows per synthetic table | 400–60,000, log-uniform | 1,024 |
+| Context share | 79–81% | 30–90% |
+| Peak learning rates | 2e-5 and 1e-5 | 1e-5 and 1e-6 |
+| Optimizer | Native Muon configuration (all trainable parameters) | AdamW |
+| Weight decay | 0.01 | 0.01 |
+| Warm-up | 1% (100 updates) | 10% (1,000 updates) |
+| Gradient norm limit | 1 | 1 |
+| Precision | FP32, explicit TF32/efficient SDPA policy | FP32 weights, FP16 autocast and GradScaler |
+| Objective | Native classification / 999-quantile regression | Native differentiable classification / distributional regression |
 
-Sources for this review use TFM pin `702d9ab0b66f6639ba8d443ff9c4a91231964465`. Repository
-snapshots checked include `TabICL.txt` stage scripts and `Trainer.configure_optimizer`,
-`TabPFN .txt` fine-tuning/preprocessing, `TabSTAR.txt` `wrap_with_lora`, Rubachev's `LoraMHA`
-and TabTune's `inject_lora`. No source snapshot or submodule was edited.
+Synthetic width remains at most 100 with the upstream row-dependent ceiling; this is not a
+benchmark feature limit. Every eligible benchmark row and feature is retained, with five common
+folds, on 21 credit tables and 25 native OOD datasets per task. Small-context development/OOD
+monitoring is labelled separately and never substitutes for the full-table benchmark.
 
-**Exp3** runs Experiment 1's best nonzero credit mix long, against its 0% control, from scratch:
-the choice maximises development ROC-AUC (PD) or R² (LGD), averaging folds and training seeds.
-Exact numerical ties choose the smaller credit share; seed spread is reported descriptively and
-does not change that rule. If no credit mix exceeds the control's development mean, the
-candidate is not an established improvement: review whether the long-budget study merits its
-cost, and describe a study that proceeds as testing whether an effect emerges at longer budgets.
-Never substitute a duplicate 0% arm for the nonzero candidate.
-The budget is 200,000 steps (16 × Exp1),
-2 paired seeds (each seed gives both arms the same base tasks and initial weights; 5 seeds were too
-expensive, 30-09-2026). The length: TabICLv2 reaches its reference in normalised accuracy before
-100,000 steps but in log-loss only after ~200,000 (`papers/2026/02_Qu_TabICLv2` §7), our PD and LGD
-metrics are probabilistic (Brier, log-loss, CRPS), and a prior's effect can appear late — the TabICL
-prior degraded TabICLv2's validation loss only in the second half of its 280,000-step ablation. Its own
-ablations are single runs at 280,000 steps, with the reference run twice to show the noise; two seeds
-at 200,000 steps follow that design. The old ~700 B200 GPU-hour estimate is superseded: linear
-extrapolation from the completed Exp1 arms (6.43–7.38 hours per 12,500 updates) gives roughly
-823–945 training GPU-hours for all eight Exp3 arms, before startup and benchmarks. This is a
-planning estimate, not a measured long run or an approved spend. A 100,000-step study would
-roughly halve that training estimate, at the cost of stopping before log-loss has settled;
-it is not the configured budget. A stage-2-like end of training on longer tables (upstream's 400-10,240 rows) would shrink the
-length gap at test time. It is not part of the current Exp3: Exp3 increases steps, not rows per task.
-Any long-context training extension requires a separately specified budget and validation.
+**What is upstream and what is a research choice.** At TFM pin
+`702d9ab0b66f6639ba8d443ff9c4a91231964465`, `repositories/TabICL.txt`, symbols
+`train_v2_clf_stage3.sh`, `train_v2_reg_stage3.sh`, `Trainer.configure_optimizer`, and the task sampler document
+stage 3's 10k updates, 64-table batch, long-table law, Muon, 2e-5 rate, 0.01 decay and 1% warm-up.
+The lower rate is our sensitivity comparison. The preceding upstream stages use 500k and 40k
+updates; this is continuation of a released model, not a recreation of all upstream pretraining.
 
-**What was designed but not built.** An **O'Prior-style generic-realism arm** (the ideal causal
-control) and an **unrealistic-but-complex arm** (TabForestPFN's counter-hypothesis that complexity
-beats realism). Both are deferred: O'Prior's realism engine is non-trivial to reimplement faithfully,
-and a weak reimplementation would be a strawman that invalidates the headline. Their absence is the
-limitation named in [§1](#1-the-claim-and-how-it-fails); evaluating both tracks does not replace
-those controls or establish a double dissociation.
+TabPFN's public differentiable fine-tuning path (`repositories/TabPFN .txt`,
+`FinetunedTabPFNClassifier`, `FinetunedTabPFNRegressor`, `fit_from_preprocessed`) processes
+single-table context/query episodes. We reuse that path across fresh synthetic tables and average
+the task losses before one optimizer update. AdamW, 1e-5 and 0.01 decay follow the public
+fine-tuning interface. The 16-table batch and 1,024-row synthetic tasks are an explicit adaptation
+recipe, informed by earlier TabPFN continuation work, not disclosed TabPFN-3 pretraining defaults.
+The 1e-6 arm tests a more conservative update. TabPFN-3's original pretraining corpus and full
+recipe are not public. Its 0% control therefore uses the generic TabICL prior, not a claimed
+reconstruction of a native TabPFN-3 prior. No setting is claimed optimal in advance.
 
-The prior mechanisms each experiment can switch on — PD's Vasicek one-factor defaults, controlled
-base rate, underwriting rules, reject-inference selection, high-cardinality categoricals; LGD's
-boundary atoms and interior shape; and the shared shift/missingness/noise — are described in
-[PRIORS.md](PRIORS.md).
+The synthetic task stream, warm-up fraction, precision and table geometry are matched across
+mixtures within each backbone. Across backbones the adaptation budgets differ; the primary
+contrast is the prior effect within each backbone, not a compute-controlled architecture contest.
+
+Exp2 retains 768 trained checkpoints before adding shared released references. Using the observed
+checkpoint sizes (about 221/229 MB for TabICL PD/LGD and 639/700 MB for TabPFN PD/LGD), these
+permanent snapshots alone require roughly 343 GB in decimal units. Exp1, Exp3, rolling resume
+files and temporary benchmark storage require additional space. This is a planning estimate,
+not a current quota measurement. Estimate runtime from Exp0's B200 throughput measurements;
+short-table Exp1 timings do not establish the cost of this long-table continuation.
+
+### 3.3 Experiment 3: constrained adaptation at a fixed 50% mixture
+
+The primary experiment uses the same 10k-update geometry and three paired seeds as Exp2.
+The mixture is fixed in advance at 50%; it is not chosen from Exp1 holdout results.
+For each model/task, select the better of Exp2's two 50% rates by mean development ROC-AUC
+(PD) or R² (LGD), averaging the five folds, datasets equally, and all three training seeds.
+Exact ties choose the smaller numeric rate. Reuse those 12 full-CPT-with-decay runs as baselines.
+
+| Additional method | Trainable parameters | Settings |
+|---|---|---|
+| No decay | Whole model | Selected full-model LR; weight decay 0 |
+| L2-SP | Whole model | Selected LR; weight decay 0; alpha in {0.0003, 0.003, 0.03} |
+| DiagScale | Query-scaling deltas only | AdamW; LR in {0.001, 0.01, 0.03}; adapter decay 0.01 |
+| Q/V LoRA | Rank-16 Q/V factors only | Alpha 16, no dropout; AdamW; LR in {1e-5, 1e-4, 1e-3}; adapter decay 0.01 |
+
+The three tuned methods each receive three 2,500-update pilots at seed 991 per backbone/task:
+36 pilots total. Each pilot follows the first 2,500 updates of the main 10,000-update schedule,
+not a compressed cosine cycle. Only complete development five-fold results choose a candidate.
+Pilots neither benchmark holdout/OOD nor monitor them. All candidate scores are recorded.
+The selected setting is then run from the released weights at seeds 0/1/2 for 10k updates;
+pilots are never counted as independent main-seed observations. No-decay needs no pilot.
+
+L2-SP adds alpha/2 times the squared displacement from the **released** parameters. The anchor
+is reconstructed from the released checkpoint before resume; it never moves to the resumed
+parameters. In TabPFN, its gradient is added once after unscaling/replaying the data gradient and
+before clipping. Ordinary decay instead shrinks the current parameters toward zero. Both are
+legitimate regularizers but express different assumptions; Exp3 measures that distinction.
+
+DiagScale starts with identity query multipliers after each native query-scaling operation,
+including TabPFN's `SoftmaxScalingMLP`; all original weights are frozen. Q/V LoRA starts with a
+zero residual, preserves packed TabICL K weights exactly, and adapts native TabPFN Q/V projections.
+Adapter checkpoints retain resumable factors; LoRA also exports merged native weights for normal
+inference. DiagScale is installed before inference caches are built. Adapter optimizers use 10%
+warm-up and clipping at 1. Adapter-only decay does not decay the frozen backbone.
+
+These are adaptations of literature mechanisms, not claims that the papers measured this exact
+multi-table CPT grid. Source anchors: `repositories/Test-Time Compute for Tabular Foundation Models.txt`,
+`inject_diagscale`, and the associated Ning et al. paper; Real-TabPFN's L2-SP continuation;
+Hu et al. LoRA. The DiagScale/LoRA paper uses single-table adaptation, and its all-linear LoRA
+scope differs from this explicitly named Q/V variant. Pilot grids are bounded sensitivity checks,
+not exhaustive optimization. Other retention techniques are outside this registered experiment.
+
+`python -m src.experiments.selection --stage learning-rate` freezes the first receipt;
+`--stage adapters` freezes the pilot selection. Both bind complete benchmark receipts, CSV hashes
+and current source. They never rewrite YAML or submit jobs. A changed or missing receipt blocks
+Exp3. Holdout/OOD are reporting outcomes only. The historical inspection of designated holdout
+data is still disclosed; development-only selection now does not erase that exposure.
+
+### 3.4 Experiment 0: implementation and capacity gates
+
+The CPU job covers the portable suite, all dataset loads/splits, configurations, task replay,
+selection isolation, checkpoint retention, receipts, output paths and notebook contracts.
+The GPU campaign covers native scratch/full-CPT routes, optimizer stop/resume, model equivalence,
+16 released-weight method/task/backbone round trips, 34 long-context stages (including 60k-row
+LoRA and DiagScale), wide-feature inference and representative full-table five-fold benchmarks.
+Passing this gate verifies those paths on that allocation; it cannot prove every future stochastic
+batch or the entire production benchmark will succeed, nor establish a treatment's efficacy.
+
+A resubmission continues an unchanged campaign with verified artifacts. When code/packages/inputs
+or the CPU receipt change, `--resume-if-current` starts a fresh isolated campaign. An actual failed
+current campaign is not silently skipped. Do not edit/pull during a campaign. Exp1 outputs are not
+cleaned by this process.
 
 ## 4. Matched compute, seeds, and the two phases
 
@@ -369,10 +245,10 @@ The current package comparison already filters native-prior tables but not credi
 generation cost and accepted-task difficulty can therefore differ across mixtures. The updated
 long-context law preserves that declared comparison instead of changing filtering mid-study.
 
-**Seeds.** 3 per arm in Exp1 and Exp2, 2 in Exp3 (paired: a seed gives both arms the same base tasks
+**Seeds.** 3 per main arm in Exp1, Exp2 and Exp3 (paired: a seed gives both arms the same base tasks
 and initial weights within a backbone). Report mean ± spread; gaps smaller than the seed spread
 indicate descriptive instability, not a significance test or an alternative selection rule.
-The Exp3 rule above breaks only exact development-mean ties by smaller credit share.
+Exp3 breaks exact development-score ties by the smaller numeric candidate, with no holdout tie-break.
 
 **Two phases, and the order is a fact about the data.** Phase 1 (`pretrain_{pd,lgd}.slurm`) trains one
 checkpoint per saved step per arm; phase 2 (`benchmark.slurm`) scores every saved checkpoint — one array
@@ -410,11 +286,12 @@ do not settle that definition. Report it as the supplied binary lending benchmar
 without claiming an independently verified default-event definition or reversing its labels.
 
 **Why a holdout at all, when every model trains on synthetic data?** Because choices are still made
-by looking at real-data results — which mix Exp3 runs, which checkpoint a curve is read at. A choice
+by looking at real-data results — which learning rate or adapter strength Exp3 uses. A choice
 made on a set of datasets is fitted to them: the winning configuration's score there is biased upward
 (the winner's curse), exactly as a hyperparameter chosen on test data is. Training on synthetic data
-removes the leak through the weights, not the leak through the choice. Since Experiment 2 dropped its
-search (30-09-2026), the one choice left is Exp3's mix, made on development; every Exp1 and Exp2 result
+removes the leak through the weights, not the leak through the choice. Exp2 reports both rates and
+all four mixtures. Exp3 fixes the 50% mixture, selects the base rate on Exp2 development scores,
+then selects method strengths on separate development-only pilots. Every Exp1 and Exp2 result
 is reported on all eligible datasets, with the designated holdout shown separately. This separation
 does not erase the effects of earlier inspection and must not be described as an unbiased fresh test.
 
@@ -422,8 +299,8 @@ Five-fold CV estimates each fixed model's performance; selecting a mixture using
 assessment scores and then reporting only its winning score would still induce selection bias.
 Exp2 therefore retains every predeclared mixture and the final checkpoint, with paired effects
 against the matching continued-pretraining control and released model reported separately.
-Only Exp3's nonzero mix is selected, using development datasets and the primary metric alone.
-OOD retention is an outcome to report, not an extra rule for re-ranking that choice. Existing
+Only Exp3's rates and method strengths are selected, using development datasets and the primary metric alone.
+OOD retention is an outcome to report, not an extra rule for re-ranking those choices. Existing
 holdout exposure remains disclosed; this separation cannot make past inspection disappear.
 These distinctions follow [Cawley & Talbot (2010)](https://www.jmlr.org/papers/v11/cawley10a.html)
 and [Varma & Simon (2006)](https://doi.org/10.1186/1471-2105-7-91).
@@ -456,9 +333,10 @@ columns, so wide-table extrapolation is shared across prior arms. Source audit: 
 `de324efcca55be392feb0c01830b3b6ce364587f`; real released PD/LGD models also passed local
 601-feature prediction and regression-quantile probes, and both released classifiers passed
 2,986-feature probes matching the widest local table's width. Exp0 repeats wide probes on CUDA. Every
-saved checkpoint (every 2,500 steps and the final one) is scored, so each arm has a learning curve on
-real data as well as a final number. Exp1, Exp3 and Exp2's TabPFN-3 arms train on 1,024-row tables;
-Exp2's TabICLv2 arms use 400–60,000 rows. All are scored on full contexts of up to ~426,000 rows.
+saved permanent checkpoint is scored: Exp1 keeps its existing 2,500-step cadence; Exp2/Exp3 keep
+125, 250, 500, 1,000, 2,500, 5,000, 7,500 and 10,000. Exp3 pilots benchmark only 2,500 on
+development. Exp1 and Exp2/Exp3's TabPFN-3 arms train on 1,024-row tables;
+Exp2/Exp3's TabICLv2 arms use 400–60,000 rows. All main runs are scored on full contexts of up to ~426,000 rows.
 Length exposure is matched across mixtures within each backbone, but it differs across experiments
 and backbones. Released TabICLv2 also completed its earlier training stages; extending our Exp2
 row distribution does not make its cumulative training budget equal to theirs.
@@ -557,10 +435,8 @@ are preserved. This closes known exclusions; it does not certify every anonymise
    after source review; the existing two-track mixture comparison is not a substitute.
 3. **ZOIB/mixture LGD head** — held in reserve behind decoding + support constraints
    ([§2.4](#2-verified-premises)); revisit only if those are insufficient.
-4. **Which mix fills Exp3's `FILL_FROM_EXP1`** — the predeclared development selection in
-   `src/eval/selection.py`, at Exp1's final 12,500-step checkpoint. This is a budget-conditional
-   choice, not proof that its ranking remains optimal at 200,000 steps; Exp3 tests persistence.
-   Keep the current grid frozen. Exp2 compares every mix independently.
+4. **Retention selection** — resolved 26-10-2026: fixed 50% mixture, two full-model rates
+   tested in Exp2, and development-only candidate pilots in Exp3. The long scratch run is dropped.
 5. **Outcome information in the evaluation data (audit of 29-09-2026; decision revised 12-10-2026).**
    The following historical audit numbers describe that cache/split, not the corrected benchmark. A column
    scan (ExtraTrees out-of-bag R² with and without the suspects, processed data) found:

@@ -182,9 +182,7 @@ def load_variants_or_generate(
 
     from src.visualize.prior_plots import sample_tasks
 
-    # Exp1's config, because all three experiments on a track name the SAME prior_file — so
-    # any of them describes the prior these figures visualise, and Exp1 is the one that is
-    # never a template. Exp3 holds `FILL_FROM_EXP1` and would refuse to load.
+    # Describe the Exp1 prior independently of Exp2 geometry and Exp3 selection receipts.
     cfg = config or f"config/Exp1_{task.upper()}.yaml"
     print(f"no pools found for {task} — generating {n} datasets per arm live from {cfg}")
     original, _ = sample_tasks(cfg, n=n, credit_fraction=0.0, seed=seed)

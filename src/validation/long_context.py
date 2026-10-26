@@ -50,7 +50,7 @@ def observe_fp32_attention():
 
 
 def diagnostic_config(track: str, *, rows: int | None = None,
-                      source: str = "mixed") -> dict:
+                      source: str = "mixed", adaptation: str = "full") -> dict:
     """Use the resolved production recipe, with explicit diagnostic overrides."""
     if track not in {"pd", "lgd"}:
         raise ValueError("track must be pd or lgd")
@@ -60,7 +60,7 @@ def diagnostic_config(track: str, *, rows: int | None = None,
         raise ValueError("Mixed probes require the full sampled batch; corners require a source")
     matches = [c for c in expand_with_seeds(load(f"config/Exp2_{track.upper()}.yaml"))
                if c["arm"] == "tabicl" and c["seed"] == 0
-               and float(c["prior"]["credit_fraction"]) == .5]
+               and float(c["prior"]["credit_fraction"]) == .5 and c.get("lr_index", 0) == 0]
     if len(matches) != 1:
         raise ValueError("Expected exactly one seed-zero mixed TabICL recipe")
     cfg = copy.deepcopy(matches[0])
@@ -81,6 +81,11 @@ def diagnostic_config(track: str, *, rows: int | None = None,
         # process teardown; the actual heterogeneous batch is not shrunk.
         cfg["train"]["num_workers"] = min(int(cfg["train"]["num_workers"]),
                                            int(cfg["train"]["max_workers"]))
+    if adaptation not in {"full", "lora", "diagscale"}:
+        raise ValueError("Unknown capacity adaptation")
+    if adaptation != "full":
+        cfg["train"].update(adaptation=adaptation, optimizer="adamw", lora_rank=16,
+                            lora_alpha=16, lr=.001, weight_decay=.01)
     cfg["experiment"] = "exp0_capacity"
     cfg["_run_name"] = f"exp0_capacity_{track}_{source}_{rows or 'batch'}"
     # A capacity probe must execute a nonzero update. The production first
@@ -112,7 +117,7 @@ def capacity_batch(batch, *, rows: int, width: int):
 
 
 def run_probe(track: str, out: Path, *, rows: int | None = None,
-              source: str = "mixed") -> dict:
+              source: str = "mixed", adaptation: str = "full") -> dict:
     import torch
 
     if not torch.cuda.is_available():
@@ -121,7 +126,7 @@ def run_probe(track: str, out: Path, *, rows: int | None = None,
     from src.prior.stream import plan_batch
     from src.train.loop import Trainer
 
-    cfg = diagnostic_config(track, rows=rows, source=source)
+    cfg = diagnostic_config(track, rows=rows, source=source, adaptation=adaptation)
     train = cfg["train"]
     planned = plan_batch(cfg["seed"], 0, cfg["prior"], train["batch_size"],
                          regression=track == "lgd", credit_fraction=cfg["prior"]["credit_fraction"])
@@ -184,6 +189,7 @@ def run_probe(track: str, out: Path, *, rows: int | None = None,
                             attention="FP32 SDPA; efficient backends required; upstream FA3 disabled",
                             activation_checkpointing=train["activation_checkpointing"],
                             diagnostic_peak_lr=train["lr"],
+                            adaptation=adaptation,
                             scope="One diagnostic update, not a performance or campaign-runtime estimate")
     finally:
         # The representative case deliberately exercises production workers. Do
@@ -199,11 +205,12 @@ def main(argv=None) -> int:
     parser.add_argument("--track", choices=("pd", "lgd"), required=True)
     parser.add_argument("--rows", type=int, choices=[r for r, _ in CAPACITY_CORNERS])
     parser.add_argument("--source", choices=("base", "credit", "mixed"), required=True)
+    parser.add_argument("--adaptation", choices=("full", "lora", "diagscale"), default="full")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     report = Report()
     try:
-        detail = run_probe(args.track, args.out, rows=args.rows, source=args.source)
+        detail = run_probe(args.track, args.out, rows=args.rows, source=args.source, adaptation=args.adaptation)
         report.add("long_context", f"{args.track}/{args.source}/{args.rows or 'batch'}", PASS, detail)
     except Exception as exc:
         import traceback

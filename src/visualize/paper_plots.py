@@ -68,10 +68,11 @@ def components_ready(track):
     return _components(track) is not None
 
 
-def development_selection(track, exp="exp1"):
+def development_selection(track, exp="exp1", *, backbone=None):
     frame = final_credit(track, exp, "development")
     if frame is None:
         return campaign.availability("Complete current-protocol development results are required for mixture selection.")
+    frame = _backbone(frame, backbone)
     part = frame.assign(identity=identities(frame))
     part["configuration"] = part.identity.str.replace(r"__s\d+$", "", regex=True)
     metric = "roc_auc" if track == "pd" else "r2"
@@ -84,7 +85,7 @@ def development_selection(track, exp="exp1"):
         values = seeds.loc[name].to_numpy()
         ax.plot([values.min(), values.max()], [i, i], color=_mass_colour(name), linewidth=style.EFFECT_LINE)
         ax.scatter(values, np.full(len(values), i), color=_mass_colour(name), s=style.SEED_POINT)
-    ax.set_yticks(range(len(order)), [label(name) if name.startswith("exp") else
+    ax.set_yticks(range(len(order)), [_compact_label(name, backbone) if name.startswith("exp") else
                                     style.reference_label(name, track) for name in order])
     ax.set(xlabel=f"Development {style.metric_label(metric)}", title="Complete final development results")
     return fig
@@ -101,8 +102,26 @@ def label(configuration):
     match = re.search(r"credit_fraction=([0-9p.]+)", configuration)
     mix = style.prior_mix_label(float(match.group(1).replace("p", "."))) if match else configuration
     if configuration.startswith("exp2"):
-        return ("TabPFN-3" if "tabpfn3" in configuration else "TabICLv2") + " · " + mix
+        from src.experiments.design import RATES
+        backbone = "tabpfn3" if "tabpfn3" in configuration else "tabicl"
+        index = re.search(r"lr_index=(\d+)", configuration)
+        rate = RATES[backbone][int(index.group(1))] if index else None
+        return ("TabPFN-3" if backbone == "tabpfn3" else "TabICLv2") + " · " + mix + (f" · LR {rate:g}" if rate else "")
     return mix
+
+
+def _backbone(frame, backbone):
+    if backbone is None or frame is None:
+        return frame
+    ids = identities(frame)
+    own = ids.str.startswith("exp") & ids.str.contains("tabpfn3").eq(backbone == "tabpfn3")
+    ref = ids.eq("tabpfn3" if backbone == "tabpfn3" else "tabiclv2")
+    return frame[own | ref].copy()
+
+
+def _compact_label(name, backbone):
+    text = label(name)
+    return text.split(" · ", 1)[-1] if backbone is not None and name.startswith("exp2") else text
 
 
 def _table(frame, metric, track, *, ablations=False, reference=False):
@@ -130,7 +149,7 @@ def seed_differences(frame, configuration, control, metric):
 
 
 def paired_scores(track, exp="exp1", *, domain="credit", ablations=False,
-                  reference=False, subset="all", metrics=None):
+                  reference=False, subset="all", metrics=None, backbone=None):
     metrics = metrics or (("roc_auc", "log_loss") if track == "pd" else ("r2", "crps"))
     if ablations:
         frame = _components(track)
@@ -143,6 +162,7 @@ def paired_scores(track, exp="exp1", *, domain="credit", ablations=False,
     if frame is None or frame.empty:
         return campaign.availability("Complete final benchmark results required for paired comparisons. "
                                      "Training monitoring and incomplete folds are not used here.")
+    frame = _backbone(frame, backbone)
     tables = [_table(frame, m, track, ablations=ablations, reference=reference) for m in metrics]
     if any(t.empty for t in tables):
         return campaign.availability("No complete matched treatment and comparator cells are available.")
@@ -167,11 +187,11 @@ def paired_scores(track, exp="exp1", *, domain="credit", ablations=False,
         direction = "higher" if METRIC_DIRECTIONS[metric] else "lower"
         ax.set_xlabel(f"Treatment − comparator\n{direction} favors treatment")
         ax.xaxis.set_major_locator(MaxNLocator(nbins=3))
-        ax.set_yticks(range(len(table)), [label(r.configuration) for r in table.itertuples()])
+        ax.set_yticks(range(len(table)), [_compact_label(r.configuration, backbone) for r in table.itertuples()])
         ax.tick_params(axis="y", labelsize=style.PANEL_TEXT)
     counts = [int(v) for v in tables[0].datasets.unique()]
     comparator = "full 50% package" if ablations else "released weights" if reference else "equally trained 0% control"
-    fig.suptitle(f"Versus {comparator} · n={','.join(map(str, counts))} datasets",
+    fig.suptitle(("TabPFN-3 · " if backbone == "tabpfn3" else "TabICLv2 · " if backbone else "") + f"Versus {comparator} · n={','.join(map(str, counts))} datasets",
                  fontsize=style.PANEL_TEXT)
     handles = [Line2D([], [], color=style.CREDIT, marker="o", label="mean / dataset interval")]
     handles += [Line2D([], [], color=style.MUTED, linestyle="none", marker=style.SEED_MARKERS[s % 3],
@@ -195,6 +215,7 @@ def retention_frontier(track, exp="exp1", *, reference=False, subset="all"):
         return campaign.availability("No matched mixture/backbone occurs in both final domains.")
     style.apply()
     groups = ("tabicl", "tabpfn3") if exp == "exp2" else ("all",)
+    fractions = set()
     fig, axes = plt.subplots(1, len(groups), squeeze=False,
                              figsize=style.figsize(style.WIDTH_FULL, .64), sharex=True, sharey=True)
     for group, ax in zip(groups, axes[0]):
@@ -202,31 +223,47 @@ def retention_frontier(track, exp="exp1", *, reference=False, subset="all"):
         for row in rows.itertuples():
             match = re.search(r"credit_fraction=([0-9p.]+)", row.configuration)
             fraction = float(match.group(1).replace("p", "."))
+            fractions.add(fraction)
             color = style.credit_fraction_colour(fraction)
             ax.errorbar(row.mean_difference_credit, row.mean_difference_ood,
                     xerr=[[max(0, row.mean_difference_credit-row.ci_low_credit)],
                           [max(0, row.ci_high_credit-row.mean_difference_credit)]],
                     yerr=[[max(0, row.mean_difference_ood-row.ci_low_ood)],
                           [max(0, row.ci_high_ood-row.mean_difference_ood)]],
-                        fmt="o", color=color, markersize=style.FRONTIER_MARKER,
-                        label=style.prior_mix_label(fraction))
+                        fmt=style.RATE_MARKERS[int(re.search(r"lr_index=(\d+)", row.configuration).group(1))] if "lr_index=" in row.configuration else "o",
+                        color=color, markersize=style.FRONTIER_MARKER,
+                        label=_compact_label(row.configuration, group) if exp == "exp2" else style.prior_mix_label(fraction))
             xs = dict(seed_differences(credit, row.configuration, row.control, metric))
             ys = dict(seed_differences(ood, row.configuration, row.control, metric))
             for seed in sorted(set(xs) & set(ys)):
-                ax.scatter(xs[seed], ys[seed], color=color, marker=style.SEED_MARKERS[seed % 3],
+                # Mean markers encode the rate; small seed points cannot reuse
+                # those shapes with a conflicting meaning in the same panel.
+                ax.scatter(xs[seed], ys[seed], color=color,
+                           marker="." if exp == "exp2" else style.SEED_MARKERS[seed % 3],
                            s=style.SEED_POINT, alpha=.6)
         ax.axhline(0, color=style.MUTED, linestyle=":")
         ax.axvline(0, color=style.MUTED, linestyle=":")
         title = f"Credit versus generality · {subset} OOD" if group == "all" else ("TabPFN-3" if group == "tabpfn3" else "TabICLv2")
         title += (f"\nn={int(joined.datasets_credit.iloc[0])} credit; "
                   f"n={int(joined.datasets_ood.iloc[0])} OOD")
+        if exp == "exp2":
+            from src.experiments.design import RATES
+            high, low = RATES[group]
+            title += f"\nPeak LRs: {high:g} / {low:g}"
         ax.set(xlabel=f"Credit Δ {style.metric_label(metric)}\nHigher is better on both axes", title=title)
         ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
         ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
     axes[0, 0].set_ylabel(f"Native OOD Δ {style.metric_label(metric)}")
     fig.suptitle("Versus released weights" if reference else "Versus equally trained 0% control",
                  fontsize=style.PANEL_TEXT)
-    style.legend_below(fig, ncol=2)
+    if exp == "exp2":
+        handles = [Line2D([], [], color=style.credit_fraction_colour(f),
+                           label=style.prior_mix_label(f)) for f in sorted(fractions)]
+        handles += [Line2D([], [], color=style.INK, linestyle="none", marker=m, label=label)
+                    for m, label in zip(style.RATE_MARKERS, ("Higher peak LR", "Lower peak LR"))]
+        style.legend_below(fig, handles, ncol=3)
+    else:
+        style.legend_below(fig, ncol=2)
     return fig
 
 
@@ -234,12 +271,13 @@ def distributional_scorecard(exp="exp1"):
     return paired_scores("lgd", exp, metrics=("r2", "crps", "boundary_mass_abs_err"))
 
 
-def dataset_effects(track, exp="exp1"):
+def dataset_effects(track, exp="exp1", *, backbone=None):
     """Every designated-holdout dataset, same matched control as the headline."""
     frame = final_credit(track, exp)
     if frame is None:
         return campaign.availability("Complete final benchmark cells are required for per-dataset effects.")
     metric = "roc_auc" if track == "pd" else "r2"
+    frame = _backbone(frame, backbone)
     contrasts = _table(frame, metric, track)
     part = frame.assign(identity=identities(frame))
     part["configuration"] = part.identity.str.replace(r"__s\d+$", "", regex=True)
@@ -252,7 +290,7 @@ def dataset_effects(track, exp="exp1"):
     limit = max(float(np.abs(values).max()), 1e-6)
     image = ax.imshow(values, cmap=style.CMAP_DIV, vmin=-limit, vmax=limit, aspect="auto")
     ax.set_yticks(range(len(scores.columns)), [s.split(".", 1)[-1] for s in scores.columns])
-    ax.set_xticks(range(len(contrasts)), [label(c).replace(" · ", "\n") for c in contrasts.configuration])
+    ax.set_xticks(range(len(contrasts)), [_compact_label(c, backbone).replace(" · ", "\n") for c in contrasts.configuration])
     ax.tick_params(axis="x", labelsize=style.PANEL_TEXT)
     for (i, j), value in np.ndenumerate(values):
         ax.text(j, i, f"{value:+.3f}", ha="center", va="center", fontsize=style.PANEL_TEXT,
@@ -358,94 +396,3 @@ def results_summary(track, exp="exp1"):
                   "Endpoint matching is aggregate, not conditional calibration; tolerance 1e-4; 99 quantile levels."]
     lines.append("Dataset bootstrap intervals are descriptive; training seeds/folds are not extra datasets.")
     return "\n".join(lines)
-
-
-def budget_selected(track):
-    cfg = load(paths.config_path(f"Exp3_{track.upper()}"), allow_placeholders=True)
-    values = cfg["prior"]["credit_fraction"]
-    return len(values) == 2 and values[0] == 0 and values[1] in (.25, .5, 1.)
-
-
-def budget_summary():
-    from src.visualize import training_plots as tp
-
-    lines = ["A · FROZEN SELECTION"]
-    selected = {track: budget_selected(track) for track in ("pd", "lgd")}
-    for track, ready in selected.items():
-        cfg = load(paths.config_path(f"Exp3_{track.upper()}"), allow_placeholders=True)
-        lines.append(f"{track.upper()}: mixtures {cfg['prior']['credit_fraction']}; frozen={ready}; "
-                     f"paired seeds {cfg['seeds']}.")
-    lines += ["\nB · COMMON-BUDGET DEVELOPMENT MONITORING",
-              "Budgets: 800,000 versus 12,800,000 tasks; 12,500 versus 200,000 updates at 64 tasks/update."]
-    for track, ready in selected.items():
-        progress = tp.load_progress(track, "exp3") if ready else {}
-        paired = 0
-        metric = "roc_auc" if track == "pd" else "r2"
-        datasets, _ = tp.comparable_datasets(progress, metric)
-        for name, frame in sorted(progress.items()):
-            if "credit_fraction=0__" in name:
-                continue
-            control = re.sub(r"credit_fraction=[0-9p.]+", "credit_fraction=0", name)
-            if control not in progress or not datasets:
-                continue
-            baseline = progress[control]
-            a = pd.Series(tp._mean_metric(frame, metric, datasets=datasets).to_numpy(), index=frame.step)
-            b = pd.Series(tp._mean_metric(baseline, metric, datasets=datasets).to_numpy(), index=baseline.step)
-            common = a.index.intersection(b.index)
-            if len(common):
-                last = common.max()
-                lines.append(f"{name}: last common update {last:,} / {64*last:,} tasks; "
-                             f"development Δ {metric} {a.loc[last]-b.loc[last]:+.5f}.")
-                paired += 1
-        if not paired:
-            lines.append(f"{track.upper()}: no selected, seed-paired local monitoring evidence.")
-    lines.append("\nC · FINAL DESIGNATED-HOLDOUT EFFECTS")
-    for track, ready in selected.items():
-        frame = final_credit(track, "exp3") if ready else None
-        lines.append(f"{track.upper()}: " + ("not yet completely benchmarked" if frame is None else
-                     "\n" + _table(frame, "roc_auc" if track == "pd" else "r2", track).to_string(index=False)))
-    return "\n".join(lines)
-
-
-def budget_gain(track):
-    if not budget_selected(track):
-        return campaign.availability("Experiment 3 awaits the documented development-selected Experiment 1 mixture. "
-                                     "No selection or long-budget result is inferred from partial monitoring.")
-    from src.visualize import training_plots as tp
-    progress = tp.load_progress(track, "exp3")
-    if not progress:
-        return campaign.availability("The selected-versus-control Experiment 3 has no downloaded training traces yet.")
-    style.apply()
-    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, .55))
-    drawn = 0
-    for name, df in sorted(progress.items()):
-        if "credit_fraction=0__" in name:
-            continue
-        control = re.sub(r"credit_fraction=[0-9p.]+", "credit_fraction=0", name)
-        if control not in progress:
-            continue
-        metric = "roc_auc" if track == "pd" else "r2"
-        datasets, _ = tp.comparable_datasets(progress, metric)
-        a = tp._mean_metric(df, metric, datasets=datasets)
-        b = tp._mean_metric(progress[control], metric, datasets=datasets)
-        a = pd.Series(a.to_numpy(), index=df.step)
-        b = pd.Series(b.to_numpy(), index=progress[control].step)
-        common = a.index.intersection(b.index)
-        if not len(common) or not len(datasets):
-            continue
-        seed = int(name.rsplit("__s", 1)[-1])
-        ax.plot(common.to_numpy()*64, (a.loc[common]-b.loc[common]).to_numpy(),
-                color=style.SERIES[seed % len(style.SERIES)], label=f"paired seed {seed}")
-        drawn += 1
-    if not drawn:
-        plt.close(fig)
-        return campaign.availability("No seed-matched control and treatment have common recorded development updates yet.")
-    ax.axhline(0, color=style.MUTED, linestyle=":")
-    ax.axvline(800_000, color=style.REFERENCE, linestyle="--", label="Exp1 budget: 0.8M tasks")
-    ax.axvline(12_800_000, color=style.REFERENCE, linestyle=":", label="Exp3 budget: 12.8M tasks")
-    ax.ticklabel_format(axis="x", style="sci", scilimits=(6, 6))
-    ax.set(xlabel="Cumulative synthetic tasks (64 per update)",
-           ylabel=f"Development Δ {style.metric_label('roc_auc' if track == 'pd' else 'r2')}",
-           title=f"{track.upper()} · selected mixture versus equally trained control")
-    style.legend_below(fig, ncol=2)
-    return fig

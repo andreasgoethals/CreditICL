@@ -95,6 +95,9 @@ def load_our_checkpoint(
             f"Loading it non-strictly would score a partly-random model as if it were "
             f"trained, so this is fatal rather than a warning."
         )
+    from src.models.adapters import restore_inference
+
+    restore_inference(model, payload)
     model.to(device).eval()
 
     meta = {
@@ -210,6 +213,7 @@ class CreditICLBaseline(TabICLBaseline):
         # `crediticl_config` is written by `src/train/checkpoint.py` and appears in no upstream
         # artefact, so its presence is the signature of a checkpoint we trained.
         meta = checkpoint_metadata(self.checkpoint)
+        self._crediticl_adapter = meta.get("adaptation", "full")
         if not meta.get("ours"):
             raise ValueError(
                 f"{self.checkpoint} has no `crediticl_config` block, so it was NOT produced by "
@@ -266,6 +270,7 @@ def checkpoint_metadata(path: str | Path) -> dict[str, Any]:
         "task": cfg.get("task"),
         "run_name": cfg.get("_run_name"),
         "credit_fraction": (cfg.get("prior") or {}).get("credit_fraction"),
+        "adaptation": (payload.get("crediticl_adapter") or {}).get("method", "full"),
     }
 
 

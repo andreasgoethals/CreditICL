@@ -78,7 +78,7 @@ def test_corners_fix_shape_without_replacing_the_synthetic_mechanisms(track, sou
 
 def test_mandatory_gpu_plan_covers_every_corner_and_source_in_separate_bounded_processes():
     stages = [s for s in campaign.plan("gpu") if s.name.startswith("long-context-")]
-    assert len(stages) == 2 * (2 * len(lc.CAPACITY_CORNERS) + 1)
+    assert len(stages) == 2 * (2 * len(lc.CAPACITY_CORNERS) + 3)
     assert len({s.command for s in stages}) == len(stages)
     for track in ("pd", "lgd"):
         for rows, _ in lc.CAPACITY_CORNERS:
@@ -87,6 +87,9 @@ def test_mandatory_gpu_plan_covers_every_corner_and_source_in_separate_bounded_p
                 assert stage.command[stage.command.index("--rows") + 1] == str(rows)
                 assert stage.command[stage.command.index("--source") + 1] == source
         assert any(s.name == f"long-context-{track}-mixed-batch" for s in stages)
+        for method in ("lora", "diagscale"):
+            stage = next(s for s in stages if s.name == f"long-context-{track}-{method}-60000")
+            assert stage.command[stage.command.index("--adaptation") + 1] == method
     assert all(s.phase == "capacity" and s.max_seconds == 7200 and s.report for s in stages)
     assert not any(s.name.startswith("long-context-") for s in campaign.plan("cpu"))
 

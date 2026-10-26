@@ -104,6 +104,13 @@ def plan(phase: str = "gpu") -> list[Stage]:
     from src.validation.long_context import CAPACITY_CORNERS
 
     for track in paths.TASKS:
+        for backbone in ("tabicl", "tabpfn3"):
+            for method in ("no_decay", "l2sp", "diagscale", "lora"):
+                name = f"adaptation-{track}-{backbone}-{method}"
+                folder = report / name
+                stages.append(Stage(name, (py, "-m", "src.validation.adaptation", "--track", track,
+                    "--backbone", backbone, "--method", method, "--out", str(folder)),
+                    report=str(folder / "checks.json"), max_seconds=1800))
         # Fresh processes bound CUDA/worker state, and each successful corner is
         # receipt-bound so a later allocation does not repeat completed probes.
         for rows, _width in CAPACITY_CORNERS:
@@ -114,6 +121,13 @@ def plan(phase: str = "gpu") -> list[Stage]:
                     "--track", track, "--rows", str(rows), "--source", source,
                     "--out", str(folder)), "capacity", report=str(folder / "checks.json"),
                     max_seconds=2 * 3600))
+        for method in ("lora", "diagscale"):
+            name = f"long-context-{track}-{method}-60000"
+            folder = report / name
+            stages.append(Stage(name, (py, "-m", "src.validation.long_context", "--track", track,
+                "--rows", "60000", "--source", "credit", "--adaptation", method,
+                "--out", str(folder)), "capacity", report=str(folder / "checks.json"),
+                max_seconds=2 * 3600))
         name = f"long-context-{track}-mixed-batch"
         folder = report / name
         stages.append(Stage(name, (py, "-m", "src.validation.long_context", "--track", track,
@@ -551,7 +565,21 @@ def readiness(phase: str = "gpu") -> list:
         return [Check(f"Experiment 0 {phase}", False, f"{exc}. Run the CPU job, then the GPU job, for the current code.")]
 
 
-def run_validation(*, hours: float = 23.5, phase: str = "gpu", resume: bool = False) -> int:
+def continuation_is_current(saved: dict, phase: str) -> bool:
+    """Choose the campaign, without forgiving damaged evidence in that campaign."""
+    from src.eval.benchmark_status import input_digest
+    from src.utils.environment import environment_fingerprint
+    from src.utils.preflight import source_fingerprint
+
+    return (saved.get("schema") == SCHEMA and saved.get("phase") == phase
+            and saved.get("source_fingerprint") == source_fingerprint()
+            and saved.get("environment_fingerprint") == environment_fingerprint()
+            and saved.get("inputs") == input_inventory()
+            and (phase != "gpu" or saved.get("cpu_receipt") == input_digest(receipt_path("cpu"))))
+
+
+def run_validation(*, hours: float = 23.5, phase: str = "gpu", resume: bool = False,
+                   resume_if_current: bool = False) -> int:
     from filelock import FileLock
 
     from src.utils.environment import environment_fingerprint
@@ -562,7 +590,11 @@ def run_validation(*, hours: float = 23.5, phase: str = "gpu", resume: bool = Fa
     pointer = receipt_path(phase)
     pointer.parent.mkdir(parents=True, exist_ok=True)
     with FileLock(str(receipt_path().with_suffix(".lock")), timeout=0), interruption_signals():
-        previous = json.loads(pointer.read_text(encoding="utf-8")) if resume and pointer.exists() else None
+        previous = json.loads(pointer.read_text(encoding="utf-8")) if (resume or resume_if_current) and pointer.exists() else None
+        if previous and resume_if_current and not continuation_is_current(previous, phase):
+            print("Previous campaign belongs to different code, packages, inputs or CPU validation; "
+                  "starting a fresh campaign. Its history is preserved.", flush=True)
+            previous = None
         attempt = previous["attempt"] if previous else (
             phase + "_" + datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + f"_j{os.environ['SLURM_JOB_ID']}_{uuid.uuid4().hex[:8]}")
         with attempt_scope(attempt):
@@ -656,10 +688,14 @@ def main(argv=None) -> int:
     ap.add_argument("--plan", action="store_true", help="print stages without executing or writing")
     ap.add_argument("--phase", choices=("cpu", "gpu"), required=True)
     ap.add_argument("--hours", type=float, default=None)
-    ap.add_argument("--resume", action="store_true", help="continue the same verified campaign after walltime")
+    continuation = ap.add_mutually_exclusive_group()
+    continuation.add_argument("--resume", action="store_true", help="continue the same verified campaign after walltime")
+    continuation.add_argument("--resume-if-current", action="store_true",
+                              help="continue matching evidence, or start fresh when campaign inputs changed")
     args = ap.parse_args(argv)
     if args.plan:
         for stage in plan(args.phase):
             print(f"{stage.phase:12} {stage.name}")
         return 0
-    return run_validation(phase=args.phase, hours=args.hours or (3.8 if args.phase == "cpu" else 23.5), resume=args.resume)
+    return run_validation(phase=args.phase, hours=args.hours or (3.8 if args.phase == "cpu" else 23.5),
+                          resume=args.resume, resume_if_current=args.resume_if_current)

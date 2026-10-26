@@ -1,23 +1,9 @@
-# =============================================================================
-# EXPERIMENT 2 — PD — IS THE CREDIT PRIOR USEFUL FOR THE REAL MODELS? (2 x 4 x 3 = 24 arms)
-#
-# Continued pretraining of RELEASED TabICLv2 and TabPFN-3 on FOUR mixtures (0%, 25%, 50%, 100%).
-# Exp1 does not select an Exp2 winner. Fixed literature-derived recipes, no search:
-#   TabICLv2: stage-3 table distribution and optimizer (400–60,000 rows log-uniform,
-#             79–81% context, Muon lr 2e-5, 10,000 updates), from released weights;
-#   TabPFN-3: TabPFN-Wide's v2-classifier recipe (Kolberg et al. 2026: AdamW,
-#             lr 1e-5, weight decay 1e-4, 10,000 steps), adapted to v3 and our tasks.
-# These are controlled starting recipes, not evidence of optimal hyperparameters.
-# The same recipe for every mix, so the comparison is about the prior. Every 2,500-step checkpoint is
-# scored (the learning curve); the FINAL one is the result, as both recipes fix the length.
-#
-#   python scripts/pretrain.py --config config/Exp2_PD.yaml --list
-#
-# Design: docs/EXPERIMENTAL_DESIGN.md   Prior: docs/PRIORS.md   Runs: docs/RUNS.md
-# =============================================================================
-
+# Experiment 2: two models x four mixtures x two learning rates x three seeds = 48 runs per task.
+# TabICL stage-3 CPT; TabPFN-v3 native differentiable fine-tuning applied to synthetic tables.
+# See docs/EXPERIMENTAL_DESIGN.md for provenance and comparison limits.
 
 experiment: exp2_pd
+design: cpt
 task: pd
 
 # ----------------------------------------------------------------------------
@@ -29,6 +15,7 @@ architecture: tabicl # overridden by every arm
 # THE SWEEP — every multi-value knob, crossed. This block IS the experiment.
 # ----------------------------------------------------------------------------
 sweep:
+  lr_index: [0, 1] # primary and lower rate; model-specific numeric rates in src/experiments/design.py
   arm: [tabicl, tabpfn3] # the two released foundation models
   prior.credit_fraction: [0.0, 0.25, 0.5, 1.0] # share of each batch from our prior; 0.0 = continued pretraining on the control prior
   seeds: [0, 1, 2] # repeats
@@ -52,7 +39,7 @@ arms: # one set of overrides per arm; `sweep.arm` picks one per run (src/utils/c
     train.weight_decay: 0.01
     train.warmup_proportion: 0.01
     train.gradient_clipping: 1.0 # TabICLv2's own continued pretraining: upstream stage 3 (tfm-library TabICL.txt scripts/train_v2_clf_stage3.sh: Muon, lr 2e-5, wd 0.01, 1 % warm-up, clip 1, 10k steps)
-  tabpfn3: { architecture: tabpfn3, train.amp: true, prior.encoding: raw, init.pretrained_path: checkpoints/tabpfn-v3-classifier-v3_default.ckpt, train.batch_size: 16, train.optimizer: adamw, train.lr: 1.0e-5, train.weight_decay: 1.0e-4, train.warmup_proportion: 0.1, train.gradient_clipping: 1.0, progress.every_datasets: 8000 } # TabPFN-Wide's continued pretraining of released TabPFN on a synthetic prior (Kolberg et al. 2026, papers/2026/03_Kolberg: AdamW lr 1e-5, wd 1e-4, warm-up + cosine, clip 1, batch 16, 10k steps)
+  tabpfn3: { architecture: tabpfn3, train.amp: true, prior.encoding: raw, init.pretrained_path: checkpoints/tabpfn-v3-classifier-v3_default.ckpt, train.batch_size: 16, train.optimizer: adamw, train.lr: 1.0e-5, train.weight_decay: 0.01, train.warmup_proportion: 0.1, train.gradient_clipping: 1.0, progress.every_datasets: 8000 } # Native TabPFN fine-tuning optimizer; 16-table synthetic updates are a research choice, not the unpublished v3 pretraining recipe.
 
 # ----------------------------------------------------------------------------
 # THE PRIOR — same mechanisms as Exp1; backbone-specific table geometry above
@@ -149,6 +136,7 @@ init:
 # TRAINING — continued pretraining (docs/EXPERIMENTAL_DESIGN.md, Experiment 2)
 # ----------------------------------------------------------------------------
 train:
+  keep_steps: [125, 250, 500, 1000, 2500, 5000, 7500, 10000]
   max_steps: 10000 # upstream's stage 3 is 10,000 steps; TabPFN-Wide's continued pretraining plateaus by 10,000
   batch_size: 64 # datasets per UPDATE, upstream's; the tabpfn3 arms use 16, as TabPFN-Wide
   micro_batch_size: 4 # TabICL arm overrides to one; TabPFN prepares one task at a time

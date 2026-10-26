@@ -23,12 +23,12 @@ def source_fingerprint() -> str:
     from src.utils.paths import REPO_ROOT
 
     files = [REPO_ROOT / "pyproject.toml"]
-    for directory in ("src/data", "src/eval", "src/models", "src/prior", "src/train", "src/utils", "src/validation", "src/visualize",
+    for directory in ("src/data", "src/eval", "src/experiments", "src/models", "src/prior", "src/train", "src/utils", "src/validation", "src/visualize",
                       "config", "scripts", "tests"):
         files.extend(p for p in (REPO_ROOT / directory).rglob("*")
                      if p.is_file() and p.suffix in (".py", ".yaml", ".slurm", ".sh"))
     files.extend((REPO_ROOT / "notebooks").rglob("*.ipynb"))
-    return _fingerprint(files, planned_selection=True)
+    return _fingerprint(files)
 
 
 def training_fingerprint() -> str:
@@ -66,7 +66,7 @@ def training_fingerprint_for(implementation: str) -> str:
     return hashlib.sha256((implementation + json.dumps(versions, sort_keys=True)).encode()).hexdigest()
 
 
-def _fingerprint(files: list[Path], *, planned_selection: bool = False) -> str:
+def _fingerprint(files: list[Path]) -> str:
     from src.utils.paths import REPO_ROOT
 
     digest = hashlib.sha256()
@@ -79,22 +79,6 @@ def _fingerprint(files: list[Path], *, planned_selection: bool = False) -> str:
             # Executing notebooks changes outputs/metadata, never the tested cell sources.
             nb = json.loads(text)
             text = json.dumps([(c["cell_type"], "".join(c["source"])) for c in nb["cells"]], ensure_ascii=False)
-        if planned_selection and path.relative_to(REPO_ROOT).as_posix() in (
-                "config/Exp3_PD.yaml", "config/Exp3_LGD.yaml"):
-            # Exp3 deliberately chooses between the configured 25%, 50% and 100%
-            # mixtures AFTER Exp1. That one planned choice is not a code change.
-            # Every other recipe value (and any untested mixture) remains hashed.
-            import yaml
-
-            cfg = yaml.safe_load(text)
-            sweep = cfg.get("sweep", {}) if isinstance(cfg, dict) else {}
-            values = sweep.get("prior.credit_fraction")
-            if (isinstance(values, list) and len(values) == 2
-                    and type(values[0]) in (int, float) and values[0] == 0
-                    and (values[1] == "FILL_FROM_EXP1" or
-                         (type(values[1]) in (int, float) and values[1] in (.25, .5, 1.0)))):
-                sweep["prior.credit_fraction"] = [0.0, "FILL_FROM_EXP1"]
-            text = json.dumps(cfg, sort_keys=True)
         digest.update(text.encode())
         digest.update(b"\0")
     return digest.hexdigest()

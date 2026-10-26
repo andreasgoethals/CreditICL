@@ -10,6 +10,11 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 26-10-2026
 
+- Verify 1,928 local tests (32 VSC-only skips), execute 12 notebooks and visually review all 40 PDFs; keep new campaign launches on the B200 allocation awaiting Exp0 validation.
+- Implement two-rate Exp2 with eight permanent checkpoints and fixed-50% Exp3 retention pilots/main runs; preserve exact reviewed Exp1 completion/resume and benchmark identities.
+- Add native DiagScale and Q/V LoRA, TabPFN L2-SP, frozen development-selection receipts, adapter validation and continuation/retention notebooks; start a fresh Exp0 campaign when old receipts are stale.
+- Remove retired long-scratch plotting helpers and retry transient Windows publication locks without replacing valid benchmark files on failure.
+- Record CPU validation 62431090 passing and GPU validation 11739875 submitted; keep proposed Exp2/Exp3 changes separate from validated code.
 - Preserve the reviewed completed Exp1 campaign when adding the quarter-mixture runs; keep checkpoint resume and unknown source/package changes blocked.
 - Verify 1,830 portable tests (30 VSC-only skips), execute all 12 notebooks/37 PDFs, and visually inspect the changed four-mixture coverage figures.
 - Run the cross-worker replay test under the production Python hash seed, including Windows-spawned workers.

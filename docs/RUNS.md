@@ -167,6 +167,96 @@ The one thing to do differently.
 
 ## Runs
 
+## 26-10-2026 — GPU 11739875 refused a stale continuation before training
+
+**Evidence** Downloads `output CreditICL.zip`, downloaded 26-10-2026 21:42, 26,856,748 bytes,
+1,486 entries; SHA256 `b64ae347e49e68b14a371292233c6650d6d2c8d925b8cf004ef306cf7c8dcc53`.
+Andreas supplied `sacct`: **FAILED**, **1:0**, **00:00:29**, limit **24:00:00**.
+**Job** GPU **11739875**, Mindwell B200 node r11g12; 24 CPUs, 180 GiB host RAM.
+**Code** `19a76cc`; TFM pin `702d9ab0b66f6639ba8d443ff9c4a91231964465`,
+VSC pin `3bcdf55e576d10161d6189b40ac39380bbba9eca`.
+
+### Configuration and results
+
+`scripts/slurm/exp0.slurm` requested continuation of the recorded GPU campaign. The main log
+`experiment_0/logs/exp0_gpu_20261026_155903_j11739875.log` shows passing package checks:
+TabPFN 9.1.0, TabICL 2.1.1 at the pinned source revision, CatBoost 1.2.10,
+torch 2.11.0+cu128, 135 dependency requirements and pip check. Then validation stopped with:
+
+`Experiment 0 continuation REFUSED: Code/config/tests/packages changed; a fresh CPU/GPU campaign is required`.
+
+The selected old campaign was `gpu_20261021T123317Z_j11724030_f8a32d10`.
+No new model-training or benchmark stage ran, and no new production hyperparameters were resolved.
+The fresh CPU campaign `cpu_20261026T141139Z_j62431090_fbb2a984` passed its stages; its unit report
+contains 1,876 tests, zero failures and one skip (999 seconds for that stage).
+The archive contains 48 completed Experiment 1 training summaries at 12,500 steps, with no
+completed 25% extension. These are metadata observations, not verification of remote checkpoint bytes
+or complete project-tier benchmark metrics. Existing outputs were not modified during inspection.
+
+### Cause and correction
+
+The strict continuation guard correctly rejected stale evidence, but the job wrapper always asked
+to resume. It now uses `--resume-if-current`: source/package/input-compatible attempts continue with
+verified artifact reuse; stale attempts start a fresh isolated campaign. Explicit `--resume` still
+refuses stale evidence. Old failed logs remain evidence rather than being relabelled as passing.
+
+### Interpretation and next steps
+
+This failure is an orchestration error before training, not numerical divergence or damaged Exp1
+weights. The approved Exp2/Exp3 implementation now adds new training routes and therefore requires
+a fresh CPU/GPU validation pair. Preserve Exp1, validate this source without changing it mid-run,
+finish only missing 25% runs, then their benchmarks. Exp2 and Exp3 must wait for their new GPU gates;
+local adapter checks do not establish B200 60k-row capacity or campaign runtime.
+
+Post-fix local verification: 1,928 tests passed, 32 VSC-only tests skipped; all 12 notebooks ran
+and saved 40 visually reviewed PDFs. The 16 released-weight CPU method round trips passed,
+with the four L2-SP routes repeated after the final anchor-gradient correction. No new VSC
+job was submitted from this checkout. Source fingerprint for the proposed fresh validation:
+`4b31d59be2048f41f894db9a26c49919f759e65e9fdfae4305dd52e27ae164d0`.
+
+## 26-10-2026 — current Exp0 CPU passed; GPU validation submitted
+
+**Evidence** Terminal attachment `5dd82437-9175-46aa-92be-9fb495f153b4/Pasted text.txt`.
+**Jobs** CPU **62431090** on wICE; GPU **11739875** on Mindwell.
+**Commit** `19a76cc`; checked source fingerprint
+`264c70dd8f5aff5acd72776366520de3765cf0a51383f9c761c8f8aef1eed5a0`.
+**TFM pin** `702d9ab0b66f6639ba8d443ff9c4a91231964465`; **VSC pin**
+`3bcdf55e576d10161d6189b40ac39380bbba9eca`. Runtime/resource accounting was not supplied.
+
+### Configuration
+
+Unmodified `scripts/slurm/exp0_cpu.slurm`, followed by the passing CPU prerequisite gate and
+`scripts/slurm/exp0.slurm`. The checkout contains the six-run Exp1 quarter-mixture extension
+and the existing single-learning-rate Exp2 design. No new production training was submitted in
+this transcript. The proposed second learning rates and replacement Exp3 remain design work.
+
+### Results
+
+CPU receipt `cpu_20261026T141139Z_j62431090_fbb2a984` passed the current-code/all-artifacts gate.
+The environment checks passed TabPFN 9.1.0, TabICL 2.1.1 at the required source commit,
+CatBoost 1.2.10, torch 2.11.0+cu128, 135 dependency versions and pip check. All configured credit
+data, released weights and 25 classification/25 regression OOD cache entries passed preflight.
+The GPU submission succeeded; its live state, final verdict, throughput and memory are unknown.
+No benchmark metrics or new resolved production-run configurations were supplied.
+
+### Bugs and anomalies
+
+No failure is shown in this transcript. Submission is not GPU validation success.
+The scoped pre-pull stash preserves notebooks and generated figures; it is not an output reset.
+
+### Interpretation
+
+CPU validation for the extension is established. GPU validation still needs its own final receipt.
+The local imported Exp1 metadata remains 48/48 completed at 12,500 steps; this is not a fresh
+remote checkpoint-byte audit. Existing compatibility tests passed in a 129-test focused review.
+
+### Next
+
+Inspect GPU 11739875, then require Exp0 PASS before submitting only the missing three PD and
+three LGD quarter-mixture runs. Benchmark their saved checkpoints after completion, reusing only
+valid compatible prior receipts. Preserve all completed Exp1 outputs. New Exp2/Exp3 implementation
+will need its own tests and validation and must not invalidate these results by broad reset.
+
 ## 26-10-2026 — GPU submission reused old validation after the pull failed
 
 **Evidence.** Terminal attachment `990a68c9-e1da-4763-9b81-d427c8562787/Pasted text.txt`

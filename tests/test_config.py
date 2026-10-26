@@ -32,8 +32,7 @@ from src.utils.config import (  # noqa: E402
 )
 
 #: One file per experiment per track. Exp0 is the cluster debug suite; Exp2 runs at each model's
-#: published continued-pretraining recipe (no search since 30-09-2026); Exp3 waits for Exp1's mix
-#: (`FILL_FROM_EXP1`).
+#: backbone-specific continuation recipes with two rates; Exp3 requires frozen development selection.
 EXPERIMENTS = [f"config/{e}_{t}.yaml" for e in ("Exp0", "Exp1", "Exp2", "Exp3") for t in ("LGD", "PD")]
 #: The runnable ones: nothing left to fill in.
 CONFIGS = [p for p in EXPERIMENTS if "Exp3" not in p]
@@ -79,14 +78,11 @@ def test_exp1_is_runnable_now(path):
 
 
 @pytest.mark.parametrize("path", TEMPLATES)
-def test_exp3_refuses_to_expand_until_exp1_has_run(path):
-    """A config that runs with a placeholder burns GPU-hours measuring nothing. The
-    refusal is the whole safeguard, so it gets a test."""
-    with pytest.raises(ValueError, match="still a template"):
+def test_exp3_requires_frozen_development_selection(path):
+    with pytest.raises(ValueError, match="selection is not frozen"):
         load(ROOT / path)
-    holes = find_placeholders(_load(path))
-    assert holes, f"{path} claims to be a template but has no {PLACEHOLDER}"
-
+    runs = expand_with_seeds(_load(path))
+    assert runs and all(r["design_unresolved"] for r in runs)
 
 
 def test_exp2_refuses_a_silent_partial_load():
@@ -103,28 +99,21 @@ def test_exp2_refuses_a_silent_partial_load():
 # -- the screening budget ------------------------------------------------------
 
 
-def test_exp1_is_cheaper_per_arm_than_exp3():
-    """Exp1 exists to make the grid affordable. If its budget ever matched Exp3's, the
-    two-phase design would have quietly become one very expensive phase."""
+def test_exp1_budget_is_preserved_and_exp3_is_continuation():
     for track in ("LGD", "PD"):
-        one = _load(f"config/Exp1_{track}.yaml")["train"]["max_steps"]
-        two = _load(f"config/Exp3_{track}.yaml")["train"]["max_steps"]
-        assert one < two, f"{track}: screening budget {one} is not below the full {two}"
+        assert _load(f"config/Exp1_{track}.yaml")["train"]["max_steps"] == 12500
+        cfg = _load(f"config/Exp3_{track}.yaml")
+        assert cfg["train"]["max_steps"] == 10000
+        assert cfg["init"]["strategy"] == "full"
 
 
-def test_exp3_runs_two_paired_seeds_at_the_long_budget():
-    """30-09-2026: two seeds, not five (cost), each pairing the control with the chosen mix on the
-    same base tasks and initial weights; 200,000 steps, where TabICLv2 reaches its log-loss parity
-    (papers/2026/02_Qu §7)."""
+def test_exp3_has_three_paired_seeds_and_eight_kept_milestones():
+    from src.experiments.design import MILESTONES
     for track in ("LGD", "PD"):
-        assert len(_load(f"config/Exp1_{track}.yaml")["seeds"]) == 3
-        exp3 = _load(f"config/Exp3_{track}.yaml")
-        assert exp3["seeds"] == [0, 1]
-        assert exp3["train"]["max_steps"] == 200_000
-        assert 200_000 % exp3["train"]["save_perm_every"] == 0, "the final step is a kept checkpoint"
-
-
-# -- the frozen evaluation split ----------------------------------------------
+        cfg = _load(f"config/Exp3_{track}.yaml")
+        assert cfg["seeds"] == [0, 1, 2]
+        assert cfg["train"]["max_steps"] == 10000
+        assert tuple(cfg["train"]["keep_steps"]) == MILESTONES
 
 
 @pytest.mark.parametrize("path", [p for p in EXPERIMENTS if "_search" not in p])
@@ -303,15 +292,13 @@ def test_no_model_block_in_the_configs(path):
 # -- each experiment owns its own prior ---------------------------------------
 
 
-def test_no_experiment_shares_a_prior_file():
-    """Exp1 sweeps 32 priors, Exp3 runs the ONE that won, Exp2 sweeps the mixture. A shared
-    `prior_file:` encoded the false claim that all three use the same prior, so each config is
-    now self-contained."""
-    for path in EXPERIMENTS:
-        assert "prior_file" not in load_yaml(ROOT / path), (
-            f"{path} names a shared prior file; each experiment must hold its own"
-        )
-        assert "prior" in load_yaml(ROOT / path), f"{path} has no inline prior block"
+def test_exp3_inherits_exp2_prior_but_fixes_the_mixture():
+    for track in ("LGD", "PD"):
+        raw = load_yaml(ROOT / f"config/Exp3_{track}.yaml")
+        assert raw["prior_file"] == f"Exp2_{track}.yaml"
+        cfg = _load(f"config/Exp3_{track}.yaml")
+        assert cfg["prior"]["credit_fraction"] == .5
+        assert cfg["prior"]["credit"] == _load(f"config/Exp2_{track}.yaml")["prior"]["credit"]
 
 
 def test_exp1_sweeps_priors_and_never_the_architecture():
@@ -340,9 +327,9 @@ def test_exp1_defines_many_priors_and_exp3_exactly_one():
         assert n_priors == 4, f"{track}: expected 4 Exp1 priors, got {n_priors}"
 
         exp3 = [(k, v) for k, v in sweep_axes(_load(f"config/Exp3_{track}.yaml")) if k != "seeds"]
-        assert exp3 == [("prior.credit_fraction", [0.0, PLACEHOLDER])], (
-            f"{track}: Exp3 must be exactly control-vs-winner, got {exp3}"
-        )
+        assert dict(exp3) == {"arm": ["tabicl", "tabpfn3"],
+                              "method": ["no_decay", "l2sp", "diagscale", "lora"]}
+        assert _load(f"config/Exp3_{track}.yaml")["prior"]["credit_fraction"] == .5
 
 
 def test_exp2_and_exp3_pin_every_knob_exp1_swept():
@@ -378,29 +365,22 @@ def test_the_control_arm_prior_never_carries_a_placeholder():
 # -- Exp2 is continued pre-training, not pretraining ---------------------------
 
 
-def test_exp2_runs_each_models_published_continued_pretraining_recipe():
-    """No search since 30-09-2026: TabICLv2 continues as its authors' stage 3 does (Muon, lr 2e-5,
-    weight decay 0.01, 1 % warm-up, clip 1 — `scripts/train_v2_clf_stage3.sh` in the TabICL dump),
-    TabPFN-3 as TabPFN-Wide continued released TabPFN on a synthetic prior (AdamW, lr 1e-5, weight
-    decay 1e-4, clip 1, batch 16). Both far below pretraining's 8e-4, which destroys trained weights
-    in a few hundred steps; both 10,000 steps."""
-    from src.utils.config import expand_with_seeds
-
+def test_exp2_has_two_predeclared_rates_per_backbone():
+    from src.experiments.design import RATES
     for track in ("LGD", "PD"):
-        three = _load(f"config/Exp3_{track}.yaml")["train"]
         runs = expand_with_seeds(load(ROOT / f"config/Exp2_{track}.yaml"))
         assert {r["architecture"] for r in runs} == {"tabicl", "tabpfn3"}
         for r in runs:
             t = r["train"]
-            assert t["max_steps"] == 10_000
-            assert t["lr"] <= three["lr"] / 8, f"{r['arm']}: rate {t['lr']} is not far below {three['lr']}"
-            assert t["gradient_clipping"] == 1.0 < three["gradient_clipping"]
+            assert t["max_steps"] == 10000
+            assert t["lr"] == RATES[r["architecture"]][r["lr_index"]]
+            assert t["gradient_clipping"] == 1.0
+            assert t["weight_decay"] == .01
             if r["architecture"] == "tabicl":
-                assert (t["optimizer"], t["lr"], t["weight_decay"], t["warmup_proportion"]) == ("muon", 2e-5, 0.01, 0.01)
+                assert (t["optimizer"], t["warmup_proportion"], t["batch_size"]) == ("muon", .01, 64)
             else:
-                assert (t["optimizer"], t["lr"], t["weight_decay"], t["batch_size"]) == ("adamw", 1e-5, 1e-4, 16)
+                assert (t["optimizer"], t["warmup_proportion"], t["batch_size"]) == ("adamw", .1, 16)
                 assert r["prior"]["encoding"] == "raw"
-        assert "headline_step" not in (_load(f"config/Exp2_{track}.yaml")["eval"]), "both recipes fix the length"
 
 
 def test_exp2_sweeps_the_mixture_because_that_is_its_question():
@@ -415,15 +395,14 @@ def test_exp2_sweeps_the_mixture_because_that_is_its_question():
         assert sorted(axes["arm"]) == ["tabicl", "tabpfn3"]
 
 
-def test_exp2_uses_fewer_tasks_than_exp3_not_a_runtime_guarantee():
-    """Long tables can cost more despite fewer updates; this checks task counts only."""
+def test_exp3_matches_exp2_task_budget_within_backbone():
     for track in ("LGD", "PD"):
-        two = _load(f"config/Exp2_{track}.yaml")["train"]
-        three = _load(f"config/Exp3_{track}.yaml")["train"]
-        assert two["max_steps"] * two["batch_size"] < three["max_steps"] * three["batch_size"]
-
-
-# -- one architecture, everywhere ---------------------------------------------
+        runs2 = expand_with_seeds(_load(f"config/Exp2_{track}.yaml"))
+        runs3 = expand_with_seeds(_load(f"config/Exp3_{track}.yaml"))
+        for r in runs3:
+            base = next(b for b in runs2 if b["architecture"] == r["architecture"])
+            for key in ("max_steps", "batch_size", "micro_batch_size"):
+                assert r["train"][key] == base["train"][key]
 
 
 def test_every_experiment_names_the_same_architecture():
@@ -444,7 +423,8 @@ def test_config_folder_holds_exactly_the_experiments():
     """Four experiments x two tracks, each self-contained. Anything else here is a file nobody
     named, which is how a stale config gets submitted."""
     found = sorted(p.name for p in (ROOT / "config").iterdir())
-    expected = [Path(p).name for p in EXPERIMENTS] + ["Exp1_PD_ablations.yaml", "Exp1_LGD_ablations.yaml"]
+    expected = [Path(p).name for p in EXPERIMENTS] + ["Exp1_PD_ablations.yaml", "Exp1_LGD_ablations.yaml",
+                                                                   "Exp3_PD_pilots.yaml", "Exp3_LGD_pilots.yaml"]
     assert found == sorted(expected), f"unexpected: {found}"
 
 
@@ -457,7 +437,7 @@ def test_exp2_and_exp3_differ_only_where_they_should():
         for key in ("dev_datasets", "holdout_datasets", "select_on"):
             assert two["eval"][key] == three["eval"][key], f"{track}: eval.{key} must be identical"
         assert two["task"] == three["task"]
-        assert three["init"]["strategy"] == "scratch"
+        assert three["init"]["strategy"] == "full"
         assert two["init"]["strategy"] != "scratch"
         assert two["init"]["pretrained_path"], "a warm start needs a checkpoint"
 

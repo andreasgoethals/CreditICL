@@ -29,10 +29,14 @@ import torch
 STEP_RE = re.compile(r"^step-(\d+)\.ckpt$")
 
 
-def validate_training_fingerprint(payload: dict[str, Any]) -> None:
+def validate_training_fingerprint(payload: dict[str, Any], current_config: dict | None = None) -> None:
     from src.utils.preflight import training_fingerprint
 
     if payload.get("training_fingerprint") != training_fingerprint():
+        if current_config is not None:
+            from src.utils.completed_runs import reviewed_exp1_resume
+            if reviewed_exp1_resume(payload, current_config):
+                return
         raise ValueError("Checkpoint training code differs or has no recorded fingerprint. "
                          "Preserve it for evaluation; use a new run name for the current recipe.")
 
@@ -45,7 +49,7 @@ def validate_resume_config(old: dict[str, Any], current: dict[str, Any]) -> None
     """
     changed = []
     missing = object()
-    for key in ("task", "seed", "architecture", "model", "init", "prior"):
+    for key in ("task", "seed", "architecture", "model", "init", "prior", "selection_provenance"):
         if old.get(key, missing) != current.get(key, missing):
             changed.append(key)
     old_train, new_train = old.get("train", {}), current.get("train", {})
@@ -53,7 +57,8 @@ def validate_resume_config(old: dict[str, Any], current: dict[str, Any]) -> None
                 "scheduler", "warmup_proportion", "gradient_clipping", "l2sp_alpha", "loss_weights",
                 "cosine_num_cycles", "cosine_amplitude_decay", "cosine_lr_end", "n_estimators", "amp",
                 "regression_loss_weights", "activation_checkpointing", "dtype",
-                "cautious_weight_decay", "num_quantiles", "require_efficient_attention"):
+                "cautious_weight_decay", "num_quantiles", "require_efficient_attention",
+                "adaptation", "lora_rank", "lora_alpha", "schedule_total_steps"):
         if old_train.get(key, missing) != new_train.get(key, missing):
             changed.append(f"train.{key}")
     if changed:
@@ -124,10 +129,12 @@ def save_checkpoint(
     from src.train.random_state import capture
     from src.utils.preflight import training_fingerprint
 
+    from src.models.adapters import checkpoint_fields
+
     payload = {
         "training_fingerprint": training_fingerprint(),
         "config": model_config,          # upstream's contract: kwargs to TabICL
-        "state_dict": model.state_dict(),
+        **checkpoint_fields(inner),
         "curr_step": step,               # upstream's name for the step
         "step": step,                    # ours, kept so older readers still work
         "crediticl_config": config,      # OUR resolved YAML — task, prior, sweep, everything
@@ -164,9 +171,9 @@ def load_checkpoint(
     # one we wrote ourselves on our own filesystem.
     payload = torch.load(path, map_location=map_location, weights_only=False)
     if current_config is not None:
-        validate_training_fingerprint(payload)
+        validate_training_fingerprint(payload, current_config)
         validate_resume_config(payload.get("crediticl_config") or {}, current_config)
-    model.load_state_dict(payload["state_dict"])
+    model.load_state_dict(payload.get("crediticl_training_state", payload["state_dict"]))
     if optimizer is not None and payload.get("optimizer_state"):
         state = payload["optimizer_state"]
         written_by = payload.get("optimizer_class")
@@ -190,7 +197,7 @@ def load_checkpoint(
     return payload
 
 
-def prune_checkpoints(ckpt_dir: str | Path, *, save_perm_every: int, max_temp: int) -> list[Path]:
+def prune_checkpoints(ckpt_dir: str | Path, *, save_perm_every: int, max_temp: int, keep_steps=()) -> list[Path]:
     """Delete the oldest temporary checkpoints beyond `max_temp`.
 
     A checkpoint is temporary when its step is not a multiple of
@@ -204,7 +211,7 @@ def prune_checkpoints(ckpt_dir: str | Path, *, save_perm_every: int, max_temp: i
         m = STEP_RE.match(entry.name)
         if m:
             step = int(m.group(1))
-            if save_perm_every > 0 and step % save_perm_every != 0:
+            if step not in keep_steps and save_perm_every > 0 and step % save_perm_every != 0:
                 temps.append((step, entry))
     temps.sort()
     removed = []

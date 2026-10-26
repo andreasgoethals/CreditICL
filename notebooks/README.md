@@ -8,9 +8,9 @@ in section order. `output CreditICL/All_Results.md` collects those summaries ver
 | Chapter | Notebooks | Question |
 |---|---|---|
 | [0. General](<0. General/>) | 0.1 benchmark tables; 0.2 PD prior; 0.3 LGD prior | What changes in exposure, difficulty and observation, and what remains mismatched? |
-| [1. Experiment 1](<1. Experiment 1/>) | 1.1/1.2 training; 1.3/1.4 final results | At equal synthetic-task budgets, do the 50% and 100% packages improve on 0%? What do component removals change? |
+| [1. Experiment 1](<1. Experiment 1/>) | 1.1/1.2 training; 1.3/1.4 final results | At equal synthetic-task budgets, do the 25%, 50% and 100% packages improve on 0%? What do component removals change? |
 | [2. Experiment 2](<2. Experiment 2/>) | 2.1/2.2 adaptation; 2.3/2.4 final results | With fixed recipes, what is the effect within each backbone, against its trained control and released weights? |
-| [3. Experiment 3](<3. Experiment 3/>) | 3.1 budget persistence | Does the selected-mixture effect persist from 0.8 million to 12.8 million synthetic tasks? |
+| [3. Experiment 3](<3. Experiment 3/>) | 3.1 retention | Which constrained updates preserve OOD performance while adapting to credit? |
 
 ## Evidence boundaries
 
@@ -30,13 +30,12 @@ all prediction-time-eligible features, and five common folds. Missing evidence
 produces one availability notice instead of a gallery of empty plots. The final
 credit/OOD frontier is not populated from short-context training monitors.
 
-Only Experiment 3 selects a nonzero mixture from complete Experiment 1 development results.
-Experiment 2 retains all three predeclared mixtures for each backbone. The designated holdout
-has historical project exposure; it is **not untouched confirmation**. Component
-removals are conditional on the full 50% package, not a PD/LGD double dissociation.
-Experiment 2 fixes its recipes and compares backbones separately. Experiment 3
-stays gated until its development-selected mixture is frozen in the configuration;
-the prepared notebook does not make that choice.
+Experiment 2 retains four mixtures and both peak rates per backbone, with separate plots
+for each backbone/rate and full-table checkpoint trajectories. Experiment 3 fixes the 50%
+mixture, selects full-model rates and adapter settings using development-only receipts, and
+reuses the matched Exp2 baseline. Its candidate, paired-retention and checkpoint panels stay
+empty until the required evidence exists. The designated holdout has historical project
+exposure; it is **not untouched confirmation**. No plot or notebook chooses a setting.
 
 Paired differences average folds and training seeds within each dataset before
 descriptive bootstrap intervals are computed. Seed marks display training spread;

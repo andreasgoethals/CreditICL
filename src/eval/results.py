@@ -43,8 +43,7 @@ def _read_frames(files: list[Any], protocol: int | None, context: int | None = N
 
 
 def _raw_config(track: str, exp: str) -> dict:
-    """The experiment's config as written — the raw file, not `config.load`, which refuses a
-    template whose placeholders are not filled yet (Exp3 before Exp1 has chosen its mix)."""
+    """Read optional evaluation overrides without requiring development-selection receipts."""
     import yaml
 
     path = paths.config_path(f"{exp.capitalize()}_{track.upper()}")

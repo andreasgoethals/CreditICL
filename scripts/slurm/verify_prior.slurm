@@ -16,8 +16,8 @@
 # and the pipeline is chained with --dependency=afterok. An earlier version put
 # preprocessing and prior generation on one cluster and training on another; the chain
 # could never have run. Everything in Phase 1 therefore stays on wice, which has both
-# `batch` (CPU) and `gpu_a100` (GPU). Mindwell's B200s are for the Phase 2
-# multi-GPU confirmation runs, which Exp3 will need and which do not exist yet.
+# `batch` (CPU) and `gpu_a100` (GPU). The registered main experiments use Mindwell
+# B200 jobs; Experiment 3 does not require a separate multi-GPU confirmation phase.
 #SBATCH --job-name=crediticl-verify
 #SBATCH --clusters=wice
 #SBATCH --partition=batch

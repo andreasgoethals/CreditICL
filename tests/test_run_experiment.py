@@ -193,7 +193,7 @@ def test_exp3_refuses_to_run_while_still_a_template(fake_tree, capsys):
     (at the published recipes, since 30-09-2026) are fully configured."""
     from src.utils.run_experiment import main, unconfigured_tracks
 
-    assert unconfigured_tracks(3, ["lgd", "pd"]) == ["lgd", "pd"]
+    assert [item.split(":", 1)[0] for item in unconfigured_tracks(3, ["lgd", "pd"])] == ["lgd", "pd"]
     assert unconfigured_tracks(2, ["lgd", "pd"]) == [], "Exp2 runs at the published recipes"
     assert unconfigured_tracks(1, ["lgd", "pd"]) == [], "Exp1 is fully configured"
 
@@ -201,7 +201,7 @@ def test_exp3_refuses_to_run_while_still_a_template(fake_tree, capsys):
     assert rc == 1, "a template experiment must refuse with a non-zero exit"
     out = capsys.readouterr().out
     assert "NOT CONFIGURED YET" in out
-    assert "FILL_FROM_EXP1" in out
+    assert "selection" in out
     assert "sbatch" not in out, "nothing may be submitted for an unconfigured experiment"
 
 

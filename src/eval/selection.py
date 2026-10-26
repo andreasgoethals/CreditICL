@@ -1,4 +1,4 @@
-"""Development-only ranking for Exp3; Exp2 compares all four mixtures independently."""
+"""Descriptive Exp1 development ranking; Exp3 selection is in src.experiments.selection."""
 from __future__ import annotations
 
 import argparse
@@ -86,7 +86,9 @@ def development_ranking(df: pd.DataFrame, track: str, exp: str = "exp1",
 
 
 def exp3_candidate(ranking: pd.DataFrame, track: str) -> dict | None:
-    """Choose the best nonzero Exp1 mixture on the predeclared primary metric.
+    """Describe the best nonzero Exp1 mixture on the predeclared primary metric.
+
+    Historical function name retained for callers; it no longer configures Exp3.
 
     The 0% arm remains the control even when it ranks first. Exact numerical ties
     between credit mixtures prefer the smaller credit fraction; seed spread is
@@ -140,17 +142,17 @@ def main(argv=None) -> int:
               "for every configured Exp1 mixture.")
         return 1
     print(ranking.to_string(index=False))
-    print(f"Exp3 candidate: credit_fraction={choice['credit_fraction']:g}; development "
+    print(f"Descriptive Exp1 ranking: credit_fraction={choice['credit_fraction']:g}; development "
           f"{choice['metric']}={choice['mean']:.6f}, 0% control={choice['control_mean']:.6f}, "
           f"difference={choice['difference_from_control']:+.6f}.")
     if choice["difference_from_control"] <= 0:
         print("No credit mixture beats the control on the development mean. "
-              "This candidate tests whether a credit effect emerges with more training; "
-              "it is not an established improvement. Review whether Exp3 merits its cost.")
+              "This is an observed development ranking; "
+              "it is not an established improvement.")
     print("The candidate is the best nonzero mixture; exact score ties prefer the smaller credit share. "
           "Seed spread describes stability, not a significance test. OOD retention is reported "
           "descriptively and must not re-rank this development-only choice. Exp2 uses all four "
-          "mixtures and needs no selected winner. No config was changed and no job was submitted.")
+          "mixtures and both learning rates. Exp3 fixes 50% and selects its learning rates and adapter settings through src.experiments.selection, using Exp2/pilot development results. No config was changed and no job was submitted.")
     return 0
 
 

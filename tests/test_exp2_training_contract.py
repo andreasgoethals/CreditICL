@@ -28,12 +28,12 @@ def test_tabpfn_refuses_unsupported_initialization_before_writing(tmp_path, stra
     assert not output.exists()
 
 
-@pytest.mark.parametrize("alpha", [0.001, -0.001, float("inf"), float("nan")])
-def test_tabpfn_refuses_unimplemented_regularization_before_writing(tmp_path, alpha):
+@pytest.mark.parametrize("alpha", [-0.001, float("inf"), float("nan")])
+def test_tabpfn_refuses_invalid_regularization_before_writing(tmp_path, alpha):
     cfg = {"task": "lgd", "prior": {"encoding": "raw"}, "init": {"strategy": "full"},
            "train": {"l2sp_alpha": alpha}}
     output = tmp_path / "must_not_exist"
-    with pytest.raises(ValueError, match="train.l2sp_alpha must be 0"):
+    with pytest.raises(ValueError, match="train.l2sp_alpha must be finite and nonnegative"):
         TabPFNTrainer(cfg, output, device="cpu")
     assert not output.exists()
 
