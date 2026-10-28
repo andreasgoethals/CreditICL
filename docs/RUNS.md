@@ -167,6 +167,49 @@ The one thing to do differently.
 
 ## Runs
 
+## 28-10-2026 — six Exp1 extension runs and 96 Exp2 CPT runs submitted
+
+**Evidence** Terminal attachment `723611bd-b126-4ffc-a791-5f8c749844a7/Pasted text.txt`,
+SHA256 `b9fb983ec5a2c3349b12cfe291cc7e97d2b4a3bf606ff256e469b828dc4cb382`.
+At 09:09–09:10 CET the current Exp0 preflight and verifier pass (122 items, zero FAIL).
+The transcript then confirms the following scheduler acceptances, ending at 09:47 CET:
+
+| Job | Config | Array | Purpose |
+|---|---|---|---|
+| 11747538 | `config/Exp1_LGD.yaml` | `9-11%8` | Three 25%-credit scratch runs, seeds 0/1/2 |
+| 11747539 | `config/Exp1_PD.yaml` | `9-11%8` | Three 25%-credit scratch runs, seeds 0/1/2 |
+| 11747551 | `config/Exp2_LGD.yaml` | `0-47%8` | All 48 planned LGD continued-pretraining runs |
+| 11747552 | `config/Exp2_PD.yaml` | `0-47%8` | All 48 planned PD continued-pretraining runs |
+
+### Configuration and results so far
+
+All submissions use the existing `pretrain_<task>.slurm` wrappers, `VARIANT=` and
+`--single-cluster`: Mindwell B200, one GPU, 24 CPUs, 180 GiB and 12-hour segments per task.
+The walltime continuation mechanism checkpoints and submits the unfinished arm again; a
+production run is not necessarily finished within one segment. These are requested resources,
+not a claim that a node was allocated or that training started.
+
+Exp1 preserves the previous nine main runs per task and all 30 component runs; only indices
+9–11 are submitted. Each added run uses the existing 64-table, 12,500-update recipe.
+Exp2 crosses two backbones, four credit mixtures (0/25/50/100%), two model-specific rates and
+three seeds for each task. TabICL uses 64 ragged tables/update, 400–60,000 log-uniform rows,
+79–81% context, Muon and rates 2e-5/1e-5; TabPFN uses 16 tables/update, 1,024 rows,
+30–90% context, AdamW and rates 1e-5/1e-6. Both use 10,000 updates, weight decay 0.01,
+gradient clipping 1.0 and permanent checkpoints at 125/250/500/1,000/2,500/5,000/7,500/10,000.
+The full resolved per-arm configs will be written with the production run artifacts. Package
+versions and the current Exp0 receipt pass before both arrays; the validated source remains
+`4b31d59be2048f41f894db9a26c49919f759e65e9fdfae4305dd52e27ae164d0`.
+
+### Interpretation and next steps
+
+No error appears in the submission transcript. Scheduler acceptance does not establish current
+RUNNING/COMPLETED state, numerical correctness or final throughput. No new storage/quota output
+was supplied. Keep code, packages and current output unchanged while these campaigns run; check
+the live queue, quotas and credit balance. The `%8` cap applies separately to each Exp2 array,
+subject to scheduler/user limits. After each experiment's training finishes, submit its missing
+benchmarks with `python -m src.utils.run_experiment <1|2> --phase benchmark --single-cluster --submit`.
+The training-only submissions above do not launch those benchmark arrays automatically.
+
 ## 28-10-2026 — current CPU/GPU validation passed; Exp1 extension remains unrun
 
 **Evidence** Downloads `output CreditICL.zip`, 28-10-2026 09:10:54, 26,998,892 bytes,

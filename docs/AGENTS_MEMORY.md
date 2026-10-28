@@ -1,5 +1,23 @@
 # Agents' memory — runs and dead ends
 
+## 28-10-2026 — Exp1 quarter-mixture extension and Exp2 submitted
+
+Terminal attachment `723611bd-b126-4ffc-a791-5f8c749844a7/Pasted text.txt` supersedes the
+submission state in the earlier archive audit below. Current Exp0 preflight passed before
+both submissions; the planner preserved all 48 completed Exp1 runs.
+
+| Job | Configuration | Observed outcome | Headline |
+|---|---|---|---|
+| 11747538, Mindwell | Exp1 LGD, indices 9–11, 25% credit, seeds 0/1/2 | Submission accepted | Three additional 12,500-update runs |
+| 11747539, Mindwell | Exp1 PD, indices 9–11, 25% credit, seeds 0/1/2 | Submission accepted | Three additional 12,500-update runs |
+| 11747551, Mindwell | Exp2 LGD, indices 0–47, throttle 8 | Submission accepted | 48 two-model/four-mixture/two-rate/three-seed CPT runs |
+| 11747552, Mindwell | Exp2 PD, indices 0–47, throttle 8 | Submission accepted | 48 two-model/four-mixture/two-rate/three-seed CPT runs |
+
+No runtime result, live queue or new quota evidence accompanies these submissions. Keep the
+validated executable source and packages fixed; retain Exp0 artifacts and Exp1 output on both
+tiers. Benchmarks were not submitted by these training-only commands. Run each experiment's
+benchmark planner after its training completes; do not reset output during these campaigns.
+
 ## 28-10-2026 — current Exp0 passed; quarter-mixture Exp1 still pending
 
 Downloads `output CreditICL.zip`, 28-10-2026 09:10, SHA256
