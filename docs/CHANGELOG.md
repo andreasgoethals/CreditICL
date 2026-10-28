@@ -10,6 +10,7 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 28-10-2026
 
+- Sync TEMPLATE.md: flexible experiment folders and staged experiment-0 VSC validation; preserve this project's code, layout and run evidence.
 - Sync TEMPLATE.md: speed-first VSC CPU sharding/parallel submission and explicit library setup; no experiment code or run settings changed.
 - Record the successful current CPU/GPU Exp0 pair, preserved 48-run Exp1 campaign, pending six quarter-mixture runs and measured storage/cost limits; leave validated executable code unchanged.
 
