@@ -167,6 +167,86 @@ The one thing to do differently.
 
 ## Runs
 
+## 28-10-2026 — current CPU/GPU validation passed; Exp1 extension remains unrun
+
+**Evidence** Downloads `output CreditICL.zip`, 28-10-2026 09:10:54, 26,998,892 bytes,
+1,600 entries, SHA256 `67ef250139ee0dd4357dc3123c562c9dd9da1389591a1ca2912b1fce111a6fcf`.
+Andreas's on-VSC verification reports **122 items, zero FAIL** on 28-10 at 09:10.
+No live scheduler query was made during this archive audit.
+
+| Job | Resources and timing | Outcome |
+|---|---|---|
+| CPU 62441437 | wICE/batch, l33c20n1, 20 CPUs, 64 GiB; 27-10 08:35:55–09:05:11 CET | All 13 stages PASS; 1,907 unit tests passed, one external-project skip, 32 GPU tests deselected; notebook stage PASS |
+| GPU 11741580 | Mindwell/gpu_b200, r11g22, B200, 24 CPUs, 180 GiB; 27-10 09:08:41–28-10 03:06:30 CET | All 116 stages PASS in 17h57m49s; 32 VSC tests passed, no skips |
+
+### Configuration and evidence integrity
+
+Both jobs ran commit `673dba5`, reporting a dirty checkout but identical executable source
+fingerprint `4b31d59be2048f41f894db9a26c49919f759e65e9fdfae4305dd52e27ae164d0` and environment
+fingerprint `d4ed1fbe1397c0063fc12abffcb338fddd8038f21decb20c8c84accaf0bf0454`.
+The source fingerprint still matches the local executable code on 28-10. The tested commit pins
+TFM `702d9ab0b66f6639ba8d443ff9c4a91231964465` and VSC
+`3bcdf55e576d10161d6189b40ac39380bbba9eca`; subsequent local library-only updates do not alter this hash.
+Environment checks pass for TabPFN 9.1.0, TabICL 2.1.1 at
+`8f1aa2098c894ab91dba15209cf2002ba4be6c6c`, CatBoost 1.2.10, torch 2.11.0+cu128,
+135 dependency requirements and pip check.
+
+Canonical attempts are `cpu_20261027T073556Z_j62441437_3ac75552` and
+`gpu_20261027T080841Z_j11741580_f4269428`. Their schema-3 reports contain PASS for every stage.
+The GPU report binds the CPU receipt SHA256
+`3bd13a45a9a060bd2942d735d51708e864f0d15a298b320322cf7c3884d82abd`.
+All 23 CPU and 205 available GPU artifact hashes match. Another 48 GPU artifacts (six checkpoints,
+28 CSVs, 14 receipt JSONs) live on project storage and are absent from this ZIP; local inspection
+cannot independently verify those bytes. The user's on-VSC verifier is the evidence for that gate.
+
+### Results and limits
+
+Validation covers package/weight loading, native prediction equivalence, PD/LGD scratch and
+continued-training stop/resume, benchmark receipts and focused credit/OOD evaluation. It also
+passes all 16 backbone/task/retention-method round trips and 34 long-context probes, including
+60,000-row base/credit tables, LoRA/DiagScale at that length, and mixed 64-table updates.
+Resolved diagnostic configurations and observations remain in each attempt's run/report artifacts;
+these short tests are not production efficacy measurements.
+
+The mixed PD update took 90.166s generation plus 63.769s training, peak 19.093 GiB GPU memory;
+LGD took 54.374s plus 63.438s, peak 19.055 GiB. Each contained 64 tables, 32 credit tables,
+413–56,012 rows in this particular draw. Native training attention used FP32, TF32 enabled,
+efficient SDPA, no FA3, activation checkpointing, four workers and prefetch one. These single
+updates demonstrate capacity, not representative throughput across a 10,000-update campaign.
+
+The verifier's short-run TabPFN projection is 1,227.6 GPU-hours for 24 PD runs and 881.8 for
+24 LGD runs: **2,109.4 GPU-hours before any TabICL training or benchmarking**. Queue delays,
+billing and long-run throughput are not established. Exp2 contains 96 total runs; this estimate
+must not be presented as a complete campaign cost.
+
+### Experiment 1 and storage
+
+There are 48 completed Exp1 summaries, each at 12,500 updates and 800,000 synthetic tables:
+9 main PD, 9 main LGD, 15 component PD and 15 component LGD. Their original training fingerprint
+is `0d328e50ce06778731c5ba5218a61222b9cf396c8b8d767cb3e8a58f7473e69b`.
+All 48 training and 128 benchmark wrapper logs end OK; the 240 inner evaluation logs have no
+wrapper end marker and are not thereby failures. No tracebacks or ERROR markers occur in those
+Exp1 logs. Full project-tier benchmark CSVs are not included, so this audit does not establish
+numerical superiority or complete metric coverage. There are no quarter-mixture run paths and
+no Exp2/Exp3 output: the six 25% runs and their benchmarks remain pending in the snapshot.
+
+Only the current passing CPU/GPU Exp0 attempts occur in this ZIP. Its uncompressed size is
+652.8 MB, mostly 622.5 MB of retained Exp1 output; Exp0 accounts for 24.0 MB. No cleanup was
+performed, and this export cannot prove the absence of legacy files elsewhere on VSC.
+The CPU storage probe on 27-10 measured 0.63 GB in the small output tier and 27.028 GB in the
+large output tier. Its `myquota` output reports DATA 56,113M/76,800M, project stg_00211
+559.8G/1T (44,784/150,000 files), GPFS scratch 151.7G/500G and Lustre scratch 26.2G/500G.
+These are dated quotas; filesystem free-space probes are not quota headroom.
+
+### Interpretation and next steps
+
+No new validation failure was found. Keep this executable version and environment fixed; a fresh
+Exp0 run is not required. Use the existing planner to finish only the six missing quarter-mixture
+Exp1 arms and then missing benchmarks. Exp2's four-mixture grid is prespecified and does not wait
+for an Exp1 winner, so its validation prerequisite is now satisfied. Check current quotas and
+credits before the 96-run launch; the complete campaign ETA remains unknown. Preserve completed
+Exp1 output and the current passing Exp0 reports and referenced artifacts on both tiers.
+
 ## 26-10-2026 — GPU 11739875 refused a stale continuation before training
 
 **Evidence** Downloads `output CreditICL.zip`, downloaded 26-10-2026 21:42, 26,856,748 bytes,

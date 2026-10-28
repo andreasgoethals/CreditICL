@@ -8,6 +8,10 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 28-10-2026
+
+- Record the successful current CPU/GPU Exp0 pair, preserved 48-run Exp1 campaign, pending six quarter-mixture runs and measured storage/cost limits; leave validated executable code unchanged.
+
 ## 26-10-2026
 
 - Verify 1,928 local tests (32 VSC-only skips), execute 12 notebooks and visually review all 40 PDFs; keep new campaign launches on the B200 allocation awaiting Exp0 validation.

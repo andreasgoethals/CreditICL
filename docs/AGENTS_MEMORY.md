@@ -1,5 +1,35 @@
 # Agents' memory — runs and dead ends
 
+## 28-10-2026 — current Exp0 passed; quarter-mixture Exp1 still pending
+
+Downloads `output CreditICL.zip`, 28-10-2026 09:10, SHA256
+`67ef250139ee0dd4357dc3123c562c9dd9da1389591a1ca2912b1fce111a6fcf`.
+
+| Job | Configuration | Observed outcome | Headline |
+|---|---|---|---|
+| 62441437, wICE | Exp0 CPU, commit 673dba5 | PASS, 27-10 | 13 stages; 1,907 tests passed, one external-project skip; notebooks passed |
+| 11741580, Mindwell B200 | Exp0 GPU, commit 673dba5 | PASS, 27–28-10 | 116 stages in 17h57m49s; 32 VSC tests, 16 adaptation routes, 34 long-context probes passed |
+
+Both reports match source `4b31d59be2048f41f894db9a26c49919f759e65e9fdfae4305dd52e27ae164d0`
+and environment `d4ed1fbe1397c0063fc12abffcb338fddd8038f21decb20c8c84accaf0bf0454`.
+All 228 referenced artifacts present in the ZIP match their hashes; 48 project-tier GPU artifacts
+are absent from this small-tier export. Andreas's on-VSC verifier reports 122 items, zero FAIL.
+The GPU report binds the exact CPU receipt. No new Exp0 run is needed for this executable source.
+Tested pins: TFM `702d9ab0b66f6639ba8d443ff9c4a91231964465`, VSC
+`3bcdf55e576d10161d6189b40ac39380bbba9eca`. Later local library-only updates preserve the source hash.
+
+Exp1 remains 48 completed 12,500-step runs (18 main + 30 component), with 128 successful
+benchmark task logs. There is no quarter-mixture output: six new runs remain, then their benchmarks.
+The ZIP does not establish the current queue or independently verify project-tier numerical results.
+Keep all completed runs and current Exp0 artifacts; do not reset output. Only the current passing
+CPU/GPU attempt directories occur in this archive. No failed Exp1 end markers or tracebacks were found.
+
+Exp2 is configured for 96 runs and no longer blocked by validation. Its TabPFN-only training
+projection is 2,109.4 GPU-hours; TabICL campaign time and benchmarking remain unmeasured.
+Single-update long-context capacity tests must not be turned into a reliable campaign ETA.
+The 27-10 quota snapshot shows DATA 56,113M/76,800M and shared project 559.8G/1T; use `myquota`
+for current quotas before launching. See RUNS.md for archive, cost and storage qualifications.
+
 ## 26-10-2026 — GPU continuation refusal and approved Exp2/Exp3 implementation
 
 New evidence supersedes the earlier submission-only entry below: Downloads `output CreditICL.zip`
