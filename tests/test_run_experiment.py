@@ -93,7 +93,7 @@ def test_after_a_drain_only_the_missing_arms_are_resubmitted(fake_tree):
     train = next(s for s in _plan(1, ["lgd"]) if s.kind == "train")
     assert train.done == n - 3
     joined = " ".join(train.commands[0])
-    assert f"--array={n - 4}-{n - 3},{n - 1}%8" in joined, joined
+    assert f"--array={n - 4}-{n - 3},{n - 1}" in joined, joined
     # A scattered spec goes to ONE cluster: splitting it across two gains nothing.
     assert len(train.commands) == 1
 

@@ -219,8 +219,8 @@ def test_retention_design_does_not_present_hypothetical_outcomes():
     fig = design_figure(3)
     assert not any(ax.has_data() for ax in fig.axes)
     text = ' '.join(t.get_text() for ax in fig.axes for t in ax.texts)
-    assert '48 additional runs' in text and 'Settings fixed before benchmarking' in text
-    assert 'pilots' not in text and '1,000 updates' in text
+    assert '32 additional runs' in text and 'Settings fixed before benchmarking' in text
+    assert 'pilots' not in text and '1,500 updates' in text
     assert 'not results' in fig._suptitle.get_text()
 
 

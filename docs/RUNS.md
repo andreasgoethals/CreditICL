@@ -169,6 +169,24 @@ The one thing to do differently.
 
 ## Runs
 
+## 29-10-2026 — PROJECT runtime rebuild and 1,500-update deployment
+
+- **Authorization:** the user requested the 64-run/two-seed design, runtime migration,
+  scoped stale-output cleanup, full CPU/GPU acceptance, remaining Exp1 benchmarking and Exp2 launch.
+- **Build:** wICE interactive job **62468678**, eight CPUs, two-hour limit.
+- **Inputs:** the accepted DATA `.venv-skylake` distribution payloads, Python 3.12.3
+  base SIF copied read-only from the already staged official Python base, and GCC runtime libraries.
+- **Method:** hash-recorded installed-artifact wheels; fresh `/opt/venv` inside a PROJECT SIF;
+  original Git package origins retained. No populated environment is moved.
+- **Candidate:** `/lustre1/project/stg_00211/CreditICL/runtimes/crediticl-20261029-py3123-cu128.sif`.
+- **Build outcome:** 62468678 failed before GPU work on a universal wheel tag. The repaired
+  62468733 image built successfully and matched the entire legacy dependency fingerprint.
+  Follow-up 62468797 restores standalone CLI binaries; CPU/GPU acceptance remains pending.
+  The old environment and every Exp1 output remain preserved.
+- **New design:** Exp2 64×1,500 updates; Exp3 32 new + 8 reused controls; seeds 0/1;
+  permanent checkpoints 125/250/500/1000/1500. Exp1 remains 54 original runs.
+
+
 ## 29-10-2026 — Live read-only reconciliation; no new workload
 
 **Scope:** native Windows SSH agent, LF-stdin transport and verified JSON stdout/stderr/status

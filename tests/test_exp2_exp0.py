@@ -104,7 +104,7 @@ def test_the_main_benchmark_scores_both_models_and_the_reference_column():
 
     total = n_slots(2, "lgd")
     from src.experiments.design import MILESTONES
-    assert total == 48 * len(MILESTONES) + 4
+    assert total == 32 * len(MILESTONES) + 4
     assert slot_for(2, "lgd", total - 1).tag == "reference_lgd_linear"
     with pytest.raises(FileNotFoundError):
         n_slots(2, "lgd", variant="pilots")

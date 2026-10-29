@@ -9,6 +9,8 @@ import argparse
 import hashlib
 import importlib.metadata as metadata
 import json
+import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,7 +24,7 @@ def source_fingerprint() -> str:
     """Relevant executable code/configs; documentation edits do not invalidate a check."""
     from src.utils.paths import REPO_ROOT
 
-    files = [REPO_ROOT / "pyproject.toml"]
+    files = [REPO_ROOT / "pyproject.toml", REPO_ROOT / "scripts/slurm/container_python"]
     for directory in ("src/data", "src/eval", "src/experiments", "src/models", "src/prior", "src/train", "src/utils", "src/validation", "src/visualize",
                       "config", "scripts", "tests"):
         files.extend(p for p in (REPO_ROOT / directory).rglob("*")
@@ -122,6 +124,10 @@ def dependency_checks() -> list[Check]:
     ok, detail = pip_consistency()
     rows.append(Check("pip check (whole environment)", ok, detail))
     if on_vsc():
+        if os.environ.get("SLURM_JOB_ID"):
+            inside = os.environ.get("CREDITICL_IN_CONTAINER") == "1" and sys.prefix == "/opt/venv"
+            rows.append(Check("PROJECT container runtime", inside,
+                              f"prefix={sys.prefix}; image={os.environ.get('CREDITICL_RUNTIME_IMAGE', 'missing')}"))
         wanted = project_metadata()["tool"]["crediticl"]["vsc"]["torch-version"]
         try:
             installed = metadata.version("torch")

@@ -114,8 +114,8 @@ unchanged, including the appended 25% mixture. This change does not require retr
 |---|---|---|
 | 0 | Do the current code, inputs, native model routes and hardware paths pass validation? | Diagnostic CPU job, then resumable GPU campaign; no research arms |
 | 1 | Does the credit prior package help a scratch TabICL at a matched budget? | 54 = (4 mixtures + 5 component removals) × 3 seeds × 2 tasks |
-| 2 | How do mixture and fixed learning rate affect transfer and OOD retention? | 96 = 2 backbones × 4 mixtures × 2 rates × 3 seeds × 2 tasks; 1,000 updates each |
-| 3 | Which fixed update constraints trade credit adaptation against OOD retention? | 48 new = 2 backbones × 4 methods × 3 seeds × 2 tasks; 1,000 updates each; 12 reused Exp2 baselines |
+| 2 | How do mixture and fixed learning rate affect transfer and OOD retention? | 64 = 2 backbones × 4 mixtures × 2 rates × 2 seeds × 2 tasks; 1,500 updates each |
+| 3 | Which fixed update constraints trade credit adaptation against OOD retention? | 32 new = 2 backbones × 4 methods × 2 seeds × 2 tasks; 1,500 updates each; 8 reused Exp2 baselines |
 
 ### 3.1 Experiment 1: preserved evidence
 
@@ -128,13 +128,13 @@ may resume across this patch under an additional exact-source and recipe check.
 
 ### 3.2 Experiment 2: full continued pretraining
 
-Every run starts from released weights, updates the full model, and uses a fixed **1,000-update**
-budget. Both predeclared peak rates are crossed with all four mixtures and three paired seeds:
-24 runs per backbone/task, 96 in total. There is no learning-rate pilot, candidate-ranking receipt,
+Every run starts from released weights, updates the full model, and uses a fixed **1,500-update**
+budget. Both predeclared peak rates are crossed with all four mixtures and two paired seeds:
+16 runs per backbone/task, 64 in total. There is no learning-rate pilot, candidate-ranking receipt,
 or benchmark-driven rate choice. The earlier Exp2A proposal is superseded; historical attempts
 remain described in [RUNS.md](RUNS.md), not silently relabelled as this design.
 
-The primary endpoint is update 1,000. Updates 125, 250, 500 and 1,000 are permanently retained
+The primary endpoint is update 1,500. Updates 125, 250, 500, 1,000 and 1,500 are permanently retained
 and benchmarked. Released weights are a shared step-zero reference. Intermediate points describe
 trajectories, not post-hoc alternative headline checkpoints. Report both rates separately, including
 an unfavorable result, rather than the best rate per dataset or the maximum across rates.
@@ -147,8 +147,8 @@ an unfavorable result, rather than the best rate per dataset or the maximum acro
 | Fixed peak rates, both run | 2e-5 and 1e-5 | 1e-5 and 1e-6 |
 | Optimizer | Native Muon configuration (all trainable parameters) | AdamW |
 | Weight decay | 0.01 | 0.01 |
-| Warm-up | 1% (10 updates) | 10% (100 updates) |
-| Schedule | One warm-up/cosine cycle over 1,000 updates, floor 1e-7 | Same schedule family and endpoint |
+| Warm-up | 1% (15 updates) | 10% (150 updates) |
+| Schedule | One warm-up/cosine cycle over 1,500 updates, floor 1e-7 | Same schedule family and endpoint |
 | Gradient norm limit | 1 | 1 |
 | Precision | FP32, explicit TF32/efficient SDPA policy | FP32 weights, FP16 autocast and GradScaler |
 | Objective | Native classification / 999-quantile regression | Native differentiable classification / distributional regression |
@@ -187,7 +187,7 @@ reconstruction of the private native TabPFN prior.
 **Rates, schedule and decay.** The TabICL pair compares its native stage-3 peak to half that rate.
 The TabPFN pair brackets the public fine-tuning/synthetic-v2-CPT rate and a conservative rate with
 actual v3 single-table evidence. AdamW's coordinate scaling and Muon's matrix transformation do
-not remove the global LR multiplier. The 1,000-update schedule is a complete cycle, not an
+not remove the global LR multiplier. The 1,500-update schedule is a complete cycle, not an
 early-stopped prefix of the earlier 10k or 2.5k proposals. General CPT research supports
 re-warming/re-decaying with replay ([Ibrahim et al., 2024](https://arxiv.org/abs/2403.08763));
 it does not prove an optimal schedule for this TFM task. No benchmark-driven plateau controller,
@@ -195,7 +195,7 @@ repeated restart or scheduler grid is added.
 
 Weight decay multiplies current weights by `1 - lr * weight_decay`; it is not a reset to zero
 and does not anchor the released checkpoint. With peak 2e-5 and this cosine schedule, its isolated
-exact-arithmetic shrinkage is about .01% over 1,000 updates, ignoring gradients and rounding.
+exact-arithmetic shrinkage is about .01% over 1,500 updates, ignoring gradients and rounding.
 That is an illustration of scale, not a bound on optimization effects. Keep .01 in Exp2 to retain
 the verified source/interface default and compare its removal separately in Exp3. L2-SP stays in
 Exp3 so the main comparison does not add both a prior intervention and a checkpoint penalty.
@@ -206,43 +206,44 @@ Torch 2.11 evidence. Exp3 uses the predetermined primary rate, not the lower-rat
 Validate effective decay on the actual runtime; numerically identical treatments should be
 reported as such, not amplified after inspecting benchmark outcomes.
 
-**Why 1,000 updates and three seeds.** This is a budget-limited adaptation study, not a claim
-of convergence or optimality. It preserves four mixtures, both rates and three paired seeds.
+**Why 1,500 updates and two seeds.** This is a budget-limited adaptation study, not a claim
+of convergence or optimality. It preserves four mixtures, both rates and two paired seeds.
 Native stage 3, TabPFN-Wide and Real-TabPFN have different tables/update, rows, objectives and
 feature counts; their update counts are not interchangeable measures of exposure. A negative
 result means no improvement under this tested budget, not that longer credit CPT cannot work.
-Three paired streams provide a modest measure of stochastic variation; more updates in one run
-cannot replace replication. [Bouthillier et al. (2021), Appendix C](https://proceedings.mlsys.org/paper_files/paper/2021/file/0184b0cd3cfb185989f858a1d9f5c1eb-Paper.pdf)
+The user selected two paired streams to afford 50% longer adaptation at the same total update budget.
+This provides less information about stochastic variation than three streams; report both runs and
+their spread, without interpreting two seeds as a precise variance estimate. [Bouthillier et al. (2021), Appendix C](https://proceedings.mlsys.org/paper_files/paper/2021/file/0184b0cd3cfb185989f858a1d9f5c1eb-Paper.pdf)
 motivates accounting for variance and paired comparisons, but does not prescribe three as a universal minimum.
 
-There are 384 permanent Exp2 snapshots, approximately 170 GB by linear scaling of the earlier
+There are 320 permanent Exp2 snapshots, approximately 142 GB by linear scaling of the earlier
 checkpoint inventory, plus rolling saves, references and benchmark artifacts. The observed/provisional
-48×2,500 training extrapolation of 46.6–49.4M credits scales to **37.3–39.5M for 96×1,000** at the
+48×2,500 training extrapolation of 46.6–49.4M credits scales to **37.3–39.5M for 64×1,500** at the
 quoted 30,600 credits/hour. This excludes validation, benchmarking and Exp3, and assumes comparable
 throughput. It is not a billing quote or a guarantee of affordability.
 
-Every retained Exp2 snapshot on all credit and OOD datasets implies **68,160 dataset-fold-model
-evaluations**: 48 PD runs × 4 steps × 39 datasets × 5 folds, plus 48 LGD runs × 4 × 32 × 5.
-References and PD threshold-calibration refits add work. Exp3's 48 new runs add 34,080 such
+Every retained Exp2 snapshot on all credit and OOD datasets implies **56,800 dataset-fold-model
+evaluations**: 32 PD runs × 5 steps × 39 datasets × 5 folds, plus 32 LGD runs × 5 × 32 × 5.
+References and PD threshold-calibration refits add work. Exp3's 32 new runs add 28,400 such
 evaluations. Full-table benchmarking can dominate total cost; price it from actual runtime evidence
 before launching the entire campaign. Keeping few trainable parameters does not itself make
 DiagScale/LoRA inference or fitting cheap. Preserve the full-row/full-feature/five-fold protocol
 rather than silently reducing coverage to fit a budget.
 
 A subsequent read-only VSC audit on 29-10 supplies a conditional inference anchor: existing
-released-model and Exp1 fold timers project **13.46–13.89M benchmarking credits for Exp2**
-and **6.73–6.95M for Exp3** at comparable speed. Including the training estimates gives roughly
-76–80M credits, before validation, retries and remaining Exp1 benchmarking, versus 95.81M available
+released-model and Exp1 fold timers project **11.22–11.58M benchmarking credits for Exp2**
+and **5.61–5.79M for Exp3** at comparable speed. Including the training estimates gives roughly
+73–77M credits, before validation, retries and remaining Exp1 benchmarking, versus 95.81M available
 at inspection. These are stored-work timers rather than billing records; adapter inference
 and adapted-model runtime remain unmeasured. See [VSC.md](VSC.md) and the
 29-10 read-only audit in [RUNS.md](RUNS.md) for observed values.
 
 ### 3.3 Experiment 3: constrained adaptation at a fixed 50% mixture
 
-The experiment uses the same 1,000-update geometry and three paired seeds as Exp2.
+The experiment uses the same 1,500-update geometry and two paired seeds as Exp2.
 The mixture is fixed in advance at 50%. Full-model reference rates are **2e-5 for TabICLv2 and
 1e-5 for TabPFN-3**, `lr_index=0`, regardless of which Exp2 rate scores better. Reuse those
-12 main full-CPT-with-decay runs. There are 48 new runs and no pilot or candidate selection.
+8 main full-CPT-with-decay runs. There are 32 new runs and no pilot or candidate selection.
 
 | Additional method | Trainable parameters | Fixed settings |
 |---|---|---|
@@ -269,7 +270,7 @@ including TabPFN's `SoftmaxScalingMLP`; all original weights are frozen. Q/V LoR
 zero residual, preserves packed TabICL K weights exactly, and adapts native TabPFN Q/V projections.
 Adapter checkpoints retain resumable factors; LoRA also exports merged native weights for normal
 inference. DiagScale is installed before inference caches are built. Adapter optimizers use 10%
-warm-up (100 updates), clipping 1 and the same 1,000-update cosine endpoint. Adapter-only decay
+warm-up (150 updates), clipping 1 and the same 1,500-update cosine endpoint. Adapter-only decay
 does not decay the frozen backbone. All four milestones are benchmarked.
 
 Source anchors: `repositories/Test-Time Compute for Tabular Foundation Models.txt`,
@@ -304,8 +305,8 @@ cleaned by this process.
 
 **Matched within each backbone, not across papers.** Mixture arms of the same backbone receive
 the same optimizer steps, task count and planned row/feature/context distribution. In Exp2,
-TabICLv2 receives 64,000 tasks (batch 64, stage-3 geometry) and TabPFN-3 receives 16,000 tasks
-(batch 16, 1,024 rows), each over 1,000 updates. Common random numbers pair shape draws across
+TabICLv2 receives 96,000 tasks (batch 64, stage-3 geometry) and TabPFN-3 receives 24,000 tasks
+(batch 16, 1,024 rows), each over 1,500 updates. Common random numbers pair shape draws across
 mixtures within a backbone. Each task contributes equally, so longer tables do not implicitly
 receive greater loss weight. Cross-backbone contrasts include different adaptation budgets;
 the primary prior effect is the contrast between mixtures within each backbone. This is **not**
@@ -318,7 +319,7 @@ The current package comparison already filters native-prior tables but not credi
 generation cost and accepted-task difficulty can therefore differ across mixtures. The updated
 long-context law preserves that declared comparison instead of changing filtering mid-study.
 
-**Seeds.** 3 per main arm in Exp1, Exp2 and Exp3 (paired: a seed gives both arms the same base tasks
+**Seeds.** 3 per main arm in Exp1; 2 in Exp2 and Exp3 (paired: a seed gives both arms the same base tasks
 and initial weights within a backbone). Report mean ± spread; gaps smaller than the seed spread
 indicate descriptive instability, not a significance test or an alternative selection rule.
 Neither Exp2 nor Exp3 ranks seeds, rates or method settings using benchmark scores.
@@ -407,7 +408,7 @@ columns, so wide-table extrapolation is shared across prior arms. Source audit: 
 601-feature prediction and regression-quantile probes, and both released classifiers passed
 2,986-feature probes matching the widest local table's width. Exp0 repeats wide probes on CUDA. Every
 saved permanent checkpoint is scored: Exp1 keeps its existing 2,500-step cadence; Exp2/Exp3 keep
-125, 250, 500 and 1,000. There are no Exp2/Exp3 pilots. Exp1 and Exp2/Exp3's TabPFN-3 arms train on 1,024-row tables;
+125, 250, 500, 1,000 and 1,500. There are no Exp2/Exp3 pilots. Exp1 and Exp2/Exp3's TabPFN-3 arms train on 1,024-row tables;
 Exp2/Exp3's TabICLv2 arms use 400–60,000 rows. All main runs are scored on full contexts of up to ~426,000 rows.
 Length exposure is matched across mixtures within each backbone, but it differs across experiments
 and backbones. Released TabICLv2 also completed its earlier training stages; extending our Exp2
@@ -540,8 +541,8 @@ are preserved. This closes known exclusions; it does not certify every anonymise
    within 0.001 on 49.2% of 594 rows, not the historical 57%. Source dictionaries and LGD target
    definitions remain necessary; weak univariate prediction does not certify absence of leakage.
 6. **Exp2's reported checkpoint** — resolved 30-09-2026: with no search there is no chosen checkpoint;
-   the final one (fixed at 1,000 steps after the 29-10 fixed-rate revision) is the result, the others a learning curve.
-   Neither 1,000 nor the original proposed 10,000 is established as optimal; the current horizon is
+   the final one (fixed at 1,500 steps after the 29-10 fixed-rate revision) is the result, the others a learning curve.
+   Neither 1,500 nor the original proposed 10,000 is established as optimal; the current horizon is
    a disclosed compute-budget constraint, frozen across all mixtures and rates.
    `eval.headline_step`, if a config sets it, is honoured by `results_plots.load_results`.
 7. **Full-row evaluation** — user decision 13-10-2026: no capped-context comparison. All eligible

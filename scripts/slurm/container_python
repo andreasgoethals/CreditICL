@@ -1,0 +1,55 @@
+#!/bin/bash
+# Host entrypoint. Every subprocess of Python then stays inside the immutable image.
+set -euo pipefail
+image=${CREDITICL_RUNTIME_IMAGE:?Activate the accepted PROJECT runtime first}
+repo=$(realpath "${VSC_DATA:?}/CreditICL")
+assets=${CREDITICL_PROJECT_ROOT:-${VSC_PROJECT_ROOT:-/lustre1/project/stg_00211}}/CreditICL
+work=${VSC_SCRATCH_NODE:-${VSC_SCRATCH_LUSTRE1:?}}/CreditICL/runtime-${SLURM_JOB_ID:-login}
+mkdir -p "$work/tmp" "$work/cache"
+cp /etc/passwd "$work/passwd"
+if ! grep -q "^$(id -un):" "$work/passwd"; then getent passwd "$(id -u)" >> "$work/passwd"; fi
+cp /etc/group "$work/group"
+if ! grep -q "^$(id -gn):" "$work/group"; then getent group "$(id -g)" >> "$work/group"; fi
+export TMPDIR="$work/tmp" XDG_CACHE_HOME="$work/cache"
+export APPTAINER_CACHEDIR="$work/apptainer-cache" APPTAINER_TMPDIR="$work/tmp"
+export PYTHONNOUSERSITE=1
+if [[ -f /run/slurm/conf/slurm.conf ]]; then export SLURM_CONF=/run/slurm/conf/slurm.conf; fi
+for name in CREDITICL_RUNTIME_IMAGE CREDITICL_EXPECTED_COMMIT CREDITICL_PROJECT_ROOT VSC_PROJECT_ROOT \
+    VSC_DATA VSC_HOME VSC_SCRATCH VSC_SCRATCH_NODE VSC_SCRATCH_LUSTRE1 VSC_SCRATCH_GPFS1 \
+    TMPDIR XDG_CACHE_HOME USER CUDA_VISIBLE_DEVICES PYTHONHASHSEED PYTHONUNBUFFERED PYTHONIOENCODING \
+    OMP_NUM_THREADS MKL_NUM_THREADS OPENBLAS_NUM_THREADS NUMEXPR_NUM_THREADS \
+    PYTORCH_CUDA_ALLOC_CONF PYTORCH_ALLOC_CONF CREDITICL_DRAW_WORKERS \
+    ${!SLURM_@} ${!CREDITICL_@}; do
+    [[ ! -v "$name" ]] || export "APPTAINERENV_$name=${!name}"
+done
+export APPTAINERENV_CREDITICL_IN_CONTAINER=1
+export APPTAINERENV_PYTHONNOUSERSITE=1
+export APPTAINERENV_LD_LIBRARY_PATH=/opt/compat:/lib64:/usr/lib64:/.singularity.d/libs
+runner=(apptainer exec --cleanenv --pwd "$repo" --bind "$repo:$repo:ro"
+    --bind "$repo/output CreditICL:$repo/output CreditICL:rw"
+    --bind "$assets:$assets:rw" --bind "$work:$work:rw"
+    --bind "$work/passwd:/etc/passwd:ro" --bind "$work/group:/etc/group:ro")
+for name in VSC_SCRATCH_NODE VSC_SCRATCH_LUSTRE1 VSC_SCRATCH_GPFS1; do
+    [[ ! -v "$name" || ! -d "${!name}" ]] || runner+=(--bind "${!name}:${!name}:rw")
+done
+# Site clients stay host-managed. Bind their non-glibc shared libraries without
+# replacing the container's Python, C library or complete /usr tree.
+declare -A _bound_libraries=()
+for tool in git sbatch squeue sacct scontrol sacctmgr /usr/lib64/slurm/auth_munge.so /usr/lib64/slurm/cli_filter_lua.so; do
+    binary=$(command -v "$tool" || true)
+    [[ -n "$binary" ]] || continue
+    if [[ "$tool" != /usr/lib64/slurm/* ]]; then runner+=(--bind "$binary:$binary:ro"); fi
+    while read -r library; do
+        case "$(basename "$library")" in libc.so.*|libm.so.*|libpthread.so.*|libdl.so.*|librt.so.*|libresolv.so.*|ld-linux*) continue;; esac
+        if [[ -f "$library" && ! -v "_bound_libraries[$library]" ]]; then
+            runner+=(--bind "$library:$library:ro")
+            _bound_libraries[$library]=1
+        fi
+    done < <(ldd "$binary" 2>/dev/null | awk '$2 == "=>" && $3 ~ /^\// {print $3}')
+done
+for directory in /usr/libexec/git-core /usr/lib64/slurm /etc/slurm /run/slurm /run/munge; do
+    [[ ! -d "$directory" ]] || runner+=(--bind "$directory:$directory:ro")
+done
+# Unit tests write only their temporary output roots; these are inside the work bind.
+if [[ -n "${SLURM_JOB_GPUS:-}" || -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then runner+=(--nv); fi
+exec "${runner[@]}" "${CREDITICL_EXEC_IMAGE:-$image}" /opt/venv/bin/python "$@"

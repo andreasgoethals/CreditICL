@@ -32,6 +32,8 @@ def test_exp3_selection_receipts_do_not_change_code_but_any_recipe_edit_does(tmp
     from src.utils.preflight import source_fingerprint
     monkeypatch.setattr(paths, "REPO_ROOT", tmp_path)
     (tmp_path / "pyproject.toml").write_text("")
+    (tmp_path / "scripts/slurm").mkdir(parents=True)
+    (tmp_path / "scripts/slurm/container_python").write_text("#!/bin/bash\n")
     folder = tmp_path / "config"
     folder.mkdir()
     file = folder / f"Exp3_{task}.yaml"

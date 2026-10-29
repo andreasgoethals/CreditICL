@@ -123,12 +123,12 @@ def test_exp2_grid_does_not_depend_on_exp1_winner(track):
     assert unconfigured_tracks(2, [track]) == []
     assert unconfigured_tracks(2, [track], "pilots")  # retired configuration cannot be submitted
     assert unconfigured_tracks(3, [track]) == []
-    assert len(runs) == 48
+    assert len(runs) == 32
     for architecture in ("tabicl", "tabpfn3"):
         group = [r for r in runs if r["architecture"] == architecture]
-        assert len(group) == 24
+        assert len(group) == 16
         assert {(r["prior"]["credit_fraction"], r["lr_index"], r["seed"]) for r in group} == {
-            (fraction, rate, seed) for fraction in (0., .25, .5, 1.) for rate in (0, 1) for seed in (0, 1, 2)}
+            (fraction, rate, seed) for fraction in (0., .25, .5, 1.) for rate in (0, 1) for seed in (0, 1)}
         assert all(r["init"]["strategy"] == "full" and r["init"]["pretrained_path"] for r in group)
 
 

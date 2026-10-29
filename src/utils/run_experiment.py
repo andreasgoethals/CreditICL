@@ -145,13 +145,13 @@ def _train_stage(exp: int, track: str, queued: set[str], single_cluster: bool,
             rng = array_spec(chunk)
             stage.commands.append([
                 "sbatch", f"--clusters={cluster}", f"--partition={part}",
-                f"--cpus-per-task={cores}", f"--mem={mem}", f"--array={rng}%8", script,
+                f"--cpus-per-task={cores}", f"--mem={mem}", f"--array={rng}", script,
             ])
     else:
         # A partial sweep goes back to one cluster: the surviving indices are scattered and
         # splitting a scattered spec across two partitions gains nothing but confusion.
         stage.commands.append(
-            ["sbatch", "--clusters=mindwell", f"--array={spec}%8", script]
+            ["sbatch", "--clusters=mindwell", f"--array={spec}", script]
         )
     for cmd in stage.commands:
         cmd[1:1] = [f"--job-name={job_name}", f"--export=ALL,EXP={exp},VARIANT={variant or ''}"]
@@ -178,7 +178,7 @@ def _benchmark_stage(exp: int, track: str, queued: set[str], train: Stage,
     stage.commands.append([
         "sbatch", "--clusters=mindwell", f"--export=ALL,EXP={exp},TRACK={track},VARIANT={variant or ''}",
         f"--job-name={job_name}",
-        f"--array={','.join(map(str, missing))}%8", "scripts/slurm/benchmark.slurm",
+        f"--array={','.join(map(str, missing))}", "scripts/slurm/benchmark.slurm",
     ])
     return stage
 

@@ -15,6 +15,7 @@ import signal
 import subprocess
 import sys
 import time
+import tempfile
 import uuid
 import xml.etree.ElementTree as ET
 from contextlib import contextmanager, suppress
@@ -91,7 +92,8 @@ def plan(phase: str = "gpu") -> list[Stage]:
         stages.insert(0, Stage("preprocess", (py, "-m", "src.data.preprocess", "--task", "both")))
     for name, args, cpu in (suites[:1] if phase == "cpu" else suites[1:]):
         junit = str(report / f"{name}.xml")
-        stages.append(Stage(name, (py, "-m", "pytest", "-q", *args, f"--junitxml={junit}"),
+        cache = str(Path(os.environ.get("TMPDIR", tempfile.gettempdir())) / "crediticl-pytest-cache")
+        stages.append(Stage(name, (py, "-m", "pytest", "-q", *args, '-o', f'cache_dir={cache}', f"--junitxml={junit}"),
                             cpu=cpu, junit=junit))
     gpu_sections = {"env", "weights"}
     sections = CHECK_SECTIONS - {"train"} - gpu_sections if phase == "cpu" else gpu_sections
@@ -229,6 +231,11 @@ def input_inventory() -> dict:
                 result[f"{track}/{slot.model}"] = wanted
     if len(result) != 8:
         raise ValueError("Expected four reference models for each track")
+    if paths.on_vsc() and os.environ.get("SLURM_JOB_ID"):
+        digest = os.environ.get("CREDITICL_RUNTIME_SHA256", "")
+        if len(digest) != 64 or os.environ.get("CREDITICL_IN_CONTAINER") != "1":
+            raise ValueError("Validation requires a verified PROJECT runtime image")
+        result["runtime_image"] = {"sha256": digest}
     return result
 
 

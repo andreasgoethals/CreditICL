@@ -104,11 +104,11 @@ def test_exp1_budget_is_preserved_and_exp3_is_continuation():
         assert cfg["init"]["strategy"] == "full"
 
 
-def test_exp3_has_three_paired_seeds_and_four_kept_milestones():
+def test_exp3_has_two_paired_seeds_and_five_kept_milestones():
     from src.experiments.design import MILESTONES
     for track in ("LGD", "PD"):
         cfg = _load(f"config/Exp3_{track}.yaml")
-        assert cfg["seeds"] == [0, 1, 2]
+        assert cfg["seeds"] == [0, 1]
         assert cfg["train"]["max_steps"] == MAIN_STEPS
         assert tuple(cfg["train"]["keep_steps"]) == MILESTONES
 

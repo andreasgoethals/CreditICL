@@ -145,12 +145,11 @@ model at micro-batch 4 uses ~13 GB of a B200's 192 GB but still runs at ~80–89
 so there is no headroom to reclaim by enlarging the batch (and `micro_batch` is pinned at `group_size`
 anyway).
 
-**Template adoption exception:** the existing campaign's array throttles and resource requests
-remain unchanged during this access/storage update. The template now prefers all independent ready
-work without an artificial cap; a percentage throttle needs measured storage/service/correctness
-evidence or an explicit user choice. Before a new campaign, inspect current Slurm/QoS limits and
-validate capacity-aware submission. The historical `%8` examples below are not a new universal
-cluster limit, and changing them while a campaign is active is outside this adoption.
+**Submission policy, 29-10-2026:** current launch plans contain no fixed percentage throttle.
+Inspect the account/QoS admission ceiling before submitting; Slurm controls running resources.
+The reviewed 64-run Exp2 grid fits the site's verified submission limits. Explicit memory/CPU
+requests remain measured project choices: these launchers execute Python directly and do not
+introduce an `srun`/MPI step affected by the site's CPU/memory-variable workaround.
 
 ## 4. Surviving a long sweep
 
@@ -296,7 +295,9 @@ file-count cost of an unpacked PyTorch environment. Do not create an unpacked ve
 persistent container sandbox on PROJECT, and do not move a populated DATA environment there.
 Local Windows venvs remain supported.
 
-**Current runtime is still the legacy DATA venv.** `_activate_env.sh` continues to discover existing
+**Runtime migration authorized, 29-10-2026.** The candidate is built through `scripts/slurm/build_runtime.slurm`; `src.utils.runtime_image` archives distribution payloads and hashes, and the image installs them into a fresh `/opt/venv`. Console scripts are regenerated and original Git origins are retained. The DATA manifest `.runtime-build/current.json` selects the PROJECT SIF. `_activate_env.sh` now selects that image by default; `CREDITICL_LEGACY_RUNTIME=1` is an explicit recovery exception. The wrapper binds checkout code read-only, output/assets/scratch writable, and site-managed Git/Slurm clients with their non-glibc dependencies. No training job installs packages.
+
+**Before acceptance the legacy DATA venv is retained for rollback.** `_activate_env.sh` continues to discover existing
 `.venv-${VSC_ARCH_LOCAL}` / `.venv` environments and their recorded Python modules so existing
 recovery paths remain usable. This repository has not yet built or accepted a SIF runtime. There is
 no automatic container switch, environment relocation, package installation or cleanup in this update.
@@ -391,22 +392,22 @@ Completed Exp1 training on B200, batch 64 and micro-batch 4, with explicit proje
 | **Completed original Exp1, 24 arms/track (9 main + 15 component)** | **323.616 recorded training GPU-h** for all 48 completed arms, excluding startup and benchmarks; see [RUNS, 24-10-2026](RUNS.md#24-10-2026--exp1-training-complete--all-48-runs-successful) |
 | **Completed Exp1 extension: 3 more arms/track** | 25% credit, three seeds, indices 9–11; all six completed on 28-10, making 54 completed training runs. Their recorded training totals about 40.7 GPU-h; quarter-mixture benchmarks remain pending in the 29-10 snapshot. |
 | Superseded 96-run Exp2, 10k updates | Production TabICL timing projects 210–225 GPU-h/arm; combined with the provisional TabPFN subtotal, **12,189–12,909 GPU-h / 373–395M training credits**, excluding benchmarking. Replaced by the fixed-rate budget below. |
-| Fixed-rate Exp2 | 96 runs × 1,000 updates: approximately **37.3–39.5M training credits**, linearly extrapolated from earlier throughput; excludes validation and benchmarking. |
-| Fixed-recipe Exp3 | 48 new runs × 1,000 updates + 12 reused baselines: **18.6–19.8M full-update-equivalent credits** for planning only; adapter throughput is unmeasured. |
+| Fixed-rate Exp2 | 64 runs × 1,500 updates: approximately **37.3–39.5M training credits**, linearly extrapolated from earlier throughput; excludes validation and benchmarking. |
+| Fixed-recipe Exp3 | 32 new runs × 1,500 updates + 8 reused baselines: **18.6–19.8M full-update-equivalent credits** for planning only; adapter throughput is unmeasured. |
 | Current Exp3 | Retention-method runtime remains unmeasured; do not extrapolate scratch throughput. The old 200k scratch Exp3 is abandoned. |
 | TabICLv2's own full pretraining | 24.5 GPU-days per model (the paper's figure) |
 
 The revised configurations generate tasks live in every experiment. Exp1 uses 12,500 updates,
-2.5% of upstream's 500k-step first stage; Exp2/3 adapt released weights for 1,000 updates.
+2.5% of upstream's 500k-step first stage; Exp2/3 adapt released weights for 1,500 updates.
 Neither reproduces upstream's complete curriculum. Exp1 times describe its frozen completed
 campaign; they do not measure the new Exp2/Exp3 recipes. Wall-clock completion also depends
 on queue delays and concurrent allocations, and benchmarks add their own runtime.
 
-For Experiment 2 (capacity checked in Experiment 0 before launch): 48 arms per track (2 models × 4
-mixes × 2 fixed rates × 3 seeds), 1,000 steps each, using upstream TabICL and TabPFN's differentiable
+For Experiment 2 (capacity checked in Experiment 0 before launch): 32 arms per track (2 models × 4
+mixes × 2 fixed rates × 2 seeds), 1,500 steps each, using upstream TabICL and TabPFN's differentiable
 fine-tuning interface on synthetic tasks. The 24-10 revision changes TabICLv2 to 400–60,000 log-uniform rows, 79–81%
 context and one task per microbatch, retaining 64 tasks per update. Its expected row exposure is
-about 761 million per main arm, 11.6 times a matched 1,024-row proposal; this is **not** a runtime ratio.
+about 1,142 million per main arm, 11.6 times a matched 1,024-row proposal; this is **not** a runtime ratio.
 TabPFN-3 retains 16 tasks per update and 1,024 rows through its own preprocessing. The old ~400
 GPU-hour estimate is **obsolete**. Never extrapolate TabICLv2 Exp2 cost from Exp0's 1,024-row
 route checks. Fresh capacity and representative-batch probes must establish feasibility first;
@@ -419,11 +420,11 @@ for a complete credit+OOD suite were 2.3824 hours PD / 0.1319 hours LGD for rele
 and 1.9298 hours PD / 0.1388 hours LGD for released TabPFN. The 45 Exp1 TabICL checkpoint
 evaluations per track had medians of 2.5337 hours PD / 0.1268 hours LGD. These timers include
 preprocessing and calibration; they are not Slurm elapsed time or billed GPU-hours. At comparable inference
-speed, all four Exp2 checkpoints imply approximately 440–454 timed hours (13.46–13.89M
-credits); Exp3 adds 220–227 hours (6.73–6.95M), conditional on adapter inference speed.
-Together with training, the planning total is roughly 76–80M credits, excluding validation,
+speed, all five Exp2 checkpoints imply approximately 367–378 timed hours (11.22–11.58M
+credits); Exp3 adds 183–189 hours (5.61–5.79M), conditional on adapter inference speed.
+Together with training, the planning total is roughly 73–77M credits, excluding validation,
 retries and remaining Exp1 benchmarks. The live available balance was 95,812,429 credits. This reserve
-motivates the 1,000-update design; the estimate is not a spending guarantee.
+motivates the 1,500-update design; the estimate is not a spending guarantee.
 
 The 29-10 quote uses an actual jobscript (this VSC `sam-quote` rejects `--wrap` alone):
 
@@ -434,7 +435,7 @@ sam-quote sbatch --clusters=mindwell --partition=gpu_b200 --account=lp_verbekela
 ```
 
 Available balance in the supplied transcript is 95,945,277 credits. This is a dated balance;
-use `sam-balance` again before submitting. The fixed 1,000-update grid is implemented locally; this does not authorize a new VSC workload. Training estimates exclude validation and full-table benchmarking.
+use `sam-balance` again before submitting. The fixed 1,500-update grid is implemented locally; this does not authorize a new VSC workload. Training estimates exclude validation and full-table benchmarking.
 
 For the authorized clean Exp2 restart, preview then delete only its generated run output:
 
@@ -643,7 +644,10 @@ Each experiment planner is safe to repeat: it skips completed/queued arms and wa
 before benchmarking. Exp1 includes only missing quarter-mixture work if the other 48 runs and
 benchmarks are already complete. All 54 training runs were complete in the 29-10 snapshot.
 Run the fixed Exp2 grid after Exp1 benchmarking and current validation.
-Exp2 retains four checkpoint benchmarks per run. All rows/features/five folds remain.
+The explicitly authorized one-off `scripts/slurm/deploy.slurm` controller performs that
+sequence and stops immediately after submitting Exp2; its durable JSON receipt records
+all accepted job IDs. It stops on failed validation or incomplete Exp1 benchmark receipts.
+Exp2 retains five checkpoint benchmarks per run. All rows/features/five folds remain.
 For Exp2/Exp3, keep `--single-cluster`: these commands use the Mindwell B200 allocation validated
 by Exp0. The planner's optional historical LGD split across wICE A100s is not validated by a B200
 capacity result and is not the launch recipe here.
@@ -655,9 +659,9 @@ python -m src.utils.run_experiment 3 --single-cluster --submit
 # Repeat after training for benchmarks.
 ```
 
-The former 200k-update scratch Exp3 is abandoned. Current Exp3 has 48 new runs and 12 reused Exp2 baselines, all at 1,000 updates.
+The former 200k-update scratch Exp3 is abandoned. Current Exp3 has 32 new runs and 8 reused Exp2 baselines, all at 1,500 updates.
 Both CPT rates and all adapter settings are fixed before benchmarking; no pilot selects them.
-The 125/250/500/1,000 checkpoints describe adaptation trajectories, with 1,000 as primary endpoint. Never delete Exp1 or Exp2 baseline checkpoints while
+The 125/250/500/1,000/1,500 checkpoints describe adaptation trajectories, with 1,500 as primary endpoint. Never delete Exp1 or Exp2 baseline checkpoints while
 these comparisons are active. Check project capacity before launching: retained checkpoints,
 rolling resume files and full-table benchmark journals all consume project storage. The 24-hour
 Exp0 allocation is a limit, not a prediction of total campaign duration.

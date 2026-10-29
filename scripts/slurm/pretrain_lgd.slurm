@@ -35,11 +35,11 @@
 #SBATCH --requeue
 #SBATCH --signal=B:USR1@600
 # 0-11 = 4 credit mixes x 3 seeds. The 25% extension is 9-11; completed 0-8 retain their identities.
-# %8 caps how many run at once: gpu_b200 has 24 GPUs TOTAL
+# Slurm controls running resources: gpu_b200 has 24 GPUs total.
 # shared with every other user, and both MaxSubmitJobsPerUser and MaxTRESPerUser apply.
 # Check yours before raising it:
 #     sacctmgr show qos normal format=Name,MaxSubmitJobsPerUser%15,MaxTRESPerUser%30
-#SBATCH --array=0-11%8
+#SBATCH --array=0-11
 
 # Jitter the start so concurrent tasks do not hammer the filesystem at once.
 sleep $((RANDOM % 30 + 1))

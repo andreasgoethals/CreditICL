@@ -1,5 +1,30 @@
 # Agents' memory — runs and dead ends
 
+## 29-10-2026 — approved 1,500-update deployment
+
+The user chooses 64 Exp2 runs (two seeds 0/1, both fixed rates, four mixtures, two
+backbones, PD/LGD), 1,500 updates and checkpoints 125/250/500/1000/1500. Exp3 uses
+32 new runs and eight matched Exp2 baselines at the same horizon/seeds. Exp1 remains
+54 completed runs with its original three seeds and identities. The user explicitly
+authorizes the PROJECT runtime rebuild, verified stale-output cleanup, current-code
+CPU/GPU Exp0, remaining Exp1 benchmarking and finally Exp2 submission. Stop after
+Exp2 has been submitted. Runtime build 62468678 on wICE started from recorded installed
+payload wheels and a Python 3.12.3 base image; acceptance is pending. Active jobs from
+other projects were observed and preserved.
+
+
+**Tried:** Runtime build 62468678 from the first installed-artifact snapshot.
+**Result:** Build stopped during offline pip installation, before any GPU validation.
+**Why:** The first tag of a py2/py3 universal wheel was selected instead of a supported tag.
+**Instead:** Select using packaging's interpreter tags, retain a regression test, and reuse
+hash-verified payloads in build 62468733. A follow-up build 62468797 restores standalone
+ELF tools such as Ruff; Python entrypoints are recreated by pip.
+
+The first image and legacy environment had identical dependency fingerprint
+`d4ed1fbe1397c0063fc12abffcb338fddd8038f21decb20c8c84accaf0bf0454`.
+Container probes verified Git and squeue after adding explicit cwd, configless Slurm,
+user/group lookup and auth-plugin library binds. No model or protocol was changed.
+
 ## 29-10-2026 — fixed-rate design supersedes the unrun pilot proposal
 
 The user withdrew benchmark-driven LR selection. Exp2 now has 96 runs: two backbones ×

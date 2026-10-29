@@ -6,7 +6,7 @@ from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 
-from src.experiments.design import MAIN_STEPS, MILESTONES, RATES
+from src.experiments.design import MAIN_STEPS, MILESTONES, RATES, SEEDS
 from src.experiments import results
 from src.utils import paths
 from src.utils.config import expand_with_seeds, load
@@ -23,11 +23,11 @@ def design_figure(experiment=2):
     fig, axes = plt.subplots(1, 2, figsize=style.figsize(style.WIDTH_FULL, .46))
     if experiment == 2:
         panels = [
-            ("What varies?", ["2 released backbones", "PD and LGD", "0%, 25%, 50%, 100% credit", "2 predetermined learning rates", "3 paired training seeds", "96 runs; both rates reported"]),
+            ("What varies?", ["2 released backbones", "PD and LGD", "0%, 25%, 50%, 100% credit", "2 predetermined learning rates", "2 paired training seeds", "64 runs; both rates reported"]),
             ("What is measured?", [f"{MAIN_STEPS:,} updates per run", f"{len(MILESTONES)} retained checkpoints", " → ".join(f"{s:,}" for s in MILESTONES), "Final step is the primary endpoint", "Full-table credit + native OOD", "Same five folds for every model"])]
     else:
         panels = [
-            ("Fixed comparison", ["50% credit / 50% generic", "Same tables within each backbone", f"{MAIN_STEPS:,} updates; 3 paired seeds", "12 full-CPT baselines reused", "48 additional runs", "Settings fixed before benchmarking"]),
+            ("Fixed comparison", ["50% credit / 50% generic", "Same tables within each backbone", f"{MAIN_STEPS:,} updates; 2 paired seeds", "8 full-CPT baselines reused", "32 additional runs", "Settings fixed before benchmarking"]),
             ("Four additional methods", ["Full CPT without weight decay", "L2-SP: anchor to released weights", "DiagScale: query scales only", "LoRA: rank-16 Q/V updates", "Compare with ordinary full CPT", f"Report credit + OOD at {len(MILESTONES)} steps"])]
     for ax, (title, lines) in zip(axes, panels):
         ax.axis("off")
@@ -68,7 +68,7 @@ def training_curves(track, backbone, *, metric="loss"):
                     continue
                 ax.plot(series.index, series, color=color, alpha=.25, linewidth=style.TRACE_LINE)
                 curves.append(series.rename(r["seed"]))
-            if len(curves) == 3:
+            if len(curves) == len(SEEDS):
                 common = pd.concat(curves, axis=1, join="inner").dropna()
                 ax.plot(common.index, common.mean(axis=1), color=color, linewidth=style.EFFECT_LINE)
         ax.set(xlabel="Optimizer updates", title=f"Fixed peak LR {RATES[backbone][lr_index]:g}")
@@ -80,13 +80,13 @@ def training_curves(track, backbone, *, metric="loss"):
 
 
 def checkpoint_curves(track, backbone, *, experiment=2, metric=None):
-    """Saved-checkpoint benchmarks; explicit steps and complete seed triplets."""
+    """Saved-checkpoint benchmarks; explicit steps and complete registered seed pairs."""
     metric = metric or ("roc_auc" if track == "pd" else "r2")
     frames = {d: results.benchmark_frames(track, experiment, domain=d) for d in ("credit", "ood")}
     scores = {d: results.complete_scores(f, metric, experiment=experiment) for d, f in frames.items()}
     scores = {d: f[f.architecture.eq(backbone)] if not f.empty else f for d, f in scores.items()}
     if all(f.empty for f in scores.values()):
-        return campaign.availability("Checkpoint curves require complete five-fold tables for all three training seeds. "
+        return campaign.availability("Checkpoint curves require complete five-fold tables for both registered training seeds. "
                                      "Monitoring values do not populate these panels.")
     style.apply()
     nrows = 2 if experiment == 2 else 1
@@ -139,7 +139,7 @@ def retention_effects(track, backbone, *, metric=None):
         tables[domain] = results.paired_retention(frame, metric)
     if any(f.empty for f in tables.values()):
         return campaign.availability("The retention comparison requires all four methods and the reused full-CPT "
-                                     "baseline, with three seeds and complete credit/OOD folds.")
+                                     "baseline, with both registered seeds and complete credit/OOD folds.")
     style.apply()
     fig, axes = plt.subplots(1, 2, sharey=True, figsize=style.figsize(style.WIDTH_FULL, .62))
     methods = list(METHODS)[1:]
@@ -171,7 +171,7 @@ def retention_recipe():
 
 
 def retention_summary():
-    lines = ["A · REGISTERED DESIGN", f"Fixed 50% mixture; 48 new {MAIN_STEPS:,}-update runs plus 12 reused Exp2 controls.",
+    lines = ["A · REGISTERED DESIGN", f"Fixed 50% mixture; 32 new {MAIN_STEPS:,}-update runs plus 8 reused Exp2 controls.",
              "B · FIXED ADAPTATION RECIPES", retention_recipe().to_string(index=False),
              "No benchmark-driven learning-rate or adapter selection.",
              "C · CREDIT AND OOD RETENTION", "Paired final contrasts use the same training seeds and five-fold assignments."]
@@ -188,7 +188,7 @@ def retention_summary():
                 name = f"{track.upper()} / {BACKBONES[backbone]} / {domain}"
                 lines.append(name + ": " + ("final paired results not complete" if effects.empty
                                            else "\n" + effects.to_string(index=False)))
-                trajectories.append(name + ": " + ("no complete three-seed checkpoint groups" if scores.empty
+                trajectories.append(name + ": " + ("no complete two-seed checkpoint groups" if scores.empty
                                     else "\n" + scores.to_string(index=False)))
     lines += ["D · ADAPTATION TRAJECTORIES", f"{len(MILESTONES)} retained checkpoints; incomplete seed/fold groups are withheld.",
               *trajectories, "Settings and primary endpoint are fixed in advance; both credit and OOD outcomes are reported. Historical benchmark exposure is disclosed."]

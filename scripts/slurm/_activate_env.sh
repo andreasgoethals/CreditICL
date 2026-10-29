@@ -18,6 +18,14 @@
 
 CONDA_ENV="${CONDA_ENV:-CreditICL}"
 
+if [[ -n "${VSC_DATA:-}" && "${CREDITICL_LEGACY_RUNTIME:-0}" != 1 ]]; then
+    source "${VSC_DATA}/CreditICL/scripts/slurm/_container_env.sh" || { return 1 2>/dev/null || exit 1; }
+    if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+        python -m src.utils.preflight --dependencies-only || { return 1 2>/dev/null || exit 1; }
+    fi
+    return 0 2>/dev/null || exit 0
+fi
+
 _verify_job_environment() {
     # Login shells must still activate an old environment so it can be repaired.
     # Every job, including preprocessing, checks it; jobs never install packages.

@@ -1,4 +1,4 @@
-# Experiment 2: two models x four mixtures x two fixed rates x three seeds = 48 runs per task.
+# Experiment 2: two models x four mixtures x two fixed rates x two seeds = 32 runs per task.
 # TabICL stage-3 CPT; TabPFN-v3 native differentiable fine-tuning applied to synthetic tables.
 # See docs/EXPERIMENTAL_DESIGN.md for provenance and comparison limits.
 
@@ -18,7 +18,7 @@ sweep:
   arm: [tabicl, tabpfn3] # the two released foundation models
   lr_index: [0, 1] # both predeclared rates are evaluated, never selected using benchmark scores
   prior.credit_fraction: [0.0, 0.25, 0.5, 1.0] # share of each batch from our prior; 0.0 = continued pretraining on the control prior
-  seeds: [0, 1, 2] # repeats
+  seeds: [0, 1] # repeats
 
 arms: # one set of overrides per arm; `sweep.arm` picks one per run (src/utils/config.py)
   tabicl:
@@ -131,8 +131,8 @@ init:
 # TRAINING — continued pretraining (docs/EXPERIMENTAL_DESIGN.md, Experiment 2)
 # ----------------------------------------------------------------------------
 train:
-  keep_steps: [125, 250, 500, 1000]
-  max_steps: 1000 # bounded comparison budget; not a claim of convergence or a literature optimum
+  keep_steps: [125, 250, 500, 1000, 1500]
+  max_steps: 1500 # bounded comparison budget; not a claim of convergence or a literature optimum
   batch_size: 64 # datasets per UPDATE, upstream's; the tabpfn3 arms use 16, as TabPFN-Wide
   micro_batch_size: 4 # TabICL arm overrides to one; TabPFN prepares one task at a time
   max_workers: null # allocation default; long-context TabICL arm caps resident workers
@@ -159,7 +159,7 @@ train:
   num_workers: 12 # CPU workers generating (and, for TabPFN, preprocessing) the tasks; the SLURM script sets it from the allocation
   log_every: 100 # steps between log lines
   save_temp_every: 250 # rolling checkpoints; caps what a kill loses
-  save_perm_every: 1000 # kept-forever checkpoints, each scored by the benchmark: the learning curve
+  save_perm_every: 1500 # kept-forever checkpoints, each scored by the benchmark: the learning curve
   max_temp_checkpoints: 2 # rolling checkpoints retained
 
 # ----------------------------------------------------------------------------

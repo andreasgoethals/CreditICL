@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from src.eval.protocol import PROTOCOL, N_FOLDS, checkpoint_steps
+from src.experiments.design import SEEDS
 from src.utils import paths
 from src.utils.config import expand_with_seeds, load, run_name
 
@@ -120,13 +121,13 @@ def benchmark_frames(track: str, experiment: int, *, domain="credit", final_only
 
 
 def complete_scores(frame, metric, *, experiment):
-    """Equal dataset weights, paired seeds 0/1/2; no partial-group summaries."""
+    """Equal dataset weights, paired registered seeds; no partial-group summaries."""
     if frame.empty or metric not in frame:
         return pd.DataFrame()
     keys = ["architecture", "lr_index", "mixture"] if experiment == 2 else ["architecture", "treatment"]
     rows = []
     for group, part in frame.groupby(keys + ["checkpoint_step"]):
-        if set(part.training_seed.unique()) != {0, 1, 2} or not np.isfinite(part[metric]).all():
+        if set(part.training_seed.unique()) != set(SEEDS) or not np.isfinite(part[metric]).all():
             continue
         datasets = [set(g.dataset) for _, g in part.groupby("training_seed")]
         if any(ds != datasets[0] for ds in datasets):
@@ -145,7 +146,7 @@ def paired_retention(frame, metric):
         return pd.DataFrame()
     counts = frame.groupby("treatment").training_seed.agg(lambda s: set(s))
     methods = {"full_wd", "no_decay", "l2sp", "diagscale", "lora"}
-    if set(counts.index) != methods or any(s != {0, 1, 2} for s in counts):
+    if set(counts.index) != methods or any(s != set(SEEDS) for s in counts):
         return pd.DataFrame()
     copy = frame.copy()
     copy["info_run_name"] = [f"exp3_{m}__s{s}" for m, s in zip(copy.treatment, copy.training_seed)]

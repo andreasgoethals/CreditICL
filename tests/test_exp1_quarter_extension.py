@@ -55,7 +55,7 @@ def test_completed_original_campaign_submits_only_the_three_new_arms(track, isol
                  if s.name == f"exp1-{track}-train")
     assert stage.done == 9 and stage.total == 12
     assert len(stage.commands) == 1
-    assert "--array=9-11%8" in stage.commands[0]
+    assert "--array=9-11" in stage.commands[0]
 
 
 @pytest.mark.parametrize("track", ["pd", "lgd"])

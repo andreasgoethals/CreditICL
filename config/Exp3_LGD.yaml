@@ -9,4 +9,4 @@ prior:
 sweep:
   arm: [tabicl, tabpfn3]
   method: [no_decay, l2sp, diagscale, lora]
-  seeds: [0, 1, 2]
+  seeds: [0, 1]

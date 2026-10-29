@@ -23,11 +23,11 @@ def test_current_exp2_reports_unknown_long_context_cost_and_only_tabpfn_subtotal
 
     assert f"Exp2 {track} TabICL: GPU-hours unknown" in text
     assert "single capacity-test update is not a reliable campaign estimate" in text
-    expected_hours = 24 * MAIN_STEPS * 5 / 3600
-    assert f"Exp2 {track} TabPFN: 24 runs, about {expected_hours:.1f} GPU-h (short-run extrapolation; subtotal only)" in text
+    expected_hours = 16 * MAIN_STEPS * 5 / 3600
+    assert f"Exp2 {track} TabPFN: 16 runs, about {expected_hours:.1f} GPU-h (short-run extrapolation; subtotal only)" in text
     assert f"Exp2 {track} total: unknown" in text
     assert "48 runs, about" not in text
-    assert "TabICL: 24 runs, about" not in text
+    assert "TabICL: 16 runs, about" not in text
 
 
 @pytest.mark.parametrize("exp,variant,count,hours", [
@@ -74,5 +74,5 @@ def test_retention_does_not_reuse_from_scratch_timing(capsys):
     runs = expand_with_seeds(load("config/Exp3_PD.yaml", allow_placeholders=True))
     _print_training_costs(3, "", "pd", runs, _summaries())
     text = capsys.readouterr().out
-    assert "24 new runs; GPU-hours unknown" in text
+    assert "16 new runs; GPU-hours unknown" in text
     assert "about" not in text

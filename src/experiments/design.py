@@ -6,9 +6,10 @@ Experiment 3 always compares against rate index zero, regardless of its score.
 from __future__ import annotations
 
 RATES = {"tabicl": (2e-5, 1e-5), "tabpfn3": (1e-5, 1e-6)}
-DESIGN_REVISION = "fixed-rates-v1"
-MAIN_STEPS = 1000
-MILESTONES = (125, 250, 500, MAIN_STEPS)
+DESIGN_REVISION = "fixed-rates-1500-two-seeds-v2"
+SEEDS = (0, 1)
+MAIN_STEPS = 1500
+MILESTONES = (125, 250, 500, 1000, MAIN_STEPS)
 # External numerical anchors, not hyperparameters selected on this benchmark.
 # Real-TabPFN: L2-SP .003; Ning et al.: DiagScale .03. Q/V-only LoRA at
 # 1e-4/rank16 is a fixed engineering choice, not Ning's all-linear LoRA recipe.

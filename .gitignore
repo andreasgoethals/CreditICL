@@ -164,3 +164,6 @@ output CreditICL/**/_stdout.txt
 /output CreditICL/results/
 /output CreditICL/legacy-output/
 /outputCreditICL/
+
+# Runtime manifests and host entrypoint links; the image lives on PROJECT.
+/.runtime-build/

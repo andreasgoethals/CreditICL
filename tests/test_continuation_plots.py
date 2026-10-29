@@ -13,7 +13,7 @@ def curve_cells(experiment=2):
         for lr in ((0, 1) if experiment == 2 else (0,)):
             for method in (0., .25, .5, 1.) if experiment == 2 else tuple(c.METHODS):
                 for step in MILESTONES:
-                    for seed in (0, 1, 2):
+                    for seed in (0, 1):
                         for dataset in ("a", "b", "c"):
                             for fold in range(5):
                                 rows.append(dict(architecture=backbone, lr_index=lr, mixture=method if experiment == 2 else .5,

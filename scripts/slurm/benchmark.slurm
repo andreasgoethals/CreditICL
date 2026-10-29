@@ -51,8 +51,8 @@
 # The launcher computes the array from the current saved-checkpoint grid plus shared
 # reference models. No capped-context slots are scheduled. Other experiments:
 #     python -m src.eval.benchmark_status --exp N --track T --count
-# and pass --array=0-<count-1>%8. Indices past the last slot exit in seconds.
-#SBATCH --array=0-63%8
+# and pass --array=0-<count-1>. Indices past the last slot exit in seconds.
+#SBATCH --array=0-63
 
 sleep $((RANDOM % 30 + 1))
 

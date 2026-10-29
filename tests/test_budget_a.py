@@ -8,17 +8,17 @@ from src.utils.config import expand_with_seeds, load, run_name
 
 
 @pytest.mark.parametrize("task", ["PD", "LGD"])
-def test_both_rates_cross_all_mixtures_and_three_seeds_without_selection(task, isolated_output):
+def test_both_rates_cross_all_mixtures_and_two_seeds_without_selection(task, isolated_output):
     cfg = load(f"config/Exp2_{task}.yaml")
     runs = expand_with_seeds(cfg)
-    assert len(runs) == 48
+    assert len(runs) == 32
     assert all(not r["design_unresolved"] and r["design_revision"] == DESIGN_REVISION for r in runs)
     assert {(r["architecture"], r["lr_index"], r["prior"]["credit_fraction"], r["seed"]) for r in runs} == {
         (model, rate, mixture, seed) for model in RATES for rate in (0, 1)
-        for mixture in (0., .25, .5, 1.) for seed in (0, 1, 2)}
+        for mixture in (0., .25, .5, 1.) for seed in (0, 1)}
     assert all(r["train"]["max_steps"] == r["train"]["schedule_total_steps"] == MAIN_STEPS for r in runs)
     assert all(r["train"]["keep_steps"] == list(MILESTONES) for r in runs)
-    assert len(set(MILESTONES)) == len(MILESTONES) == 4 and MILESTONES[-1] == MAIN_STEPS
+    assert len(set(MILESTONES)) == len(MILESTONES) == 5 and MILESTONES[-1] == MAIN_STEPS
     assert all(r["train"]["l2sp_alpha"] == 0. for r in runs)
     assert "selection_scope" not in cfg["eval"]
 
@@ -86,7 +86,7 @@ def test_checkpoint_plot_draws_measured_milestones_and_step_zero(monkeypatch):
              checkpoint_step=step, training_seed=seed, dataset="held-out",
              roc_auc=.6 + step / 100000 + fraction / 100 + rate / 1000)
         for rate in (0, 1) for fraction in (0, .25, .5, 1) for step in MILESTONES
-        for seed in (0, 1, 2)])
+        for seed in (0, 1)])
     monkeypatch.setattr(plots.results, "benchmark_frames", lambda *a, **k: frame)
     monkeypatch.setattr(plots.results, "released_score", lambda *a: .6)
     fig = plots.checkpoint_curves("pd", "tabicl")

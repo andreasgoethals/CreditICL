@@ -78,6 +78,14 @@ REVIEWED_TRANSITIONS["src/eval/tabicl_memory.py"] = (
 )
 
 
+# Queue admission removes only the array throttle; benchmark commands are identical.
+_before, _after = REVIEWED_TRANSITIONS["scripts/slurm/benchmark.slurm"]
+REVIEWED_TRANSITIONS["scripts/slurm/benchmark.slurm"] = (
+    _before | _after | frozenset(['ebca55e7a3b6a7a70e93834ffb6a50c2826248801251c12f464ca96b4162b489', 'eccc69e3956231b27f3bf145ffa1dfe658135de435fb1961f2b337dd80f6596a']),
+    _after | frozenset(['34b3376d0f9e66b90a094aa3ee2c0ba93e099ace25fe99940bffd93565f4138e', '6efcd512c107147819a1e877a7f9e919e8c8a163e2dd1d2a605f20ce5360e7e2']),
+)
+
+
 def compatible_requests(recorded: object, wanted: dict) -> bool:
     """Allow changed grid counts only when every scientific input is identical."""
     if recorded == wanted:

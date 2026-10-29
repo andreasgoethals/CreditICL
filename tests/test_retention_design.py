@@ -10,10 +10,10 @@ from src.experiments.design import MAIN_STEPS, MILESTONES, RATES, FIXED_RETENTIO
 @pytest.mark.parametrize("task", ["pd", "lgd"])
 def test_exp2_crosses_each_recipe_without_changing_geometry(task):
     runs = expand_with_seeds(load(f"config/Exp2_{task.upper()}.yaml", allow_placeholders=True))
-    assert len(runs) == len({r["_run_name"] for r in runs}) == 48
+    assert len(runs) == len({r["_run_name"] for r in runs}) == 32
     assert {(r["architecture"], r["train"]["lr"], r["prior"]["credit_fraction"], r["seed"])
             for r in runs} == {(model, rate, mix, seed) for model, rates in RATES.items()
-                              for rate in rates for mix in (0, .25, .5, 1) for seed in range(3)}
+                              for rate in rates for mix in (0, .25, .5, 1) for seed in range(2)}
     for r in runs:
         t, p = r["train"], r["prior"]
         assert t["keep_steps"] == list(MILESTONES) and t["max_steps"] == MAIN_STEPS
@@ -23,11 +23,11 @@ def test_exp2_crosses_each_recipe_without_changing_geometry(task):
 
 
 @pytest.mark.parametrize("task", ["PD", "LGD"])
-def test_exp3_is_fixed_with_exactly_six_reusable_baselines_per_task(task, isolated_output):
+def test_exp3_is_fixed_with_exactly_four_reusable_baselines_per_task(task, isolated_output):
     main = expand_with_seeds(load(f"config/Exp3_{task}.yaml"))
     exp2 = expand_with_seeds(load(f"config/Exp2_{task}.yaml"))
     baselines = [r for r in exp2 if r["lr_index"] == 0 and r["prior"]["credit_fraction"] == .5]
-    assert len(main) == 24 and len(baselines) == 6
+    assert len(main) == 16 and len(baselines) == 4
     assert all(not r["design_unresolved"] for r in main)
     for r in main:
         baseline = next(b for b in baselines if (b["architecture"], b["seed"]) == (r["architecture"], r["seed"]))
@@ -67,10 +67,10 @@ def test_early_checkpoints_are_published_and_never_pruned(tmp_path):
                            final=False, stopped=False)
     prune_checkpoints(folder, save_perm_every=2500, max_temp=2, keep_steps=MILESTONES)
     assert all((destination / f"step-{s}.ckpt").exists()
-               for s in (125, 250, 500, 1000))
+               for s in MILESTONES)
     assert not (folder / "step-750.ckpt").exists()
     cfg = expand_with_seeds(load("config/Exp2_PD.yaml", allow_placeholders=True))[0]
-    assert checkpoint_steps(cfg) == [MAIN_STEPS, 125, 250, 500]
+    assert checkpoint_steps(cfg) == [MAIN_STEPS, 125, 250, 500, 1000]
 
 
 def test_stale_gpu_campaign_starts_fresh_but_corrupt_matching_campaign_does_not(monkeypatch):

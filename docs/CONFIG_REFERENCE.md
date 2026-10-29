@@ -137,22 +137,22 @@ on synthetic tasks. Its private original pretraining recipe is not claimed repro
 | Experiment | Updates / run | Main runs total | Permanent checkpoints / run |
 |---|---:|---:|---|
 | Exp1 | 12,500 | 54 | Existing cadence preserved |
-| Exp2 main | 1,000 | 96 | 125, 250, 500, 1k |
-| Exp3 main | 1,000 | 48 new + 12 reused Exp2 | Same four milestones as Exp2 |
+| Exp2 main | 1,500 | 64 | 125, 250, 500, 1k, 1.5k |
+| Exp3 main | 1,500 | 32 new + 8 reused Exp2 | Same five milestones as Exp2 |
 
-The 29-10 fixed-rate revision cancels the learning-rate and adapter pilots. The 1,000-update
-horizon is a compute-budget choice preserving four mixtures, two rates and three paired seeds;
+The 29-10 fixed-rate revision cancels the learning-rate and adapter pilots. The 1,500-update
+horizon is a compute-budget choice preserving four mixtures, two rates and two paired seeds;
 it is not an evidence-based optimum or a convergence guarantee. Upstream stage 3 used 10,000
 updates, TabPFN-Wide used 10,000 with much shorter tables, and Real-TabPFN used 20,000 with
 one real table/update. Those budgets cannot be compared by update count alone. Full runs here
-consume 64k/16k tasks for TabICL/TabPFN respectively. The full cosine schedule ends at 1,000,
+consume 96k/24k tasks for TabICL/TabPFN respectively. The full cosine schedule ends at 1,500,
 rather than stopping an older longer schedule early. Report the fixed endpoint and all retained
 trajectories, never the best checkpoint on the assessment data.
 
-There are 384 permanent Exp2 snapshots and 192 new Exp3 snapshots. At the observed/provisional
+There are 320 permanent Exp2 snapshots and 160 new Exp3 snapshots. At the observed/provisional
 training rates, Exp2 extrapolates to 37.3–39.5M credits, excluding benchmark/validation/Exp3.
 Full evaluation of every saved checkpoint on all eligible rows/features and five folds creates
-68,160 Exp2 dataset-fold-model evaluations and 34,080 for the new Exp3 arms before reference
+56,800 Exp2 dataset-fold-model evaluations and 28,400 for the new Exp3 arms before reference
 models and threshold-calibration refits. Benchmarking must be budgeted separately; training
 cost alone does not establish affordability. See the source evidence and cost assumptions in
 [EXPERIMENTAL_DESIGN.md](EXPERIMENTAL_DESIGN.md) §3.2.
@@ -249,15 +249,15 @@ The registered questions, source evidence and limits are in
 selection receipts. Retired pilot designs, candidate fields and supplied selection overrides
 are rejected. This module is not used by Exp1, whose existing resolved recipes remain unchanged.
 
-**Exp2 has 48 runs per track:** 2 backbones × 4 mixtures × 2 rates × 3 seeds, or 96 overall.
+**Exp2 has 32 runs per track:** 2 backbones × 4 mixtures × 2 rates × 2 seeds, or 64 overall.
 Both rates are reported separately. Neither credit nor OOD results select a rate, mixture or
 checkpoint. Legacy development/holdout names remain for Exp1 compatibility and reporting;
 past benchmark exposure is disclosed, so these are not newly untouched datasets.
 
 | Backbone | `lr_index=0` | `lr_index=1` | Optimizer | Decay | Warm-up |
 |---|---:|---:|---|---:|---:|
-| TabICLv2 | 2e-5 | 1e-5 | Native all-parameter Muon | .01 | .01 = 10 updates |
-| TabPFN-3 | 1e-5 | 1e-6 | AdamW | .01 | .1 = 100 updates |
+| TabICLv2 | 2e-5 | 1e-5 | Native all-parameter Muon | .01 | .01 = 15 updates |
+| TabPFN-3 | 1e-5 | 1e-6 | AdamW | .01 | .1 = 150 updates |
 
 TabICLv2 keeps 64 tables/update, 400–60,000 log-uniform rows and 79–81% context.
 TabPFN keeps 16 tables/update, 1,024 rows and 30–90% context. Both clip the global unscaled
@@ -271,15 +271,15 @@ The TabPFN rates bracket the public fine-tuner/TabPFN-Wide `1e-5` and the same p
 `1e-6` result. Neither source proves an optimal multi-table credit-CPT recipe. Native TabPFN-3
 pretraining settings remain undisclosed; the 0% control is generic TabICL-prior exposure.
 
-`train.keep_steps: [125, 250, 500, 1000]` adds permanent milestones independently of rolling saves.
-All four receive full-table credit/native-OOD five-fold evaluation; final-step slots remain first.
+`train.keep_steps: [125, 250, 500, 1000, 1500]` adds permanent milestones independently of rolling saves.
+All five receive full-table credit/native-OOD five-fold evaluation; final-step slots remain first.
 `max_temp_checkpoints: 2` applies only to nonpermanent saves. `max_steps`,
-`schedule_total_steps` and the primary endpoint are all 1,000 for the production recipe.
+`schedule_total_steps` and the primary endpoint are all 1,500 for the production recipe.
 Intermediate scores are trajectories, not selected winners.
 
-**Exp3 has 24 new runs per track:** 2 backbones × 4 methods × 3 seeds, or 48 overall.
+**Exp3 has 16 new runs per track:** 2 backbones × 4 methods × 2 seeds, or 32 overall.
 Its mixture is fixed at 50% and its full-model reference rate is always `lr_index=0`.
-Twelve matching full-CPT-with-decay Exp2 runs are reused; the better-performing rate is never
+Eight matching full-CPT-with-decay Exp2 runs are reused; the better-performing rate is never
 chosen retrospectively. There are no `Exp3_*_pilots.yaml` jobs in the current design.
 
 | Method | Optimizer and fixed peak LR | Decay / anchor |
@@ -289,7 +289,7 @@ chosen retrospectively. There are no `Exp3_*_pilots.yaml` jobs in the current de
 | `diagscale` | AdamW .03 | .01 on query-scale deltas only |
 | `lora` | AdamW 1e-4 | .01 on rank-16 Q/V factors only; alpha 16 |
 
-Adapter warm-up is 10% (100 updates), clipping 1, dropout 0, with the same 1,000-update cosine
+Adapter warm-up is 10% (150 updates), clipping 1, dropout 0, with the same 1,500-update cosine
 endpoint and four saved milestones. Native weights are frozen for both adapters; initial
 predictions are unchanged. L2-SP is supported by both trainers and always uses the released
 checkpoint as its fixed anchor, including after resume. LoRA exports merged native inference

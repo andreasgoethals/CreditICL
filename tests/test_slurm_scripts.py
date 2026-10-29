@@ -293,7 +293,7 @@ def test_array_range_matches_the_grid_it_submits(name, track):
     lo, _, hi = span.partition("-")
     assert int(lo) == 0
     assert int(hi) == n_runs - 1, f"{name}: --array=0-{hi} but the grid expands to {n_runs}"
-    assert throttle and 0 < int(throttle) <= 24, "throttle to at most the 24 B200s that exist"
+    assert not throttle, "queue admission uses the site limits, not a project run throttle"
 
 
 @pytest.mark.parametrize("name", sorted(LAUNCHERS))

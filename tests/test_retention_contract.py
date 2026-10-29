@@ -86,10 +86,10 @@ def test_checkpoint_plot_reader_withholds_partial_or_wrong_cells(tmp_path):
     with pytest.warns(UserWarning, match="Withheld"):
         assert read_cells(path, ["d"], identity="run", step=125) is None
     frame = pd.concat([pd.DataFrame(rows).assign(training_seed=s, architecture="tabicl", lr_index=lr,
-                mixture=.5, checkpoint_step=125, roc_auc=.6 + lr*.1) for s in (0, 1, 2) for lr in (0, 1)])
+                mixture=.5, checkpoint_step=125, roc_auc=.6 + lr*.1) for s in (0, 1) for lr in (0, 1)])
     scores = complete_scores(frame, "roc_auc", experiment=2)
     assert list(scores.sort_values("lr_index")["mean"]) == pytest.approx([.6, .7])
-    assert complete_scores(frame[frame.training_seed.ne(2)], "roc_auc", experiment=2).empty
+    assert complete_scores(frame[frame.training_seed.ne(1)], "roc_auc", experiment=2).empty
 
 
 @pytest.fixture

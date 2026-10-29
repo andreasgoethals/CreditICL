@@ -72,12 +72,12 @@ Full rationale in
 |---|---|---|---|
 | **0** | **Does the revised pipeline run correctly?** | CPU + GPU Slurm jobs: portable tests, CUDA/save/resume checks, full-table benchmarks, 34 long-context probes and 16 retention-method round trips | 3 base training routes |
 | **1** | **Does the prior help at matched compute?** | four mixtures × three seeds, plus five component removals × three seeds; 12,500 steps | 27 |
-| **2** | **Does continued pretraining transfer?** | two released backbones × four mixtures × two fixed rates × three seeds, 1,000 updates | 48 |
-| **3** | **Which constraints preserve generality?** | fixed 50% mixture; no decay, L2-SP, DiagScale, Q/V LoRA; three seeds | 24 new + 6 reused |
+| **2** | **Does continued pretraining transfer?** | two released backbones × four mixtures × two fixed rates × two seeds, 1,500 updates | 32 |
+| **3** | **Which constraints preserve generality?** | fixed 50% mixture; no decay, L2-SP, DiagScale, Q/V LoRA; two seeds | 16 new + 4 reused |
 
 Counts include seeds and both prediction tasks: **Exp1 = (4 mixtures + 5 component removals) × 3 seeds × 2 tasks = 54 runs**;
-**Exp2 = 2 backbones × 4 mixtures × 2 fixed rates × 3 paired seeds × 2 tasks = 96 runs**.
-**Exp3 = 48 new runs + 12 reused Exp2 baselines**, at the fixed 50% mixture and predeclared primary CPT rate. Both experiments stop at 1,000 updates and retain 125/250/500/1,000 checkpoints. This is a budget-limited adaptation study, not a claim of convergence.
+**Exp2 = 2 backbones × 4 mixtures × 2 fixed rates × 2 paired seeds × 2 tasks = 64 runs**.
+**Exp3 = 32 new runs + 8 reused Exp2 baselines**, at the fixed 50% mixture and predeclared primary CPT rate. Both experiments stop at 1,500 updates and retain 125/250/500/1,000/1,500 checkpoints. This is a budget-limited adaptation study, not a claim of convergence.
 The component removals are compared with the main 50% mixture; they are not additional mixture levels.
 The 25% Exp1 extension was approved on 26-10-2026 after the initial 48-run campaign. It appends
 indices 9–11 per task, preserving existing run names and benchmark tags. Completed runs stay valid;
