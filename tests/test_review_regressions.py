@@ -158,6 +158,9 @@ def test_notebook_outputs_do_not_change_validation_fingerprint_but_source_does(t
     from src.utils import paths, preflight
     monkeypatch.setattr(paths, "REPO_ROOT", tmp_path)
     (tmp_path / "pyproject.toml").write_text("")
+    launcher = tmp_path / "scripts/slurm/container_python"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("#!/bin/bash\n")
     (tmp_path / "notebooks").mkdir()
     p = tmp_path / "notebooks/probe.ipynb"
     nb = {"cells": [{"cell_type": "code", "source": ["print(1)"], "outputs": []}]}

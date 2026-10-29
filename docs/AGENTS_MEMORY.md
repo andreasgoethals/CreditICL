@@ -2,6 +2,27 @@
 
 ## 29-10-2026 — approved 1,500-update deployment
 
+CPU runtime probe **62468952 COMPLETED**: 98 passed; Python 3.12.3 and all 135 dependency
+requirements, Git/Slurm clients, child imports and executable helpers passed inside the
+PROJECT image. Whole-environment fingerprint remains identical to the old DATA venv.
+The fresh full CPU/GPU Exp0 pair is still required for acceptance.
+
+Cleanup preserved all 2,204 Exp1 files (metadata plus JSON/CSV hashes), archived compact
+old diagnostics on PROJECT, reset 546 old Exp0 files (4.500 GB), retired 3.869 GB of
+verified published scratch, 150 legacy sentinels and two superseded candidate images.
+The four unmatched directories from failed diagnostic job 11688276 were separately
+identified by their Exp0 destination markers and retired (17 files, 2.601 GB).
+Exp1 planning confirms only 15 missing quarter-mixture checkpoint benchmarks per task;
+all 54 training runs are complete. The DATA venv and build workspace remain rollback
+material until full image acceptance. Other projects' active jobs are preserved.
+
+**Tried:** Full local regression suite after requiring the container launcher in the source digest.
+**Result:** 2,073 passed, 36 VSC-only skips, one miniature-repository fixture failed in 1,535 s.
+**Why:** That fixture omitted the now mandatory extensionless container launcher.
+**Instead:** Add the launcher to the fixture, retain the strict production digest, then rerun
+all portable tests locally and in CPU Exp0 before GPU acceptance.
+
+
 Runtime mode repair 62468816 completed: Ruff 0.16.2 and Torch helper executability
 verified. Candidate r3 SHA256 is
 `83f8145eafbbbcad0f25a5d109b0329aec12a159e5bc8ab9fc94a9f1e3ed0585`.
