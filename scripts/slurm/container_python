@@ -51,10 +51,11 @@ done
 # replacing the container's Python, C library or complete /usr tree.
 declare -A _bound_libraries=()
 for tool in git sbatch squeue sacct scontrol sacctmgr /usr/lib64/slurm/auth_munge.so \
-    /usr/lib64/slurm/cli_filter_lua.so /usr/lib64/slurm/serializer*.so /usr/lib64/slurm/data_parser*.so; do
+    /usr/lib64/slurm/cli_filter_lua.so /usr/lib64/slurm/serializer*.so /usr/lib64/slurm/data_parser*.so \
+    /usr/lib64/lua/5.4/*.so /usr/lib64/lua/5.4/*/*.so; do
     binary=$(command -v "$tool" || true)
     [[ -n "$binary" ]] || continue
-    if [[ "$tool" != /usr/lib64/slurm/* ]]; then runner+=(--bind "$binary:$binary:ro"); fi
+    if [[ "$tool" != /usr/lib64/slurm/* && "$tool" != /usr/lib64/lua/* ]]; then runner+=(--bind "$binary:$binary:ro"); fi
     while read -r library; do
         case "$(basename "$library")" in libc.so.*|libm.so.*|libpthread.so.*|libdl.so.*|librt.so.*|libresolv.so.*|ld-linux*) continue;; esac
         if [[ -f "$library" && ! -v "_bound_libraries[$library]" ]]; then
@@ -63,7 +64,7 @@ for tool in git sbatch squeue sacct scontrol sacctmgr /usr/lib64/slurm/auth_mung
         fi
     done < <(ldd "$binary" 2>/dev/null | awk '$2 == "=>" && $3 ~ /^\// {print $3}')
 done
-for directory in /usr/libexec/git-core /usr/lib64/slurm /etc/slurm /run/slurm /run/munge \
+for directory in /usr/libexec/git-core /usr/lib64/slurm /usr/lib64/lua /usr/share/lua /etc/slurm /run/slurm /run/munge \
     ${_slurm_conf:+"$(dirname "$_slurm_conf")"}; do
     [[ ! -d "$directory" ]] || runner+=(--bind "$directory:$directory:ro")
 done

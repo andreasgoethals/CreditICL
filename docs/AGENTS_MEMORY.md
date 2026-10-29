@@ -8,6 +8,8 @@
 real config-cache directory, not the login node's inherited /run configuration path.
 **Instead:** Bind serializer/data-parser dependencies and the resolved host configuration;
 clear stale APPTAINERENV_SLURM_CONF and add mandatory sbatch --test-only checks in both phases.
+The subsequent login dry run exposed the site filter's Lua POSIX module dependency; bind
+the host Lua module directories and their non-glibc libraries as well.
 Host configuration probe 62470775 completed on wICE interactive and confirmed the configless
 cache at /var/spool/slurmd/conf-cache. These are infrastructure probes, not research runs.
 
