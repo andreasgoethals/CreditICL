@@ -304,14 +304,19 @@ def main(argv: list[str] | None = None) -> int:
         if preflight(["--require-exp0"]):
             return 1
 
-    rc = 0
+    from datetime import datetime, UTC
+    from uuid import uuid4
+    from src.utils.paths import outputs_dir
+    from src.utils.submit_jobs import submit_command
+    receipt_root = outputs_dir() / 'manifests' / 'submissions' / (
+        datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ') + '-' + uuid4().hex[:8])
     for stage in stages:
         if stage.state != "ready":
             continue
-        for cmd in stage.commands:
+        for index, cmd in enumerate(stage.commands):
             print(f"\n$ {' '.join(cmd)}")
-            rc |= subprocess.call(cmd, cwd=ROOT)
-    return rc
+            submit_command(cmd, receipt_root / f'{stage.name}-{index}.json')
+    return 0
 
 
 if __name__ == "__main__":

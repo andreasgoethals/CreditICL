@@ -70,6 +70,10 @@ authorization; access alone does not authorize new workloads, installations or m
   images belong on allocated PROJECT storage; temporary working files belong on scratch.
   Local laptop venvs remain supported. Existing DATA venvs are a documented transitional
   exception for recovery, not the policy for new installations.
+- For authorized submissions use the receipt-backed admission manager in `src.utils.submit_jobs`.
+  Verify the site ceiling and actual expanded user queue; wait for capacity without imposing
+  a running-job throttle. Preserve task IDs when splitting arrays. Never retry an uncertain
+  acceptance or cancel another project's jobs to create admission space.
 - Do not move populated environments. Propose a container rebuild from recorded dependencies,
   image hashes, binds, quotas and CPU/GPU acceptance before cutover; keep originals until no
   active, queued or resumable run needs them. No automatic migration or storage cleanup.

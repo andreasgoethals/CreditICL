@@ -71,7 +71,7 @@ _log_exit() {
     fi
     echo "=========================================="
     if   [[ "$rc" -eq 0  ]]; then echo "END status=OK - $(date)"
-    elif [[ "$rc" -eq 64 ]]; then echo "END status=INCOMPLETE-RESUBMITTED - $(date)"
+    elif [[ "$rc" -eq 64 ]]; then echo "END status=INCOMPLETE-REQUEUED - $(date)"
     else echo "END status=FAILED exit_code=${rc} - $(date)"; fi
     echo "=========================================="
 }
@@ -127,7 +127,7 @@ python -u scripts/pretrain.py \
     --prior-source "${PRIOR_SOURCE:-generate}" &
 TRAIN_PID=$!
 CANCELLED=0
-SEGMENT=${CREDITICL_SEGMENT:-0}
+SEGMENT=$(( ${CREDITICL_SEGMENT:-0} + ${SLURM_RESTART_COUNT:-0} ))
 trap 'echo "SIGUSR1 -> forwarding to trainer $TRAIN_PID"; kill -USR1 "$TRAIN_PID" 2>/dev/null || true' USR1
 trap 'CANCELLED=1; echo "SIGTERM -> forwarding to trainer $TRAIN_PID"; kill -TERM "$TRAIN_PID" 2>/dev/null || true' TERM
 
@@ -138,28 +138,15 @@ wait "$TRAIN_PID"; RC=$?
 if [[ $RC -gt 128 ]]; then wait "$TRAIN_PID"; RC=$?; fi
 set -e
 
-# EXIT 64 = saved and stopped early. Resubmit THIS arm only; it resumes from the checkpoint.
+# EXIT 64 = saved and stopped early. Requeue THIS arm only; it resumes from the checkpoint.
 if [[ "$RC" -eq 64 ]]; then
     [[ "$CANCELLED" -eq 0 ]] || exit 143
     python -m src.utils.resume_guard "$CONFIG" "$SLURM_ARRAY_TASK_ID" "$SEGMENT" --limit "${CREDITICL_MAX_SEGMENTS:-32}"
-    echo "Arm ${SLURM_ARRAY_TASK_ID} incomplete — resubmitting to resume."
-    RESUME_TIME=()
-    if (( LIMIT_S > 0 )); then RESUME_TIME=(--time="$(( (LIMIT_S + 59) / 60 ))"); fi
-    # BACK TO THE SAME PLACE, WITH THE SAME RESOURCES. Carry over cluster/partition AND the
-    # cores/mem this task was actually granted -- not the #SBATCH header default, which asks
-    # for the gpu_b200 ceiling (24 cores, 180G) that a lower-ceiling partition (wICE gpu_a100:
-    # 18 / 126000 MiB) rejects with "Requested node configuration is not available". PD runs on
-    # mindwell today so the header would work, but echoing the grant is strictly correct and
-    # costs nothing. (See the LGD script: an LGD wICE arm died on exactly this.)
-    sbatch --clusters="${SLURM_CLUSTER_NAME:-mindwell}" \
-           --job-name="crediticl-exp${EXP}${VARIANT}-pd" \
-           --export="ALL,EXP=${EXP},VARIANT=${VARIANT},CREDITICL_SEGMENT=$((SEGMENT + 1))" \
-           "${RESUME_TIME[@]}" \
-           --partition="${SLURM_JOB_PARTITION:-gpu_b200}" \
-           --cpus-per-task="${SLURM_CPUS_PER_TASK}" \
-           --mem="${SLURM_MEM_PER_NODE}M" \
-           --array="${SLURM_ARRAY_TASK_ID}" \
-           "${SLURM_SUBMIT_DIR:-.}/scripts/slurm/pretrain_pd.slurm"
+    # Requeue this existing array element, preserving resources, environment,
+    # variant and task ID without requiring an additional admission slot.
+    # Guard above permits only a published SIGUSR1 checkpoint with progress.
+    echo "Arm ${SLURM_ARRAY_TASK_ID} incomplete — requeueing its existing Slurm slot."
+    scontrol --clusters="${SLURM_CLUSTER_NAME:-mindwell}" requeue "${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
     exit 64
 fi
 [[ "$RC" -eq 0 ]] || exit "$RC"

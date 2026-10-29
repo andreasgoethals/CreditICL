@@ -27,13 +27,9 @@ def command(args: list[str]) -> str:
     return result.stdout
 
 
-def submit(args: list[str]) -> tuple[str, str]:
-    out = command([args[0], '--parsable', *args[1:]])
-    line = out.strip().splitlines()[-1]
-    job, _, cluster = line.partition(';')
-    if not job.isdigit() or cluster not in {'wice', 'mindwell'}:
-        raise ValueError(f"Unrecognized submission receipt: {line}")
-    return job, cluster
+def submit(args: list[str], receipt: Path) -> list[tuple[str, str]]:
+    from src.utils.submit_jobs import submit_command
+    return submit_command(args, receipt)
 
 
 def wait_jobs(jobs: list[tuple[str, str]], *, poll_seconds: int = 60) -> None:
@@ -60,37 +56,42 @@ def production_stages(exp: int, kind: str):
     return [stage for stage in stages if stage.kind == kind]
 
 
-def submit_stage_commands(stages) -> list[tuple[str, str]]:
+def submit_stage_commands(stages, receipt_root: Path) -> list[tuple[str, str]]:
     jobs = []
     for stage in stages:
         if stage.complete:
             continue
         if stage.state != 'ready':
             raise RuntimeError(f"Stage is not ready: {stage.name}: {stage.state}")
-        for args in stage.commands:
-            jobs.append(submit(args))
+        for index, args in enumerate(stage.commands):
+            jobs.extend(submit(args, receipt_root / f'{stage.name}-{index}.json'))
     return jobs
 
 
 def pipeline(record: dict, save) -> None:
+    from src.utils.paths import outputs_dir
+    receipts = Path(record.get('submissions', outputs_dir() / 'manifests' / 'submissions' / 'deployment'))
     def phase(name: str):
         record['phase'] = name
         save(record)
     phase('exp0_cpu')
-    job = submit(['sbatch', '--clusters=wice', 'scripts/slurm/exp0_cpu.slurm'])
-    record['cpu_job'] = job; save(record)
-    wait_jobs([job])
+    jobs = submit(['sbatch', '--clusters=wice', 'scripts/slurm/exp0_cpu.slurm'], receipts / 'cpu.json')
+    record['cpu_job'] = jobs[0]
+    save(record)
+    wait_jobs(jobs)
     command([sys.executable, '-m', 'src.utils.preflight', '--require-exp0-cpu'])
     phase('exp0_gpu')
-    job = submit(['sbatch', '--clusters=mindwell', 'scripts/slurm/exp0.slurm'])
-    record['gpu_job'] = job; save(record)
-    wait_jobs([job])
+    jobs = submit(['sbatch', '--clusters=mindwell', 'scripts/slurm/exp0.slurm'], receipts / 'gpu.json')
+    record['gpu_job'] = jobs[0]
+    save(record)
+    wait_jobs(jobs)
     command([sys.executable, '-m', 'src.utils.preflight', '--require-exp0'])
     command([sys.executable, '-m', 'src.validation.verify'])
     phase('exp1_benchmark')
     stages = production_stages(1, 'benchmark')
-    jobs = submit_stage_commands(stages)
-    record['benchmark_jobs'] = jobs; save(record)
+    jobs = submit_stage_commands(stages, receipts / 'exp1')
+    record['benchmark_jobs'] = jobs
+    save(record)
     wait_jobs(jobs)
     if not all(stage.complete for stage in production_stages(1, 'benchmark')):
         raise RuntimeError('Exp1 benchmark receipts are incomplete; Exp2 remains blocked')
@@ -98,7 +99,7 @@ def pipeline(record: dict, save) -> None:
     stages = production_stages(2, 'train')
     if sum(stage.total for stage in stages) != 64:
         raise RuntimeError('Exp2 is not the reviewed 64-run grid')
-    jobs = submit_stage_commands(stages)
+    jobs = submit_stage_commands(stages, receipts / 'exp2')
     record.update(exp2_jobs=jobs, phase='exp2_submitted', status='COMPLETE')
     save(record)
 
@@ -119,7 +120,8 @@ def main() -> None:
         temp = args.record.with_suffix('.tmp')
         temp.write_text(json.dumps(value, indent=2), encoding='utf-8')
         temp.replace(args.record)
-    record = dict(status='RUNNING', commit=os.environ['CREDITICL_EXPECTED_COMMIT'])
+    record = dict(status='RUNNING', commit=os.environ['CREDITICL_EXPECTED_COMMIT'],
+                  submissions=str(args.record.parent / 'submissions' / args.record.stem))
     try:
         pipeline(record, save)
     except Exception as exc:

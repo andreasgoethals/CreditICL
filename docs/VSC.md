@@ -73,7 +73,8 @@ needs Ampere or later.
 ## 2. Account and cluster setup
 
 **Access adoption, 29-10-2026.** `docs/TEMPLATE.md` matches the canonical template byte-for-byte
-(SHA-256 `285c7c321b2cd52d8d415e30f41fe775ceb47113f39007c2490fdb0ec23fc8d8`). No additional
+(SHA-256 `0ed244c16cab8ea86afab5ed90eea36eef3a9e218314c38538e227e4f009fd3c`, after the
+canonical validation-loop synchronization during this task). No additional
 template synchronization or per-project SSH installation is needed. The shared VSC reference pin
 for this review is `0ed4ffa89d312b9bb6411681b6a14f81672439f3`.
 
@@ -106,7 +107,8 @@ That envelope contained `VSC_ACCESS_OK`, `VSC_ERROR_CHECK` and return code 7; SS
 Parse the envelope and verify its status rather than treating the absent raw stderr stream as
 success. This is a route-specific transport workaround, not an authentication or shell change.
 
-The live checkout resolves to `/vsc-hard-mounts/leuven-data/383/vsc38338/CreditICL`, at commit
+**Initial inspection, before the authorized migration below:** the checkout resolved to
+`/vsc-hard-mounts/leuven-data/383/vsc38338/CreditICL`, at commit
 `be6de6e`, with tracked notebook/figure changes. Preserve those changes before any update.
 The `.venv-skylake` runtime is still on DATA; persistent assets remain under
 `/lustre1/project/stg_00211/CreditICL`. No PROJECT_ROOT overrides were set, and no jobs were
@@ -139,15 +141,23 @@ job reads from `$SLURM_CPUS_PER_TASK` so one script is correct on 8 cores and on
 | `gpu_a100` | 18 | 126,000 MiB | 16 (of 18) |
 | `gpu_h100` | 16 | 187,200 MiB | 14 (of 16) |
 
-`gpu_b200` is only **3 nodes / 24 GPUs total**, shared with every other user, so a throttle above ~8
-is optimistic regardless of what the QoS allows. `nvidia-smi` memory is not utilisation — a 28.5M-param
+`gpu_b200` is **3 nodes / 24 GPUs total**, shared with every other user. Slurm controls allocation
+and no project-specific running throttle is imposed. `nvidia-smi` memory is not utilisation — a 28.5M-param
 model at micro-batch 4 uses ~13 GB of a B200's 192 GB but still runs at ~80–89% of the card's compute,
 so there is no headroom to reclaim by enlarging the batch (and `micro_batch` is pinned at `group_size`
 anyway).
 
 **Submission policy, 29-10-2026:** current launch plans contain no fixed percentage throttle.
 Inspect the account/QoS admission ceiling before submitting; Slurm controls running resources.
-The reviewed 64-run Exp2 grid fits the site's verified submission limits. Explicit memory/CPU
+The site ceiling is 500 pending+running jobs (live normal MaxSubmitPU and a definite refusal
+verified 29-10-2026). Other campaigns share admission capacity: the grid size alone does not
+prove that space is available. `src.utils.submit_jobs` follows the template's resumable admission
+procedure; the deployment controller and `run_experiment --submit` use it. It counts this user's
+expanded array tasks on the selected cluster, waits while full or unavailable, and records every
+accepted split. Explicit task IDs and resource/export arguments survive splitting. Stricter QoS
+limits are retried only after a definite capacity refusal; uncertain acknowledgments stop for
+manual reconciliation. There is no injected running-job cap. `CREDITICL_SITE_SUBMIT_LIMIT` may
+override 500 only after verifying a changed site ceiling. Explicit memory/CPU
 requests remain measured project choices: these launchers execute Python directly and do not
 introduce an `srun`/MPI step affected by the site's CPU/memory-variable workaround.
 
@@ -162,8 +172,8 @@ introduce an `srun`/MPI step affected by the site's CPU/memory-variable workarou
 - **Concurrency — two caps** (pending+running jobs, and total running resources), both per-partition
   QoS. The docs give the mechanism, not the numbers, so read them live:
   `sacctmgr show qos normal format=Name%20,MaxSubmitJobsPerUser%15,MaxTRESPerUser%30`. We have hit both.
-  **Use the array throttle `%N` rather than counting by hand** — `--array=0-44%8` keeps ≤8 active
-  whatever the limit is.
+  The submission manager handles pending+running admission. Slurm controls running resources;
+  an array throttle does not solve a full submission queue and is not added by this project.
 - **Unannounced maintenance** — Mindwell drains without warning and cancels running jobs. Not often,
   but often enough that a multi-day sweep meets it.
 
@@ -172,8 +182,12 @@ introduce an `srun`/MPI step affected by the site's CPU/memory-variable workarou
 A walltime kill, a node failure, and a maintenance drain all arrive as a signal, so one chain handles
 them: `--signal=B:USR1@600` fires 600 s before the wall → a `trap` forwards it to python (Slurm does
 **not**) → `_install_stop_signals` in `src/train/loop.py` catches it, finishes the step, writes a
-checkpoint → `pretrain.py` returns **exit 64** ("saved, not finished") → the job script **resubmits its
-own array index** → `maybe_resume` picks up the newest checkpoint. `--requeue` covers a node failure
+checkpoint → `pretrain.py` returns **exit 64** ("saved, not finished") → a progress/cancellation/restart
+guard permits **native requeue of that existing array element** → `maybe_resume` picks up the newest
+checkpoint. No new admission slot is needed; Slurm retains the resources, environment and original
+task ID. The restart guard counts native `SLURM_RESTART_COUNT` plus any legacy segment offset.
+Actual wICE probe 62471598, tasks 14/15, restarted each once with identical identities/resources and
+completed 0:0 on 29-10-2026; Mindwell's live JobRequeue setting is 1. `--requeue` covers a node failure
 where no signal arrives; `save_temp_every: 250` bounds an ungraceful kill to 250 updates (roughly
 ten minutes for the observed short-table runs, not for long-context Exp2). The trained child
 must be backgrounded and `wait`ed on — a foreground child blocks the trap until too late.
@@ -186,8 +200,9 @@ time with the 600-second warning interval. The stop handler completes the curren
 the old short-table timing does not establish that this fits. A capacity PASS alone is insufficient
 to choose checkpoint cadence, warning time or a campaign budget.
 
-> The self-resubmit only fires on the graceful exit 64. A hard crash (a process abort) does **not**
-> self-resubmit and leaves no summary — those arms are recovered by `sweep_status` below.
+> Automatic application continuation only fires on a published, progressing SIGUSR1 checkpoint
+> and graceful exit 64. A cancellation or ordinary crash does not trigger it; inspect the failure
+> before recovery through `sweep_status`/`run_experiment`.
 
 ### 4.3 When the whole cluster drains — `sweep_status`
 
@@ -301,10 +316,11 @@ Local Windows venvs remain supported.
 
 **Before acceptance the legacy DATA venv is retained for rollback.** `_activate_env.sh` continues to discover existing
 `.venv-${VSC_ARCH_LOCAL}` / `.venv` environments and their recorded Python modules so existing
-recovery paths remain usable. This repository has not yet built or accepted a SIF runtime. There is
-no automatic container switch, environment relocation, package installation or cleanup in this update.
+recovery paths remain usable. The built candidate r3 already passed full CPU acceptance;
+GPU acceptance is still required before retiring the old DATA runtime. Image selection is
+explicitly recorded in `.runtime-build/current.json`, and no job installs packages.
 
-Migration must be proposed and approved before execution:
+The authorized migration follows these gates:
 
 1. Freeze the current DATA checkout, runtime inventory/locks, CUDA build, source revision and
    submodule pins. Check queued/running/recoverable jobs and both quota types. Identify the allocated

@@ -129,19 +129,22 @@ def test_finished_summary_cannot_hide_a_changed_training_implementation(tmp_path
 def test_resubmit_uses_the_requested_experiment_and_checks_readiness(monkeypatch):
     from src.utils import sweep_status, preflight
     from src.utils import run_experiment
+    from src.utils import submit_jobs
 
     monkeypatch.setattr(run_experiment, "queued_job_names", lambda: set())
 
     monkeypatch.setattr(sweep_status, "arm_states", lambda *a: [_arm(0, PARTIAL)])
     calls = []
     monkeypatch.setattr(preflight, "main", lambda args: calls.append(args) or 1)
-    monkeypatch.setattr(sweep_status.subprocess, "call", lambda cmd: pytest.fail("submitted despite failed gate"))
+    monkeypatch.setattr(submit_jobs, "submit_command", lambda cmd, receipt: pytest.fail("submitted despite failed gate"))
     assert sweep_status.main(["--config", "config/Exp2_LGD.yaml", "--resubmit"]) == 1
     monkeypatch.setattr(preflight, "main", lambda args: calls.append(args) or 0)
-    monkeypatch.setattr(sweep_status.subprocess, "call", lambda cmd: calls.append(cmd) or 0)
+    monkeypatch.setattr(submit_jobs, "submit_command", lambda cmd, receipt: calls.append(cmd) or [])
     assert sweep_status.main(["--config", "config/Exp2_LGD.yaml", "--resubmit"]) == 0
     assert "--export=ALL,EXP=2,VARIANT=" in calls[-1]
     assert calls[-1][-1] == "scripts/slurm/pretrain_lgd.slurm"
+    assert '--array=0' in calls[-1]
+    assert not any('%' in arg for arg in calls[-1])
     assert calls[0] == ["--require-exp0"]
 
 

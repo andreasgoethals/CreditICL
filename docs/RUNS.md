@@ -169,6 +169,48 @@ The one thing to do differently.
 
 ## Runs
 
+### 29-10-2026 — native Slurm continuation proof before production
+
+Array **62471598**, wICE interactive, indices **14 and 15**, one CPU/1G and two minutes
+per allocation, `--requeue`. Each initial task called `scontrol --clusters=wice requeue`
+on its own explicit `array_task` identifier. Both restarted once and completed **0:0**.
+JSONL records before and after confirmed identical job ID, array ID, task index, CPU,
+RAM and partition; only restart count changed 0→1. Mindwell's live `JobRequeue` is 1;
+the actual round trip was verified on wICE, not claimed as a Mindwell GPU measurement.
+No model training or other campaign was changed by this free CPU infrastructure probe.
+
+The two training launchers now use this existing-slot continuation after the unchanged
+published-checkpoint/progress guard. Native restart counts plus legacy offsets retain
+the 32-segment guard. Bash behavior tests exercise success, cancellation, failed progress
+guard, rejected requeue and restart arithmetic. Legacy INCOMPLETE-RESUBMITTED logs remain
+accepted alongside INCOMPLETE-REQUEUED. The recovery CLI uses the same receipt-backed
+admission path as normal launch/controller submission, with no default percentage throttle.
+
+
+### 29-10-2026 — full CPU acceptance; GPU admission full
+
+CPU job **62471122**, controller **62471116**, source commit **79cdcd9** and fingerprint
+`704cfdfc1ae5abc823786137bd8334bc7332ebc5f27a3f4b5e2a8bf817dfd096`:
+**14/14 stages passed**, including native credit/submission clients, preprocessing,
+2,069 portable tests (two allowed external/fresh-output skips), all data/prior/orchestration
+checks and all 12 executed notebooks. Allocation: wICE interactive, eight CPUs, 48G,
+four-hour limit. The notebook kernel was observed running `/opt/venv/bin/python` inside
+the PROJECT image r3, SHA256 `83f8145eafbbbcad0f25a5d109b0329aec12a159e5bc8ab9fc94a9f1e3ed0585`.
+
+The controller then received a definite **QOSMaxSubmitJobPerUserLimit** refusal for GPU
+submission: the user's other campaigns occupied 500 Mindwell slots (492 pending, eight
+running). No CreditICL GPU job was accepted or billed. The CPU evidence is preserved.
+The template's resumable queue-admission manager is being integrated before a final
+same-revision CPU/GPU pair; it must wait for capacity, preserve task IDs when splitting
+arrays, and record every accepted chunk without changing another campaign's jobs.
+
+Runtime recovery job **62470983** completed, 0:0, **9m37s**. Its 7,233,483,401-byte
+archive and all 167 input hashes were verified; SHA256
+`c0b54ede3ce4f77c9cc47cd28c926c211df55a4fd0d8cb0f3c2718dc1c22a727`.
+Only then was the verified 12,000,459,103-byte temporary build workspace removed.
+The image and recovery bundle remain on PROJECT; DATA legacy runtime remains rollback
+until GPU acceptance. The library pins and training implementation are unchanged.
+
 ### 29-10-2026 — container submission probes before clean validation
 
 | Job | Allocation | Result |
@@ -179,7 +221,7 @@ The one thing to do differently.
 | 62470838 / 62470841 | wICE controller / interactive CPU child | CPU startup FAILED (30 s): inherited parent container mount list; controller stopped before GPU |
 | 62470856 / 62470861 | wICE controller / interactive CPU | Native runtime/credit/preflight passed; unit fixture leaked PROJECT-root alias; GPU remained blocked |
 | 62470900 / 62470908 | wICE controller / interactive CPU | 954 tests passed; notebook path fixture used legacy alias; deliberately stopped after diagnosis; no GPU |
-| 62470983 | wICE batch, 2 CPUs, 8G, one hour | Runtime recovery bundle creation and full archive-content hash verification; outcome pending |
+| 62470983 | wICE batch, 2 CPUs, 8G, one hour | COMPLETED, 0:0, 9m37s; recovery archive and all 167 content hashes verified |
 
 The controller used source `cbd755ed9185403865b68a3d65f74e3c3045abb950c0a9841f476b7c3241d35f`
 and image SHA256 `83f8145eafbbbcad0f25a5d109b0329aec12a159e5bc8ab9fc94a9f1e3ed0585`.

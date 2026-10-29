@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -185,7 +184,7 @@ def report(states: list[ArmState], verbose: bool = False) -> str:
     if spec:
         lines += [
             "  RESUBMIT ONLY WHAT IS LEFT:",
-            f"    sbatch --clusters=mindwell --array={spec}%8 scripts/slurm/pretrain_<track>.slurm",
+            f"    sbatch --clusters=mindwell --array={spec} scripts/slurm/pretrain_<track>.slurm",
             "",
             "  Safe to run repeatedly: a `partial` arm resumes from its checkpoint and a",
             "  `todo` arm starts at step 0. Nothing already `done` is touched.",
@@ -208,8 +207,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--resubmit", action="store_true",
                     help="actually sbatch the remaining arms (asks nothing; check --array first)")
     ap.add_argument("--script", default=None, help="job script for --resubmit")
-    ap.add_argument("--throttle", type=int, default=8, help="the %%N cap for --resubmit")
+    ap.add_argument("--throttle", type=int, default=None, help="optional explicit %%N cap; none by default")
     args = ap.parse_args(argv)
+    if args.throttle is not None and args.throttle < 1:
+        ap.error('--throttle must be positive')
 
     states = arm_states(Path(args.config), args.out_root)
     spec = array_spec(states)
@@ -246,11 +247,18 @@ def main(argv: list[str] | None = None) -> int:
     if job_name in queued or f"crediticl-{track.lower()}" in queued:
         print(f"Already queued/running: {job_name}; no duplicate submission.")
         return 0
+    throttle = f'%{args.throttle}' if args.throttle is not None else ''
     cmd = ["sbatch", "--clusters=mindwell", f"--job-name={job_name}",
            f"--export=ALL,EXP={experiment},VARIANT={variant or ''}",
-           f"--array={spec}%{args.throttle}", script]
+           f"--array={spec}{throttle}", script]
     print("\n$ " + " ".join(cmd))
-    return subprocess.call(cmd)
+    from uuid import uuid4
+
+    from src.utils.paths import outputs_dir
+    from src.utils.submit_jobs import submit_command
+    receipt = outputs_dir() / 'manifests' / 'submissions' / f'recovery-{uuid4().hex}.json'
+    submit_command(cmd, receipt)
+    return 0
 
 
 if __name__ == "__main__":

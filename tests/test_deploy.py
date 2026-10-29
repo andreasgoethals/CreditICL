@@ -17,7 +17,7 @@ def test_deployment_gates_exp2_on_actual_acceptance_and_complete_scores(monkeypa
             raise RuntimeError('GPU failed')
         return ''
     monkeypatch.setattr(d, 'command', command)
-    monkeypatch.setattr(d, 'submit', lambda args: ('123', 'wice'))
+    monkeypatch.setattr(d, 'submit', lambda args, receipt: [('123', 'wice')])
     monkeypatch.setattr(d, 'wait_jobs', lambda jobs: None)
     counts = {1: 0}
     def stages(exp, kind):
@@ -26,7 +26,7 @@ def test_deployment_gates_exp2_on_actual_acceptance_and_complete_scores(monkeypa
             return [SimpleNamespace(complete=counts[1] > 1 and failure != 'benchmark', total=60)]
         return [SimpleNamespace(complete=False, total=32) for _ in range(2)]
     monkeypatch.setattr(d, 'production_stages', stages)
-    def submit_stages(stages):
+    def submit_stages(stages, receipt_root):
         submitted.append(sum(s.total for s in stages))
         return [('456', 'mindwell')]
     monkeypatch.setattr(d, 'submit_stage_commands', submit_stages)
@@ -46,3 +46,15 @@ def test_cluster_label_does_not_keep_a_finished_job_waiting(monkeypatch):
                         else '123|COMPLETED|0:0\n')
     monkeypatch.setattr(d.time, 'sleep', lambda _: pytest.fail('finished job must not wait'))
     d.wait_jobs([('123', 'wice')])
+
+
+def test_controller_waits_for_every_admitted_array_chunk(monkeypatch, tmp_path):
+    calls = []
+    def submit(args, receipt):
+        calls.append((args, receipt))
+        return [('123', 'mindwell'), ('124', 'mindwell')]
+    monkeypatch.setattr(d, 'submit', submit)
+    stage = SimpleNamespace(complete=False, state='ready', name='exp1-pd-benchmark',
+                            commands=[['sbatch', '--array=9-11', 'job.slurm']])
+    assert d.submit_stage_commands([stage], tmp_path) == [('123', 'mindwell'), ('124', 'mindwell')]
+    assert calls[0][1] == tmp_path / 'exp1-pd-benchmark-0.json'

@@ -10,6 +10,10 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 29-10-2026
 
+- Adopt the template's resumable Slurm admission manager: wait at the verified site ceiling, split arrays without changing task IDs, and retain every accepted job receipt.
+
+- Continue saved training through native array-element requeue, preserving its queue slot and restart guard; retain legacy log compatibility.
+
 - Isolate test fixtures from inherited PROJECT-root aliases and fail CPU validation early on a failed test.
 
 - Keep computation read-only while allowing guarded login cleanup of checkout-root Slurm fallback logs.

@@ -369,10 +369,13 @@ def _fake_exp0_tree(root: Path, *, resumed: bool = True) -> None:
                 "files": {d: digest(p) for d, p in files.items()}}), encoding="utf-8")
 
 
-def test_the_verifier_passes_a_complete_experiment_0(tmp_path, capsys):
+@pytest.mark.parametrize('footer', ['INCOMPLETE-RESUBMITTED', 'INCOMPLETE-REQUEUED'])
+def test_the_verifier_passes_a_complete_experiment_0(tmp_path, capsys, footer):
     from src.validation.verify import FAIL, verify
 
     _fake_exp0_tree(tmp_path)
+    log = tmp_path / 'output CreditICL/experiment_0/logs/pretrain_pd_1.log'
+    log.write_text(f'END status={footer}\n', encoding='utf-8')
     v = verify(tmp_path / "output CreditICL")
     fails = [item for item in v.items if item[0] == FAIL]
     assert not fails, fails

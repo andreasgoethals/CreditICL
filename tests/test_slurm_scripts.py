@@ -311,7 +311,7 @@ def test_launcher_survives_a_kill(name):
     assert "TRAIN_PID=$!" in text
     assert any(line.rstrip().endswith("&") for line in text.splitlines())
     # Exit 64 = "saved, not finished". Resubmitting is what makes the arm outlast the wall.
-    assert 'RC" -eq 64' in text and "sbatch --clusters=" in text
+    assert 'RC" -eq 64' in text and 'requeue "${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"' in text
 
 
 def test_the_trainer_actually_produces_exit_64():
@@ -337,8 +337,8 @@ def test_a_resumed_arm_goes_back_to_the_same_cluster(name):
     would have resumed on Mindwell — a different GPU mid-run, which makes its own timings
     incomparable and can meet a different memory ceiling."""
     text = (ROOT / "scripts" / "slurm" / name).read_text(encoding="utf-8")
-    assert 'sbatch --clusters="${SLURM_CLUSTER_NAME:-mindwell}"' in text
-    assert '--partition="${SLURM_JOB_PARTITION:-gpu_b200}"' in text
+    assert 'scontrol --clusters="${SLURM_CLUSTER_NAME:-mindwell}" requeue' in text
+    assert "SLURM_RESTART_COUNT:-0" in text
     assert "sbatch --clusters=mindwell --array=" not in text
 
 
@@ -499,13 +499,15 @@ def test_every_training_launcher_can_run_the_exp2_search():
         text = (SLURM / name).read_text(encoding="utf-8")
         assert 'VARIANT="${VARIANT:-}"' in text
         assert "${VARIANT:+_${VARIANT}}" in text
-        assert "VARIANT=${VARIANT}" in text, "a resubmitted search arm must stay in the search"
+        assert 'requeue "${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"' in text
     bench = (SLURM / BENCH).read_text(encoding="utf-8")
     assert '--variant "$VARIANT"' in bench and "${VARIANT:+_${VARIANT}}" in bench
 
 
 @pytest.mark.parametrize("track", ["pd", "lgd"])
-def test_resubmitted_component_arm_keeps_queue_identity_and_resources(track):
+@pytest.mark.parametrize("guard,cancelled,requeue_rc,expected", [(0, 0, 0, 64), (9, 0, 0, 9),
+                                                            (0, 1, 0, 143), (0, 0, 5, 5)])
+def test_resubmitted_component_arm_keeps_queue_identity_and_resources(track, guard, cancelled, requeue_rc, expected):
     import shutil
     import subprocess
 
@@ -514,23 +516,46 @@ def test_resubmitted_component_arm_keeps_queue_identity_and_resources(track):
         pytest.skip("no bash on this machine")
     launcher = (SLURM / f"pretrain_{track}.slurm").read_text(encoding="utf-8")
     resume = launcher[launcher.index('if [[ "$RC" -eq 64 ]]'):]
-    setup = '''
+    setup = f'GUARD={guard}\nCANCELLED={cancelled}\nREQUEUE_RC={requeue_rc}\n' + '''
+set -euo pipefail
 RC=64
 EXP=1
 VARIANT=ablations
+CONFIG=config/Exp1_PD_ablations.yaml
+SEGMENT=3
 LIMIT_S=7200
 SLURM_CLUSTER_NAME=mindwell
 SLURM_JOB_PARTITION=gpu_b200
 SLURM_CPUS_PER_TASK=24
 SLURM_MEM_PER_NODE=184320
+SLURM_ARRAY_JOB_ID=123
 SLURM_ARRAY_TASK_ID=14
 SLURM_SUBMIT_DIR=/repo
-sbatch() { printf '%s\\n' "$*"; }
+python() { printf 'GUARD %s\\n' "$*"; return "$GUARD"; }
+scontrol() { printf 'REQUEUE %s\\n' "$*"; return "$REQUEUE_RC"; }
+sbatch() { echo 'ERROR: native continuation must not request another slot'; return 99; }
 '''
     result = subprocess.run([bash, "-s"], input=setup + resume,
                             capture_output=True, text=True, timeout=30)
-    assert result.returncode == 64, result.stderr
-    assert f"--job-name=crediticl-exp1ablations-{track}" in result.stdout
-    assert "--export=ALL,EXP=1,VARIANT=ablations" in result.stdout
-    assert "--array=14" in result.stdout and "--cpus-per-task=24" in result.stdout
-    assert "--mem=184320M" in result.stdout and "--time=120" in result.stdout
+    assert result.returncode == expected, result.stderr
+    assert 'ERROR:' not in result.stdout
+    if not guard and not cancelled:
+        assert 'REQUEUE --clusters=mindwell requeue 123_14' in result.stdout
+        assert result.stdout.index('GUARD ') < result.stdout.index('REQUEUE ')
+    else:
+        assert 'REQUEUE ' not in result.stdout
+    assert 'sbatch ' not in '\n'.join(line for line in resume.splitlines() if not line.lstrip().startswith('#'))
+
+
+@pytest.mark.parametrize('legacy,restarts,expected', [(0, 0, 0), (0, 2, 2), (3, 2, 5), (0, 32, 32)])
+def test_native_and_legacy_restart_counts_share_the_existing_safety_limit(legacy, restarts, expected):
+    import shutil
+    import subprocess
+    bash = shutil.which('bash')
+    if bash is None:
+        pytest.skip('no bash on this machine')
+    text = (SLURM / 'pretrain_pd.slurm').read_text(encoding='utf-8')
+    counter = next(line for line in text.splitlines() if line.startswith('SEGMENT='))
+    script = f'CREDITICL_SEGMENT={legacy}\nSLURM_RESTART_COUNT={restarts}\n' + counter + '\nprintf "%s" "$SEGMENT"\n'
+    result = subprocess.run([bash, '-s'], input=script, text=True, capture_output=True, timeout=30)
+    assert result.returncode == 0 and int(result.stdout) == expected

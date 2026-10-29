@@ -111,9 +111,10 @@ def verify(out_root: Path, *, big_root: Path | None = None) -> Verdicts:
         v.add(PASS if ok else FAIL, "latest checks job including trainer equivalence", latest.name)
     else:
         v.add(FAIL, "latest checks job including trainer equivalence", "missing exp0_checks log")
-    resubmitted = [n for n, t in text.items() if "END status=INCOMPLETE-RESUBMITTED" in t]
-    v.add(PASS if resubmitted else FAIL, "forced stop: a job saved on SIGUSR1 and resubmitted itself",
-          ", ".join(resubmitted) or "no log ends INCOMPLETE-RESUBMITTED — was the scratch arm submitted with the short walltime?")
+    resubmitted = [n for n, t in text.items() if any(marker in t for marker in (
+        "END status=INCOMPLETE-RESUBMITTED", "END status=INCOMPLETE-REQUEUED"))]
+    v.add(PASS if resubmitted else FAIL, "forced stop: a job saved on SIGUSR1 and continued itself",
+          ", ".join(resubmitted) or "no incomplete-continuation log — was the scratch arm submitted with the short walltime?")
 
     speeds: dict[tuple[str, str], float] = {}
     for track in ("pd", "lgd"):

@@ -2,6 +2,21 @@
 
 ## 29-10-2026 — approved 1,500-update deployment
 
+| Job | Configuration | Outcome |
+|---|---|---|
+| 62471598_14 / _15 | wICE interactive, 1 CPU/1G each, native requeue probe | Both COMPLETED 0:0; restart 0→1 with identical job, array, task, CPU, RAM and partition |
+| 62471122 | Exp0 CPU, 79cdcd9, PROJECT image r3, 8 CPUs/48G | PASS: 14/14 stages; 2,069 portable tests passed, 2 allowed skips; all 12 notebooks executed |
+| 62471116 | Deployment controller, same revision | CPU passed; GPU submission refused at 500 queued/running jobs; zero GPU time |
+
+**Tried:** Submit the GPU acceptance job immediately after the successful CPU validation.
+**Result:** Definite QOSMaxSubmitJobPerUserLimit refusal; no GPU job was accepted.
+**Why:** Other campaigns already occupied all 500 admission slots. A grid smaller than 500
+does not establish available capacity; a percentage running throttle does not free queue slots.
+**Instead:** Adopt the canonical template's receipt-backed admission manager. Wait for real
+capacity, split unthrottled arrays preserving original work IDs, retry only definite capacity
+refusals, and stop on uncertain acceptance. Preserve other projects' jobs and the CPU evidence.
+
+
 **Tried:** CPU validation 62470908 under controller 62470900, after alias-fixture repair.
 **Result:** 954 portable tests passed before the notebook output-contract fixture failed;
 no GPU launched. Preflight, site credit client and both clusters' submission dry runs passed.
