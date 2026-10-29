@@ -1,9 +1,10 @@
 #!/bin/bash
 # =============================================================================
-#  Create THIS project's own venv on the VSC, from pyproject.toml. Run ONCE.
+#  Legacy DATA-venv repair only; new cluster runtimes must be immutable SIFs on PROJECT.
+#  See docs/VSC.md for the migration/validation gate. This script does not migrate anything.
 #
 #      cd $VSC_DATA/CreditICL
-#      bash scripts/slurm/setup_venv.sh
+#      bash scripts/slurm/setup_venv.sh --legacy-maintenance
 #
 #  RUN IT ON A LOGIN NODE. Compute nodes have no outbound internet, so pip
 #  cannot reach PyPI there.
@@ -22,14 +23,26 @@ if [[ -n "${SLURM_JOB_ID:-}" ]]; then
     echo "Run setup_venv.sh on a login node, outside any Slurm job." >&2
     exit 1
 fi
+if [[ "${1:-}" != "--legacy-maintenance" ]]; then
+    echo "New VSC dependencies belong in a versioned immutable SIF on PROJECT; see docs/VSC.md section 6." >&2
+    echo "No environment was installed or moved. Plan and validate the container migration first." >&2
+    echo "For explicitly authorized legacy DATA-venv repair only: setup_venv.sh --legacy-maintenance [--recreate]." >&2
+    exit 2
+fi
+shift
+case "${1:-}" in
+    ""|--recreate) ;;
+    *) echo "Usage: setup_venv.sh --legacy-maintenance [--recreate]" >&2; exit 2 ;;
+esac
 
 # ---------------------------------------------------------------------------
-# WHERE. $VSC_DATA, never project storage.
+# LEGACY location, preserved for controlled recovery until the SIF cutover.
 #
 # A venv with torch is ~5-8 GB across TENS OF THOUSANDS of small files, and
-# project storage has a LOW INODE BUDGET — it is sized for few big files. Put a
-# venv there and you exhaust inodes long before space. $VSC_DATA is 75 GiB and
-# handles the file count fine.
+# PROJECT has a low file-count budget. The adopted policy packages dependencies
+# inside immutable SIF images on PROJECT, not unpacked venv directories there.
+# This exceptional repair path keeps the previous DATA environment in place;
+# never move a populated venv or treat this as the default new-runtime workflow.
 # ---------------------------------------------------------------------------
 REPO="${VSC_DATA}/CreditICL"
 

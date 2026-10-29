@@ -15,18 +15,21 @@ Rules of thumb:
 * What stays on `$VSC_DATA` is what a job APPENDS to while it runs — its log, and a run's
   progress/telemetry CSVs. Staging is Lustre, and Mindwell jobs keep frequent small I/O
   off it (docs/VSC.md §5); a benchmark writes its CSV once, at the end.
-* Staging is on **Lustre**, so it is reachable from wICE but Mindwell
-  jobs must use their own GPFS scratch for heavy I/O. Read a checkpoint from
-  staging once at job start; do not stream from it.
+* The default staging allocation is on **Lustre**. Mindwell jobs stage heavy
+  repeated I/O on node-local scratch; shared scratch requires an explicit override.
+  Read a checkpoint from staging once at job start; do not stream from it.
 
 Staging is resolved in this order, so it can be overridden without editing code:
-``$CREDITICL_STAGING_ROOT`` -> ``$CREDITPFN_STAGING_ROOT`` (shared lab default)
+``$CREDITICL_PROJECT_ROOT`` -> ``$VSC_PROJECT_ROOT`` -> legacy
+``$CREDITICL_STAGING_ROOT`` -> ``$CREDITPFN_STAGING_ROOT`` -> ``$TABPFN_STAGING_ROOT``
 -> ``$VSC_PROJECT_LUSTRE1/stg_00211`` -> the literal ``/lustre1/project/stg_00211``.
+Overrides name an allocated shared root; CreditICL is appended. Unset overrides
+preserve existing paths. Adding the aliases does not move any data or environment.
 
 `resolve_writable` probes permanent storage before training and fails if it is
 unwritable. It never changes checkpoint location or restarts an arm implicitly.
-`working_storage` stages repeated reads and rolling checkpoint writes on GPFS
-on Mindwell, publishing permanent, stopped and final checkpoints atomically.
+`working_storage` stages repeated reads and rolling checkpoint writes on node-local
+scratch on Mindwell, publishing permanent, stopped and final checkpoints atomically.
 """
 
 from __future__ import annotations
@@ -55,6 +58,7 @@ def on_vsc() -> bool:
 #: than a literal inside the function because the test fixture has to set the same variable
 #: this reads — two copies of that name would drift.
 STAGING_ENV_VARS = ("CREDITICL_STAGING_ROOT", "CREDITPFN_STAGING_ROOT", "TABPFN_STAGING_ROOT")
+PROJECT_ENV_VARS = ("CREDITICL_PROJECT_ROOT", "VSC_PROJECT_ROOT")
 
 
 def staging_override() -> Path | None:
@@ -66,7 +70,7 @@ def staging_override() -> Path | None:
     point it at a temp dir, and it is the supported way to put pools on an external
     drive instead of inside the repo.
     """
-    for var in STAGING_ENV_VARS:
+    for var in (*PROJECT_ENV_VARS, *STAGING_ENV_VARS):
         p = _env_path(var)
         if p:
             return p

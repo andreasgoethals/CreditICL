@@ -1,6 +1,9 @@
 #!/bin/bash
 # =============================================================================
-#  Shared conda-env activator for every CreditICL slurm script.
+#  Activator for existing legacy environments used by CreditICL Slurm jobs.
+#  New policy: immutable dependencies in SIF images on PROJECT. This file keeps
+#  recovery paths intact until a separately validated, explicit container cutover.
+#  It neither installs dependencies nor selects an unvalidated container.
 #
 #  Adapted from CreditPFN's scripts/slurm/_activate_env.sh, which was hardened
 #  against several real failures on this cluster. Keeping the same shape means
@@ -26,7 +29,7 @@ _verify_job_environment() {
 # ---------------------------------------------------------------------------
 # THE PROJECT VENV COMES FIRST, if it exists.
 #
-# `scripts/slurm/setup_venv.sh` builds `$VSC_DATA/CreditICL/.venv` from
+# The historical `scripts/slurm/setup_venv.sh` built `$VSC_DATA/CreditICL/.venv` from
 # pyproject.toml, which makes pyproject the single source of truth for what is
 # installed. When that venv is present it is what we want — so we activate it
 # deliberately and return, rather than treating it as something to neutralise.
@@ -76,7 +79,8 @@ if [[ -n "${_PROJECT_VENV}" && -x "${_PROJECT_VENV}/bin/python" ]]; then
         echo "  [activate] venv is INCOMPLETE, missing:${_missing}" >&2
         echo "  [activate] rebuild it on a LOGIN node:" >&2
         echo "               cd \$VSC_DATA/CreditICL" >&2
-        echo "               bash scripts/slurm/setup_venv.sh" >&2
+        echo "               bash scripts/slurm/setup_venv.sh --legacy-maintenance" >&2
+        echo "  [activate] legacy repair requires authorization; new runtimes follow the PROJECT SIF plan in docs/VSC.md." >&2
         exit 1
     fi
     _verify_job_environment || { return 1 2>/dev/null || exit 1; }
@@ -122,10 +126,8 @@ else
     _try_source_conda "${HOME}/mambaforge/etc/profile.d/conda.sh"        || \
     _try_source_conda "/apps/leuven/rocky9/sapphirerapids/2024a/software/Miniforge3/25.3.0-3/etc/profile.d/conda.sh" || {
         echo "ERROR: could not locate a conda/mamba installation." >&2
-        echo "       Create the env once from a wICE login node (login.hpc.kuleuven.be):" >&2
-        echo "         conda create -y -n ${CONDA_ENV} python=3.12" >&2
-        echo "         conda activate ${CONDA_ENV}" >&2
-        echo "         cd \$VSC_DATA/CreditICL && pip install -e \".[dev]\"" >&2
+        echo "       Plan and validate an immutable PROJECT SIF runtime using docs/VSC.md." >&2
+        echo "       Existing legacy environments must not be relocated or replaced implicitly." >&2
         exit 1
     }
 fi
@@ -183,7 +185,7 @@ _env_is_healthy() {
     # its dependencies. Without it every script dies later on `from src.utils...`.
     if ! python -c "import src" >/dev/null 2>&1; then
         echo "  [activate] '${env_name}': dependencies are fine but the PROJECT is not installed." >&2
-        echo "  [activate] run:  pip install -e '.[dev,eval]'  (from \$VSC_DATA/CreditICL)" >&2
+        echo "  [activate] review the runtime migration/legacy-repair instructions in docs/VSC.md." >&2
         return 1
     fi
     return 0
@@ -204,18 +206,8 @@ if [[ -z "${_activated}" ]]; then
     echo "ERROR: no usable conda env (tried '${CONDA_ENV}' and 'base')." >&2
     conda env list >&2
     echo "" >&2
-    echo "       REPAIR, once, from a login node. Run these one line at a time:" >&2
-    echo "         conda deactivate            # leave whatever is active now" >&2
-    echo "         conda activate ${CONDA_ENV}" >&2
-    echo "         which python                # MUST be inside .../envs/${CONDA_ENV}/bin" >&2
-    echo "         cd \$VSC_DATA/CreditICL" >&2
-    echo "         pip install -e \".[dev,eval]\"" >&2
-    echo "" >&2
-    echo "       If 'which python' points anywhere else, the install lands in the WRONG" >&2
-    echo "       env and this job fails again with exactly this message. That is the" >&2
-    echo "       single most common cause. If the env is broken beyond repair:" >&2
-    echo "         conda env remove -n ${CONDA_ENV}" >&2
-    echo "         conda create -y -n ${CONDA_ENV} python=3.12" >&2
+    echo "       Review the PROJECT SIF migration plan in docs/VSC.md; no environment was changed." >&2
+    echo "       Preserve existing versions needed for recovery, and authorize any legacy repair explicitly." >&2
     exit 1
 fi
 

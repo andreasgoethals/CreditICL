@@ -6,7 +6,7 @@ from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 
-from src.experiments.design import MAIN_STEPS
+from src.experiments.design import MAIN_STEPS, MILESTONES, RATES
 from src.experiments import results
 from src.utils import paths
 from src.utils.config import expand_with_seeds, load
@@ -23,12 +23,12 @@ def design_figure(experiment=2):
     fig, axes = plt.subplots(1, 2, figsize=style.figsize(style.WIDTH_FULL, .46))
     if experiment == 2:
         panels = [
-            ("What varies?", ["2 released backbones", "PD and LGD", "0%, 25%, 50%, 100% credit", "1 rate per backbone/task", "3 paired training seeds", "48 main runs + 16 LR pilots"]),
-            ("What is measured?", ["2,500 updates per run", "5 retained checkpoints", "125 → 250 → 500 → 1,000 → 2,500", "Final step is the primary endpoint", "Full-table credit + native OOD", "Same five folds for every model"])]
+            ("What varies?", ["2 released backbones", "PD and LGD", "0%, 25%, 50%, 100% credit", "2 predetermined learning rates", "3 paired training seeds", "96 runs; both rates reported"]),
+            ("What is measured?", [f"{MAIN_STEPS:,} updates per run", f"{len(MILESTONES)} retained checkpoints", " → ".join(f"{s:,}" for s in MILESTONES), "Final step is the primary endpoint", "Full-table credit + native OOD", "Same five folds for every model"])]
     else:
         panels = [
-            ("Fixed comparison", ["50% credit / 50% generic", "Same tables within each backbone", "2,500 updates; 3 seeds", "12 full-CPT baselines reused", "48 additional main runs", "36 development-only pilots"]),
-            ("Four additional methods", ["Full CPT without weight decay", "L2-SP: anchor to released weights", "DiagScale: query scales only", "LoRA: rank-16 Q/V updates", "Select settings on development", "Report credit + OOD at 5 steps"])]
+            ("Fixed comparison", ["50% credit / 50% generic", "Same tables within each backbone", f"{MAIN_STEPS:,} updates; 3 paired seeds", "12 full-CPT baselines reused", "48 additional runs", "Settings fixed before benchmarking"]),
+            ("Four additional methods", ["Full CPT without weight decay", "L2-SP: anchor to released weights", "DiagScale: query scales only", "LoRA: rank-16 Q/V updates", "Compare with ordinary full CPT", f"Report credit + OOD at {len(MILESTONES)} steps"])]
     for ax, (title, lines) in zip(axes, panels):
         ax.axis("off")
         ax.set_title(title)
@@ -40,19 +40,18 @@ def design_figure(experiment=2):
 
 
 def training_curves(track, backbone, *, metric="loss"):
-    """One frozen rate with paired seeds; losses never mix architectures."""
+    """Separate predetermined rates; losses never mix architectures."""
     cfg = load(paths.config_path(f"Exp2_{track.upper()}"), allow_placeholders=True)
     configs = {r["_run_name"]: r for r in expand_with_seeds(cfg) if r["architecture"] == backbone}
-    if any(r.get("design_unresolved") for r in configs.values()):
-        return campaign.availability("Learning-rate selection is not frozen; main training is blocked.")
     runs = training.load_loss_logs(track, "exp2") if metric == "loss" else training.load_progress(track, "exp2")
     if not runs:
         return campaign.availability("No training traces are available for this continuation recipe.")
     runs = {n: d for n, d in runs.items() if n in configs}
+    if not runs:
+        return campaign.availability("No training traces match the current fixed-rate design.")
     datasets = training.comparable_datasets(runs, metric)[0] if metric != "loss" else []
     style.apply()
-    fig, axis = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, .6))
-    axes = [axis]
+    fig, axes = plt.subplots(1, 2, sharey=True, figsize=style.figsize(style.WIDTH_FULL, .6))
     for lr_index, ax in enumerate(axes):
         for fraction in (0, .25, .5, 1):
             curves = []
@@ -72,7 +71,7 @@ def training_curves(track, backbone, *, metric="loss"):
             if len(curves) == 3:
                 common = pd.concat(curves, axis=1, join="inner").dropna()
                 ax.plot(common.index, common.mean(axis=1), color=color, linewidth=style.EFFECT_LINE)
-        ax.set(xlabel="Optimizer updates", title=f"Selected peak LR {next(iter(configs.values()))['train']['lr']:g}")
+        ax.set(xlabel="Optimizer updates", title=f"Fixed peak LR {RATES[backbone][lr_index]:g}")
     axes[0].set_ylabel("Synthetic query loss" if metric == "loss" else f"Development {style.metric_label(metric)}")
     fig.suptitle(BACKBONES[backbone] + (" · optimization" if metric == "loss" else " · small-context monitoring"))
     style.legend_below(fig, [Line2D([], [], color=style.credit_fraction_colour(f), label=style.prior_mix_label(f))
@@ -85,11 +84,12 @@ def checkpoint_curves(track, backbone, *, experiment=2, metric=None):
     metric = metric or ("roc_auc" if track == "pd" else "r2")
     frames = {d: results.benchmark_frames(track, experiment, domain=d) for d in ("credit", "ood")}
     scores = {d: results.complete_scores(f, metric, experiment=experiment) for d, f in frames.items()}
+    scores = {d: f[f.architecture.eq(backbone)] if not f.empty else f for d, f in scores.items()}
     if all(f.empty for f in scores.values()):
         return campaign.availability("Checkpoint curves require complete five-fold tables for all three training seeds. "
                                      "Monitoring values do not populate these panels.")
     style.apply()
-    nrows = 1
+    nrows = 2 if experiment == 2 else 1
     fig, axes = plt.subplots(nrows, 2, squeeze=False,
                              figsize=style.grid_figsize(2, nrows, panel_ratio=1.0))
     labels = (0, .25, .5, 1) if experiment == 2 else tuple(METHODS)
@@ -105,12 +105,15 @@ def checkpoint_curves(track, backbone, *, experiment=2, metric=None):
                     part = frame[frame["mixture" if experiment == 2 else "treatment"].eq(label)].sort_values("checkpoint_step")
                     color = style.credit_fraction_colour(label) if experiment == 2 else style.METHOD_COLORS[label]
                     ax.plot(part.checkpoint_step, part["mean"], color=color,
-                            marker=style.MILESTONE_MARKER, markersize=style.CURVE_MARKER)
+                            marker=style.credit_fraction_marker(label) if experiment == 2 else style.MILESTONE_MARKER,
+                            markersize=style.CURVE_MARKER)
                     ax.fill_between(part.checkpoint_step, part.minimum, part.maximum, color=color, alpha=.12)
-            title = "Credit tuning benchmark" if domain == "credit" else "Native OOD"
+            title = "Credit benchmark" if domain == "credit" else "Native OOD"
+            if experiment == 2:
+                title += f" · LR {RATES[backbone][i]:g}"
             ax.set(title=title, xlabel="Optimizer updates", xscale="log")
-            ax.set_xticks([125, 250, 500, 1000, 2500], ["125", "250", "500", "1,000", "2,500"])
-            ax.minorticks_off()  # Only the five measured milestones need labels.
+            ax.set_xticks(MILESTONES, [f"{s:,}" for s in MILESTONES])
+            ax.minorticks_off()
             reference = results.released_score(track, backbone, domain, metric)
             if reference is not None:
                 ax.axhline(reference, color=style.REFERENCE, linestyle="--")
@@ -146,59 +149,32 @@ def retention_effects(track, backbone, *, metric=None):
             ax.plot([row.ci_low, row.ci_high], [i, i], color=style.METHOD_COLORS[method], linewidth=style.EFFECT_LINE)
             ax.scatter(row.mean_difference, i, color=style.METHOD_COLORS[method], s=style.EFFECT_POINT)
         ax.axvline(0, color=style.MUTED, linestyle=":")
-        ax.set(title="Credit tuning benchmark" if domain == "credit" else "Native OOD",
+        ax.set(title="Credit benchmark" if domain == "credit" else "Native OOD",
                xlabel=f"Δ {style.metric_label(metric)} vs full CPT + decay")
         ax.set_yticks(range(4), [METHODS[m] for m in methods])
-    fig.suptitle(f"{BACKBONES[backbone]} · retention methods at 2,500 updates")
+    fig.suptitle(f"{BACKBONES[backbone]} · retention methods at {MAIN_STEPS:,} updates")
     return fig
 
 
-def pilot_scores(track, backbone):
-    """All pilot candidates, never a winner-only plot."""
-    from src.experiments.selection import load_selection
-    receipt = load_selection("retention", optional=True, for_analysis=True)
-    if receipt is None:
-        return campaign.availability("The development-only pilot comparison has not been frozen.")
-    df = pd.DataFrame(receipt["candidates"])
-    df = df[df.track.eq(track) & df.model.eq(backbone)]
-    style.apply()
-    fig, axes = plt.subplots(1, 3, sharey=True, figsize=style.figsize(style.WIDTH_FULL, .55))
-    for ax, method in zip(axes, ("l2sp", "diagscale", "lora")):
-        part = df[df.method.eq(method)].sort_values("value")
-        ax.plot(part.value, part.score, color=style.METHOD_COLORS[method], marker=style.MILESTONE_MARKER)
-        ax.set(title=METHODS[method], xlabel="Anchor strength α" if method == "l2sp" else "Peak adapter LR", xscale="log")
-        ax.set_xticks(part.value, [f"{v:g}" for v in part.value])
-    axes[0].set_ylabel(f"Development {style.metric_label('roc_auc' if track == 'pd' else 'r2')}")
-    fig.suptitle(f"{BACKBONES[backbone]} · 500-update pilots, seed 991")
-    return fig
-
-
-def learning_rate_pilot(track, backbone):
-    """Both LR candidates; all-credit tuning scores are not independent test scores."""
-    from src.experiments.selection import load_selection
-    receipt = load_selection("cpt", optional=True, for_analysis=True)
-    if receipt is None:
-        return campaign.availability("Experiment 2A's all-credit learning-rate pilot has not been frozen.")
-    frame = pd.DataFrame(receipt["candidates"])
-    frame = frame[frame.track.eq(track) & frame.model.eq(backbone)].sort_values("value")
-    style.apply()
-    fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_HALF, .8))
-    ax.plot(frame.value, frame.score, color=style.REFERENCE, marker=style.MILESTONE_MARKER)
-    ax.set(xscale="log", xlabel="Candidate peak learning rate",
-           ylabel=f"All-credit {style.metric_label('roc_auc' if track == 'pd' else 'r2')}")
-    ax.set_xticks(frame.value, [f"{v:g}" for v in frame.value])
-    ax.set_title(f"{BACKBONES[backbone]} · 500-update pilot")
-    return fig
+def retention_recipe():
+    """Fixed settings are descriptive metadata, never selected from benchmark scores."""
+    rows = []
+    for backbone in BACKBONES:
+        for run in expand_with_seeds(load(paths.config_path("Exp3_PD"))):
+            if run["architecture"] != backbone or run["seed"] != 0:
+                continue
+            t = run["train"]
+            rows.append({"Backbone": BACKBONES[backbone], "Method": METHODS[run["method"]],
+                         "Peak LR": f"{t['lr']:g}", "Weight decay": t["weight_decay"],
+                         "L2-SP alpha": t.get("l2sp_alpha", 0.), "Updates": t["max_steps"]})
+    return pd.DataFrame(rows)
 
 
 def retention_summary():
-    from src.experiments.selection import load_selection
-    lines = ["A · REGISTERED DESIGN", "Fixed 50% mixture; 48 new 2,500-update runs plus 12 reused Exp2 controls.",
-             "B · DEVELOPMENT SELECTION", "36 pilots use seed 991 and only development datasets; 500 updates on a 2,500-update schedule."]
-    for kind in ("retention_pilot", "retention"):
-        saved = load_selection(kind, optional=True, for_analysis=True)
-        lines.append(f"{kind}: " + (str(saved["choices"]) if saved else "not frozen"))
-    lines += ["C · CREDIT AND OOD RETENTION", "Paired final contrasts use the same training seeds and five-fold assignments."]
+    lines = ["A · REGISTERED DESIGN", f"Fixed 50% mixture; 48 new {MAIN_STEPS:,}-update runs plus 12 reused Exp2 controls.",
+             "B · FIXED ADAPTATION RECIPES", retention_recipe().to_string(index=False),
+             "No benchmark-driven learning-rate or adapter selection.",
+             "C · CREDIT AND OOD RETENTION", "Paired final contrasts use the same training seeds and five-fold assignments."]
     trajectories = []
     for track in ("pd", "lgd"):
         for domain in ("credit", "ood"):
@@ -214,6 +190,6 @@ def retention_summary():
                                            else "\n" + effects.to_string(index=False)))
                 trajectories.append(name + ": " + ("no complete three-seed checkpoint groups" if scores.empty
                                     else "\n" + scores.to_string(index=False)))
-    lines += ["D · ADAPTATION TRAJECTORIES", "Five retained checkpoints; incomplete seed/fold groups are withheld.",
-              *trajectories, "Registered protocol: select the base LR using all credit datasets in Experiment 2A; credit results are tuning-benchmark outcomes. OOD is excluded from selection."]
+    lines += ["D · ADAPTATION TRAJECTORIES", f"{len(MILESTONES)} retained checkpoints; incomplete seed/fold groups are withheld.",
+              *trajectories, "Settings and primary endpoint are fixed in advance; both credit and OOD outcomes are reported. Historical benchmark exposure is disclosed."]
     return "\n".join(lines)

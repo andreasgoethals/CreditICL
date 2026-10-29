@@ -35,10 +35,12 @@ python -m src.utils.check_storage
 ```
 
 **1b. Preserve the previous run.** Current Exp0 attempts have separate directories. Keep completed
-checkpoints and their logs; a rerun does not require clearing them. Inspect before any deliberate cleanup:
+checkpoints and their logs; a rerun does not require clearing them. Retained checkpoints/results
+and any large backup archives belong on PROJECT, not the small HOME allocation. Verify the
+allocation's backup policy and independent recovery copy before deleting irreplaceable evidence.
+Inspect before any deliberate cleanup:
 
 ```bash
-tar czf ~/crediticl_$(date +%Y%m%d).tar.gz -C "$VSC_DATA/CreditICL" "output CreditICL"
 python -m src.utils.clean_run            # LISTS what is there, deletes nothing
 ```
 
@@ -166,6 +168,48 @@ The one thing to do differently.
 ---
 
 ## Runs
+
+## 29-10-2026 — Live read-only reconciliation; no new workload
+
+**Scope:** native Windows SSH agent, LF-stdin transport and verified JSON stdout/stderr/status
+capture. No authentication flow, file mutation, checkpoint read, migration or job submission.
+Checkout `be6de6e` on DATA; tracked rendered notebooks/PDFs remain modified. No jobs in the
+user's Mindwell/wICE queues at inspection. TFM pin `26156f36eb7676e8d9050547817346db548b0e85`;
+VSC reference pin `0ed4ffa89d312b9bb6411681b6a14f81672439f3`.
+
+**Exp0:** existing CPU job 62441437 has 13 PASS stages; GPU job 11741580 has 116 PASS stages,
+both bound to source `4b31d59be2048f41f894db9a26c49919f759e65e9fdfae4305dd52e27ae164d0`.
+These are prior-code receipts, not acceptance of the new fixed-rate design.
+
+**Exp1:** all 54 training summaries report completion at 12,500 updates. For each task, 45 main
+checkpoint evaluations (the original nine arms × five steps) and 15 component evaluations are
+complete: 120 credit CSVs and 120 OOD CSVs across both tasks. The six 25% arms (main indices
+9–11 per task) still need their 30 checkpoint evaluations: 30 credit CSVs and 30 OOD CSVs.
+All 240 Exp1 CSVs (21,300 fold rows) and 16 reference CSVs (1,420 rows)
+have successful rows, finite primary metrics, exact dataset/five-fold coverage, no recorded
+context cap/subsampling and matching training-row counts. All 256 CSV hashes match 128 receipts.
+This checks saved result integrity; it is not a new prediction run or checkpoint-byte audit.
+
+**Measured benchmark work:** full credit+OOD suites from summed fold `total_seconds`:
+
+| Model | PD hours | LGD hours |
+|---|---:|---:|
+| Released TabICLv2 | 2.3824 | 0.1319 |
+| Released TabPFN-3 | 1.9298 | 0.1388 |
+| Exp1 TabICL median, 45 evaluations/task | 2.5337 | 0.1268 |
+| Exp1 observed range | 2.2773–2.7445 | 0.0997–0.1477 |
+
+These are work timers, not Slurm elapsed time or billing records. AlgorithmWatch alone took
+1.6166 hours with released TabICL and 1.0653 hours with released TabPFN. Under comparable
+throughput, the new four-step Exp2 benchmark is about 440–454 timed hours, and Exp3 adds
+220–227; adapter inference remains unmeasured. At the earlier actual-script quote of 30,600
+credits/hour, these imply 13.46–13.89M and 6.73–6.95M credits respectively, before startup/retries.
+
+**Storage/account:** DATA 56,233M / 76,800M; PROJECT 538.2G / 1T; GPFS scratch 8.634G / 500G;
+Lustre scratch 28.5G / 500G. These are account/allocation totals, not project-only sizes.
+CreditICL's DATA venv is 9.8G and its PROJECT output is 36G. Available credits: 95,812,429.
+The pending SIF migration is a separate explicit change. No files were deleted during this inspection.
+
 
 ## 29-10-2026 — Authorized Exp2 reset completed; Budget A not yet submitted
 

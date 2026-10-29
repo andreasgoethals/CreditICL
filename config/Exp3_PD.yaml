@@ -1,5 +1,5 @@
 # Experiment 3: retention treatments at a fixed 50% credit mixture.
-# Full CPT + weight decay is reused from the selected Experiment 2 arms.
+# Full CPT + weight decay is reused from the primary-rate Experiment 2 arms (lr_index=0), never a selected winner.
 prior_file: Exp2_PD.yaml
 experiment: exp3_pd
 design: retention

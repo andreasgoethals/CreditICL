@@ -42,7 +42,7 @@ its full time limit). Billing is `(CPU_weight·effective_cores + GPU_weight·num
 where `effective_cores` is what you *block*, not what you request: request one core but a node's whole
 memory and you are billed for every core.
 
-| partition | cluster | GPUs (queue) | cores/GPU | credits/GPU-h | max walltime |
+| partition | cluster | GPUs (queue) | cores/GPU | GPU-component credits/h | max walltime |
 |---|---|---|---|---|---|
 | `interactive` | mindwell | 4 × RTX 5000 Ada 32 GiB | 8 | **free** | 16 h |
 | **`gpu_b200`** | mindwell | **24** × B200 192 GiB | **24** | 26,250 | 72 h |
@@ -52,6 +52,8 @@ memory and you are billed for every core.
 
 GPU count describes capacity; queue wait depends on current demand. Our generator uses CPU cores,
 so GPU speed alone does not predict the time or cost of an arm.
+The verified 29-10 quote for this project's B200 + 24 CPU + 180G allocation is **30,600 credits/h**,
+including host resources; use that allocation price for the current campaign estimates in §9.
 
 - **`gpu_b200` remains the production default:** 24 cores per GPU and 192 GiB of GPU memory.
   The H100 GPU charge is about **1.30×** the B200 charge, not 4×; its 16-core allocation may
@@ -70,6 +72,49 @@ needs Ampere or later.
 
 ## 2. Account and cluster setup
 
+**Access adoption, 29-10-2026.** `docs/TEMPLATE.md` matches the canonical template byte-for-byte
+(SHA-256 `285c7c321b2cd52d8d415e30f41fe775ceb47113f39007c2490fdb0ec23fc8d8`). No additional
+template synchronization or per-project SSH installation is needed. The shared VSC reference pin
+for this review is `0ed4ffa89d312b9bb6411681b6a14f81672439f3`.
+
+Andreas renews access manually in **Windows PowerShell**:
+
+```powershell
+step ssh login --context VSC
+```
+
+He completes KU Leuven Authenticator approval. Agents reuse this Windows user's existing native
+OpenSSH agent; they do not start login flows, configure renewal hooks or schedule reminders.
+If the certificate is unavailable/expired, ask Andreas to run the command. Keep certificate
+contents, private keys and authentication URLs out of reports and Git.
+
+For relevant tasks, directly inspect bounded VSC files, logs, job/accounting state and quotas
+using the tested method in [TEMPLATE.md](TEMPLATE.md#vsc-access-windows-and-agents): native
+`System32/OpenSSH/ssh.exe`, noninteractive options, strict host-key checking, and an LF-delimited
+script on stdin with **no trailing remote command**. Verify the channel with the deliberate
+exit-7 stdout/stderr probe before trusting results. Missing markers, even with exit 0, are a channel
+failure; do not interpret them as empty results or retry uncertain mutations. Network/host-key
+failures require their own diagnosis, not automatic authentication renewal. Remote computational
+debugging belongs in an explicitly authorized Slurm allocation; a working SSH connection grants
+no authorization to submit, cancel, install, relocate or delete.
+
+**Verified read-only access, 29-10-2026.** The native LF-stdin probe returned its stdout marker
+and exit 7, but its raw stderr marker did not reach the client. The verified capture fallback
+runs the bounded Bash payload through remote Python 3 `subprocess.run(..., capture_output=True)`
+and emits a JSON envelope on stdout containing separate `stdout`, `stderr` and `returncode`.
+That envelope contained `VSC_ACCESS_OK`, `VSC_ERROR_CHECK` and return code 7; SSH also exited 7.
+Parse the envelope and verify its status rather than treating the absent raw stderr stream as
+success. This is a route-specific transport workaround, not an authentication or shell change.
+
+The live checkout resolves to `/vsc-hard-mounts/leuven-data/383/vsc38338/CreditICL`, at commit
+`be6de6e`, with tracked notebook/figure changes. Preserve those changes before any update.
+The `.venv-skylake` runtime is still on DATA; persistent assets remain under
+`/lustre1/project/stg_00211/CreditICL`. No PROJECT_ROOT overrides were set, and no jobs were
+listed for this user on Mindwell or wICE at inspection time. Quota usage was DATA
+56,233M/76,800M; PROJECT 538.2G/1T; GPFS scratch 8.634G/500G; Lustre scratch 28.5G/500G.
+These are account/allocation totals, not CreditICL-only sizes. No authentication, installation,
+migration, workload submission or deletion was performed; this read does not validate GPU code.
+
 - **Account `lp_verbekelab`** (has Mindwell access; billed under it since 14-08-2026).
 - **SSH to `login.hpc.kuleuven.be`**, which now selects a wICE login node. Mindwell shares
   these login nodes. Genius retired at the end of September 2026; its P100/V100 nodes moved to
@@ -77,8 +122,9 @@ needs Ampere or later.
 - The relevant library source sections are `source/leuven/tier2_hardware/tier2_login_nodes.rst`,
   `source/leuven/old_hardware/genius/genius_hardware.rst`, and `source/leuven/slurm_specifics.rst`.
   Current B200/A100/H100 partitions and resource limits still match this project's launchers.
-- **Compute nodes have no outbound internet** — so `setup_venv.sh` and `fetch_ood` must run on a login
-  node.
+- **Compute nodes have no outbound internet** — prepare package/input artifacts before an authorized
+  offline container build/validation allocation. `fetch_ood` and exceptional legacy environment
+  maintenance need a networked preparation route; neither is an automatic job-start action.
 
 ## 3. Cores and memory per GPU
 
@@ -98,6 +144,13 @@ is optimistic regardless of what the QoS allows. `nvidia-smi` memory is not util
 model at micro-batch 4 uses ~13 GB of a B200's 192 GB but still runs at ~80–89% of the card's compute,
 so there is no headroom to reclaim by enlarging the batch (and `micro_batch` is pinned at `group_size`
 anyway).
+
+**Template adoption exception:** the existing campaign's array throttles and resource requests
+remain unchanged during this access/storage update. The template now prefers all independent ready
+work without an artificial cap; a percentage throttle needs measured storage/service/correctness
+evidence or an explicit user choice. Before a new campaign, inspect current Slurm/QoS limits and
+validate capacity-aware submission. The historical `%8` examples below are not a new universal
+cluster limit, and changing them while a campaign is active is outside this adoption.
 
 ## 4. Surviving a long sweep
 
@@ -164,7 +217,7 @@ python -m src.utils.run_experiment 1 --submit   # submit whatever is ready
 ```
 
 The experiment number is required (never a default) and printed at the top, so "Exp1 or Exp2?" is
-answered on the page. `run_experiment 3` refuses missing or stale development-selection receipts. Guarantees, each tested: benchmark cannot start before training finishes; a drain
+answered on the page. `run_experiment 3` resolves its predeclared settings without any selection receipt. Guarantees, each tested: benchmark cannot start before training finishes; a drain
 costs only what was pending; a re-run never doubles a queued job (matched on the Slurm job name); a
 unavailable `squeue` blocks submission until the queue can be checked, preventing duplicate jobs.
 
@@ -172,11 +225,30 @@ unavailable `squeue` blocks submission until the queue can be checked, preventin
 
 Three tiers, resolved automatically by [`src/utils/paths.py`](../src/utils/paths.py):
 
+The actual checkout, including `.git`, stays on DATA. Large persistent assets and new installed
+dependencies belong on PROJECT, with dependencies consolidated into immutable SIF images as
+described in §6. Scratch contains temporary work only. The existing DATA venv is an explicitly
+documented migration exception; it has not been relocated or replaced by this policy update.
+Do not pull, update submodules or mutate environments while active/queued jobs use that checkout.
+Use a separate actual DATA checkout for a new revision, or wait for those jobs to finish.
+
 | tier | path | holds | backup | quota |
 |---|---|---|---|---|
 | **project staging** | `/lustre1/project/stg_00211/CreditICL` | inputs: `data/` (raw, processed, the OOD cache `ood/`) and `checkpoints/` (the released TabICLv2 / TabPFN-3 weights); the big half of `output CreditICL/`: `{reference,experiment_<N>}/benchmark/`, `experiment_<N>/checkpoints/<run>/`, `prior_cache/` | no | ≥1 TB, **low inode budget** |
 | **personal data** | `$VSC_DATA/CreditICL` | the repo, and the small half of `output CreditICL/`: `logs/`, `{reference,experiment_<N>}/logs/`, `experiment_<N>/{runs,report}/` | **yes** | **75 GiB for every project together** — kept low |
 | scratch | `$VSC_SCRATCH` | working scratch only | no | 500 GiB, **purged after 30 days without access** |
+
+Canonical allocation-root overrides are `CREDITICL_PROJECT_ROOT`, then `VSC_PROJECT_ROOT`.
+They name the **shared allocation root**, and the resolver appends `CreditICL`. Existing
+`CREDITICL_STAGING_ROOT`, `CREDITPFN_STAGING_ROOT` and `TABPFN_STAGING_ROOT` remain lower-priority
+aliases, followed by the existing Lustre allocation default. Unset new overrides preserve current
+paths; setting one is a deliberate cutover decision, not a copy/migration operation. Pass it explicitly
+through the submission environment; arbitrary login exports are not assumed to reach a Leuven job.
+Unavailable persistent storage fails instead of redirecting large writes to DATA or scratch.
+
+Before migration/build/staging, check both bytes **and file counts** with `myquota` and a bounded
+inspection of this project's directories. Verify PROJECT protection independently; DATA backups
+do not protect project checkpoints. Keep independent backups of irreplaceable results.
 
 **One tree, two tiers, the same layout** (`src/utils/paths.py`; the tree is described in
 `output CreditICL/README.md`). Since 30-09-2026 only what a job APPENDS TO while it runs stays on
@@ -197,7 +269,7 @@ Successful jobs verify the latest publication before releasing their working dir
 **Native I/O:** Mindwell repeated I/O belongs on GPFS or node-local scratch; wICE uses Lustre.
 Project-Lustre access from Mindwell is restricted here to input staging and checkpoint publication,
 not repeated training reads or offload. This follows VSC library pin
-`1c29213086a0ae76b8f95cdd8eccbb9db8d6ca87`. Small logs remain on `$VSC_DATA`.
+`0ed4ffa89d312b9bb6411681b6a14f81672439f3`. Small logs remain on `$VSC_DATA`.
 `CREDITICL_WORK_ROOT` is an explicit override; leave it unset for the node-local default.
 
 To remove old shared-scratch copies without deleting persistent experiment results, while no
@@ -218,28 +290,47 @@ to this project. Do not delete other projects to recover it.
 
 ## 6. The Python environment
 
-**There is no PyTorch module on VSC** — we install torch into a venv, **one per microarchitecture**
-(wICE and Mindwell differ; a venv built on one is not reliably usable on the other), suffixed
-`.venv-${VSC_ARCH_LOCAL}`. A venv with torch is ~5–8 GB across tens of thousands of small files, so it
-lives on `$VSC_DATA` (staging's inode budget would exhaust first; `$VSC_HOME`'s 3 GiB can't hold torch).
+**Target policy: immutable dependencies in versioned Apptainer/SIF images on PROJECT.** This is
+the project's adopted template policy, not a claim that VSC mandates it. The container avoids the
+file-count cost of an unpacked PyTorch environment. Do not create an unpacked venv/Conda tree or
+persistent container sandbox on PROJECT, and do not move a populated DATA environment there.
+Local Windows venvs remain supported.
 
-**Build it once, on a login node** (compute nodes have no internet):
+**Current runtime is still the legacy DATA venv.** `_activate_env.sh` continues to discover existing
+`.venv-${VSC_ARCH_LOCAL}` / `.venv` environments and their recorded Python modules so existing
+recovery paths remain usable. This repository has not yet built or accepted a SIF runtime. There is
+no automatic container switch, environment relocation, package installation or cleanup in this update.
+
+Migration must be proposed and approved before execution:
+
+1. Freeze the current DATA checkout, runtime inventory/locks, CUDA build, source revision and
+   submodule pins. Check queued/running/recoverable jobs and both quota types. Identify the allocated
+   PROJECT destination and verify accessibility from the intended wICE and Mindwell partitions.
+2. Prepare an immutable image definition and pinned offline dependencies from the recorded VSC
+   environment. Keep definitions/manifests in DATA Git, build caches/temp files on scratch and the
+   final versioned SIF on PROJECT. Build only in an authorized allocation with sufficient resources.
+3. Record the image digest and explicit code/data/results/cache binds. Validate CPU imports,
+   dependencies and filesystem publication, then actual GPU precision, forward/backward,
+   checkpoint/resume and benchmark behavior through Experiment 0, including `--nv`/host-driver
+   compatibility. Metadata or a local container test alone does not certify the VSC GPU path.
+4. Switch only a separate/new validated campaign to the accepted image. Preserve the old runtime,
+   checkout and checkpoints until no active, queued or resumable job needs them. Retire exact
+   project-owned obsolete files only after verified publication and an approved cleanup.
+
+Until that migration, explicitly authorized legacy repair while all consumers are idle is available:
 
 ```bash
-cd $VSC_DATA/CreditICL && bash scripts/slurm/setup_venv.sh      # idempotent; --recreate starts over
+bash scripts/slurm/update_env.sh --legacy-maintenance
+# Exceptional rebuild, only if reviewed and needed:
+bash scripts/slurm/setup_venv.sh --legacy-maintenance --recreate
 ```
 
-It builds from `pyproject.toml`, installs torch from the CUDA index, `pip install -e ".[dev,eval]"`,
-then verifies every import *and* that our model matches the released checkpoints.
+Both scripts otherwise stop before any installation and explain the new policy. The explicit
+exception preserves the old DATA location and is not a container migration. Never run repair as
+routine preparation for a healthy campaign. Existing shell auto-activation hooks may remain, but
+do not install a new hook during this adoption; jobs explicitly source `_activate_env.sh`.
 
-**Refresh an existing environment after dependency changes:**
-
-```bash
-bash scripts/slurm/update_env.sh
-```
-
-This only updates a `.venv` or `.venv-*` inside this project and refuses to install inside a
-Slurm job. VSC torch is pinned to **2.11.0+cu128**, the installed build observed on 12-10-2026;
+VSC torch is pinned to **2.11.0+cu128**, the installed build observed on 12-10-2026;
 TabPFN is **9.1.0**, and TabICL uses its pinned Git commit. All runtime/dev/eval requirements,
 including nested extras, are checked along with `pip check`. An inventory of all installed
 package versions goes to `output CreditICL/general/report/environment.json`. Every job checks
@@ -248,14 +339,6 @@ require that exact validated environment, and benchmark receipts include it. A p
 requires revalidation, never a silent continuation under different dependencies. The inventory
 is platform-specific; do not install a Windows freeze onto VSC. These metadata checks supplement
 the GPU tests; they do not prove CUDA/runtime compatibility by themselves.
-
-**Auto-activate on `cd`** (interactive shells): `bash scripts/slurm/shell_hook.sh --install` appends one
-line to `~/.bashrc` that sources the in-repo hook (so `git pull` keeps it current; `--status`/`--uninstall`
-manage it). It uses `PROMPT_COMMAND` (works after `pushd`/subshells/symlinks, unlike an overridden `cd`)
-and stands down another project's active venv first — which mattered, because a sibling venv kept winning
-the PATH race and `pip` reported "already satisfied" for packages we never had. **Jobs need none of
-this** — `scripts/slurm/_activate_env.sh` finds and activates the venv explicitly, because `~/.bashrc`
-is not reliably sourced in a batch job.
 
 Two gotchas that read like a corrupt install: **the module load is not optional** (`.venv/bin/python` is
 a thin link to the Lmod interpreter; the module name is read from `.python_module` beside the venv,
@@ -307,28 +390,40 @@ Completed Exp1 training on B200, batch 64 and micro-batch 4, with explicit proje
 | one Exp1 arm, 12,500 steps | **6.43–7.38 training GPU-h**, measured in the completed 24-10-2026 snapshot |
 | **Completed original Exp1, 24 arms/track (9 main + 15 component)** | **323.616 recorded training GPU-h** for all 48 completed arms, excluding startup and benchmarks; see [RUNS, 24-10-2026](RUNS.md#24-10-2026--exp1-training-complete--all-48-runs-successful) |
 | **Completed Exp1 extension: 3 more arms/track** | 25% credit, three seeds, indices 9–11; all six completed on 28-10, making 54 completed training runs. Their recorded training totals about 40.7 GPU-h; quarter-mixture benchmarks remain pending in the 29-10 snapshot. |
-| Superseded 96-run Exp2, 10k updates | Production TabICL timing projects 210–225 GPU-h/arm; combined with the provisional TabPFN subtotal, **12,189–12,909 GPU-h / 373–395M training credits**, excluding benchmarking. Replaced by Budget A below. |
-| Budget A Exp2 | 48 main runs × 2,500 updates plus 16 LR pilots × 500: approximately **50–53M training credits**, extrapolated from measured/provisional throughput; excludes validation and benchmarking. |
+| Superseded 96-run Exp2, 10k updates | Production TabICL timing projects 210–225 GPU-h/arm; combined with the provisional TabPFN subtotal, **12,189–12,909 GPU-h / 373–395M training credits**, excluding benchmarking. Replaced by the fixed-rate budget below. |
+| Fixed-rate Exp2 | 96 runs × 1,000 updates: approximately **37.3–39.5M training credits**, linearly extrapolated from earlier throughput; excludes validation and benchmarking. |
+| Fixed-recipe Exp3 | 48 new runs × 1,000 updates + 12 reused baselines: **18.6–19.8M full-update-equivalent credits** for planning only; adapter throughput is unmeasured. |
 | Current Exp3 | Retention-method runtime remains unmeasured; do not extrapolate scratch throughput. The old 200k scratch Exp3 is abandoned. |
 | TabICLv2's own full pretraining | 24.5 GPU-days per model (the paper's figure) |
 
 The revised configurations generate tasks live in every experiment. Exp1 uses 12,500 updates,
-2.5% of upstream's 500k-step first stage; Exp2/3 adapt released weights for 2,500 updates.
+2.5% of upstream's 500k-step first stage; Exp2/3 adapt released weights for 1,000 updates.
 Neither reproduces upstream's complete curriculum. Exp1 times describe its frozen completed
 campaign; they do not measure the new Exp2/Exp3 recipes. Wall-clock completion also depends
 on queue delays and concurrent allocations, and benchmarks add their own runtime.
 
-For Experiment 2 (capacity checked in Experiment 0 before launch): 24 main arms per track (2 models × 4
-mixes × 1 frozen rate × 3 seeds), 2,500 steps each, using upstream TabICL and TabPFN's differentiable
+For Experiment 2 (capacity checked in Experiment 0 before launch): 48 arms per track (2 models × 4
+mixes × 2 fixed rates × 3 seeds), 1,000 steps each, using upstream TabICL and TabPFN's differentiable
 fine-tuning interface on synthetic tasks. The 24-10 revision changes TabICLv2 to 400–60,000 log-uniform rows, 79–81%
 context and one task per microbatch, retaining 64 tasks per update. Its expected row exposure is
-about 1.9 billion per main arm, 11.6 times the former 1,024-row proposal; this is **not** a runtime ratio.
+about 761 million per main arm, 11.6 times a matched 1,024-row proposal; this is **not** a runtime ratio.
 TabPFN-3 retains 16 tasks per update and 1,024 rows through its own preprocessing. The old ~400
 GPU-hour estimate is **obsolete**. Never extrapolate TabICLv2 Exp2 cost from Exp0's 1,024-row
 route checks. Fresh capacity and representative-batch probes must establish feasibility first;
 one representative update gives a timing observation, not a reliable campaign ETA.
 Benchmark probes measure selected tables only: their times do not establish
 the runtime of the complete publication benchmark matrix.
+
+The 29-10 live CSV audit provides an inference planning anchor. Summed fold `total_seconds`
+for a complete credit+OOD suite were 2.3824 hours PD / 0.1319 hours LGD for released TabICL,
+and 1.9298 hours PD / 0.1388 hours LGD for released TabPFN. The 45 Exp1 TabICL checkpoint
+evaluations per track had medians of 2.5337 hours PD / 0.1268 hours LGD. These timers include
+preprocessing and calibration; they are not Slurm elapsed time or billed GPU-hours. At comparable inference
+speed, all four Exp2 checkpoints imply approximately 440–454 timed hours (13.46–13.89M
+credits); Exp3 adds 220–227 hours (6.73–6.95M), conditional on adapter inference speed.
+Together with training, the planning total is roughly 76–80M credits, excluding validation,
+retries and remaining Exp1 benchmarks. The live available balance was 95,812,429 credits. This reserve
+motivates the 1,000-update design; the estimate is not a spending guarantee.
 
 The 29-10 quote uses an actual jobscript (this VSC `sam-quote` rejects `--wrap` alone):
 
@@ -339,8 +434,7 @@ sam-quote sbatch --clusters=mindwell --partition=gpu_b200 --account=lp_verbekela
 ```
 
 Available balance in the supplied transcript is 95,945,277 credits. This is a dated balance;
-use `sam-balance` again before submitting. The reduced-budget alternatives are still proposals,
-not the current YAML grid. Training estimates exclude validation and full-table benchmarking.
+use `sam-balance` again before submitting. The fixed 1,000-update grid is implemented locally; this does not authorize a new VSC workload. Training estimates exclude validation and full-table benchmarking.
 
 For the authorized clean Exp2 restart, preview then delete only its generated run output:
 
@@ -418,8 +512,8 @@ python -m src.utils.preflight --require-exp0-cpu && sbatch --clusters=mindwell s
 
 The 26-10 implementation adds no dependencies. Do not update working packages or refresh inputs
 as a routine step: the latest VSC attempt already passed its dependency audit. If the prerequisite
-check reports a real package mismatch, `update_env.sh` installs this project's requirements/extras
-and verifies all transitive dependencies and `pip check`; resolve that before starting CPU validation.
+check reports a real package mismatch, review the PROJECT SIF migration or explicitly authorize
+`update_env.sh --legacy-maintenance`; verify all transitive dependencies and `pip check` before CPU validation.
 CPU and GPU jobs must use the same environment. Preprocessing cache v8 retains
 borrower groups and percentage corrections, fixes Freddie missing-value codes and preserves distinct
 extreme feature values. OOD cache v3 retains the same pinned dataset IDs
@@ -457,7 +551,7 @@ attempts remain until an explicit reset. CPU completion is recorded in `cpu_vali
 the GPU receipt binds that exact CPU receipt. Rerunning CPU invalidates an older GPU PASS.
 Exp0 reference probes are isolated and are never published as complete production results.
 The launcher refuses production work if tests, code, configurations, packages, inputs or artifacts
-changed after validation. Exp3's planned choices are stored in hashed selection receipts;
+changed after validation. Exp3's settings are prescribed in the versioned configuration;
 no YAML edit is required or exempted. Each training run records its fully resolved choice.
 
 After completion:
@@ -548,28 +642,22 @@ python -m src.utils.run_experiment 1 --phase benchmark --submit
 Each experiment planner is safe to repeat: it skips completed/queued arms and waits for training
 before benchmarking. Exp1 includes only missing quarter-mixture work if the other 48 runs and
 benchmarks are already complete. All 54 training runs were complete in the 29-10 snapshot.
-Run Exp2A pilots after Exp1 benchmarking; repeat its planner after training to submit all-credit benchmarks.
-Main Exp2 retains five checkpoint benchmarks per run. All rows/features/five folds remain.
+Run the fixed Exp2 grid after Exp1 benchmarking and current validation.
+Exp2 retains four checkpoint benchmarks per run. All rows/features/five folds remain.
 For Exp2/Exp3, keep `--single-cluster`: these commands use the Mindwell B200 allocation validated
 by Exp0. The planner's optional historical LGD split across wICE A100s is not validated by a B200
 capacity result and is not the launch recipe here.
 
 ```bash
-python -m src.utils.run_experiment 2 --variant pilots --single-cluster --submit
-# Repeat after pilot training to submit all-credit benchmarks. Once they finish:
-python -m src.experiments.selection --stage learning-rate
 python -m src.utils.run_experiment 2 --single-cluster --submit
-# Repeat after main training to submit missing benchmarks. Then proceed with Exp3:
-python -m src.utils.run_experiment 3 --variant pilots --single-cluster --submit
-# Repeat the pilot planner after training; once all development pilot benchmarks finish:
-python -m src.experiments.selection --stage adapters
+# Repeat after training to submit missing benchmarks. Then proceed with Exp3:
 python -m src.utils.run_experiment 3 --single-cluster --submit
-# Repeat the main planner after training for benchmarks.
+# Repeat after training for benchmarks.
 ```
 
-The former 200k-update scratch Exp3 is abandoned. Current Exp3 has 36 short development-only
-pilots, 48 new full runs and 12 reused Exp2 baselines. Selection receipts avoid configuration
-edits between validation and training. Never delete Exp1 or Exp2 baseline checkpoints while
+The former 200k-update scratch Exp3 is abandoned. Current Exp3 has 48 new runs and 12 reused Exp2 baselines, all at 1,000 updates.
+Both CPT rates and all adapter settings are fixed before benchmarking; no pilot selects them.
+The 125/250/500/1,000 checkpoints describe adaptation trajectories, with 1,000 as primary endpoint. Never delete Exp1 or Exp2 baseline checkpoints while
 these comparisons are active. Check project capacity before launching: retained checkpoints,
 rolling resume files and full-table benchmark journals all consume project storage. The 24-hour
 Exp0 allocation is a limit, not a prediction of total campaign duration.

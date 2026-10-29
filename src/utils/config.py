@@ -109,7 +109,7 @@ def load_yaml(path: str | Path) -> dict[str, Any]:
 
 
 #: Historical template sentinel. Keep rejecting it in older user configs;
-#: the current fixed-mixture Exp3 instead requires frozen development receipts.
+#: current experiments use fixed, predeclared recipes.
 PLACEHOLDER = "FILL_FROM_EXP1"
 #: Current runnable configs contain none of these legacy placeholders.
 PLACEHOLDERS = (PLACEHOLDER,)
@@ -188,13 +188,8 @@ def load(path: str | Path, *, allow_placeholders: bool = False) -> dict[str, Any
                 f"chosen value. Refusing to expand it, because a config that runs with a "
                 f"placeholder wastes GPU-hours measuring nothing."
             )
-    if cfg.get("design") in {"cpt", "retention", "retention_pilot"}:
-        from src.experiments.selection import load_selection
-
-        selection = load_selection(cfg["design"], optional=allow_placeholders, for_analysis=allow_placeholders)
-        if selection is not None:
-            cfg["_selection"] = selection
-            cfg["selection_provenance"] = selection["receipt_digest"]
+    if cfg.get("design") in {"cpt_pilot", "retention_pilot"}:
+        raise ValueError("Pilot selection is retired; use the fixed Exp2/Exp3 configurations")
     return apply_sweep_block(cfg)
 
 
@@ -414,6 +409,10 @@ def _hash(assignments: dict[str, Any]) -> str:
 def run_name(cfg: dict[str, Any]) -> str:
     """Directory-safe name for a run: <experiment>__<grid tag>__s<seed>."""
     experiment = cfg.get("experiment", "run")
+    # New CPT/retention outputs cannot collide with the retired selected-rate
+    # campaign. Experiment 1 has no revision and retains its exact names.
+    if cfg.get("design_revision"):
+        experiment = f"{experiment}__{_fmt(cfg['design_revision'])}"
     tag = cfg.get("_grid", {}).get("tag", "base")
     seed = cfg.get("seed", 0)
     name = f"{experiment}__{tag}__s{seed}"

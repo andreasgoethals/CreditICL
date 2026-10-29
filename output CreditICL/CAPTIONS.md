@@ -186,13 +186,13 @@ _No figures produced._
 
 **01_registered_continuation_design** — `registered_continuation_design`
 
-Registered continuation design: two released backbones, two prediction tasks, four credit-prior mixtures, one selected learning rate per backbone/task and three training seeds; five checkpoint evaluations use full eligible tables and shared five-fold splits.
+Registered continuation design: two released backbones, two prediction tasks, four credit-prior mixtures, two predetermined peak learning rates and three paired training seeds give 96 runs. Four checkpoint evaluations use all eligible rows and features with shared five-fold splits; 1,000 updates is the primary endpoint.
 
 ## 2.2_lgd_finetuning
 
 **01_registered_continuation_design** — `registered_continuation_design`
 
-Registered continuation design: two released backbones, two prediction tasks, four credit-prior mixtures, one selected learning rate per backbone/task and three training seeds; five checkpoint evaluations use full eligible tables and shared five-fold splits.
+Registered continuation design: two released backbones, two prediction tasks, four credit-prior mixtures, two predetermined peak learning rates and three paired training seeds give 96 runs. Four checkpoint evaluations use all eligible rows and features with shared five-fold splits; 1,000 updates is the primary endpoint.
 
 ## 2.3_pd_results
 
@@ -208,4 +208,4 @@ _No figures produced._
 
 **01_registered_retention_design** — `registered_retention_design`
 
-Number of runs and retained checkpoints in the 50% credit retention design: four additional methods across both backbones and tasks, three main seeds, 36 development-only pilots and 12 reused full-CPT baselines from Experiment 2.
+Registered retention comparison at a fixed 50% credit mixture: four additional methods across two backbones, two prediction tasks and three paired seeds give 48 runs. Twelve primary-rate full-CPT-with-decay baselines are reused from Experiment 2. All settings are fixed before benchmarking; four checkpoints end at the primary 1,000-update endpoint.

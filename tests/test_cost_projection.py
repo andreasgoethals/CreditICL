@@ -2,6 +2,7 @@
 
 import pytest
 
+from src.experiments.design import MAIN_STEPS
 from src.utils.config import expand_with_seeds, load
 from src.validation.verify import _print_legacy_training_costs, _print_training_costs
 
@@ -22,7 +23,8 @@ def test_current_exp2_reports_unknown_long_context_cost_and_only_tabpfn_subtotal
 
     assert f"Exp2 {track} TabICL: GPU-hours unknown" in text
     assert "single capacity-test update is not a reliable campaign estimate" in text
-    assert f"Exp2 {track} TabPFN: 12 runs, about 41.7 GPU-h (short-run extrapolation; subtotal only)" in text
+    expected_hours = 24 * MAIN_STEPS * 5 / 3600
+    assert f"Exp2 {track} TabPFN: 24 runs, about {expected_hours:.1f} GPU-h (short-run extrapolation; subtotal only)" in text
     assert f"Exp2 {track} total: unknown" in text
     assert "48 runs, about" not in text
     assert "TabICL: 24 runs, about" not in text

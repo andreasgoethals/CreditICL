@@ -1,5 +1,50 @@
 # Agents' memory — runs and dead ends
 
+## 29-10-2026 — fixed-rate design supersedes the unrun pilot proposal
+
+The user withdrew benchmark-driven LR selection. Exp2 now has 96 runs: two backbones ×
+four mixtures × two predetermined rates × three paired seeds × PD/LGD. Stop at 1,000
+updates; retain 125/250/500/1,000, with 1,000 as the primary endpoint. This is a bounded
+adaptation experiment, not established convergence. Report both rates rather than selecting
+a best-on-test score. Exp3 fixes 50% and the primary rate, reuses 12 Exp2 baselines and adds
+48 fixed no-decay/L2-SP/DiagScale/QV-LoRA runs. No pilot was launched in this revision;
+prior design discussions below remain historical evidence. New run names include
+`fixed-rates-v1`; all 54 Exp1 configurations, names and indices match the previous code.
+
+Live read-only VSC inspection: DATA checkout at `be6de6e`; generated tracked notebook/PDF
+changes still block an ordinary pull. No jobs on Mindwell/wICE. Both recorded Exp0 reports
+PASS for source `4b31d59be2048f41f894db9a26c49919f759e65e9fdfae4305dd52e27ae164d0`
+(13 CPU, 116 GPU stages); they do not validate this new revision. All 54 Exp1 summaries
+are completed at 12,500 steps, including the six quarter-mixture runs. DATA venv is 9.8G;
+PROJECT CreditICL output is 36G. Quota totals: DATA 56,233M / 76,800M, PROJECT 538.2G / 1T,
+GPFS scratch 8.634G / 500G, Lustre scratch 28.5G / 500G. Available credits: 95,812,429.
+No installation, migration, deletion, submission or remote update was performed.
+
+Current TEMPLATE already matches canonical SHA256
+`285c7c321b2cd52d8d415e30f41fe775ceb47113f39007c2490fdb0ec23fc8d8`.
+Manual Windows `step ssh login --context VSC`, existing agent, native LF-stdin SSH only.
+The raw stderr probe was absent; a verified remote subprocess JSON envelope preserved both
+streams and exit code 7. See VSC.md for the tested fallback and pending PROJECT SIF migration.
+The existing DATA venv remains a documented legacy deployment, not a completed migration.
+
+Local verification: the full suite ran in 1,334 s with 2,008 passed, 36 VSC-only skips,
+and two obsolete plotting assertions failing. Both failures pass after the assertions were
+updated for the two-rate panels and retired pilot labels; the subsequent affected-code batch
+passed all 117 tests. No B200 acceptance is implied by these CPU checks.
+All 12 notebooks subsequently completed, with 40 saved PDFs, captions and final summaries;
+112 saved-output/plot/design tests passed afterwards. Visually inspected the actual Exp2/3
+design PDFs, LGD endpoint ties and PD covariate-missingness figure, plus populated two-rate
+curve layouts using test data outside the publication outputs. New source fingerprint:
+`cbe1c7ecde878906010a3f5bfcf93cc43f0c8e3f01d4b545cda9e587fdfe556d`.
+Training implementation is unchanged:
+`01a5f056044cc261b83b3973956d55211c64b4e81ee58d285712e852109007e4`.
+
+**Tried:** Full-suite validation after replacing selected-rate plots with the fixed design.
+**Result:** Two plotting-contract failures; training, resume and compatibility tests passed.
+**Why:** Tests still expected two panels and a pilot count instead of four panels and fixed recipes.
+**Instead:** Assert the new panel/legend/design behavior and rerun both failures and affected tests.
+
+
 ## 29-10-2026 — Exp2A scope amendment and notebook Git conflicts
 
 Andreas requests LR selection on all 14 PD / 7 LGD datasets. This supersedes the

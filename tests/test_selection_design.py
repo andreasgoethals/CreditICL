@@ -1,4 +1,4 @@
-"""Protect the distinction between fixed Exp2 comparisons and Exp3 selection."""
+"""Exp1 descriptive rankings must not configure fixed Exp2 or Exp3 comparisons."""
 from types import SimpleNamespace
 
 import pandas as pd
@@ -103,6 +103,8 @@ def test_cli_filters_historical_and_newer_unrecognised_protocols(tmp_path, monke
     assert "credit_fraction=0.5;" in text
     assert "No credit mixture beats the control" in text
     assert "must not re-rank" in text and "Exp2 uses all four" in text
+    assert "both predeclared learning rates" in text and "primary-rate baseline" in text
+    assert "pilot-selected" not in text
 
 
 def test_cli_refuses_no_current_ranking_even_with_receipts(monkeypatch, capsys):
@@ -118,12 +120,22 @@ def test_exp2_grid_does_not_depend_on_exp1_winner(track):
     from src.utils.run_experiment import unconfigured_tracks
     cfg = load(selection.ROOT / f"config/Exp2_{track.upper()}.yaml", allow_placeholders=True)
     runs = expand_with_seeds(cfg)
-    assert unconfigured_tracks(2, [track])  # LR pilot not frozen
-    assert unconfigured_tracks(2, [track], "pilots") == []
-    assert len(runs) == 24
+    assert unconfigured_tracks(2, [track]) == []
+    assert unconfigured_tracks(2, [track], "pilots")  # retired configuration cannot be submitted
+    assert unconfigured_tracks(3, [track]) == []
+    assert len(runs) == 48
     for architecture in ("tabicl", "tabpfn3"):
         group = [r for r in runs if r["architecture"] == architecture]
-        assert len(group) == 12
-        assert {(r["prior"]["credit_fraction"], r["seed"]) for r in group} == {
-            (fraction, seed) for fraction in (0., .25, .5, 1.) for seed in (0, 1, 2)}
+        assert len(group) == 24
+        assert {(r["prior"]["credit_fraction"], r["lr_index"], r["seed"]) for r in group} == {
+            (fraction, rate, seed) for fraction in (0., .25, .5, 1.) for rate in (0, 1) for seed in (0, 1, 2)}
         assert all(r["init"]["strategy"] == "full" and r["init"]["pretrained_path"] for r in group)
+
+
+def test_descriptive_exp1_winner_cannot_change_the_fixed_exp3_mixture_or_rates():
+    before = expand_with_seeds(load("config/Exp3_PD.yaml"))
+    ranking = selection.development_ranking(_development_cells(scores={0.: .5, .25: .9, .5: .6, 1.: .7}), "pd")
+    assert selection.exp3_candidate(ranking, "pd")["credit_fraction"] == .25
+    after = expand_with_seeds(load("config/Exp3_PD.yaml"))
+    assert after == before
+    assert all(r["prior"]["credit_fraction"] == .5 and r["lr_index"] == 0 for r in after)

@@ -72,12 +72,12 @@ Full rationale in
 |---|---|---|---|
 | **0** | **Does the revised pipeline run correctly?** | CPU + GPU Slurm jobs: portable tests, CUDA/save/resume checks, full-table benchmarks, 34 long-context probes and 16 retention-method round trips | 3 base training routes |
 | **1** | **Does the prior help at matched compute?** | four mixtures × three seeds, plus five component removals × three seeds; 12,500 steps | 27 |
-| **2** | **Does continued pretraining transfer?** | two released backbones × four mixtures × one pilot-selected rate × three seeds, 2,500 updates | 24 + 8 pilots |
-| **3** | **Which constraints preserve generality?** | fixed 50% mixture; no decay, L2-SP, DiagScale, Q/V LoRA; three seeds | 24 new + 6 reused; 18 pilots |
+| **2** | **Does continued pretraining transfer?** | two released backbones × four mixtures × two fixed rates × three seeds, 1,000 updates | 48 |
+| **3** | **Which constraints preserve generality?** | fixed 50% mixture; no decay, L2-SP, DiagScale, Q/V LoRA; three seeds | 24 new + 6 reused |
 
 Counts include seeds and both prediction tasks: **Exp1 = (4 mixtures + 5 component removals) × 3 seeds × 2 tasks = 54 runs**;
-**Exp2 = 2 backbones × 4 mixtures × 1 selected rate × 3 seeds × 2 tasks = 48 main runs, plus 16 all-credit LR pilots (Experiment 2A)**.
-**Exp3 = 48 new main runs + 12 reused Exp2 baselines + 36 development-only pilots**.
+**Exp2 = 2 backbones × 4 mixtures × 2 fixed rates × 3 paired seeds × 2 tasks = 96 runs**.
+**Exp3 = 48 new runs + 12 reused Exp2 baselines**, at the fixed 50% mixture and predeclared primary CPT rate. Both experiments stop at 1,000 updates and retain 125/250/500/1,000 checkpoints. This is a budget-limited adaptation study, not a claim of convergence.
 The component removals are compared with the main 50% mixture; they are not additional mixture levels.
 The 25% Exp1 extension was approved on 26-10-2026 after the initial 48-run campaign. It appends
 indices 9–11 per task, preserving existing run names and benchmark tags. Completed runs stay valid;
@@ -122,10 +122,10 @@ knowing:
   sides differ only by design, not by draw. `--prior-source generate` builds live instead.
 - **Notebooks** — twelve, in four numbered chapters ([reading order](notebooks/README.md)):
   benchmark/prior diagnostics; Experiment 1 training and matched-budget effects;
-  Experiment 2 adaptation within each backbone; and Experiment 3 retention methods with development-only pilot selection.
+  Experiment 2 adaptation within each backbone; and Experiment 3 retention methods with fixed settings.
   Logic lives in `src/visualize/`. Every figure is a saved A4 vector PDF with a descriptive caption.
   Final panels require complete current-protocol benchmark cells; monitoring and local file absence
-  are never presented as final efficacy or live queue state. Exp3 settings are selected on development;
+  are never presented as final efficacy or live queue state. Exp3 settings and both Exp2 rates are prescribed before benchmarking;
   designated-holdout historical exposure is disclosed. Official notebook PDFs are committed.
 
 ## Repository layout
@@ -238,31 +238,28 @@ python -m src.utils.preflight --require-exp0
 python -m src.utils.run_experiment 1 --submit
 ```
 
-Use `update_env.sh` or `fetch_ood` only when preparing a missing environment/cache or resolving
-a prerequisite failure, before CPU validation. This implementation adds no packages. The current
+New VSC dependencies must follow the PROJECT SIF migration plan in [VSC](docs/VSC.md).
+The existing DATA venv is a documented legacy deployment: `update_env.sh --legacy-maintenance`
+is only for an explicitly authorized repair while consumers are idle. Use `fetch_ood` only for a missing cache. This implementation adds no packages. The current
 VSC dependency audit already passed; do not routinely upgrade that environment. The guarded
 pull and Exp0-only cleanup sequence is in [VSC](docs/VSC.md).
 
 After Exp1's extension and benchmarks, continue without changing the validated code:
 
 ```bash
-python -m src.utils.run_experiment 2 --variant pilots --single-cluster --submit
-# Repeat after pilot training to submit its all-credit benchmarks. Then:
-python -m src.experiments.selection --stage learning-rate
 python -m src.utils.run_experiment 2 --single-cluster --submit
-# Repeat after training to submit missing benchmarks; then the retention pilots:
-python -m src.utils.run_experiment 3 --variant pilots --single-cluster --submit
-# Repeat the pilot planner after training; after all pilot development benchmarks:
-python -m src.experiments.selection --stage adapters
+# Repeat after training to submit only missing benchmarks.
 python -m src.utils.run_experiment 3 --single-cluster --submit
-# Repeat the main planner after training to submit missing benchmarks.
+# Repeat after training to submit only missing benchmarks.
 ```
 
-Exp2A selects on complete five-fold results for all credit datasets; later credit results
-are tuning-benchmark outcomes. OOD never selects a setting. Exp2 uses one frozen rate per backbone/task
-for all four mixtures. Exp3 reuses that rate and freezes adapter settings in hashed receipts;
-no YAML edit or retraining of the 12 reused baselines is needed. Its five-checkpoint figures report credit and native OOD
-trajectories separately. See [the registered design](docs/EXPERIMENTAL_DESIGN.md).
+Both Exp2 rates are reported separately: TabICLv2 `2e-5`/`1e-5`, TabPFN-3 `1e-5`/`1e-6`.
+There is no learning-rate pilot or best-on-test selection. Exp3 reuses the 50% runs at the
+predeclared primary rates (`2e-5`/`1e-5`), with fixed adaptation settings. All four saved
+checkpoints are benchmarked on credit and native OOD data. Historical exposure to the credit
+benchmark remains disclosed. See [the registered design](docs/EXPERIMENTAL_DESIGN.md).
+These commands are for the reviewed, validated deployment; no new campaign is launched during
+access/storage migration planning.
 
 The Experiment 1 planner includes its main grid and component ablations. Repeat each experiment's
 planner after training to submit only missing benchmarks, or after an interruption to resume incomplete runs.

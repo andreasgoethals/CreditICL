@@ -152,7 +152,9 @@ def main(argv=None) -> int:
     print("The candidate is the best nonzero mixture; exact score ties prefer the smaller credit share. "
           "Seed spread describes stability, not a significance test. OOD retention is reported "
           "descriptively and must not re-rank this development-only choice. Exp2 uses all four "
-          "mixtures at one development-pilot-selected rate per backbone/task. Exp3 fixes 50% and reuses that rate, selecting adapter settings through src.experiments.selection on separate development-only pilots. No config was changed and no job was submitted.")
+          "mixtures at both predeclared learning rates per backbone/task. Exp3 fixes 50%, "
+          "the primary-rate baseline and all method settings before observing scores. "
+          "This ranking changes neither experiment. No config was changed and no job was submitted.")
     return 0
 
 

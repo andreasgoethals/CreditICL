@@ -12,6 +12,7 @@ def paths(monkeypatch):
     """Reload the module so it re-reads the environment each time."""
     def _load(**env):
         for var in ("VSC_DATA", "VSC_SCRATCH", "VSC_PROJECT_LUSTRE1",
+                    "CREDITICL_PROJECT_ROOT", "VSC_PROJECT_ROOT",
                     "CREDITICL_STAGING_ROOT", "CREDITPFN_STAGING_ROOT", "TABPFN_STAGING_ROOT"):
             monkeypatch.delenv(var, raising=False)
         for k, v in env.items():
@@ -70,6 +71,24 @@ def test_falls_back_to_the_lab_shared_variable(paths):
 def test_our_override_beats_the_lab_one(paths):
     p = paths(VSC_DATA="/data/x", CREDITICL_STAGING_ROOT="/mine", CREDITPFN_STAGING_ROOT="/theirs")
     assert p.staging_root().as_posix() == "/mine"
+
+
+@pytest.mark.parametrize("name", ["CREDITICL_PROJECT_ROOT", "VSC_PROJECT_ROOT"])
+def test_project_root_alias_selects_large_assets_without_moving_checkout(paths, name):
+    p = paths(VSC_DATA="/data/user", **{name: "/allocated/project"})
+    assert p.staging_root().as_posix() == "/allocated/project"
+    assert p.datasets_dir().as_posix() == "/allocated/project/CreditICL/data"
+    assert p.repo_dir().as_posix() == "/data/user/CreditICL"
+    assert p.big_outputs_dir().as_posix() == "/allocated/project/CreditICL/output CreditICL"
+
+
+def test_project_specific_root_precedes_shared_and_legacy_roots(paths):
+    p = paths(VSC_DATA="/data/user", CREDITICL_PROJECT_ROOT="/allocated/ours",
+              VSC_PROJECT_ROOT="/allocated/shared", CREDITICL_STAGING_ROOT="/legacy")
+    assert p.staging_root().as_posix() == "/allocated/ours"
+    p = paths(VSC_DATA="/data/user", VSC_PROJECT_ROOT="/allocated/shared",
+              CREDITICL_STAGING_ROOT="/legacy")
+    assert p.staging_root().as_posix() == "/allocated/shared"
 
 
 def test_resolve_writable_returns_a_usable_dir(paths, tmp_path):

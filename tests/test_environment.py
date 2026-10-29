@@ -148,10 +148,25 @@ def test_updater_cannot_install_into_a_sibling_project(tmp_path, monkeypatch):
     monkeypatch.setenv("VSC_DATA", tmp_path.as_posix())
     monkeypatch.setenv("CREDITICL_TEST_VENV", other.as_posix())
     monkeypatch.delenv("SLURM_JOB_ID", raising=False)
-    result = subprocess.run([bash, str(ROOT / "scripts/slurm/update_env.sh")],
+    result = subprocess.run([bash, str(ROOT / "scripts/slurm/update_env.sh"), "--legacy-maintenance"],
                             capture_output=True, text=True, timeout=20)
     assert result.returncode == 1 and "Refusing to install outside" in result.stderr
     assert "INSTALL MUST NOT BE REACHED" not in result.stdout
+
+
+@pytest.mark.parametrize("script", ["setup_venv.sh", "update_env.sh"])
+def test_default_install_commands_require_a_deliberate_legacy_exception(script, tmp_path, monkeypatch):
+    bash = shutil.which("bash")
+    if not bash:
+        pytest.skip("bash unavailable")
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
+    monkeypatch.setenv("VSC_DATA", tmp_path.as_posix())
+    result = subprocess.run([bash, str(ROOT / "scripts/slurm" / script)],
+                            capture_output=True, text=True, timeout=20)
+    assert result.returncode == 2
+    assert "immutable SIF on PROJECT" in result.stderr
+    assert "--legacy-maintenance" in result.stderr
+    assert not list(tmp_path.iterdir()), "refusing an install must not create a project or runtime"
 
 
 @pytest.mark.parametrize("job", [True, False])

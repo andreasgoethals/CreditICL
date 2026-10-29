@@ -1,10 +1,9 @@
-# Experiment 2: two models x four mixtures x one pilot-selected rate x three seeds = 24 runs per task.
+# Experiment 2: two models x four mixtures x two fixed rates x three seeds = 48 runs per task.
 # TabICL stage-3 CPT; TabPFN-v3 native differentiable fine-tuning applied to synthetic tables.
 # See docs/EXPERIMENTAL_DESIGN.md for provenance and comparison limits.
 
 experiment: exp2_lgd
 design: cpt
-lr_index: 0 # identity of the single selected-rate main campaign
 task: lgd
 
 # ----------------------------------------------------------------------------
@@ -17,6 +16,7 @@ architecture: tabicl # overridden by every arm
 # ----------------------------------------------------------------------------
 sweep:
   arm: [tabicl, tabpfn3] # the two released foundation models
+  lr_index: [0, 1] # both predeclared rates are evaluated, never selected using benchmark scores
   prior.credit_fraction: [0.0, 0.25, 0.5, 1.0] # share of each batch from our prior; 0.0 = continued pretraining on the control prior
   seeds: [0, 1, 2] # repeats
 
@@ -131,8 +131,8 @@ init:
 # TRAINING — continued pretraining (docs/EXPERIMENTAL_DESIGN.md, Experiment 2)
 # ----------------------------------------------------------------------------
 train:
-  keep_steps: [125, 250, 500, 1000, 2500]
-  max_steps: 2500 # approved Budget A; shorter than upstream stage 3, not a claimed optimum
+  keep_steps: [125, 250, 500, 1000]
+  max_steps: 1000 # bounded comparison budget; not a claim of convergence or a literature optimum
   batch_size: 64 # datasets per UPDATE, upstream's; the tabpfn3 arms use 16, as TabPFN-Wide
   micro_batch_size: 4 # TabICL arm overrides to one; TabPFN prepares one task at a time
   max_workers: null # allocation default; long-context TabICL arm caps resident workers
@@ -159,7 +159,7 @@ train:
   num_workers: 12 # CPU workers generating (and, for TabPFN, preprocessing) the tasks; the SLURM script sets it from the allocation
   log_every: 100 # steps between log lines
   save_temp_every: 250 # rolling checkpoints; caps what a kill loses
-  save_perm_every: 2500 # kept-forever checkpoints, each scored by the benchmark: the learning curve
+  save_perm_every: 1000 # kept-forever checkpoints, each scored by the benchmark: the learning curve
   max_temp_checkpoints: 2 # rolling checkpoints retained
 
 # ----------------------------------------------------------------------------
@@ -190,7 +190,7 @@ logging:
 eval:
   data_dir: data/raw/lgd # where the real datasets live
   # hackerearth shares 5,696 loans with lendingclub, base_modelisation defaults with base_model
-  # Legacy partitions retained for compatibility; Exp2A selects LR on both partitions.
-  dev_datasets: [0007.lgd_lendingclub, 0004.base_model, 0005.base_modelisation, 0001.heloc] # used to choose the prior
-  holdout_datasets: [0002.loss2, 0003.axa, 0006.lgd_freddie] # included in Exp2A LR selection; no independent holdout claim
-  select_on: dev # legacy mixture-selection setting; Exp2A's explicit all_credit scope controls LR selection
+  # Legacy partitions retained for compatibility; neither selects a learning rate.
+  dev_datasets: [0007.lgd_lendingclub, 0004.base_model, 0005.base_modelisation, 0001.heloc] # monitoring subset; prior design has historical benchmark exposure
+  holdout_datasets: [0002.loss2, 0003.axa, 0006.lgd_freddie] # previously inspected; no pristine holdout claim
+  select_on: dev # legacy reporting field; the fixed CPT grid does not select on scores

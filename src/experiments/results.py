@@ -1,6 +1,6 @@
 """Complete benchmark cells for continuation curves and reused Exp3 baselines.
 
-These are analysis readers, not launch gates. Launch/selection uses the stronger
+These are analysis readers, not launch gates. Launch uses the stronger
 checkpoint/input/package receipts in benchmark_status. Downloaded CSVs can be
 analysed without copying hundreds of GB of checkpoints to the laptop.
 """
@@ -18,20 +18,30 @@ from src.utils.config import expand_with_seeds, load, run_name
 
 def released_score(track, backbone, domain, metric):
     """Shared step-zero reference, with the same datasets as the CPT curves."""
-    from src.eval.comparisons import identities
-    from src.eval.results import load_results
-    from src.eval.analysis import load_ood_results
-
-    frame = load_results(track, exp="exp2", protocol=PROTOCOL) if domain == "credit" else load_ood_results(track, "exp2")
-    if frame is None or frame.empty or metric not in frame:
-        return None
-    part = frame[identities(frame).eq("tabiclv2" if backbone == "tabicl" else "tabpfn3")]
+    if track not in {"pd", "lgd"} or backbone not in {"tabicl", "tabpfn3"}:
+        raise ValueError("Unknown benchmark track or backbone")
+    model = "tabiclv2" if backbone == "tabicl" else "tabpfn3"
     if domain == "credit":
         cfg = load(paths.config_path(f"Exp2_{track.upper()}"), allow_placeholders=True)
-        part = part[part.dataset.isin(cfg["eval"]["dev_datasets"] + cfg["eval"]["holdout_datasets"])]
-    if part.empty or not np.isfinite(part[metric]).all():
+        datasets = cfg["eval"]["dev_datasets"] + cfg["eval"]["holdout_datasets"]
+        path = paths.benchmark_dir(paths.REFERENCE, track) / f"results_reference_{track}_{model}.csv"
+    elif domain == "ood":
+        from src.eval.ood import list_ood_datasets
+        datasets = [d.name for d in list_ood_datasets("classification" if track == "pd" else "regression")]
+        path = paths.benchmark_dir(paths.REFERENCE, "ood") / f"ood_results_reference_{track}_{model}.csv"
+    else:
+        raise ValueError("Unknown benchmark domain")
+    if not datasets:
         return None
-    return float(part.groupby("dataset")[metric].mean().mean())
+    # A complete shared reference is useful before the CPT campaign finishes.
+    # Validate its own cells instead of depending on every final trained arm.
+    part = read_cells(path, datasets, identity=model)
+    if part is None or part.empty or metric not in part:
+        return None
+    scores = pd.to_numeric(part[metric], errors="coerce")
+    if not np.isfinite(scores).all():
+        return None
+    return float(scores.groupby(part.dataset).mean().mean())
 
 
 def read_cells(path, datasets, *, identity, step=None):
@@ -43,12 +53,29 @@ def read_cells(path, datasets, *, identity, step=None):
         expected = {(d, 0, fold) for d in datasets for fold in range(N_FOLDS)}
         from src.eval.comparisons import identities
         valid = (len(keys) == len(expected) and set(keys) == expected
-                 and df.status.eq("ok").all() and df.protocol.eq(PROTOCOL).all()
+                 and df["status"].eq("ok").all() and df["protocol"].eq(PROTOCOL).all()
                  and identities(df).eq(identity).all())
         if step is not None:
             valid &= "info_checkpoint_step" in df and df.info_checkpoint_step.eq(step).all()
         if not valid:
             raise ValueError("wrong identity/step/protocol or incomplete five-fold coverage")
+        # CSV-only analysis cannot verify remote input receipts, but must never
+        # relabel explicitly capped/subsampled evidence as a full-table result.
+        for column in ("context_cap", "info_context_cap", "info_row_cap"):
+            if column in df and df[column].notna().any():
+                raise ValueError(f"full-table benchmark has a recorded {column}")
+        if "subsampled" in df and not df["subsampled"].astype(str).str.lower().isin(("false", "0")).all():
+            raise ValueError("full-table benchmark records subsampling")
+        for columns in (("n_train", "n_train_used"),
+                        ("prep_features_in", "prep_features_used", "n_features_used")):
+            if any(c in df for c in columns):
+                counts = df[list(columns)].apply(pd.to_numeric, errors="coerce")
+                if (not np.isfinite(counts.to_numpy()).all() or not counts.gt(0).all().all()
+                        or not counts.eq(counts.round()).all().all()
+                        or not counts.eq(counts.iloc[:, 0], axis=0).all().all()):
+                    raise ValueError("full-table benchmark did not retain all training rows/features")
+        if "pred_nonfinite_frac" in df and not pd.to_numeric(df["pred_nonfinite_frac"], errors="coerce").eq(0).all():
+            raise ValueError("benchmark discarded non-finite predictions")
         return df
     except (ValueError, KeyError, OSError) as exc:
         warnings.warn(f"Withheld {path.name}: {exc}", stacklevel=2)
@@ -59,19 +86,12 @@ def benchmark_frames(track: str, experiment: int, *, domain="credit", final_only
     """Every available complete checkpoint; an absent seed is never averaged away."""
     cfg = load(paths.config_path(f"Exp{experiment}_{track.upper()}"), allow_placeholders=True)
     runs = expand_with_seeds(cfg)
-    if any(r.get("design_unresolved") for r in runs):
-        return pd.DataFrame()
     selections = [(experiment, r, r["_grid"]["array_index"], r.get("method", "full_wd")) for r in runs]
     if experiment == 3:
-        from src.experiments.selection import load_selection
-        saved = load_selection("retention", for_analysis=True)
         baselines = expand_with_seeds(load(paths.config_path(f"Exp2_{track.upper()}"), allow_placeholders=True))
-        for item in saved["baselines"]:
-            if item["track"] == track:
-                run = baselines[item["array_index"]]
-                if run_name(run) != item["run_name"]:
-                    raise ValueError("Frozen baseline identity changed")
-                selections.append((2, run, item["array_index"], "full_wd"))
+        for run in baselines:
+            if run["prior"]["credit_fraction"] == .5 and run["lr_index"] == 0:
+                selections.append((2, run, run["_grid"]["array_index"], "full_wd"))
     if domain == "credit":
         datasets = cfg["eval"]["dev_datasets"] + cfg["eval"]["holdout_datasets"]
     elif domain == "ood":
@@ -93,7 +113,7 @@ def benchmark_frames(track: str, experiment: int, *, domain="credit", final_only
             if frame is None:
                 continue
             frames.append(frame.assign(architecture=run["architecture"], treatment=method,
-                evaluation_role="tuning_benchmark" if domain == "credit" else "ood_not_used_for_selection",
+                evaluation_role="fixed_design_credit" if domain == "credit" else "ood_not_used_for_selection",
                 learning_rate=run["train"]["lr"], lr_index=run.get("lr_index", 0),
                 mixture=run["prior"]["credit_fraction"], training_seed=run["seed"], checkpoint_step=step))
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()

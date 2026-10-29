@@ -32,8 +32,8 @@ credit/OOD frontier is not populated from short-context training monitors.
 
 Experiment 2 retains four mixtures and both peak rates per backbone, with separate plots
 for each backbone/rate and full-table checkpoint trajectories. Experiment 3 fixes the 50%
-mixture, selects full-model rates and adapter settings using development-only receipts, and
-reuses the matched Exp2 baseline. Its candidate, paired-retention and checkpoint panels stay
+mixture and predeclared full-model/adapter settings, and reuses the primary-rate Exp2 baseline.
+Both experiments retain 125/250/500/1,000 updates; paired-retention and checkpoint panels stay
 empty until the required evidence exists. The designated holdout has historical project
 exposure; it is **not untouched confirmation**. No plot or notebook chooses a setting.
 

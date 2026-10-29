@@ -63,6 +63,8 @@ def isolated_output(tmp_path, monkeypatch) -> Path:
 
     from src.utils import paths
 
+    for name in paths.PROJECT_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("VSC_DATA", str(tmp_path / "vsc_data"))
     monkeypatch.setenv(paths.STAGING_ENV_VARS[0], str(tmp_path / "staging"))
     importlib.reload(paths)

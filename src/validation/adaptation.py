@@ -22,8 +22,8 @@ def diagnostic_config(track: str, backbone: str, method: str) -> dict:
     cfg = copy.deepcopy(next(r for r in expand_with_seeds(load(f"config/Exp2_{track.upper()}.yaml", allow_placeholders=True))
                              if r["arm"] == backbone and r["seed"] == 0
                              and r["lr_index"] == 0 and r["prior"]["credit_fraction"] == .5))
-    cfg.update(design="retention_pilot", method=method, candidate=1)
-    apply_design(cfg, {"choices": {f"{track}/{backbone}": {"full_lr": cfg["train"]["lr"]}}})
+    cfg.update(design="retention", method=method)
+    apply_design(cfg)
     cfg["experiment"] = "exp0_adaptation"
     cfg["_run_name"] = f"exp0_adaptation_{track}_{backbone}_{method}"
     cfg["prior"].update(n_rows_range=[96, 96], n_features_range=[3, 5], max_features=8,

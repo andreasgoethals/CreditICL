@@ -27,8 +27,8 @@ from src.visualize import campaign, style
 def _role(frame, track, exp, role="holdout"):
     cfg = load(paths.config_path(f"{exp.capitalize()}_{track.upper()}"), allow_placeholders=True)
     if exp in {"exp2", "exp3"} and role != "development":
-        # Experiment 2A tunes on the entire credit suite. No remaining credit
-        # subset can be presented as independent of that base-LR choice.
+        # Fixed-design CPT reports the complete credit suite. Historical project
+        # exposure is disclosed rather than claiming untouched confirmation.
         datasets = cfg["eval"]["dev_datasets"] + cfg["eval"]["holdout_datasets"]
         return frame[frame.dataset.isin(datasets)].copy()
     return frame[frame.dataset.isin(cfg["eval"][f"{'dev' if role == 'development' else 'holdout'}_datasets"])].copy()
@@ -370,11 +370,11 @@ def results_summary(track, exp="exp1"):
     lines = ["A · DEVELOPMENT AND COMPARISON CONTRACT",
              ("Both backbones and all four mixtures (0%, 25%, 50%, 100%) are fixed; no Experiment 1 winner is selected for Experiment 2."
               if exp == "exp2" else "Fixed training recipes; any subsequent mixture choice uses complete development results only."),
-             ("Registered protocol: select the base LR using all credit datasets in Experiment 2A; these are tuning-benchmark outcomes."
+             ("Both predetermined learning rates are reported; no pilot or best-on-test selection. Historical benchmark exposure remains disclosed."
               if exp in {"exp2", "exp3"} else
               "The designated holdout has historical project exposure; it is not untouched confirmation."),
              f"Development final table available: {dev is not None}.",
-             "\nB · " + ("CREDIT TUNING-BENCHMARK EFFECTS" if exp in {"exp2", "exp3"}
+             "\nB · " + ("CREDIT BENCHMARK EFFECTS" if exp in {"exp2", "exp3"}
                             else "DESIGNATED-HOLDOUT PACKAGE EFFECTS")]
     credit = final_credit(track, exp)
     for metric in metrics:

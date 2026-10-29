@@ -65,6 +65,13 @@ REVIEWED_TRANSITIONS["src/eval/selection.py"] = (
 )
 
 
+# Fixed-rate design changes only the explanatory CLI text, never Exp1 scoring.
+_before, _after = REVIEWED_TRANSITIONS["src/eval/selection.py"]
+REVIEWED_TRANSITIONS["src/eval/selection.py"] = (
+    _before | _after, _after | frozenset(['192beb936e80b767f4750169e3561d7c29db15414ecb1c127d9d7edc820c6215', '5ed96d55b76068bec09eba48dca800e11f6cfde84f652e3f4a8801a8b621e83b']),
+)
+
+
 # Workspace description only; the prediction implementation is identical.
 REVIEWED_TRANSITIONS["src/eval/tabicl_memory.py"] = (
     frozenset(['2dd1ac97ebbc849424cbc1ce6f742eba6918b6bfef557c4dda1098bc00867d35', '9ef0f00013debd76bb53f8df221ed11a6425e8b034a02e576b3bb3c5cced614e']), frozenset(['094f50b18d0ecb949ab45e2f4161fb33ea1355357956b38a137275b68b594cbb', 'b43848335996c286d0357c8397f7433f52255674d587586c7df8f538eb2d4aca']),

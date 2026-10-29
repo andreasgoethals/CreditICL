@@ -7,7 +7,7 @@ submit, so prose in it makes the settings unfindable. If you catch yourself writ
 a knob, it belongs here.
 
 Neighbours: [EXPERIMENTAL_DESIGN.md](EXPERIMENTAL_DESIGN.md) (what the experiments ask) ·
-[PRIORS.md](PRIORS.md) (how the prior is built) · [VSC.md](VSC.md) (the cluster). Original source-audit pin `de324efcca55be392feb0c01830b3b6ce364587f`; the 24-10-2026 Experiment 2 audit uses TFM pin `702d9ab0b66f6639ba8d443ff9c4a91231964465`.
+[PRIORS.md](PRIORS.md) (how the prior is built) · [VSC.md](VSC.md) (the cluster). Original source-audit pin `de324efcca55be392feb0c01830b3b6ce364587f`; the 24-10-2026 Experiment 2 audit uses TFM pin `702d9ab0b66f6639ba8d443ff9c4a91231964465`. The 29-10-2026 fixed-rate design uses TFM pin `26156f36eb7676e8d9050547817346db548b0e85`.
 
 ## Contents
 
@@ -31,10 +31,11 @@ Any setting may be a single value or a list; a list means one run per value, and
 `[mean, sd]` pairs of a normal distribution. Inspect the expansion with
 `python scripts/pretrain.py --config config/Exp1_PD.yaml --list`.
 
-**Arms that are not a cross product** (Exp0, Exp2) are named presets: `sweep.arm` lists them and the
-`arms:` block gives each one's dotted overrides (`arms.tabpfn3_adamw_1e-5: {architecture: tabpfn3,
-train.lr: 1.0e-5, ...}`), applied after the sweep (`apply_arm_preset`). An override must name a key the
-config body already has, so a typo raises instead of doing nothing.
+**Backbone presets** use `sweep.arm` and an `arms:` block of dotted overrides, applied after the
+sweep (`apply_arm_preset`). An override must name a key the config body already has, so a typo
+raises instead of doing nothing. For Exp2, `sweep.arm: [tabicl, tabpfn3]` crosses
+`lr_index: [0, 1]`, mixtures and seeds. `src/experiments/design.py:apply_design` then maps the index
+to the corresponding backbone's fixed numerical rate. Exp3 fixes `lr_index: 0` and crosses methods.
 
 **Exp1 sweeps `credit_fraction {0, .25, .5, 1}` × 3 seeds = 12 main arms**. The 25% extension
 was approved on 26-10-2026 after the initial nine-main-arm campaign; its three seeds are appended
@@ -136,20 +137,32 @@ on synthetic tasks. Its private original pretraining recipe is not claimed repro
 | Experiment | Updates / run | Main runs total | Permanent checkpoints / run |
 |---|---:|---:|---|
 | Exp1 | 12,500 | 54 | Existing cadence preserved |
-| Exp2 LR pilots | 500 (2.5k schedule prefix) | 16 | 500 |
-| Exp2 main | 2,500 | 48 | 125, 250, 500, 1k, 2.5k |
-| Exp3 pilots | 500 (2.5k schedule prefix) | 36 | 500 |
-| Exp3 main | 2,500 | 48 new + 12 reused Exp2 | Same five milestones as Exp2 |
+| Exp2 main | 1,000 | 96 | 125, 250, 500, 1k |
+| Exp3 main | 1,000 | 48 new + 12 reused Exp2 | Same four milestones as Exp2 |
 
-2,500 is the approved cost-constrained budget; upstream stage 3 used 10,000, not evidence that our smaller budget is optimal. Learning
-curves assess under/over-adaptation. At 64/16 tables per update, full runs consume 160k/40k
-tasks for TabICL/TabPFN respectively. Benchmark jobs are separate and can dominate total cost.
+The 29-10 fixed-rate revision cancels the learning-rate and adapter pilots. The 1,000-update
+horizon is a compute-budget choice preserving four mixtures, two rates and three paired seeds;
+it is not an evidence-based optimum or a convergence guarantee. Upstream stage 3 used 10,000
+updates, TabPFN-Wide used 10,000 with much shorter tables, and Real-TabPFN used 20,000 with
+one real table/update. Those budgets cannot be compared by update count alone. Full runs here
+consume 64k/16k tasks for TabICL/TabPFN respectively. The full cosine schedule ends at 1,000,
+rather than stopping an older longer schedule early. Report the fixed endpoint and all retained
+trajectories, never the best checkpoint on the assessment data.
+
+There are 384 permanent Exp2 snapshots and 192 new Exp3 snapshots. At the observed/provisional
+training rates, Exp2 extrapolates to 37.3–39.5M credits, excluding benchmark/validation/Exp3.
+Full evaluation of every saved checkpoint on all eligible rows/features and five folds creates
+68,160 Exp2 dataset-fold-model evaluations and 34,080 for the new Exp3 arms before reference
+models and threshold-calibration refits. Benchmarking must be budgeted separately; training
+cost alone does not establish affordability. See the source evidence and cost assumptions in
+[EXPERIMENTAL_DESIGN.md](EXPERIMENTAL_DESIGN.md) §3.2.
 
 ## 6. `optimizer`
 
 **Muon for full-parameter TabICL updates; AdamW for TabPFN-3 and the new adapters.**
 The optimizer is held fixed across mixture fractions within each backbone. Exp3's adapter
-methods have their own development-selected AdamW rates; this is part of the method comparison.
+methods have their own predeclared AdamW rates; this is part of the fixed-recipe comparison,
+not an optimum selected on this benchmark.
 
 - **Muon** is what TabICLv2 uses, built exactly as upstream builds it (`src/train/optim.py`: one group,
   every parameter, Moonlight scaling; `train.lr` is the one rate — stage 1 `8e-4`, stage 3 `2e-5`). Its
@@ -229,45 +242,66 @@ incomparable across filter settings.
 
 ## 8. Continued pretraining and retention
 
-The authoritative registered design and source limitations are in
+The registered questions, source evidence and limits are in
 [EXPERIMENTAL_DESIGN.md](EXPERIMENTAL_DESIGN.md) §3. Resolved values are saved per run.
-`src/experiments/design.py` maps stable candidate indices to numeric settings; changing a numeric
-setting invalidates validation/selection evidence rather than silently reusing a run.
+`src/experiments/design.py` owns `RATES`, `MAIN_STEPS`, `MILESTONES`, `FIXED_RETENTION` and
+`DESIGN_REVISION`. `apply_design` resolves a predeclared recipe without reading scores or
+selection receipts. Retired pilot designs, candidate fields and supplied selection overrides
+are rejected. This module is not used by Exp1, whose existing resolved recipes remain unchanged.
 
-Exp2: 24 main runs per track (2 backbones × 4 mixtures × 1 selected rate × 3 seeds), plus 8 all-credit LR pilots (Exp2A). The existing dev/holdout names remain for Exp1 compatibility;
-both partitions select Exp2A rates, so neither is an independent Exp2/3 credit test set.
-TabICLv2 uses Muon, peak 2e-5/1e-5, decay .01, warm-up .01, 64 tables/update,
-400–60,000 log-uniform rows and 79–81% context. TabPFN-3 uses AdamW, peak 1e-5/1e-6,
-decay .01, warm-up .1, 16 tables/update, 1,024 rows and 30–90% context. Both clip the global
-unscaled gradient norm to 1. TabICL remains FP32 under the validated TF32/efficient-attention
-policy; TabPFN uses FP32 parameters with FP16 AMP and finite-gradient replay. These are
-backbone-specific recipes, not matched cross-backbone compute.
+**Exp2 has 48 runs per track:** 2 backbones × 4 mixtures × 2 rates × 3 seeds, or 96 overall.
+Both rates are reported separately. Neither credit nor OOD results select a rate, mixture or
+checkpoint. Legacy development/holdout names remain for Exp1 compatibility and reporting;
+past benchmark exposure is disclosed, so these are not newly untouched datasets.
 
-`train.keep_steps: [125,250,500,1000,2500]` adds permanent milestones
-independently of rolling saves. All five receive full-table credit/native-OOD five-fold evaluation;
-final-step slots remain first. `max_temp_checkpoints: 2` applies only to nonpermanent saves.
-The primary endpoint is 2,500; intermediate scores are trajectories, not selected winners.
+| Backbone | `lr_index=0` | `lr_index=1` | Optimizer | Decay | Warm-up |
+|---|---:|---:|---|---:|---:|
+| TabICLv2 | 2e-5 | 1e-5 | Native all-parameter Muon | .01 | .01 = 10 updates |
+| TabPFN-3 | 1e-5 | 1e-6 | AdamW | .01 | .1 = 100 updates |
 
-Exp3 replaces the old 200k scratch grid. `Exp3_*_pilots.yaml` has 18 pilots per task,
-seed 991, max_steps 500 and schedule_total_steps 2500, development benchmarks only.
-`Exp3_*.yaml` has 24 main runs per task, max_steps 2500, three seeds, fixed 50% mixture.
-Full-CPT-with-decay baselines reuse 12 selected Exp2 runs. Candidate settings:
+TabICLv2 keeps 64 tables/update, 400–60,000 log-uniform rows and 79–81% context.
+TabPFN keeps 16 tables/update, 1,024 rows and 30–90% context. Both clip the global unscaled
+gradient norm to 1 and use one warm-up/cosine cycle with floor 1e-7. TabICL remains FP32 under
+the validated TF32/efficient-attention policy; TabPFN uses FP32 parameters with FP16 AMP and
+finite-gradient replay. These are backbone-specific recipes, not matched cross-backbone compute.
 
-| Method | Optimizer and peak LR | Decay / anchor |
+The TabICL rates are anchored by its native stage-3 `2e-5` and the `1e-5` single-table result
+in [Ning et al., Appendix B](../tfm-library/papers/text/2026/10_Ning_et_al._Test_Time_Compute_for_Tabular_Foundation_Models_Mechanisms_Gains_and_Limits.txt).
+The TabPFN rates bracket the public fine-tuner/TabPFN-Wide `1e-5` and the same paper's TabPFN-3
+`1e-6` result. Neither source proves an optimal multi-table credit-CPT recipe. Native TabPFN-3
+pretraining settings remain undisclosed; the 0% control is generic TabICL-prior exposure.
+
+`train.keep_steps: [125, 250, 500, 1000]` adds permanent milestones independently of rolling saves.
+All four receive full-table credit/native-OOD five-fold evaluation; final-step slots remain first.
+`max_temp_checkpoints: 2` applies only to nonpermanent saves. `max_steps`,
+`schedule_total_steps` and the primary endpoint are all 1,000 for the production recipe.
+Intermediate scores are trajectories, not selected winners.
+
+**Exp3 has 24 new runs per track:** 2 backbones × 4 methods × 3 seeds, or 48 overall.
+Its mixture is fixed at 50% and its full-model reference rate is always `lr_index=0`.
+Twelve matching full-CPT-with-decay Exp2 runs are reused; the better-performing rate is never
+chosen retrospectively. There are no `Exp3_*_pilots.yaml` jobs in the current design.
+
+| Method | Optimizer and fixed peak LR | Decay / anchor |
 |---|---|---|
-| no_decay | Exp2-selected full-model optimizer/LR | decay 0 |
-| l2sp | same full-model optimizer/LR | decay 0; alpha .0003/.003/.03 |
-| diagscale | AdamW, LR .001/.01/.03 | .01 on query-scale deltas only |
-| lora | AdamW, LR 1e-5/1e-4/1e-3 | .01 on rank-16 Q/V factors only; alpha 16 |
+| `no_decay` | Native Muon 2e-5 for TabICL; AdamW 1e-5 for TabPFN | Decay 0 |
+| `l2sp` | Same full-model optimizer/rate | Decay 0; alpha .003 |
+| `diagscale` | AdamW .03 | .01 on query-scale deltas only |
+| `lora` | AdamW 1e-4 | .01 on rank-16 Q/V factors only; alpha 16 |
 
-Adapter warm-up is 10%, clipping 1, dropout 0. Native weights are frozen for both adapters;
-initial predictions are unchanged. L2-SP is supported by both trainers and always uses the
-released checkpoint as its fixed anchor, including after resume. LoRA exports merged native
-inference weights plus separate resumable factors. DiagScale injection precedes cache creation.
+Adapter warm-up is 10% (100 updates), clipping 1, dropout 0, with the same 1,000-update cosine
+endpoint and four saved milestones. Native weights are frozen for both adapters; initial
+predictions are unchanged. L2-SP is supported by both trainers and always uses the released
+checkpoint as its fixed anchor, including after resume. LoRA exports merged native inference
+weights plus separate resumable factors. DiagScale injection precedes cache creation.
 
-Selection receipts are created by `python -m src.experiments.selection --stage learning-rate`
-and then `--stage adapters` after their required benchmarks. Missing/stale receipts block jobs.
-`allow_placeholders=True` is for analysis/planning only and marks unresolved recipes explicitly.
+[Real-TabPFN](../tfm-library/papers/text/2025/07_Garg_et_al._Real_TabPFN_Improving_Tabular_Foundation_Models_via_Continued_Pre_training_With_Real_World_Data.txt)
+supports the alpha .003 anchor; Ning et al. supports .03 for DiagScale in a different, single-table
+setting. Q/V-only LoRA at 1e-4 is a fixed engineering recipe, not a reproduced optimum from
+Ning's all-linear LoRA menu. Ordinary decay shrinks current weights; L2-SP penalizes displacement
+from released weights. Compare L2-SP against no-decay to isolate anchoring, and no-decay against
+reused Exp2 to isolate ordinary decay. These are fixed-recipe comparisons with no benchmark-driven
+hyperparameter search. Keeping most weights frozen is not a guarantee of lower GPU time.
 
 ## 9. A note on the LGD R² band
 

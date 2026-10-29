@@ -76,6 +76,23 @@ def test_corners_fix_shape_without_replacing_the_synthetic_mechanisms(track, sou
         assert probe["init"]["strict_load"] is True
 
 
+@pytest.mark.parametrize("track", ["pd", "lgd"])
+@pytest.mark.parametrize("method,peak_lr", [("lora", 1e-4), ("diagscale", .03)])
+def test_adapter_capacity_probe_uses_the_actual_retention_recipe(track, method, peak_lr):
+    production = next(c for c in expand_with_seeds(load(f"config/Exp3_{track.upper()}.yaml", allow_placeholders=True))
+                      if c["arm"] == "tabicl" and c["seed"] == 0 and c["method"] == method)
+    probe = lc.diagnostic_config(track, rows=60000, source="credit", adaptation=method)
+    expected_train = dict(production["train"], batch_size=1, num_workers=0, warmup_proportion=0.)
+    assert probe["train"] == expected_train
+    assert probe["train"]["lr"] == peak_lr
+    assert probe["train"]["adaptation"] == method
+    assert probe["train"]["amp"] is False
+    assert probe["init"] == production["init"]
+    expected_prior = dict(production["prior"], n_rows_range=[60000, 60000],
+                          n_features_range=[20, 20], credit_fraction=1.)
+    assert probe["prior"] == expected_prior
+
+
 def test_mandatory_gpu_plan_covers_every_corner_and_source_in_separate_bounded_processes():
     stages = [s for s in campaign.plan("gpu") if s.name.startswith("long-context-")]
     assert len(stages) == 2 * (2 * len(lc.CAPACITY_CORNERS) + 3)

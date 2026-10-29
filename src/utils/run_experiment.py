@@ -184,13 +184,13 @@ def _benchmark_stage(exp: int, track: str, queued: set[str], train: Stage,
 
 
 def unconfigured_tracks(exp: int, tracks: list[str], variant: str | None = None) -> list[str]:
-    """Refuse unresolved recipes or missing/stale development-selection receipts."""
+    """Refuse missing or unresolved experiment recipes before queue planning."""
     from src.utils.config import find_placeholders, load_yaml, load
 
     blocked = []
     for track in tracks:
-        cfg = load_yaml(_config(exp, track, variant))
         try:
+            cfg = load_yaml(_config(exp, track, variant))
             if find_placeholders(cfg):
                 blocked.append(track)
             elif exp in (2, 3):
@@ -230,8 +230,8 @@ def render(stages: list[Stage], exp: int, blocked_tracks: list[str] | None = Non
     ]
     if blocked_tracks:
         lines += [
-            f"  EXPERIMENT {exp} IS NOT CONFIGURED YET: {', '.join(blocked_tracks)} still hold a",
-            "  missing or stale development-selection receipt. Follow the selection command above.",
+            f"  EXPERIMENT {exp} HAS INVALID CONFIGURATION: {', '.join(blocked_tracks)}",
+            "  Check the registered fixed design and the requested variant.",
             "  No job was submitted.",
             "=" * 78,
         ]

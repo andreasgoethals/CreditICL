@@ -49,7 +49,36 @@ represent from how *often* it occurs; a library annotation from the primary sour
 ## 4. Do not train, install, or push without asking
 
 Cluster runs cost real VSC credits. Installs change a shared environment. Pushes are
-Andreas's action. Ask first.
+Andreas's action unless he has already authorized them in the current task. Reuse explicit
+authorization; access alone does not authorize new workloads, installations or migrations.
+
+### VSC access and storage
+
+- Read the current access/storage sections in `docs/TEMPLATE.md` and the project-specific
+  adoption state in `docs/VSC.md`. The template is already synchronized as of 29-10-2026;
+  compare it byte-for-byte with the canonical template before assuming a newer copy is needed.
+- Andreas manually runs `step ssh login --context VSC` in Windows PowerShell and approves
+  KU Leuven Authenticator. Reuse the native Windows OpenSSH agent for this Windows account.
+  Do not reinstall/bootstrap SSH per project, initiate authentication, add renewal hooks or
+  schedule reminders. If the certificate is missing/expired, ask him to run that command.
+- For relevant work, inspect VSC directly after verifying the bounded, noninteractive LF-stdin
+  SSH channel in TEMPLATE.md. Check actual stdout/stderr and remote status; empty output with
+  exit 0 is not success. Keep host-key verification enabled. Diagnose a failed channel before
+  reading results or attempting mutations; network failures do not prove certificate expiry.
+- The actual checkout and `.git` live on DATA. Freeze code, submodules and runtime versions
+  used by active/queued jobs. Large persistent assets and versioned immutable dependency SIF
+  images belong on allocated PROJECT storage; temporary working files belong on scratch.
+  Local laptop venvs remain supported. Existing DATA venvs are a documented transitional
+  exception for recovery, not the policy for new installations.
+- Do not move populated environments. Propose a container rebuild from recorded dependencies,
+  image hashes, binds, quotas and CPU/GPU acceptance before cutover; keep originals until no
+  active, queued or resumable run needs them. No automatic migration or storage cleanup.
+- Use `CREDITICL_PROJECT_ROOT` or `VSC_PROJECT_ROOT` for a shared allocation root (CreditICL
+  is appended); legacy STAGING variables remain compatible. Export roots explicitly through
+  the job submission path. Keep important results/checkpoints on persistent storage and remove
+  only verified, retired, project-owned scratch after checking live jobs and recovery needs.
+- Computational debugging belongs in authorized Slurm allocations. Distinguish local tests,
+  a verified SSH read, Slurm status and actual CPU/GPU acceptance in every report.
 
 ## 5. Windows PowerShell 5.1 — no `&&`
 

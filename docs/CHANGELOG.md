@@ -10,6 +10,9 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 29-10-2026
 
+- Replace LR/adapter pilots with fixed two-rate, three-seed Exp2 and fixed-recipe Exp3 at 1,000 updates; preserve Exp1 identities and report all four checkpoints.
+- Adopt current manual VSC access and DATA/PROJECT/SIF storage guidance; guard legacy installers and document the pending runtime migration without moving assets.
+
 - Make Exp2A an explicitly recorded all-credit LR pilot; label Exp2/3 credit outcomes as tuning-exposed and keep OOD out of selection.
 - Save VSC notebook executions inside validation output, preventing tracked notebook/PDF changes from blocking later pulls.
 - Implement Budget A: 48×2,500-update Exp2 runs, 16 development-only LR pilots, frozen selection receipts and five checkpoint milestones; align Exp3 and notebooks without changing Exp1 recipes.

@@ -1,16 +1,21 @@
 #!/bin/bash
-# Refresh ONLY this project's existing VSC venv, then validate every dependency.
-# Run on a login node after git pull. Never installs inside a Slurm allocation.
+# Explicit legacy DATA-venv maintenance, pending validated PROJECT SIF migration.
+# Never installs inside a Slurm allocation or switches the runtime automatically.
 set -euo pipefail
 if [[ -n "${SLURM_JOB_ID:-}" ]]; then
     echo "Run update_env.sh on a login node, outside any Slurm job." >&2
     exit 1
 fi
+if [[ "${1:-}" != "--legacy-maintenance" || "$#" -ne 1 ]]; then
+    echo "New VSC dependencies belong in a versioned immutable SIF on PROJECT; see docs/VSC.md section 6." >&2
+    echo "No environment was updated. For authorized legacy repair only: update_env.sh --legacy-maintenance." >&2
+    exit 2
+fi
 
 cd "${VSC_DATA:?VSC_DATA is not set}/CreditICL"
 source scripts/slurm/_activate_env.sh
 if [[ -z "${VIRTUAL_ENV:-}" ]]; then
-    echo "No project venv is active. Run bash scripts/slurm/setup_venv.sh first." >&2
+    echo "No project venv is active. Plan the PROJECT SIF migration in docs/VSC.md; no packages installed." >&2
     exit 1
 fi
 repo_real=$(pwd -P)

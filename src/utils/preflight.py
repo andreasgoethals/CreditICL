@@ -252,8 +252,9 @@ def main(argv: list[str] | None = None) -> int:
               "Follow the failed checks above before submitting or continuing validation.")
         if any(r.name in ("tabpfn", "tabicl", "catboost", "all project requirements",
                           "pip check (whole environment)", "VSC CUDA torch") for r in failed):
-            print("Environment repair, on the login node in the project venv: "
-                  "bash scripts/slurm/update_env.sh")
+            print("Review the PROJECT SIF migration in docs/VSC.md before changing packages. "
+                  "For explicitly authorized legacy repair while all consumers are idle: "
+                  "bash scripts/slurm/update_env.sh --legacy-maintenance")
         if any(r.name.startswith("data ") for r in failed):
             print("Rebuild stale data on a CPU node: sbatch --clusters=wice scripts/slurm/preprocess.slurm")
         if any(r.name.startswith("OOD") for r in failed):

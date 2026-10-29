@@ -420,7 +420,7 @@ def test_the_shell_hook_is_a_real_file_not_a_paste_from_the_docs():
     # And it must stand down another project's venv, which is what actually went wrong.
     assert "deactivate" in text
     doc = (ROOT / "docs" / "VSC.md").read_text(encoding="utf-8")
-    assert "shell_hook.sh --install" in doc, "the docs must point at the installer"
+    assert "do not install a new hook" in doc, "VSC adoption must not prescribe new automatic hooks"
 
 
 # -- a figure is the plot; the caption explains it -----------------------------

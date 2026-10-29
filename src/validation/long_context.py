@@ -56,11 +56,15 @@ def diagnostic_config(track: str, *, rows: int | None = None,
         raise ValueError("track must be pd or lgd")
     if source not in {"base", "credit", "mixed"}:
         raise ValueError("Unknown synthetic source")
+    if adaptation not in {"full", "lora", "diagscale"}:
+        raise ValueError("Unknown capacity adaptation")
     if (rows is None) != (source == "mixed"):
         raise ValueError("Mixed probes require the full sampled batch; corners require a source")
-    matches = [c for c in expand_with_seeds(load(f"config/Exp2_{track.upper()}.yaml", allow_placeholders=True))
+    experiment = 2 if adaptation == "full" else 3
+    matches = [c for c in expand_with_seeds(load(f"config/Exp{experiment}_{track.upper()}.yaml", allow_placeholders=True))
                if c["arm"] == "tabicl" and c["seed"] == 0
-               and float(c["prior"]["credit_fraction"]) == .5 and c.get("lr_index", 0) == 0]
+               and float(c["prior"]["credit_fraction"]) == .5 and c.get("lr_index", 0) == 0
+               and (adaptation == "full" or c.get("method") == adaptation)]
     if len(matches) != 1:
         raise ValueError("Expected exactly one seed-zero mixed TabICL recipe")
     cfg = copy.deepcopy(matches[0])
@@ -81,11 +85,6 @@ def diagnostic_config(track: str, *, rows: int | None = None,
         # process teardown; the actual heterogeneous batch is not shrunk.
         cfg["train"]["num_workers"] = min(int(cfg["train"]["num_workers"]),
                                            int(cfg["train"]["max_workers"]))
-    if adaptation not in {"full", "lora", "diagscale"}:
-        raise ValueError("Unknown capacity adaptation")
-    if adaptation != "full":
-        cfg["train"].update(adaptation=adaptation, optimizer="adamw", lora_rank=16,
-                            lora_alpha=16, lr=.001, weight_decay=.01)
     cfg["experiment"] = "exp0_capacity"
     cfg["_run_name"] = f"exp0_capacity_{track}_{source}_{rows or 'batch'}"
     # A capacity probe must execute a nonzero update. The production first

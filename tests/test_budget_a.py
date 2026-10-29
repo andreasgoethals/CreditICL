@@ -1,84 +1,78 @@
-"""Selection leakage, schedule prefixes and the approved smaller campaign."""
+"""Fixed grids keep all rate outcomes and cannot consume pilot winners."""
 import copy
 
 import pytest
-import torch
 
-from src.experiments.design import apply_design
-from src.train.optim import build_scheduler
-from src.utils.config import expand_with_seeds, load
+from src.experiments.design import apply_design, DESIGN_REVISION, MAIN_STEPS, MILESTONES, RATES
+from src.utils.config import expand_with_seeds, load, run_name
 
 
 @pytest.mark.parametrize("task", ["PD", "LGD"])
-def test_lr_pilot_uses_all_credit_but_independent_training_seed(task, isolated_output):
-    cfg = load(f"config/Exp2_{task}.yaml", allow_placeholders=True)
-    pilot_cfg = load(f"config/Exp2_{task}_pilots.yaml")
-    main, pilots = expand_with_seeds(cfg), expand_with_seeds(pilot_cfg)
-    assert len(main) == 24 and len(pilots) == 8
-    assert all(r["design_unresolved"] for r in main)
-    with pytest.raises(ValueError, match="selection is not frozen"):
-        load(f"config/Exp2_{task}.yaml")
-    assert pilot_cfg["eval"]["dev_datasets"] == cfg["eval"]["dev_datasets"]
-    assert pilot_cfg["eval"]["holdout_datasets"] == cfg["eval"]["holdout_datasets"]
-    assert pilot_cfg["eval"]["selection_scope"] == "all_credit"
-    assert not pilot_cfg["eval"]["include_ood"]
-    assert {r["seed"] for r in pilots}.isdisjoint(r["seed"] for r in main)
-    assert {r["prior"]["credit_fraction"] for r in pilots} == {0., .5}
-    assert all(r["train"]["keep_steps"] == [500] and r["train"]["max_steps"] == 500
-               and r["progress"]["every_datasets"] == 0 for r in pilots)
-    assert all(r["train"]["l2sp_alpha"] == 0. for r in main)
+def test_both_rates_cross_all_mixtures_and_three_seeds_without_selection(task, isolated_output):
+    cfg = load(f"config/Exp2_{task}.yaml")
+    runs = expand_with_seeds(cfg)
+    assert len(runs) == 48
+    assert all(not r["design_unresolved"] and r["design_revision"] == DESIGN_REVISION for r in runs)
+    assert {(r["architecture"], r["lr_index"], r["prior"]["credit_fraction"], r["seed"]) for r in runs} == {
+        (model, rate, mixture, seed) for model in RATES for rate in (0, 1)
+        for mixture in (0., .25, .5, 1.) for seed in (0, 1, 2)}
+    assert all(r["train"]["max_steps"] == r["train"]["schedule_total_steps"] == MAIN_STEPS for r in runs)
+    assert all(r["train"]["keep_steps"] == list(MILESTONES) for r in runs)
+    assert len(set(MILESTONES)) == len(MILESTONES) == 4 and MILESTONES[-1] == MAIN_STEPS
+    assert all(r["train"]["l2sp_alpha"] == 0. for r in runs)
+    assert "selection_scope" not in cfg["eval"]
 
 
-@pytest.mark.parametrize("model,rate", [("tabicl", 1e-5), ("tabpfn3", 1e-6)])
-def test_main_and_lr_pilot_have_identical_first_500_schedule_updates(model, rate):
-    pilots = expand_with_seeds(load("config/Exp2_PD_pilots.yaml"))
-    pilot = next(r for r in pilots if r["architecture"] == model and r["lr_index"] == 1)
-    main = copy.deepcopy(pilot)
-    main.update(design="cpt", lr_index=0)
-    main["train"]["max_steps"] = 2500
-    apply_design(main, {"choices": {f"pd/{model}": {"full_lr": rate}}})
-    optimizers = [torch.optim.AdamW([torch.nn.Parameter(torch.zeros(1))], lr=rate) for _ in range(2)]
-    schedulers = [build_scheduler(o, r["train"], r["train"]["schedule_total_steps"])
-                  for o, r in zip(optimizers, (pilot, main))]
-    for _ in range(501):
-        assert optimizers[0].param_groups[0]["lr"] == optimizers[1].param_groups[0]["lr"]
-        for optimizer, scheduler in zip(optimizers, schedulers):
-            optimizer.step()
-            scheduler.step()
+@pytest.mark.parametrize("index", [-1, 2, True, .5, None])
+def test_invalid_rate_id_cannot_silently_select_a_python_index(index):
+    run = expand_with_seeds(load("config/Exp2_PD.yaml"))[0]
+    run["lr_index"] = index
+    with pytest.raises(ValueError, match="lr_index"):
+        apply_design(run)
 
 
-def test_same_frozen_rate_applies_to_every_mixture_and_retention_baseline():
-    from src.experiments.design import RATES
-    cfg = load("config/Exp2_PD.yaml", allow_placeholders=True)
-    receipt = {"choices": {f"pd/{m}": {"full_lr": rates[1]} for m, rates in RATES.items()}}
-    for run in expand_with_seeds(cfg):
-        apply_design(run, receipt)
-        assert not run["design_unresolved"]
-        assert run["train"]["lr"] == RATES[run["architecture"]][1]
-        no_decay = copy.deepcopy(run)
-        no_decay.update(design="retention", method="no_decay")
-        apply_design(no_decay, receipt)
-        assert no_decay["train"]["lr"] == run["train"]["lr"]
-        assert no_decay["train"]["schedule_total_steps"] == run["train"]["schedule_total_steps"] == 2500
+@pytest.mark.parametrize("design", ["cpt_pilot", "retention_pilot"])
+def test_legacy_pilots_fail_even_if_a_local_copy_remains(design, tmp_path):
+    run = expand_with_seeds(load("config/Exp2_PD.yaml"))[0]
+    run["design"] = design
+    with pytest.raises(ValueError, match="retired"):
+        apply_design(run)
+    path = tmp_path / "old.yaml"
+    path.write_text(f"design: {design}\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="retired"):
+        load(path, allow_placeholders=True)
 
 
-def test_all_credit_selection_includes_former_holdout_and_excludes_ood():
-    import pandas as pd
-    from src.experiments.selection import development_score, selection_datasets
+def test_a_historical_winner_cannot_override_the_registered_rate():
+    original = expand_with_seeds(load("config/Exp2_PD.yaml"))[0]
+    with pytest.raises(ValueError, match="Selection"):
+        apply_design(copy.deepcopy(original), {"choices": {"pd/tabicl": {"full_lr": 999.}}})
+    with pytest.raises(ValueError, match="revision"):
+        apply_design(dict(original, design_revision="old"))
+    assert original["train"]["lr"] == RATES[original["architecture"]][original["lr_index"]]
 
-    cfg = {"eval": {"dev_datasets": ["dev"], "holdout_datasets": ["former_holdout"],
-                    "selection_scope": "all_credit"}}
-    datasets = selection_datasets(cfg, "learning-rate")
-    frame = pd.DataFrame([dict(dataset=d, seed=0, fold=f, status="ok", info_run_name="run", roc_auc=s)
-                          for d, s in (("dev", .9), ("former_holdout", .5), ("ood", -1000))
-                          for f in range(5)])
-    assert development_score(frame, datasets, "run", "roc_auc") == pytest.approx(.7)
-    assert development_score(frame, selection_datasets(cfg, "adapters"), "run", "roc_auc") == pytest.approx(.9)
-    with pytest.raises(ValueError, match="Incomplete"):
-        development_score(frame[frame.dataset.ne("former_holdout")], datasets, "run", "roc_auc")
-    cfg["eval"]["selection_scope"] = "development"
-    with pytest.raises(ValueError, match="all-credit"):
-        selection_datasets(cfg, "learning-rate")
+
+def test_new_revisions_isolate_even_the_early_checkpoint_run_names():
+    for experiment in (2, 3):
+        runs = expand_with_seeds(load(f"config/Exp{experiment}_PD.yaml"))
+        assert len({run_name(r) for r in runs}) == len(runs)
+        for run in runs:
+            historical = dict(run)
+            historical.pop("design_revision")
+            assert run_name(historical) != run_name(run)
+            assert DESIGN_REVISION in run_name(run)
+    for run in expand_with_seeds(load("config/Exp1_PD.yaml")):
+        assert "design_revision" not in run and DESIGN_REVISION not in run_name(run)
+
+
+@pytest.mark.parametrize("task", ["pd", "lgd"])
+def test_experiment1_keeps_its_existing_names_and_appended_quarter_mixture_indices(task):
+    runs = expand_with_seeds(load(f"config/Exp1_{task.upper()}.yaml"))
+    expected = [f"exp1_{task}__prior-credit_fraction={mixture}__s{seed}"
+                for seed in range(3) for mixture in ("0", "0p5", "1")]
+    expected += [f"exp1_{task}__prior-credit_fraction=0p25__s{seed}" for seed in range(3)]
+    assert [r["_run_name"] for r in runs] == expected
+    assert [r["_grid"]["array_index"] for r in runs] == list(range(12))
 
 
 def test_checkpoint_plot_draws_measured_milestones_and_step_zero(monkeypatch):
@@ -88,18 +82,23 @@ def test_checkpoint_plot_draws_measured_milestones_and_step_zero(monkeypatch):
     from src.visualize import continuation as plots
 
     frame = pd.DataFrame([
-        dict(architecture="tabicl", lr_index=0, mixture=fraction,
+        dict(architecture="tabicl", lr_index=rate, mixture=fraction,
              checkpoint_step=step, training_seed=seed, dataset="held-out",
-             roc_auc=.6 + step / 100000 + fraction / 100)
-        for fraction in (0, .25, .5, 1) for step in (125, 250, 500, 1000, 2500)
+             roc_auc=.6 + step / 100000 + fraction / 100 + rate / 1000)
+        for rate in (0, 1) for fraction in (0, .25, .5, 1) for step in MILESTONES
         for seed in (0, 1, 2)])
     monkeypatch.setattr(plots.results, "benchmark_frames", lambda *a, **k: frame)
     monkeypatch.setattr(plots.results, "released_score", lambda *a: .6)
     fig = plots.checkpoint_curves("pd", "tabicl")
     try:
-        for ax in fig.axes:
+        assert len(fig.axes) == 4  # One row per fixed rate, credit and OOD columns.
+        for index, ax in enumerate(fig.axes):
             assert len(ax.lines) == 5  # Four mixtures plus released reference.
-            assert list(ax.lines[0].get_xdata()) == [125, 250, 500, 1000, 2500]
+            assert list(ax.lines[0].get_xdata()) == list(MILESTONES)
+            rate = index // 2
+            assert list(ax.lines[0].get_ydata()) == pytest.approx(
+                [.6 + step / 100000 + rate / 1000 for step in MILESTONES])
+            assert f"LR {RATES['tabicl'][rate]:g}" in ax.get_title(loc="left")
             assert ax.lines[-1].get_ydata() == [.6, .6]
     finally:
         plt.close(fig)

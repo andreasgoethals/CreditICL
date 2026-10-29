@@ -404,7 +404,7 @@ def check_determinism(rep: Report) -> None:
 
 def check_orchestration(rep: Report) -> None:
     """The jobs resubmit themselves and `run_experiment` reads the queue: the SLURM tools must be
-    there, and the planner must plan every experiment — Exp3 refusing until development selection is frozen."""
+    there, and the planner must plan every experiment — fixed Exp2/3 grids resolving without benchmark-driven selection."""
     import shutil
 
     from src.utils.run_experiment import unconfigured_tracks
@@ -416,7 +416,7 @@ def check_orchestration(rep: Report) -> None:
             want = int(bool(unconfigured_tracks(exp, ["pd", "lgd"])))
             r = subprocess.run([sys.executable, "-m", "src.utils.run_experiment", str(exp)], cwd=ROOT,
                                capture_output=True, text=True, timeout=900)
-            ok = r.returncode == want and (not want or "NOT CONFIGURED YET" in r.stdout)
+            ok = r.returncode == want and (not want or "HAS INVALID CONFIGURATION" in r.stdout)
             rep.add("orchestration", f"run_experiment {exp} (plan only)", PASS if ok else FAIL,
                     {"exit": r.returncode, "expected": want, "tail": r.stdout.strip()[-700:]})
         except Exception as exc:  # noqa: BLE001
@@ -434,7 +434,7 @@ def check_configs(rep: Report) -> None:
         text = (ROOT / "scripts" / "slurm" / f"{script}.slurm").read_text(encoding="utf-8")
         m = re.search(r"#SBATCH --array=0-(\d+)", text)
         header[script] = int(m.group(1)) + 1 if m else None
-    for exp, variant in ((0, None), (1, None), (1, "ablations"), (2, None), (2, "pilots"), (3, None), (3, "pilots")):
+    for exp, variant in ((0, None), (1, None), (1, "ablations"), (2, None), (3, None)):
         for track in ("pd", "lgd"):
             name = f"Exp{exp}_{track.upper()}{'_' + variant if variant else ''}"
             path = ROOT / "config" / f"{name}.yaml"

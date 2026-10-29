@@ -187,23 +187,33 @@ def test_the_experiment_number_is_required_and_shown():
     assert "EXPERIMENT 2" in render([], 2)  # empty stage list, exp 2
 
 
-def test_exp3_refuses_to_run_while_still_a_template(fake_tree, capsys):
-    """Exp3 ships with FILL_FROM_EXP1 where Exp1's mix goes. Submitting it would run for hours and
-    measure the wrong arm, so `run_experiment 3` must refuse until it is filled in. Exp1 and Exp2
-    (at the published recipes, since 30-09-2026) are fully configured."""
-    from src.utils.run_experiment import main, unconfigured_tracks
+def test_current_experiments_resolve_without_any_selection_receipt(fake_tree):
+    from src.utils.run_experiment import unconfigured_tracks
+    for experiment in (1, 2, 3):
+        assert unconfigured_tracks(experiment, ["lgd", "pd"]) == []
+    for experiment in (2, 3):
+        assert unconfigured_tracks(experiment, ["lgd", "pd"], "pilots")
 
-    assert [item.split(":", 1)[0] for item in unconfigured_tracks(3, ["lgd", "pd"])] == ["lgd", "pd"]
-    assert unconfigured_tracks(2, ["lgd", "pd"]), "Exp2 requires a frozen pilot receipt"
-    assert unconfigured_tracks(2, ["lgd", "pd"], "pilots") == []
-    assert unconfigured_tracks(1, ["lgd", "pd"]) == [], "Exp1 is fully configured"
 
-    rc = main(["3", "--submit"])
-    assert rc == 1, "a template experiment must refuse with a non-zero exit"
+@pytest.mark.parametrize("experiment", [2, 3])
+def test_retired_pilot_variant_cannot_submit_any_jobs(fake_tree, experiment, capsys):
+    from src.utils.run_experiment import main
+    with pytest.raises(SystemExit) as error:
+        main([str(experiment), "--variant", "pilots", "--submit"])
+    assert error.value.code == 2
+    assert "no config for variant" in capsys.readouterr().err
+
+
+def test_legacy_pilot_file_is_rejected_before_planning_or_submitting(fake_tree, monkeypatch, capsys):
+    from src.utils import run_experiment as pipeline
+    legacy = fake_tree / "legacy.yaml"
+    legacy.write_text("design: retention_pilot\n", encoding="utf-8")
+    monkeypatch.setattr(pipeline, "_config", lambda *args: legacy)
+    monkeypatch.setattr(pipeline, "plan", lambda *args: pytest.fail("invalid config reached planning"))
+    assert pipeline.main(["3", "--submit"]) == 1
     out = capsys.readouterr().out
-    assert "NOT CONFIGURED YET" in out
-    assert "selection" in out
-    assert "sbatch" not in out, "nothing may be submitted for an unconfigured experiment"
+    assert "HAS INVALID CONFIGURATION" in out and "retired" in out
+    assert "sbatch" not in out
 
 
 def test_one_invocation_drives_one_experiment_only(fake_tree):

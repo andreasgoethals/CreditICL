@@ -481,7 +481,7 @@ def test_exp1_default_plan_includes_main_and_component_runs(monkeypatch, isolate
 
 
 @pytest.mark.parametrize("selected", [False, True])
-def test_cluster_planner_check_accepts_exp3_before_and_after_selection(monkeypatch, selected):
+def test_cluster_planner_check_reports_configuration_state(monkeypatch, selected):
     from types import SimpleNamespace
 
     from src.validation.checks import Report, check_orchestration
@@ -492,7 +492,7 @@ def test_cluster_planner_check_accepts_exp3_before_and_after_selection(monkeypat
 
     def run(command, **kwargs):
         blocked = command[-1] == "3" and not selected
-        return SimpleNamespace(returncode=int(blocked), stdout="NOT CONFIGURED YET" if blocked else "ready")
+        return SimpleNamespace(returncode=int(blocked), stdout="HAS INVALID CONFIGURATION" if blocked else "ready")
 
     monkeypatch.setattr("src.validation.checks.subprocess.run", run)
     report = Report()

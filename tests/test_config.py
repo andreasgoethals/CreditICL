@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.experiments.design import MAIN_STEPS  # noqa: E402
 from src.utils.config import (  # noqa: E402
     PLACEHOLDER,
     expand_grid,
@@ -32,12 +33,10 @@ from src.utils.config import (  # noqa: E402
 )
 
 #: One file per experiment per track. Exp0 is the cluster debug suite; Exp2 runs at each model's
-#: backbone-specific continuation recipes with two rates; Exp3 requires frozen development selection.
+#: backbone-specific continuation recipes with two rates; Exp3 uses fixed method settings.
 EXPERIMENTS = [f"config/{e}_{t}.yaml" for e in ("Exp0", "Exp1", "Exp2", "Exp3") for t in ("LGD", "PD")]
 #: The runnable ones: nothing left to fill in.
-CONFIGS = [p for p in EXPERIMENTS if "Exp3" not in p]
-#: The templates.
-TEMPLATES = [p for p in EXPERIMENTS if p not in CONFIGS]
+CONFIGS = list(EXPERIMENTS)
 
 
 def _load(path):
@@ -72,17 +71,15 @@ def test_task_matches_filename(path):
 
 @pytest.mark.parametrize("path", CONFIGS)
 def test_configs_contain_no_unfilled_recipe_placeholders(path):
-    """Resolved design choices are receipt-gated; no YAML value needs manual editing."""
+    """Predeclared recipes need no selection receipts or manual editing."""
     cfg = load(ROOT / path, allow_placeholders=True)
     assert find_placeholders(cfg) == []
 
 
-@pytest.mark.parametrize("path", TEMPLATES)
-def test_exp3_requires_frozen_development_selection(path):
-    with pytest.raises(ValueError, match="selection is not frozen"):
-        load(ROOT / path)
-    runs = expand_with_seeds(_load(path))
-    assert runs and all(r["design_unresolved"] for r in runs)
+@pytest.mark.parametrize("path", [p for p in CONFIGS if "Exp3" in p])
+def test_exp3_is_resolved_without_any_scores_or_selection_receipt(path):
+    runs = expand_with_seeds(load(ROOT / path))
+    assert runs and all(not r["design_unresolved"] for r in runs)
 
 
 def test_exp2_refuses_a_silent_partial_load():
@@ -103,16 +100,16 @@ def test_exp1_budget_is_preserved_and_exp3_is_continuation():
     for track in ("LGD", "PD"):
         assert _load(f"config/Exp1_{track}.yaml")["train"]["max_steps"] == 12500
         cfg = _load(f"config/Exp3_{track}.yaml")
-        assert cfg["train"]["max_steps"] == 2500
+        assert cfg["train"]["max_steps"] == MAIN_STEPS
         assert cfg["init"]["strategy"] == "full"
 
 
-def test_exp3_has_three_paired_seeds_and_five_kept_milestones():
+def test_exp3_has_three_paired_seeds_and_four_kept_milestones():
     from src.experiments.design import MILESTONES
     for track in ("LGD", "PD"):
         cfg = _load(f"config/Exp3_{track}.yaml")
         assert cfg["seeds"] == [0, 1, 2]
-        assert cfg["train"]["max_steps"] == 2500
+        assert cfg["train"]["max_steps"] == MAIN_STEPS
         assert tuple(cfg["train"]["keep_steps"]) == MILESTONES
 
 
@@ -247,7 +244,7 @@ def test_credit_fraction_is_a_probability(path):
         assert 0.0 <= v <= 1.0
 
 
-@pytest.mark.parametrize("path", [p for p in CONFIGS if "Exp0" not in p])
+@pytest.mark.parametrize("path", [p for p in CONFIGS if "Exp0" not in p and "Exp3" not in p])
 def test_control_arm_is_present(path):
     """credit_fraction = 0 is the baseline everything is measured against. If it
     is missing there is nothing to compare to."""
@@ -365,14 +362,15 @@ def test_the_control_arm_prior_never_carries_a_placeholder():
 # -- Exp2 is continued pre-training, not pretraining ---------------------------
 
 
-def test_exp2_has_one_pilot_selected_rate_per_backbone():
+def test_exp2_has_two_predeclared_rates_per_backbone():
     from src.experiments.design import RATES
     for track in ("LGD", "PD"):
         runs = expand_with_seeds(load(ROOT / f"config/Exp2_{track}.yaml", allow_placeholders=True))
         assert {r["architecture"] for r in runs} == {"tabicl", "tabpfn3"}
+        assert {r["lr_index"] for r in runs} == {0, 1}
         for r in runs:
             t = r["train"]
-            assert t["max_steps"] == 2500
+            assert t["max_steps"] == MAIN_STEPS
             assert t["lr"] == RATES[r["architecture"]][r["lr_index"]]
             assert t["gradient_clipping"] == 1.0
             assert t["weight_decay"] == .01
@@ -415,7 +413,7 @@ def test_every_experiment_names_the_same_architecture():
     assert named == {"tabicl"}, f"experiments disagree on the architecture: {named}"
     for p in CONFIGS:
         archs = {r["architecture"] for r in expand_with_seeds(_load(p))}
-        allowed = {"tabicl", "tabpfn3"} if ("Exp2" in p or "Exp0" in p) else {"tabicl"}
+        allowed = {"tabicl", "tabpfn3"} if ("Exp2" in p or "Exp3" in p or "Exp0" in p) else {"tabicl"}
         assert archs <= allowed, f"{p}: {archs}"
 
 
@@ -423,9 +421,7 @@ def test_config_folder_holds_exactly_the_experiments():
     """Four experiments x two tracks, each self-contained. Anything else here is a file nobody
     named, which is how a stale config gets submitted."""
     found = sorted(p.name for p in (ROOT / "config").iterdir())
-    expected = [Path(p).name for p in EXPERIMENTS] + ["Exp1_PD_ablations.yaml", "Exp1_LGD_ablations.yaml",
-                                                                   "Exp3_PD_pilots.yaml", "Exp3_LGD_pilots.yaml",
-                                                                   "Exp2_PD_pilots.yaml", "Exp2_LGD_pilots.yaml"]
+    expected = [Path(p).name for p in EXPERIMENTS] + ["Exp1_PD_ablations.yaml", "Exp1_LGD_ablations.yaml"]
     assert found == sorted(expected), f"unexpected: {found}"
 
 

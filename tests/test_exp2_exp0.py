@@ -1,5 +1,5 @@
 """Experiment 2 (continued pretraining of TabICLv2 and TabPFN-3) and Experiment 0 (the cluster
-debug suite): the grid, the benchmark bookkeeping, the stage-A choice, the wide-table rule, the
+debug suite): the grid, the benchmark bookkeeping, the fixed-rate design, the wide-table rule, the
 TabPFN-3 trainer, and the tools that read Experiment 0 back."""
 
 from __future__ import annotations
@@ -84,9 +84,10 @@ def test_a_placeholder_keeps_a_config_a_template(tmp_path):
 
 
 def test_each_arm_is_scored_by_the_wrapper_of_its_architecture():
-    from src.eval.benchmark_status import slot_for
+    from src.eval.benchmark_status import n_slots, slot_for
 
-    models = {slot_for(2, "pd", i).model for i in range(24 * 4)}
+    slots = [slot_for(2, "pd", i) for i in range(n_slots(2, "pd"))]
+    models = {s.model for s in slots if s.kind == "arm"}
     assert models == {"crediticl", "tabpfn3"}
 
 
@@ -102,9 +103,11 @@ def test_the_main_benchmark_scores_both_models_and_the_reference_column():
     from src.eval.benchmark_status import n_slots, slot_for
 
     total = n_slots(2, "lgd")
-    assert total == 24 * 5 + 4
+    from src.experiments.design import MILESTONES
+    assert total == 48 * len(MILESTONES) + 4
     assert slot_for(2, "lgd", total - 1).tag == "reference_lgd_linear"
-    assert n_slots(2, "lgd", variant="pilots") == 8
+    with pytest.raises(FileNotFoundError):
+        n_slots(2, "lgd", variant="pilots")
 
 
 # -- the same columns for every model ----------------------------------------------------------------
