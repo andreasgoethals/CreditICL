@@ -1,7 +1,7 @@
 """No paid submission can be hidden inside the runtime compatibility probe."""
-from types import SimpleNamespace
 import os
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 
@@ -43,6 +43,56 @@ def test_submission_warning_about_disabled_credit_check_is_not_success(monkeypat
     monkeypatch.setattr(slurm_client.subprocess, "run", lambda args, **kwargs:
                         SimpleNamespace(returncode=0, stdout="OK", stderr="credit balance check is not enforced"))
     with pytest.raises(RuntimeError, match="not enforced"):
+        slurm_client.check()
+
+
+def test_dry_run_capacity_refusal_waits_for_actual_success(monkeypatch, capsys):
+    monkeypatch.setenv('CREDITICL_IN_CONTAINER', '1')
+    monkeypatch.setenv('SLURM_JOB_ID', '123')
+    monkeypatch.setenv('CREDITICL_EXP0_ATTEMPT', 'cpu_fixture')
+    calls, sleeps = [], []
+    def run(args, **kwargs):
+        calls.append(args)
+        refused = len(calls) == 3
+        return SimpleNamespace(returncode=int(refused), stdout='',
+            stderr='QOSMaxSubmitJobPerUserLimit\nallocation failure: Job violates accounting/QOS policy'
+            if refused else 'OK') if args[0] == 'sbatch' else SimpleNamespace(returncode=0, stdout='balance', stderr='')
+    monkeypatch.setattr(slurm_client.subprocess, 'run', run)
+    monkeypatch.setattr(slurm_client.time, 'sleep', sleeps.append)
+    slurm_client.check()
+    assert sleeps == [60]
+    assert calls[2] == calls[3] and '--test-only' in calls[3]
+    assert '[WAIT]' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('cpu_current', [False, True])
+def test_paid_gpu_never_idles_for_capacity_and_requires_current_cpu_proof(monkeypatch, cpu_current, capsys):
+    from src.validation import campaign
+    monkeypatch.setenv('CREDITICL_IN_CONTAINER', '1')
+    monkeypatch.setenv('SLURM_JOB_ID', '123')
+    monkeypatch.setenv('CREDITICL_EXP0_ATTEMPT', 'gpu_fixture')
+    monkeypatch.setattr(campaign, 'readiness', lambda phase: [SimpleNamespace(ok=cpu_current)] if phase == 'cpu' else [])
+    monkeypatch.setattr(slurm_client.subprocess, 'run', lambda args, **kwargs:
+        SimpleNamespace(returncode=1, stdout='', stderr='QOSMaxSubmitJobPerUserLimit') if args[0] == 'sbatch'
+        else SimpleNamespace(returncode=0, stdout='balance', stderr=''))
+    monkeypatch.setattr(slurm_client.time, 'sleep', lambda _: pytest.fail('paid GPU must not wait for admission'))
+    if cpu_current:
+        slurm_client.check()
+        assert 'admission refused' in capsys.readouterr().out
+    else:
+        with pytest.raises(RuntimeError, match='CPU resource validation is missing'):
+            slurm_client.check()
+
+
+@pytest.mark.parametrize('error', ["Job violates accounting/QOS policy (job submit limit, user's size and/or time limits)",
+                                  'QOSMaxSubmitJobPerUserLimit; sam-balance failed'])
+def test_ambiguous_resource_or_credit_failure_is_never_retried(monkeypatch, error):
+    monkeypatch.setenv('CREDITICL_IN_CONTAINER', '1')
+    monkeypatch.setenv('SLURM_JOB_ID', '123')
+    monkeypatch.setattr(slurm_client.subprocess, 'run', lambda args, **kwargs:
+        SimpleNamespace(returncode=1 if args[0] == 'sbatch' else 0, stdout='balance', stderr=error))
+    monkeypatch.setattr(slurm_client.time, 'sleep', lambda _: pytest.fail('unsafe retry'))
+    with pytest.raises(RuntimeError, match='Slurm submission client failed'):
         slurm_client.check()
 
 

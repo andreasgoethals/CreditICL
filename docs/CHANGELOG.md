@@ -10,6 +10,8 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 29-10-2026
 
+- Treat definite dry-run queue-capacity refusals as transient; CPU waits for real resource acceptance, while GPU transport checks require the matching completed CPU proof.
+
 - Adopt the template's resumable Slurm admission manager: wait at the verified site ceiling, split arrays without changing task IDs, and retain every accepted job receipt.
 
 - Continue saved training through native array-element requeue, preserving its queue slot and restart guard; retain legacy log compatibility.

@@ -169,6 +169,34 @@ The one thing to do differently.
 
 ## Runs
 
+### 29-10-2026 — frozen final acceptance and authorized deployment
+
+Controller **62471630** (wICE batch, one CPU, 72h) accepted CPU validation **62471633**
+(wICE interactive, eight CPUs/48G, 4h). Commit
+`d21073029916f0c637d50c86e0e7f2017603242c`; source fingerprint
+`c3d596aea23be7639533b0380110344445aecd21dc5f97a668c6cdc0cf82660a`;
+training implementation unchanged at
+`01a5f056044cc261b83b3973956d55211c64b4e81ee58d285712e852109007e4`.
+The PROJECT image remains r3, SHA256
+`83f8145eafbbbcad0f25a5d109b0329aec12a159e5bc8ab9fc94a9f1e3ed0585`.
+The previous CPU PASS was archived and all 99 archive member hashes verified before
+resetting only its 101 generated files (4 MB). All production evidence survived.
+Planned gates: current CPU PASS → current GPU PASS → all missing Exp1 receipts →
+submit exactly 64 Exp2 training runs and stop. Queue admission now waits at the live
+ceiling without changing another campaign. Outcome pending; the runtime remains a
+candidate and DATA legacy environment remains rollback until full GPU acceptance.
+
+**Outcome:** CPU 62471633 failed early at stage 3, before portable tests/GPU work.
+Preprocessing, package/runtime preflight, native site balance and the wICE dry run passed.
+Mindwell explicitly returned `QOSMaxSubmitJobPerUserLimit` even for `--test-only`;
+the 500-slot queue, rather than a library/resource failure, caused this stop. The client
+check now retries definite capacity refusals on CPU until actual dry-run acceptance.
+GPU transport checks can use that same-current CPU resource proof after a definite
+daemon capacity response, avoiding paid idle time. Generic policy errors and credit/plugin
+failures still fail; missing or stale CPU proof is rejected. No resource acceptance is
+inferred from a refusal. Dedicated tests cover these boundaries.
+
+
 ### 29-10-2026 — native Slurm continuation proof before production
 
 Array **62471598**, wICE interactive, indices **14 and 15**, one CPU/1G and two minutes

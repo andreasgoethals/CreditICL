@@ -2,8 +2,25 @@
 
 ## 29-10-2026 — approved 1,500-update deployment
 
+**Tried:** CPU 62471633 before the reviewed unthrottled launch, at 500 Mindwell submissions.
+**Result:** Packages, preprocessing and wICE dry-run client passed; Mindwell --test-only
+returned explicit QOSMaxSubmitJobPerUserLimit. The fail-closed gate launched no GPU.
+**Why:** Slurm applies admission limits even to dry runs; the node client/resource test
+treated a definite transient refusal as a code/runtime failure.
+**Instead:** CPU waits for a real successful dry run. On GPU, the same explicit daemon
+reply proves node transport, while resources require the complete current CPU receipt;
+this avoids idling a paid GPU at a full queue. Missing plugins/credits, generic QoS errors,
+and absent/stale CPU evidence still fail. Tests exercise each boundary.
+
+**Tried:** Bounded metadata monitoring with bare python3 in a persistent SSH login.
+**Result:** No monitor output, despite a responsive channel; absolute /usr/bin/python3 worked.
+**Why:** The long-lived shell had hashed a different project's Python path, modified meanwhile.
+**Instead:** Use absolute host Python for metadata and the explicit PROJECT launcher for science;
+never trust another project's login-path interpreter or treat empty exit-0 output as evidence.
+
 | Job | Configuration | Outcome |
 |---|---|---|
+| 62471630 / 62471633 | Deployment / CPU Exp0, d210730, PROJECT image | CPU stopped at the dry-run client: definite Mindwell MaxSubmit refusal; preprocessing, packages and wICE client passed; no GPU launched |
 | 62471598_14 / _15 | wICE interactive, 1 CPU/1G each, native requeue probe | Both COMPLETED 0:0; restart 0→1 with identical job, array, task, CPU, RAM and partition |
 | 62471122 | Exp0 CPU, 79cdcd9, PROJECT image r3, 8 CPUs/48G | PASS: 14/14 stages; 2,069 portable tests passed, 2 allowed skips; all 12 notebooks executed |
 | 62471116 | Deployment controller, same revision | CPU passed; GPU submission refused at 500 queued/running jobs; zero GPU time |
