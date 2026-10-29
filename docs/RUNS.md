@@ -169,6 +169,24 @@ The one thing to do differently.
 
 ## Runs
 
+### 29-10-2026 — container submission probes before clean validation
+
+| Job | Allocation | Result |
+|---|---|---|
+| 62470743 | wICE batch, 1 CPU, deployment controller | FAILED, 1:0, 00:01:38; stopped before any Exp0/production job submission |
+| 62470775 | wICE interactive, 1 CPU, 2G, five-minute limit | COMPLETED; host sbatch test-only and actual compute config path verified |
+
+The controller used source `cbd755ed9185403865b68a3d65f74e3c3045abb950c0a9841f476b7c3241d35f`
+and image SHA256 `83f8145eafbbbcad0f25a5d109b0329aec12a159e5bc8ab9fc94a9f1e3ed0585`.
+A login-node dry run revealed the missing serializer dependency; the compute-node failure
+also showed that /run/slurm/conf resolves into /var/spool/slurmd/conf-cache. The wrapper now
+binds that real directory, sanitizes inherited configuration and includes serializer/data-parser
+libraries. Mandatory dry-run submission checks were added before long tests in both phases.
+No trained weights, optimizer, prior or benchmark protocol changed. TFM pin
+`26156f36eb7676e8d9050547817346db548b0e85`; VSC pin
+`0ed4ffa89d312b9bb6411681b6a14f81672439f3`.
+
+
 ## 29-10-2026 — PROJECT runtime rebuild and 1,500-update deployment
 
 Runtime mode repair 62468816 completed: Ruff 0.16.2 and Torch helper executability

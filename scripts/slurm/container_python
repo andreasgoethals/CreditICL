@@ -13,7 +13,18 @@ if ! grep -q "^$(id -gn):" "$work/group"; then getent group "$(id -g)" >> "$work
 export TMPDIR="$work/tmp" XDG_CACHE_HOME="$work/cache"
 export APPTAINER_CACHEDIR="$work/apptainer-cache" APPTAINER_TMPDIR="$work/tmp"
 export PYTHONNOUSERSITE=1
-if [[ -f /run/slurm/conf/slurm.conf ]]; then export SLURM_CONF=/run/slurm/conf/slurm.conf; fi
+# A submitting login node's config path may not exist on the allocated node.
+# Resolve the current host's configuration and bind its real directory too:
+# /etc/slurm may contain links into slurmd's configless cache.
+unset APPTAINERENV_SLURM_CONF
+_slurm_conf=""
+for candidate in "${SLURM_CONF:-}" /etc/slurm/slurm.conf /run/slurm/conf/slurm.conf \
+    /var/spool/slurmd/conf-cache/slurm.conf /var/spool/slurm/conf-cache/slurm.conf; do
+    [[ -n "$candidate" && -f "$candidate" ]] || continue
+    _slurm_conf=$(realpath "$candidate")
+    break
+done
+if [[ -n "$_slurm_conf" ]]; then export SLURM_CONF="$_slurm_conf"; else unset SLURM_CONF; fi
 for name in CREDITICL_RUNTIME_IMAGE CREDITICL_EXPECTED_COMMIT CREDITICL_PROJECT_ROOT VSC_PROJECT_ROOT \
     VSC_DATA VSC_HOME VSC_SCRATCH VSC_SCRATCH_NODE VSC_SCRATCH_LUSTRE1 VSC_SCRATCH_GPFS1 \
     TMPDIR XDG_CACHE_HOME USER CUDA_VISIBLE_DEVICES PYTHONHASHSEED PYTHONUNBUFFERED PYTHONIOENCODING \
@@ -39,7 +50,8 @@ done
 # Site clients stay host-managed. Bind their non-glibc shared libraries without
 # replacing the container's Python, C library or complete /usr tree.
 declare -A _bound_libraries=()
-for tool in git sbatch squeue sacct scontrol sacctmgr /usr/lib64/slurm/auth_munge.so /usr/lib64/slurm/cli_filter_lua.so; do
+for tool in git sbatch squeue sacct scontrol sacctmgr /usr/lib64/slurm/auth_munge.so \
+    /usr/lib64/slurm/cli_filter_lua.so /usr/lib64/slurm/serializer*.so /usr/lib64/slurm/data_parser*.so; do
     binary=$(command -v "$tool" || true)
     [[ -n "$binary" ]] || continue
     if [[ "$tool" != /usr/lib64/slurm/* ]]; then runner+=(--bind "$binary:$binary:ro"); fi
@@ -51,7 +63,8 @@ for tool in git sbatch squeue sacct scontrol sacctmgr /usr/lib64/slurm/auth_mung
         fi
     done < <(ldd "$binary" 2>/dev/null | awk '$2 == "=>" && $3 ~ /^\// {print $3}')
 done
-for directory in /usr/libexec/git-core /usr/lib64/slurm /etc/slurm /run/slurm /run/munge; do
+for directory in /usr/libexec/git-core /usr/lib64/slurm /etc/slurm /run/slurm /run/munge \
+    ${_slurm_conf:+"$(dirname "$_slurm_conf")"}; do
     [[ ! -d "$directory" ]] || runner+=(--bind "$directory:$directory:ro")
 done
 # Unit tests write only their temporary output roots; these are inside the work bind.

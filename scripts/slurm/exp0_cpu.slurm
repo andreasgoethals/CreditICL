@@ -4,11 +4,11 @@
 #SBATCH --job-name=crediticl-exp0-cpu
 #SBATCH --clusters=wice
 #SBATCH --account=lp_verbekelab
-#SBATCH --partition=batch
+#SBATCH --partition=interactive
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=20
-#SBATCH --mem=64G
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=48G
 #SBATCH --time=04:00:00
 #SBATCH --output=slurm-%x-%j.out
 #SBATCH --error=slurm-%x-%j.err

@@ -2,6 +2,22 @@
 
 ## 29-10-2026 — approved 1,500-update deployment
 
+**Tried:** Containerized deployment controller 62470743, before CPU/GPU Exp0.
+**Result:** Submission failed (1:0, 98 s); no Experiment 0 or production GPU job was created.
+**Why:** The host sbatch client dynamically needs serializer libraries and the compute node's
+real config-cache directory, not the login node's inherited /run configuration path.
+**Instead:** Bind serializer/data-parser dependencies and the resolved host configuration;
+clear stale APPTAINERENV_SLURM_CONF and add mandatory sbatch --test-only checks in both phases.
+Host configuration probe 62470775 completed on wICE interactive and confirmed the configless
+cache at /var/spool/slurmd/conf-cache. These are infrastructure probes, not research runs.
+
+CPU validation now uses wICE interactive (8 CPUs, 48G, four hours; no GPU). Live QoS allows
+8 CPUs per user and the partition allows 7,500 MiB per CPU. The last accepted CPU job
+62441437 peaked at 22,133,236 KiB (~21.1 GiB), so this retains ample RAM. Batch's test-only
+projection was next-day afternoon; the debug allocation avoids that scheduling delay without
+changing any model, prior, GPU allocation or scientific budget.
+
+
 CPU runtime probe **62468952 COMPLETED**: 98 passed; Python 3.12.3 and all 135 dependency
 requirements, Git/Slurm clients, child imports and executable helpers passed inside the
 PROJECT image. Whole-environment fingerprint remains identical to the old DATA venv.

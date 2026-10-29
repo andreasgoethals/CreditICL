@@ -295,6 +295,8 @@ file-count cost of an unpacked PyTorch environment. Do not create an unpacked ve
 persistent container sandbox on PROJECT, and do not move a populated DATA environment there.
 Local Windows venvs remain supported.
 
+**CPU validation allocation, 29-10-2026.** Exp0 CPU uses wICE `interactive`, eight CPUs, 48G and four hours, with no GPU request. Live QoS permits eight CPUs; the previous full CPU validation peaked at 21.1 GiB. This is computational debugging, not production training. Both CPU/GPU validation explicitly exercise `sbatch --test-only` for wICE and Mindwell. The host Slurm serializer/data-parser libraries and real config-cache directory are bound into the image; an inherited login-node configuration path is never blindly reused.
+
 **Runtime migration authorized, 29-10-2026.** The candidate is built through `scripts/slurm/build_runtime.slurm`; `src.utils.runtime_image` archives distribution payloads and hashes, and the image installs them into a fresh `/opt/venv`. Console scripts are regenerated and original Git origins are retained. The DATA manifest `.runtime-build/current.json` selects the PROJECT SIF. `_activate_env.sh` now selects that image by default; `CREDITICL_LEGACY_RUNTIME=1` is an explicit recovery exception. The wrapper binds checkout code read-only, output/assets/scratch writable, and site-managed Git/Slurm clients with their non-glibc dependencies. No training job installs packages.
 
 **Before acceptance the legacy DATA venv is retained for rollback.** `_activate_env.sh` continues to discover existing
