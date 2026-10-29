@@ -2,6 +2,15 @@
 
 ## 29-10-2026 — approved 1,500-update deployment
 
+**Tried:** Controller 62470838 submitted fresh CPU validation 62470841 through the image.
+**Result:** CPU startup stopped in 30 s; the dependency gate kept GPU/production unsubmitted.
+**Why:** Apptainer exported the controller's automatic bind list; sbatch --export=ALL carried
+its node-local /tmp runtime path to a different node, where that source does not exist.
+**Instead:** Clear inherited Apptainer/Singularity mount and override variables before rebuilding
+this host's explicit mounts; discard inherited node-local image pointers. A direct Bash test
+checks that parent mounts/env are dropped while the new SLURM_JOB_ID is retained.
+
+
 **Tried:** Containerized deployment controller 62470743, before CPU/GPU Exp0.
 **Result:** Submission failed (1:0, 98 s); no Experiment 0 or production GPU job was created.
 **Why:** The host sbatch client dynamically needs serializer libraries and the compute node's

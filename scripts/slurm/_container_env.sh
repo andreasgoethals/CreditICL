@@ -14,6 +14,7 @@ _expected=$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[
 _actual=$(sha256sum "$CREDITICL_RUNTIME_IMAGE")
 export CREDITICL_RUNTIME_SHA256=${_actual%% *}
 [[ "$CREDITICL_RUNTIME_SHA256" == "$_expected" ]] || { echo 'Runtime image digest changed' >&2; return 1; }
+unset CREDITICL_EXEC_IMAGE  # A parent allocation's node-local copy is not portable.
 if [[ "${SLURM_CLUSTER_NAME:-}" == mindwell && -n "${SLURM_JOB_ID:-}" ]]; then
     _runtime_work="${VSC_SCRATCH_NODE:?}/CreditICL/runtime-${SLURM_JOB_ID}"
     mkdir -p "$_runtime_work"

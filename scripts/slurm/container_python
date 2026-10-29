@@ -1,6 +1,12 @@
 #!/bin/bash
 # Host entrypoint. Every subprocess of Python then stays inside the immutable image.
 set -euo pipefail
+# sbatch --export=ALL may originate inside another allocation's container.
+# Its automatic mount list references that node's temporary paths. Rebuild
+# mounts and environment from this host instead of nesting inherited bindings.
+unset APPTAINER_BIND APPTAINER_BINDPATH APPTAINER_MOUNT APPTAINER_CONTAINER APPTAINER_NAME
+unset SINGULARITY_BIND SINGULARITY_BINDPATH SINGULARITY_MOUNT SINGULARITY_CONTAINER SINGULARITY_NAME
+for inherited in ${!APPTAINERENV_@} ${!SINGULARITYENV_@}; do unset "$inherited"; done
 image=${CREDITICL_RUNTIME_IMAGE:?Activate the accepted PROJECT runtime first}
 repo=$(realpath "${VSC_DATA:?}/CreditICL")
 assets=${CREDITICL_PROJECT_ROOT:-${VSC_PROJECT_ROOT:-/lustre1/project/stg_00211}}/CreditICL

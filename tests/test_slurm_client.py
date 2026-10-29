@@ -96,3 +96,13 @@ def test_only_explicit_cleanup_opens_idle_checkout_for_deletion(args, mode):
     result = subprocess.run(["bash", "-c", script, "bash", *args], env=env,
                             capture_output=True, text=True, check=True)
     assert result.stdout == mode
+
+
+def test_child_allocation_discards_parent_container_mounts_and_env():
+    text = (slurm_client.REPO_ROOT / "scripts/slurm/container_python").read_text()
+    setup = text.split("image=${CREDITICL_RUNTIME_IMAGE", 1)[0]
+    env = dict(os.environ, APPTAINER_BIND="/tmp/parent-allocation", APPTAINERENV_SLURM_JOB_ID="old",
+               SINGULARITYENV_PATH="/old/venv", SLURM_JOB_ID="current")
+    script = setup + '\nprintf "%s|%s|%s|%s" "${APPTAINER_BIND:-unset}" "${APPTAINERENV_SLURM_JOB_ID:-unset}" "${SINGULARITYENV_PATH:-unset}" "$SLURM_JOB_ID"'
+    result = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True, check=True)
+    assert result.stdout == "unset|unset|unset|current"
