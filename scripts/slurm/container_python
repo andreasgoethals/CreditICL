@@ -68,6 +68,23 @@ for directory in /usr/libexec/git-core /usr/lib64/slurm /usr/lib64/lua /usr/shar
     ${_slurm_conf:+"$(dirname "$_slurm_conf")"}; do
     [[ ! -d "$directory" ]] || runner+=(--bind "$directory:$directory:ro")
 done
+# Slurm's site Lua filter invokes sam-balance, whose host Python must stay
+# separate from /opt/venv. Its native loader and libraries live under a private
+# mount; they never replace the scientific interpreter or its C library.
+if [[ -x /usr/bin/sam-balance ]]; then
+    _site_python=$(realpath /usr/bin/python3)
+    _site_version=$(/usr/bin/python3 -c 'import sys; print("{}.{}".format(*sys.version_info[:2]))')
+    printf '#!/bin/bash\nexport LD_LIBRARY_PATH=/lib64:/usr/lib64\nexec /opt/vsc-host-libs/ld-linux-x86-64.so.2 --library-path /opt/vsc-host-libs %q "$@"\n' \
+        "$_site_python" > "$work/site-python"
+    chmod 700 "$work/site-python"
+    runner+=(--bind /usr/lib64:/opt/vsc-host-libs:ro
+        --bind "$_site_python:$_site_python:ro"
+        --bind "$work/site-python:/usr/bin/python3:ro"
+        --bind /usr/bin/sam-balance:/usr/bin/sam-balance:ro)
+    for directory in "/usr/lib/python$_site_version" "/usr/lib64/python$_site_version"; do
+        [[ ! -d "$directory" ]] || runner+=(--bind "$directory:$directory:ro")
+    done
+fi
 # Unit tests write only their temporary output roots; these are inside the work bind.
 if [[ -n "${SLURM_JOB_GPUS:-}" || -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then runner+=(--nv); fi
 exec "${runner[@]}" "${CREDITICL_EXEC_IMAGE:-$image}" /opt/venv/bin/python "$@"

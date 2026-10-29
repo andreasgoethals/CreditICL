@@ -17,7 +17,8 @@ def test_submission_probe_is_dry_and_rejects_plugin_errors(monkeypatch, failure)
     def run(args, **kwargs):
         calls.append(args)
         assert kwargs["timeout"] == 90
-        return SimpleNamespace(returncode=int(failure), stdout="", stderr="serializer" if failure else "OK")
+        failed = failure and args[0] == "sbatch"
+        return SimpleNamespace(returncode=int(failed), stdout="OK", stderr="serializer" if failed else "")
 
     monkeypatch.setattr(slurm_client.subprocess, "run", run)
     if failure:
@@ -25,14 +26,24 @@ def test_submission_probe_is_dry_and_rejects_plugin_errors(monkeypatch, failure)
             slurm_client.check()
     else:
         slurm_client.check()
-        assert len(calls) == 2
-    assert all("--test-only" in args and "--array=0" in args for args in calls)
+        assert len(calls) == 3
+    assert calls[0][0] == "sam-balance"
+    assert all("--test-only" in args and "--array=0" in args for args in calls[1:])
 
 
 def test_both_validation_phases_include_submission_client_check():
     from src.validation.campaign import plan
     for phase in ("cpu", "gpu"):
         assert any(s.name == "slurm-client" for s in plan(phase))
+
+
+def test_submission_warning_about_disabled_credit_check_is_not_success(monkeypatch):
+    monkeypatch.setenv("CREDITICL_IN_CONTAINER", "1")
+    monkeypatch.setenv("SLURM_JOB_ID", "123")
+    monkeypatch.setattr(slurm_client.subprocess, "run", lambda args, **kwargs:
+                        SimpleNamespace(returncode=0, stdout="OK", stderr="credit balance check is not enforced"))
+    with pytest.raises(RuntimeError, match="not enforced"):
+        slurm_client.check()
 
 
 def test_cpu_validation_fits_verified_free_debug_allocation():
