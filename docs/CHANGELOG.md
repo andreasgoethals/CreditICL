@@ -10,6 +10,10 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 29-10-2026
 
+- Fix native TabPFN LGD target-loss overflow with wider arithmetic; test batch 685 through released weights and add mandatory CUDA checks.
+- Add an Exp2-only reset across both tiers and identified scratch jobs; stop copying inputs just to hash them, report quota errors clearly and remove failed checkpoint temporaries.
+- Preserve all 54 completed Exp1 runs and reviewed benchmark receipts across the numerical fix; verify current B200 allocation pricing before revising the Exp2 budget.
+- Document the installed Git Bash prerequisite for Windows shell tests; verify the numerical/storage patch with the full local suite.
 - Record completed quarter-mixture Exp1 training and diagnose Exp2's full GPFS quota, reproducible TabPFN target-loss overflow and measured long-context cost; preserve checkpoints and validated executable code.
 
 ## 28-10-2026

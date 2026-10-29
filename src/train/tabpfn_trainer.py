@@ -70,23 +70,31 @@ REGRESSION_LOSS_WEIGHTS = {"ce": 0.0, "crps": 1.0, "crls": 0.0, "mse": 1.0, "mae
 MAX_AMP_RETRIES = 16
 
 
-def _clip_full_precision_grad_norm(params: list[torch.nn.Parameter], max_norm: float) -> None:
+def _clip_full_precision_grad_norm(params: list[torch.nn.Parameter], max_norm: float,
+                                   *, divisor: float = 1.0) -> None:
     """Clip large finite gradients without overflowing the norm's float32 reduction.
 
     Synthetic regression target transforms can extrapolate far beyond their fitted
     context. The unchanged MSE objective can then have finite float32 gradients
     whose squared norm overflows. Only the reduction uses float64; weights and
     gradients retain their original dtype and the same global clipping rule.
+    ``divisor`` reverses a COMMON backward scaling of the whole batch, including
+    its regularizer. Apply the true clipped gradient without materializing an
+    unrepresentable unclipped float32 gradient.
     """
     grads = [p.grad for p in params if p.grad is not None]
     norms = torch.stack([torch.linalg.vector_norm(g, dtype=torch.float64) for g in grads])
     norm = torch.linalg.vector_norm(norms)
     if not torch.isfinite(norm):
         raise FloatingPointError("non-finite full-precision gradient norm")
+    coefficient = torch.full_like(norm, divisor)
     if max_norm > 0:
-        coefficient = (max_norm / (norm + 1e-6)).clamp(max=1.0)
-        for grad in grads:
-            grad.mul_(coefficient.to(device=grad.device, dtype=grad.dtype))
+        coefficient = (max_norm / (norm + 1e-6 / divisor)).clamp(max=divisor)
+    for grad in grads:
+        restored = grad.double() * coefficient
+        if not torch.isfinite(restored).all() or (restored.abs() > torch.finfo(grad.dtype).max).any():
+            raise FloatingPointError("clipped gradient cannot be represented in the model dtype")
+        grad.copy_(restored)
 
 
 def resolve_tabpfn_weights(task: str, path: str | Path | None = None) -> Path:
@@ -212,7 +220,14 @@ def classification_loss(est, batch, n_estimators: int) -> torch.Tensor:
 
 
 def regression_loss(est, batch, n_estimators: int, weights: dict[str, float]) -> torch.Tensor:
-    """`FinetunedTabPFNRegressor._forward_with_loss`, through TabPFN's own loss function."""
+    """The native objective, with wider arithmetic for extrapolated target tails.
+
+    A power transform fitted on context can map a finite query target to 1e25
+    (production batch 685). Its squared error exceeds float32's range even
+    with finite FP32 logits. Transform in float64 before any narrowing, and
+    widen the loss when squaring float32 targets would be unsafe. The model
+    forward, objective weights, targets and task budget are unchanged.
+    """
     from tabpfn.finetuning.finetuned_regressor import _compute_regression_loss, _targets_in_estimator_space
 
     _, per_estimator, _ = est.forward(batch.X_query)
@@ -221,15 +236,26 @@ def regression_loss(est, batch, n_estimators: int, weights: dict[str, float]) ->
     # Worker preprocessing produces CPU buffers. The loss performs searchsorted
     # against these borders with GPU targets. Keep a device-local copy: moving
     # the batch's shared distribution in place can also affect later tasks.
-    bardist = copy.deepcopy(batch.znorm_space_bardist).to(logits.device)
+    bardist = copy.deepcopy(batch.znorm_space_bardist)
     if b != 1 or e != n_estimators or n_logits != bardist.num_bars:
         raise RuntimeError(f"unexpected logits shape {tuple(logits.shape)}")
     logits_bql = logits.permute(1, 2, 0, 3).reshape(b * e, q, n_logits)
     # Each ensemble member can transform its regression target (e.g. safepower).
     # Its logits live in that member's target space, not the common z-score space.
     # Matches the upstream 9.1.0 correction to _forward_with_loss (#1290).
-    targets = torch.stack([_targets_in_estimator_space(batch.y_query[0], c[0])
-                           for c in batch.configs]).to(logits.device)
+    targets = torch.stack([_targets_in_estimator_space(batch.y_query[0].double(), c[0])
+                           for c in batch.configs])
+    if not torch.isfinite(targets).all():
+        raise FloatingPointError("TabPFN target transform produced a non-finite float64 target")
+    # Leave ample headroom for squared error and its reductions. Ordinary
+    # tasks retain the native FP32 loss; the differentiable cast below does
+    # not change model parameter or forward precision.
+    safe_float32_target = math.sqrt(torch.finfo(torch.float32).max / (4 * max(1, targets.numel())))
+    loss_dtype = (torch.float64 if targets.abs().amax() > safe_float32_target
+                  else torch.float32)
+    targets = targets.to(device=logits.device, dtype=loss_dtype)
+    logits_bql = logits_bql.to(dtype=loss_dtype)
+    bardist = bardist.to(device=logits.device, dtype=loss_dtype)
     return _compute_regression_loss(
         logits_BQL=logits_bql, targets_BQ=targets, bardist_loss_fn=bardist,
         ce_loss_weight=weights["ce"], crps_loss_weight=weights["crps"],
@@ -380,11 +406,14 @@ class TabPFNTrainer:
         if adapter_fields and getattr(self.est, "znorm_space_bardist_", None) is not None:
             adapter_fields["state_dict"].update({"criterion." + k: v for k, v in
                                                 self.est.znorm_space_bardist_.state_dict().items()})
-        save_tabpfn_model(self.est, tmp, additional_fields={**adapter_fields,
-            "training_fingerprint": training_fingerprint(),
-            "crediticl_run_name": self.run_name, "crediticl_step": self.step,
-            "crediticl_config": self.cfg, **(extra or {})})
-        os.replace(tmp, path)
+        try:
+            save_tabpfn_model(self.est, tmp, additional_fields={**adapter_fields,
+                "training_fingerprint": training_fingerprint(),
+                "crediticl_run_name": self.run_name, "crediticl_step": self.step,
+                "crediticl_config": self.cfg, **(extra or {})})
+            os.replace(tmp, path)
+        finally:
+            tmp.unlink(missing_ok=True)
         return path
 
     def _save(self) -> None:
@@ -534,13 +563,28 @@ class TabPFNTrainer:
         while True:
             self.optimizer.zero_grad(set_to_none=True)
             total = 0.0
+            wide_loss = False
+            backward_divisor = 1.0
             try:
                 with self._full_precision() if full_precision else nullcontext():
                     for p in usable:
                         loss = self._task_loss(p)
+                        wide_loss |= loss.dtype == torch.float64
                         if not torch.isfinite(loss):
                             raise FloatingPointError(f"non-finite loss at step {self.step}")
-                        scaled = loss / len(usable)
+                        # A finite float64 MSE can still have gradients outside
+                        # FP32's range. In the full-precision path normalize the
+                        # WHOLE accumulated batch by a common factor, then undo
+                        # it during global clipping. Rescale earlier task grads
+                        # when that factor grows; no task receives a new weight.
+                        if loss.dtype == torch.float64 and not self.amp:
+                            divisor = max(backward_divisor, math.sqrt(abs(float(loss.detach()))) / 1e24)
+                            if divisor > backward_divisor:
+                                for parameter in params:
+                                    if parameter.grad is not None:
+                                        parameter.grad.mul_(backward_divisor / divisor)
+                                backward_divisor = divisor
+                        scaled = loss / len(usable) / backward_divisor
                         with sdpa_kernel_context():
                             (self.scaler.scale(scaled) if self.scaler is not None else scaled).backward()
                         total += float(loss.detach())
@@ -586,17 +630,21 @@ class TabPFNTrainer:
                         difference = parameter.float() - self._l2sp_ref[name].float()
                         penalty += float(difference.square().sum()) * (self.l2sp_alpha / 2)
                         if parameter.grad is None:
-                            parameter.grad = (difference * self.l2sp_alpha).to(parameter.dtype)
+                            parameter.grad = (difference * (self.l2sp_alpha / backward_divisor)).to(parameter.dtype)
                         else:
-                            parameter.grad.add_(difference, alpha=self.l2sp_alpha)
+                            parameter.grad.add_(difference, alpha=self.l2sp_alpha / backward_divisor)
             if not math.isfinite(penalty):
                 raise FloatingPointError("non-finite L2-SP penalty")
         if self.telemetry.due_grad(self.step + 1):
             row = self.telemetry.sample_grads(self.model)
+            if backward_divisor != 1.0:
+                row = {key: value * backward_divisor if key.startswith(("grad_", "gw_ratio_")) else value
+                       for key, value in row.items()}
+                row["backward_divisor"] = backward_divisor
             row.update({"step": self.step + 1, "datasets_seen": self.datasets_seen + len(prepared), "kind": "grad"})
             self.telemetry.record(row)
-        if full_precision:
-            _clip_full_precision_grad_norm(params, self.grad_clip)
+        if full_precision or wide_loss:
+            _clip_full_precision_grad_norm(params, self.grad_clip, divisor=backward_divisor)
         else:
             torch.nn.utils.clip_grad_norm_(params,
                                            self.grad_clip if self.grad_clip > 0 else float("inf"),
@@ -610,7 +658,7 @@ class TabPFNTrainer:
         self.scheduler.step()
         self.datasets_seen += len(prepared)
         return {"loss": total / len(usable), "l2sp_penalty": penalty, "tasks": float(len(usable)), "amp_retries": float(retries),
-                "full_precision_retry": float(full_precision)}
+                "full_precision_retry": float(full_precision), "backward_divisor": backward_divisor}
 
     # -- the loop --------------------------------------------------------------------------
     def _install_stop_signals(self) -> None:

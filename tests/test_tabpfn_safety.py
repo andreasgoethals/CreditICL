@@ -124,7 +124,7 @@ def test_regression_loss_has_finite_gradients_without_mutating_prepared_batch():
     assert_regression_loss_devices('cpu')
 
 
-def assert_extreme_regression_replay(device):
+def assert_extreme_regression_replay(device, target_magnitude=3.390504907822858e18):
     """A finite MSE with the target magnitude observed in synthetic batch 217.
 
     The model output is explicitly cast to half to exercise the float16 gradient
@@ -136,7 +136,7 @@ def assert_extreme_regression_replay(device):
     trainer = tiny_trainer(scale=128., device=device)
     baseline = tiny_trainer(device=device)
     bar = FullSupportBarDistribution(torch.linspace(-3, 3, 5))
-    target = torch.tensor([[0., 3.390504907822858e18, 1.]])
+    target = torch.tensor([[0., target_magnitude, 1.]], dtype=torch.float64)
     batch = SimpleNamespace(X_query=None, y_query=target, znorm_space_bardist=bar,
                             configs=[[SimpleNamespace(target_transform=None)]])
     seen, draws = [], []
@@ -179,6 +179,58 @@ def assert_extreme_regression_replay(device):
 
 def test_extreme_regression_target_replays_full_precision_without_changing_the_objective():
     assert_extreme_regression_replay('cpu')
+
+
+def test_reported_batch_685_target_range_keeps_one_complete_update():
+    assert_extreme_regression_replay('cpu', 1.0339849692701e25)
+
+
+def test_beyond_float32_target_range_keeps_one_complete_update():
+    assert_extreme_regression_replay('cpu', 1e40)
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('regularizer', [0., .3])
+def test_wide_batch_rescaling_preserves_the_true_clipped_gradient(reverse, regularizer):
+    trainer = tiny_trainer()
+    trainer.model = torch.nn.Linear(2, 1, bias=False)
+    with torch.no_grad():
+        trainer.model.weight.copy_(torch.tensor([[1., -1.]]))
+    trainer.optimizer = torch.optim.SGD(trainer.model.parameters(), lr=.25)
+    trainer.scheduler = torch.optim.lr_scheduler.StepLR(trainer.optimizer, step_size=1)
+    trainer.l2sp_alpha = regularizer
+    trainer._l2sp_ref = {'weight': torch.zeros_like(trainer.model.weight)}
+    tasks = [{'item': (torch.tensor([1e5, 1.]), -1e35)},
+             {'item': (torch.tensor([1., -1.]), -1e40)}]
+    if reverse:
+        tasks.reverse()
+    before = trainer.model.weight.detach().double().clone()
+    expected = torch.zeros_like(before)
+    for task in tasks:
+        x, y = task['item']
+        x = x.double().reshape(1, -1)
+        expected += 2 * ((before * x).sum() - y) * x / len(tasks)
+    expected += regularizer * before
+    expected /= torch.linalg.vector_norm(expected) + 1e-6
+    trainer._task_loss = lambda task: (trainer.model(task['item'][0]).double() - task['item'][1]).square().mean()
+    stats = trainer.train_step(tasks)
+    assert stats['backward_divisor'] > 1.
+    torch.testing.assert_close(trainer.model.weight.double(), before - .25 * expected, rtol=1e-6, atol=1e-7)
+    assert trainer.datasets_seen == 2 and trainer.scheduler.last_epoch == 1
+
+
+def test_wide_backward_restores_unclipped_gradients_and_regularizer():
+    trainer = tiny_trainer()
+    trainer.grad_clip = 0.
+    trainer.optimizer = torch.optim.SGD(trainer.model.parameters(), lr=.01)
+    trainer.scheduler = torch.optim.lr_scheduler.StepLR(trainer.optimizer, step_size=1)
+    trainer.l2sp_alpha = .25
+    trainer._l2sp_ref = {'weight': torch.zeros_like(trainer.model.weight)}
+    # A huge constant tests normalization without overwhelming the regularizer.
+    trainer._task_loss = lambda _: trainer.model.weight.double().square().sum() + 1e60
+    stats = trainer.train_step([{'item': 1}])
+    assert stats['backward_divisor'] > 1.
+    torch.testing.assert_close(trainer.model.weight, torch.tensor([[1 - .01 * 2.25]]))
 
 
 @pytest.mark.parametrize('max_norm', [1., 0.])

@@ -127,3 +127,20 @@ def test_previous_revision_preserves_all_27_recipes_and_only_their_exact_resume(
         bad["crediticl_config"]["seed"] = 99
         with pytest.raises(ValueError, match="training code differs"):
             validate_training_fingerprint(bad, current_config=run)
+
+
+@pytest.mark.parametrize("track", ['PD', 'LGD'])
+def test_oct26_exp1_results_survive_tabpfn_only_numerical_fix(track):
+    from src.train.checkpoint import validate_training_fingerprint
+
+    for variant in ['', '_ablations']:
+        for run in expand_with_seeds(load(f'config/Exp1_{track}{variant}.yaml')):
+            fingerprint = preflight.training_fingerprint_for(compat.OCT26_IMPLEMENTATION)
+            summary = dict(steps=12500, completed=True, datasets_seen=800000,
+                           training_fingerprint=fingerprint)
+            compat.validate_completed_training(summary, run, copy.deepcopy(run))
+            # Exp2 has a changed numerical path and must not inherit Exp1's exception.
+            changed = copy.deepcopy(run)
+            changed['experiment'] = f'exp2_{track.lower()}'
+            with pytest.raises(ValueError, match='training code differs'):
+                validate_training_fingerprint(summary, current_config=changed)

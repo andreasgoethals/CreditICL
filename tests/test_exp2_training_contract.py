@@ -105,7 +105,12 @@ def test_regression_loss_and_gradients_match_official_finetuner(transform_member
 
     assert torch.isfinite(loss) and gradient.abs().sum() > 0
     torch.testing.assert_close(loss, expected, rtol=0, atol=0)
-    torch.testing.assert_close(gradient, expected_gradient, rtol=0, atol=0)
+    # Transforming in float64 prevents the real batch-685 overflow. A benign
+    # PowerTransformer can consequently round its FP32 gradient a few ULPs
+    # differently from the native float32 transform; its objective is unchanged.
+    torch.testing.assert_close(gradient, expected_gradient,
+                               rtol=2e-6 if transform_member else 0,
+                               atol=3e-8 if transform_member else 0)
     if transform_member:
         # The fixture must detect accidentally applying one common target space
         # to both members; numerical equality alone is not useful without this.

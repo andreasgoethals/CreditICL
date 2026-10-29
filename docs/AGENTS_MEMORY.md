@@ -1,5 +1,71 @@
 # Agents' memory — runs and dead ends
 
+## 29-10-2026 — TabPFN loss-range correction and authorized Exp2 restart
+
+Andreas authorizes fixing the numerical bug and discarding all Exp2 run output for a fresh
+rerun. Exp1's 54 completed runs and its existing benchmarks must remain usable. The observed
+numerical failure is confined to Exp2 LGD TabPFN primary-rate seed-0 arms 8/9/10 (0/25/50%
+credit), all at update 685. Exp1 uses the TabICL trainer and its benchmarks do not call this loss.
+
+The correction transforms query targets in float64 and widens loss arithmetic for tails whose
+squared errors or their batch reduction would exceed FP32 range. It preserves the model forward precision, mathematical
+CRPS+MSE objective, task stream and budgets. Wide-loss updates use a float64 norm reduction for
+clipping. A common backward divisor also covers finite float64 losses whose true gradients exceed
+FP32's range: earlier task gradients and L2-SP receive the same divisor, then global clipping
+restores the mathematically equivalent update. Targets are not clipped and tasks are not discarded.
+The actual seed-0 batch-685 original-prior task now passes a real released-weight CPU
+optimizer update. New CPU and mandatory CUDA tests cover that task, finite gradients, AMP replay
+and one committed update. GPU acceptance still requires new Exp0 validation.
+
+Hash-only provenance reads no longer stage every input/validation checkpoint into per-job GPFS.
+Quota/access failures are labelled storage access rather than instructions to retrain Exp0.
+Both checkpoint writers remove partial temp files after a failed save. Completed Exp1 source
+compatibility is bound to the exact new training digest and reviewed prior sources/recipes;
+failed Exp2 checkpoints do not gain resume permission through that exception.
+
+`python -m src.utils.clean_run --reset-exp2` previews; adding `--clean` removes Exp2 logs,
+records, results, checkpoints, recognised legacy output and identified job scratch on configured
+GPFS/Lustre roots. It checks all paths before deletion, refuses queued/running CreditICL jobs,
+uses Slurm accounting for preflight-only job directories, and retains unclassified scratch.
+Other experiments, shared references, datasets, released weights and Downloads are excluded.
+No actual user output was deleted in this implementation turn; cleanup was tested in fixtures.
+
+The corrected VSC quote with `--array=0` and the actual script returns **30,600 credits/hour**
+for one B200, 24 CPUs, 180G. Available balance: **95,945,277**. At the measured/provisional
+throughput the current 96×10k grid projects to **373–395M training credits**, excluding benchmarks.
+The 48×2,500 single-rate alternative projects to 46.6–49.4M, and 96×1,000 to 37.3–39.5M.
+These are proposals, not changed runnable grids. The user requests an extensive literature-based
+comparison before choosing. Freeze that choice before a fresh CPU/GPU validation pair.
+TFM research pin `26156f36eb7676e8d9050547817346db548b0e85`; VSC pin
+`1c29213086a0ae76b8f95cdd8eccbb9db8d6ca87`; neither submodule was edited.
+
+Local acceptance: **1,957 passed, 36 VSC-only skipped**, 1,190.03 s, with PYTHONHASHSEED=0,
+OMP/MKL threads=1 and the existing Git Bash on the process PATH. The focused checks pass 144/144.
+Current source fingerprint `07f1b4e40e258e7d9748af8a4ee7c227cef1897561e2b324269001838a8022b5`;
+reviewed training implementation `01a5f056044cc261b83b3973956d55211c64b4e81ee58d285712e852109007e4`.
+Ruff reports 185 pre-existing findings, zero introduced (compared against HEAD); new test files lint clean.
+No notebook/visualization source was changed, no package installed, and no cluster job submitted.
+
+Tried: the first reset regression fixtures and new atomic-save failure probe.
+Result: cleanup refused the recognised legacy Exp2 checkpoint folder; two test fixtures also needed correction.
+Why: the released-weight parent guard was broader than the explicit legacy-run scope, and the save probe lacked the scheduler required by the existing API.
+Instead: allow only the recognised `checkpoints/exp2_*` child exception, keep released files protected, repair the fixtures and rerun the suite before publication.
+
+Tried: a complete local suite with the unbounded host thread default, then a wider finite-tail probe.
+Result: the released-weight CPU replay became excessively slow; a finite FP64 loss can still produce FP32-infinite gradients above the original failure's range.
+Why: native CPU attention is sensitive to oversubscription; widening the loss alone does not widen intermediate gradients.
+Instead: bound threads in the CPU replay test, normalize the entire backward accumulation before the existing global clipping rule, and test against analytic FP64 gradients before the final suite.
+
+Tried: the broader Windows suite with the default executable search path and the old exact-gradient assertion.
+Result: two shell error-propagation tests could not find Bash; a transformed-target gradient differed from native FP32 by 2.24e-8.
+Why: Git's installed Bash was outside PATH; the deliberately wider target transform changes FP32 rounding slightly.
+Instead: expose the existing Git Bash only in the test process, retain exact classification/untransformed checks, bound transformed-gradient tolerance to FP32 roundoff, and rerun the full suite.
+
+Tried: regenerating the exact failing production task in a test process without PYTHONHASHSEED=0.
+Result: the nominal seed/slot could yield an ordinary transformed target instead of the reported extreme.
+Why: upstream GraphSCM uses hash-dependent set ordering, already documented and fixed to hash seed 0 in production launchers.
+Instead: regenerate this historical regression case in a fresh hash-seed-0 subprocess, not by inheriting the test runner's hash seed; also cover finite-element/overflowing-mean loss reduction.
+
 ## 29-10-2026 — all Exp1 training complete; Exp2 blocked by scratch quota and target-loss overflow
 
 Downloads `output CreditICL.zip`, 29-10 08:51:08, 28,122,513 bytes, SHA256

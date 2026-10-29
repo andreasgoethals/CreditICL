@@ -1,7 +1,7 @@
 """Recognise the completed Exp1 campaign after the isolated Exp2 additions.
 
 Historical source has completion/evaluation permission only. The separate
-19a76cc-to-current review also permits unchanged Exp1 checkpoint resume. The a073d7d-to-a18efa8 source diff preserves Exp1's fixed 1024-row
+19a76cc/26-October-to-current review also permits unchanged Exp1 checkpoint resume. The a073d7d-to-a18efa8 source diff preserves Exp1's fixed 1024-row
 dense stream, loss and optimiser. It adds opt-in long-context/ragged training,
 TabPFN precision handling, validation and telemetry. Exact source and recipe
 digests below constrain that review; unknown changes still fail closed.
@@ -14,10 +14,11 @@ from typing import Any
 
 HISTORICAL_IMPLEMENTATION = "abb00376738fe71ca1d5590eab5299fa9ae796e8515be6ba559d462495418155"
 PREVIOUS_IMPLEMENTATION = "5b9cf0c29f222ac9555c5712976f3deb0f1f4d95ed7eedc75a5087316cf82b9d"
-REVIEWED_IMPLEMENTATION = "ea055886d91ddd805ffe378d5d2722c3d3c0bcc07f909d5c30489905ba58e2e0"
+OCT26_IMPLEMENTATION = "ea055886d91ddd805ffe378d5d2722c3d3c0bcc07f909d5c30489905ba58e2e0"
+REVIEWED_IMPLEMENTATION = "01a5f056044cc261b83b3973956d55211c64b4e81ee58d285712e852109007e4"
 
 # PD/LGD, original main mixtures and five component removals. Seed is checked
-# separately; 25% has no historical completion to grandfather. Digests include
+# separately; 25% was completed under OCT26_IMPLEMENTATION. Digests include
 # all prior/model/init settings and training settings except operational knobs.
 REVIEWED_RECIPES: frozenset[str] = frozenset({
     "018eb8e311c6a3e4629ce385b62bc6b555585d655f854cdc541bc33cde8b4f21",
@@ -68,8 +69,11 @@ def validate_completed_training(summary: dict[str, Any], current: dict[str, Any]
             and type(current.get("seed")) is int and current["seed"] in (0, 1, 2)
             and recipe_digest(current) in REVIEWED_RECIPES | QUARTER_RECIPES
             and recipe_digest(saved) == recipe_digest(current)
+            and saved.get("seed") == current["seed"]
             and preflight.training_implementation_fingerprint() == REVIEWED_IMPLEMENTATION
-            and (summary.get("training_fingerprint") == preflight.training_fingerprint_for(PREVIOUS_IMPLEMENTATION)
+            and (summary.get("training_fingerprint") in {
+                    preflight.training_fingerprint_for(PREVIOUS_IMPLEMENTATION),
+                    preflight.training_fingerprint_for(OCT26_IMPLEMENTATION)}
                  or (recipe_digest(current) in REVIEWED_RECIPES and summary.get("training_fingerprint")
                      == preflight.training_fingerprint_for(HISTORICAL_IMPLEMENTATION)))):
         validate_resume_config(saved, current)
@@ -79,7 +83,7 @@ def validate_completed_training(summary: dict[str, Any], current: dict[str, Any]
 
 
 def reviewed_exp1_resume(payload: dict, current: dict) -> bool:
-    """Only 19a76cc's unchanged Exp1 update rule may continue across this patch.
+    """Only the reviewed unchanged Exp1 update rule may continue across this patch.
 
     Original campaign fingerprints remain completion/evaluation-only. A change
     to source, packages, seed, recipe or task accounting closes this exception.
@@ -94,4 +98,6 @@ def reviewed_exp1_resume(payload: dict, current: dict) -> bool:
         and recipe_digest(saved) == recipe_digest(current)
         and saved.get("seed") == current["seed"]
         and preflight.training_implementation_fingerprint() == REVIEWED_IMPLEMENTATION
-        and payload.get("training_fingerprint") == preflight.training_fingerprint_for(PREVIOUS_IMPLEMENTATION))
+        and payload.get("training_fingerprint") in {
+            preflight.training_fingerprint_for(PREVIOUS_IMPLEMENTATION),
+            preflight.training_fingerprint_for(OCT26_IMPLEMENTATION)})

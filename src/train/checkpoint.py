@@ -152,8 +152,11 @@ def save_checkpoint(
     # mid-write would otherwise leave a truncated checkpoint that resume picks up
     # as "latest" and fails on.
     tmp = path.with_suffix(".ckpt.tmp")
-    torch.save(payload, tmp)
-    os.replace(tmp, path)
+    try:
+        torch.save(payload, tmp)
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
     return path
 
 

@@ -190,9 +190,18 @@ python -m pip install -e ".[dev]"
 
 **4. Verify:**
 
+The Slurm shell checks require Bash. Git for Windows includes it; if `bash` is not on the
+terminal's PATH, expose the existing installation in this terminal before testing:
+
+```powershell
+$creditIclGitRoot = Split-Path (Split-Path (Get-Command git).Source -Parent) -Parent
+$creditIclBashBin = Join-Path $creditIclGitRoot "bin"
+if (Test-Path (Join-Path $creditIclBashBin "bash.exe")) { $env:Path = "$creditIclBashBin;$env:Path" }
+```
+
 ```powershell
 python -c "import torch, numpy, sklearn, pandas; print(torch.__version__)"
-pytest -q
+python -m pytest -q
 ```
 
 `.vscode/settings.json` is committed and points VS Code at `.\CreditICL\Scripts\python.exe` (auto-

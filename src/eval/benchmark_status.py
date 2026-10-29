@@ -94,9 +94,11 @@ def digest(path: Path) -> str:
 
 @lru_cache(maxsize=512)
 def _cached_digest(path: str, size: int, mtime_ns: int) -> str:
-    from src.utils.working_storage import local_input
-
-    return digest(local_input(path))
+    # Provenance is a single sequential read, cached for this process. Copying
+    # every validation checkpoint into each job's scratch just to hash it filled
+    # the shared GPFS quota during Exp2. Model/data working I/O still stages its
+    # own inputs through working_storage.local_input.
+    return digest(Path(path))
 
 
 def input_digest(path: Path) -> str:

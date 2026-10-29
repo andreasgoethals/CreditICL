@@ -179,6 +179,43 @@ TabPFN 9.1.0. That commit pins VSC `3bcdf55e576d10161d6189b40ac39380bbba9eca`.
 The executable source fingerprint remains
 `4b31d59be2048f41f894db9a26c49919f759e65e9fdfae4305dd52e27ae164d0` locally during this audit.
 
+### 29-10 implementation follow-up (no new cluster submission)
+
+Andreas subsequently authorizes discarding all Exp2 runs and requests the numerical fix before
+a fresh rerun. Query-target transforms now use float64; the native CRPS+MSE arithmetic widens
+when squared targets or their batch reduction would overflow FP32. In a full-precision replay, very wide losses use
+a common backward divisor for all accumulated tasks and L2-SP, reversed during the existing
+global clipping rule. This retains the same mathematical objective and task weights without
+materializing an unrepresentable FP32 gradient. The native batch-685 task is covered through
+released weights; mandatory VSC tests cover its loss/update and an even wider finite target.
+This does not establish CUDA acceptance until Experiment 0 runs on the final chosen design.
+
+Hash-only validation reads no longer stage artifacts into GPFS. Both checkpoint writers remove
+failed temporary files, and quota/access exceptions explicitly report storage access. The new
+`clean_run --reset-exp2` previews an Exp2-only reset on both permanent tiers and identified job
+scratch; `--clean` applies it after idle-queue/path checks. It preserves Exp0/1/3, released weights,
+data, shared references and unrelated projects. No user output was deleted during implementation.
+Reviewed source/recipe compatibility preserves all 54 completed Exp1 runs; it does not authorize
+resuming the numerically changed Exp2 implementation.
+
+The actual one-task, one-hour B200/24-CPU/180G `sam-quote` returns **30,600 credits**; available
+shared-account credits are **95,945,277**. The full 96×10k plan projects to 373–395M training
+credits. The 48×2,500 one-rate and 96×1,000 two-rate alternatives project to 46.6–49.4M and
+37.3–39.5M respectively, before benchmarks/validation. Neither budget is implemented while
+Andreas compares the literature-grounded proposals. TFM pin `26156f36eb7676e8d9050547817346db548b0e85`;
+VSC pin `1c29213086a0ae76b8f95cdd8eccbb9db8d6ca87`. These submodules were not edited.
+
+Local verification: full `python -m pytest -q` **1,957 passed / 36 mandatory VSC cases skipped**,
+1,190.03 seconds. PYTHONHASHSEED=0, OMP_NUM_THREADS=1, MKL_NUM_THREADS=1; Git Bash was added only
+to the test process PATH. The production-case helper separately fixes its child hash seed to 0.
+The focused numerical/storage/provenance checks pass 144/144. Current executable fingerprint:
+`07f1b4e40e258e7d9748af8a4ee7c227cef1897561e2b324269001838a8022b5`.
+The reviewed training implementation is
+`01a5f056044cc261b83b3973956d55211c64b4e81ee58d285712e852109007e4`.
+Full Ruff still reports 185 existing findings; comparison of diagnostic code/message counts to
+HEAD shows no introduced findings. The new test modules lint clean. No notebooks/visualization
+source was changed; no package installation, paid cluster run or user-output deletion occurred.
+
 ### Experiment 1: completed training, quarter-mixture benchmarks pending
 
 All six quarter-mixture runs report completed=true, 12,500 updates and 800,000 synthetic tables.

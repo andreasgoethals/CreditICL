@@ -288,11 +288,12 @@ Completed Exp1 training on B200, batch 64 and micro-batch 4, with explicit proje
 
 | | value |
 |---|---|
-| B200 GPU-hour | 26,250 GPU credits plus host CPU/memory charges; verify current Turin billing |
+| B200 allocation-hour | **30,600 credits**, live `sam-quote` on 29-10-2026 for one B200, 24 CPUs, 180G; GPU component 26,250, host charges additional |
 | one Exp1 arm, 12,500 steps | **6.43–7.38 training GPU-h**, measured in the completed 24-10-2026 snapshot |
 | **Completed original Exp1, 24 arms/track (9 main + 15 component)** | **323.616 recorded training GPU-h** for all 48 completed arms, excluding startup and benchmarks; see [RUNS, 24-10-2026](RUNS.md#24-10-2026--exp1-training-complete--all-48-runs-successful) |
-| **Exp1 extension approved 26-10-2026: 3 more arms/track** | 25% credit, three seeds, indices 9–11; six additional runs make 54 total. Earlier per-arm timings imply roughly 39–44 training GPU-h, excluding queue, startup and benchmarking. Preserve the completed runs. |
-| Exp2 / current Exp3 | Runtime remains to be measured on the validated long-context/adapter paths; do not extrapolate fixed 1,024-row Exp1 throughput. The old 200k scratch Exp3 is abandoned. |
+| **Completed Exp1 extension: 3 more arms/track** | 25% credit, three seeds, indices 9–11; all six completed on 28-10, making 54 completed training runs. Their recorded training totals about 40.7 GPU-h; quarter-mixture benchmarks remain pending in the 29-10 snapshot. |
+| Current 96-run Exp2, 10k updates | Production TabICL timing projects 210–225 GPU-h/arm; combined with the provisional TabPFN subtotal, **12,189–12,909 GPU-h / 373–395M training credits**, excluding benchmarking. New budget remains under review. |
+| Current Exp3 | Retention-method runtime remains unmeasured; do not extrapolate scratch throughput. The old 200k scratch Exp3 is abandoned. |
 | TabICLv2's own full pretraining | 24.5 GPU-days per model (the paper's figure) |
 
 The revised configurations generate tasks live in every experiment. Exp1 uses 12,500 updates,
@@ -312,6 +313,34 @@ route checks. Fresh capacity and representative-batch probes must establish feas
 one representative update gives a timing observation, not a reliable 96-run campaign ETA.
 Benchmark probes measure selected tables only: their times do not establish
 the runtime of the complete publication benchmark matrix.
+
+The 29-10 quote uses an actual jobscript (this VSC `sam-quote` rejects `--wrap` alone):
+
+```bash
+sam-quote sbatch --clusters=mindwell --partition=gpu_b200 --account=lp_verbekelab \
+  --nodes=1 --ntasks=1 --gpus-per-node=1 --cpus-per-task=24 --mem=180G \
+  --time=01:00:00 --array=0 scripts/slurm/pretrain_pd.slurm
+```
+
+Available balance in the supplied transcript is 95,945,277 credits. This is a dated balance;
+use `sam-balance` again before submitting. The reduced-budget alternatives are still proposals,
+not the current YAML grid. Training estimates exclude validation and full-table benchmarking.
+
+For the authorized clean Exp2 restart, preview then delete only its generated run output:
+
+```bash
+python -m src.utils.clean_run --reset-exp2
+python -m src.utils.clean_run --reset-exp2 --clean
+myquota
+```
+
+Run on a login node with no CreditICL jobs queued/running. Both permanent output tiers are
+included; configure `VSC_SCRATCH_GPFS1` and `VSC_SCRATCH_LUSTRE1` to inspect their job directories.
+Accounting records and checkpoint destination markers identify Exp2 scratch. Unidentified jobs
+are retained and printed; another project's scratch is never a cleanup target. The same command
+works locally on the local output tree. Downloads ZIPs remain evidence. Current Exp0 and all
+Exp1 outputs survive. After code or the final approved grid changes, validate that revision
+before production; do not repeatedly rerun Exp0 while the budget design is still changing.
 
 ## 10. Experiment 0: run it first
 

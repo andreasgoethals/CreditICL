@@ -8,6 +8,7 @@ code, configuration, packages, input data, weights and output artifacts.
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 import signal
@@ -521,7 +522,7 @@ def readiness(phase: str = "gpu") -> list:
         if phase == "gpu":
             cpu = readiness("cpu")
             if not cpu[0].ok:
-                raise ValueError(cpu[0].detail)
+                return cpu
         if phase == "gpu" and saved.get("status") in ("RUNNING", "DEFERRED"):
             with attempt_scope(saved["attempt"]):
                 verify_continuation(saved, phase)
@@ -561,7 +562,13 @@ def readiness(phase: str = "gpu") -> list:
             if not artifacts or any(input_digest(Path(p)) != h for p, h in artifacts.items()):
                 raise ValueError("Validation artifacts missing or modified")
         return [Check(f"Experiment 0 {phase}", True, f"PASS: {saved['attempt']}; all stages and artifacts current")]
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except OSError as exc:
+        if exc.errno in (errno.EDQUOT, errno.ENOSPC, errno.EACCES):
+            return [Check("Validation storage access", False,
+                          f"Cannot verify existing evidence: {exc}. Restore storage capacity/access "
+                          "and repeat preflight; this error does not establish a failed Experiment 0.")]
+        return [Check(f"Experiment 0 {phase}", False, str(exc))]
+    except (ValueError, KeyError, TypeError) as exc:
         return [Check(f"Experiment 0 {phase}", False, f"{exc}. Run the CPU job, then the GPU job, for the current code.")]
 
 

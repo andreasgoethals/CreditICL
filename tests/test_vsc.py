@@ -102,6 +102,25 @@ def test_cuda_extreme_regression_targets_keep_the_whole_training_batch():
     assert_extreme_regression_replay('cuda')
 
 
+@pytest.mark.parametrize('target_magnitude', [1.0339849692701e25, 1e40])
+def test_cuda_wide_regression_replays_and_commits_once(target_magnitude):
+    from test_tabpfn_safety import assert_extreme_regression_replay
+
+    assert_extreme_regression_replay('cuda', target_magnitude)
+
+
+def test_cuda_production_batch_685_native_target_loss():
+    from test_tabpfn_loss_range import assert_production_batch_685_loss
+
+    assert_production_batch_685_loss('cuda')
+
+
+def test_cuda_production_batch_685_updates_released_weights(tmp_path):
+    from test_tabpfn_loss_range import assert_production_batch_685_update
+
+    assert_production_batch_685_update(tmp_path, 'cuda')
+
+
 def test_cluster_working_storage_publishes_complete_checkpoint():
     from src.utils import paths
     from src.utils.working_storage import checkpoint_work_dir, local_input, publish_checkpoint, work_root

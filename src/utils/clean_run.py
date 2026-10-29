@@ -11,6 +11,7 @@
     python -m src.utils.clean_run --reset-output --clean    ALL generated output on both tiers
     python -m src.utils.clean_run --reset-exp0-gpu --clean  GPU validation attempts only
     python -m src.utils.clean_run --reset-exp0 --clean      CPU/GPU validation only, both tiers
+    python -m src.utils.clean_run --reset-exp2 --clean      Exp2 runs/checkpoints and identified scratch jobs
 
 Clears the `output CreditICL/` tree (`src/utils/paths.py`) on BOTH storage tiers: the small
 half on `$VSC_DATA` (logs, run records, benchmark scores, figures) and, when asked, the big
@@ -310,6 +311,138 @@ def reset_exp0(*, clean: bool = False) -> tuple[int, int]:
     return _reset_exp0(clean=clean, gpu_only=False)
 
 
+def _exp2_accounting_jobs(job_ids: set[str]) -> set[str]:
+    """Classify scratch left by preflight failures, which have no run marker.
+
+    Scheduler records, rather than an ID range or another project's files,
+    identify the job. Missing accounting evidence leaves a directory intact.
+    """
+    import subprocess
+
+    found = set()
+    if not job_ids:
+        return found
+    for cluster in ("mindwell", "wice"):
+        try:
+            result = subprocess.run(
+                ["sacct", f"--clusters={cluster}", "-X", "--noheader", "--parsable2",
+                 "--jobs=" + ",".join(sorted(job_ids)), "--format=JobIDRaw,JobName%128"],
+                capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if result.returncode:
+            continue
+        for line in result.stdout.splitlines():
+            fields = line.strip().split("|")
+            if (len(fields) >= 2 and fields[0] in job_ids
+                    and re.fullmatch(r"(?:crediticl|cicl)-exp2(?:[-_].*)?", fields[1])):
+                found.add(fields[0])
+    return found
+
+
+def reset_exp2(*, clean: bool = False) -> tuple[int, int]:
+    """Remove only Exp2 output, on both tiers and verified job scratch.
+
+    Preview by default. Exp0/Exp1/Exp3, shared reference results, input data,
+    released weights and Downloads archives are outside the deletion scope.
+    """
+    current = (paths.outputs_dir(), paths.big_outputs_dir())
+    if any(p.name != paths.OUTPUT_NAME or _linked(p) for p in current):
+        raise RuntimeError(f"Unexpected or linked output roots: {current}")
+    projects = {p.parent.resolve() for p in current}
+    candidates: dict[Path, Path] = {}
+    exp_roots = set()
+    for project in sorted(projects):
+        for name in (paths.OUTPUT_NAME, "output", "outputCreditICL", "output_CreditICL"):
+            output = project / name
+            exp = output / "experiment_2"
+            candidates[exp] = project
+            exp_roots.add(exp)
+            # Lock names encode the run/tag; other experiments' locks survive.
+            lock_root = output / "locks"
+            if _linked(lock_root):
+                raise RuntimeError(f"Linked output locks: {lock_root}")
+            if lock_root.is_dir():
+                for item in lock_root.iterdir():
+                    if re.match(r"exp2(?:_|bench_)", item.name):
+                        candidates[item] = project
+        legacy = project / "checkpoints"
+        if _linked(legacy):
+            raise RuntimeError(f"Linked legacy checkpoints: {legacy}")
+        if legacy.is_dir():
+            for item in legacy.iterdir():
+                if item.name.startswith("exp2_"):
+                    candidates[item] = project
+        if project.is_dir():
+            for item in project.iterdir():
+                if re.fullmatch(r"slurm-(?:crediticl|cicl)-exp2(?:-[A-Za-z]+)*-\d+(?:_\d+)?\.(?:out|err)", item.name):
+                    candidates[item] = project
+
+    if paths.on_vsc():
+        scratch_values = {os.environ[k] for k in ("VSC_SCRATCH_GPFS1", "VSC_SCRATCH_LUSTRE1")
+                          if os.environ.get(k)}
+        if not scratch_values and os.environ.get("VSC_SCRATCH"):
+            scratch_values.add(os.environ["VSC_SCRATCH"])
+        for scratch_value in sorted(scratch_values):
+            scratch = Path(scratch_value).resolve()
+            base = scratch / paths.PROJECT_NAME / "jobs"
+            if _linked(base):
+                raise RuntimeError(f"Linked scratch jobs: {base}")
+            if not base.is_dir():
+                continue
+            jobs = [p for p in base.iterdir() if re.fullmatch(r"[0-9_]+", p.name)]
+            classified = _exp2_accounting_jobs({p.name for p in jobs})
+            for job in jobs:
+                if _linked(job):
+                    raise RuntimeError(f"Linked scratch job: {job}")
+                markers = list((job / "checkpoints").glob("*/destination.txt"))
+                marker_ownership = []
+                for marker in markers:
+                    if _linked(marker) or _linked(marker.parent) or _linked(marker.parent.parent):
+                        raise RuntimeError(f"Linked scratch marker: {marker}")
+                    destination = Path(marker.read_text(encoding="utf-8").strip())
+                    marker_ownership.append(any(destination.resolve().is_relative_to(p) for p in exp_roots))
+                owned = bool(marker_ownership) and all(marker_ownership)
+                if job.name in classified and marker_ownership and not owned:
+                    raise RuntimeError(f"Exp2 job contains checkpoints outside Experiment 2: {job}")
+                if job.name in classified or owned:
+                    candidates[job] = scratch
+                elif not markers:
+                    print(f"Unidentified scratch job retained: {job}")
+
+    inputs = [paths.datasets_dir(), paths.ood_cache_dir(), paths.pretrained_dir()]
+    files, directories, anchors = [], [], set()
+    for item, anchor in sorted(candidates.items()):
+        if (item == anchor or not item.is_relative_to(anchor)
+                or not item.resolve().is_relative_to(anchor)
+                or any(_linked(p) for p in (item, *item.parents) if p != anchor and anchor in p.parents)):
+            raise RuntimeError(f"Linked or escaping Exp2 output: {item}")
+        if not item.exists():
+            continue
+        legacy_run = (item.parent == paths.pretrained_dir().resolve()
+                      and item.name.startswith("exp2_"))
+        protected_inputs = inputs[:2] if legacy_run else inputs
+        if any(p.resolve().is_relative_to(item) or item.is_relative_to(p.resolve()) for p in protected_inputs):
+            raise RuntimeError(f"Input data or released weights overlap Exp2 output: {item}")
+        anchors.add(anchor)
+        print(f"Experiment 2 reset target: {item}")
+        tree = [item, *_safe_tree(item)] if item.is_dir() else [item]
+        for path in tree:
+            if path.is_dir():
+                directories.append(path)
+            elif path.is_file():
+                if path.name not in KEEP:
+                    info = path.stat()
+                    files.append((path, anchor, (info.st_size, info.st_mtime_ns, info.st_ino)))
+            else:
+                raise RuntimeError(f"Unexpected Exp2 output type: {path}")
+    total = sum(info[0] for _, _, info in files)
+    print(f"Experiment 2 reset: {len(files)} files, {total / 1e9:.3f} GB; includes partial checkpoints.")
+    if clean:
+        _apply_reset_plan(files, directories, anchors)
+    return len(files), total
+
+
 def _reset_exp0(*, clean: bool, gpu_only: bool) -> tuple[int, int]:
     """Reset all validation or only its GPU phase, preserving production and inputs.
 
@@ -530,6 +663,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="GPU validation attempts, checkpoints/results, logs and matching scratch jobs; preserve CPU output")
     parser.add_argument("--reset-exp0", action="store_true",
                         help="all CPU/GPU Experiment 0 output on both tiers and matching scratch jobs; preserve Experiments 1-3")
+    parser.add_argument("--reset-exp2", action="store_true",
+                        help="all Experiment 2 output on both tiers and identified scratch jobs; preserve other experiments and inputs")
     parser.add_argument("--stale", action="store_true",
                         help="only failed job logs and generated figures/summaries; preserve all "
                              "checkpoints, successful/unfinished logs, results and caches")
@@ -544,13 +679,14 @@ def main(argv: list[str] | None = None) -> int:
                              "from them and trains nothing. Never touches the released weights.")
     args = parser.parse_args(argv)
 
-    if args.reset_output or args.reset_exp0_gpu or args.reset_exp0:
+    if args.reset_output or args.reset_exp0_gpu or args.reset_exp0 or args.reset_exp2:
         if args.stale or args.experiment is not None or args.processed or args.prior_cache or args.checkpoints:
             parser.error("reset options define their own output scope; combine only with --clean")
-        if sum((args.reset_output, args.reset_exp0_gpu, args.reset_exp0)) > 1:
+        if sum((args.reset_output, args.reset_exp0_gpu, args.reset_exp0, args.reset_exp2)) > 1:
             parser.error("choose only one reset scope")
         try:
-            reset = reset_exp0 if args.reset_exp0 else (reset_exp0_gpu if args.reset_exp0_gpu else reset_output)
+            reset = (reset_exp2 if args.reset_exp2 else reset_exp0 if args.reset_exp0
+                     else reset_exp0_gpu if args.reset_exp0_gpu else reset_output)
             reset(clean=args.clean)
         except (OSError, RuntimeError) as exc:
             print(f"Reset refused: {exc}")
