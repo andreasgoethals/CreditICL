@@ -122,13 +122,17 @@ def test_clean_run_spares_the_ood_cache_and_the_released_weights(tmp_path, monke
     assert (root / "weights" / "tabicl.ckpt").is_file(), "the released weights must survive"
 
 
-def test_checkpoints_are_opt_in_even_where_both_tiers_are_one_folder(tmp_path, monkeypatch):
+@pytest.mark.parametrize("inherited_project", [False, True])
+def test_checkpoints_are_opt_in_even_where_both_tiers_are_one_folder(tmp_path, monkeypatch, inherited_project):
     """The bug that cost job 11517891: a rerun that finds an old checkpoint resumes at
     `max_steps`, trains nothing, and exits 0. So `--checkpoints` must reach them — and a plain
     clean must not, even locally where they sit inside the tree it walks."""
     from src.utils import clean_run, paths
 
-    for var in ("VSC_DATA", *paths.STAGING_ENV_VARS):
+    if inherited_project:
+        for var in paths.PROJECT_ENV_VARS:
+            monkeypatch.setenv(var, str(tmp_path / "unrelated-allocation"))
+    for var in ("VSC_DATA", *paths.PROJECT_ENV_VARS, *paths.STAGING_ENV_VARS):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(paths, "REPO_ROOT", tmp_path)   # read at call time by every resolver
     assert paths.big_outputs_dir() == paths.outputs_dir() == tmp_path / "output CreditICL"

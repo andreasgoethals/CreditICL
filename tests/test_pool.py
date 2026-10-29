@@ -37,7 +37,7 @@ def pool_env(tmp_path, monkeypatch):
     """Point the pool cache at a temp dir and reload the modules that read it."""
     import importlib
 
-    monkeypatch.setenv("CREDITICL_STAGING_ROOT", str(tmp_path))
+    monkeypatch.setenv("CREDITICL_PROJECT_ROOT", str(tmp_path))
     monkeypatch.delenv("VSC_DATA", raising=False)
     import src.utils.paths as paths
 

@@ -27,7 +27,7 @@ def ood_cache(tmp_path, monkeypatch):
     """A hand-built OOD cache: 2 classification + 2 regression datasets."""
     import importlib
 
-    monkeypatch.setenv("CREDITICL_STAGING_ROOT", str(tmp_path))
+    monkeypatch.setenv("CREDITICL_PROJECT_ROOT", str(tmp_path))
     monkeypatch.delenv("VSC_DATA", raising=False)
     import src.utils.paths as paths
 
@@ -217,7 +217,7 @@ def test_an_unresolvable_suite_does_not_abort_the_fetch():
 def test_status_is_empty_without_a_cache(tmp_path, monkeypatch):
     import importlib
 
-    monkeypatch.setenv("CREDITICL_STAGING_ROOT", str(tmp_path / "nothing"))
+    monkeypatch.setenv("CREDITICL_PROJECT_ROOT", str(tmp_path / "nothing"))
     monkeypatch.delenv("VSC_DATA", raising=False)
     import src.utils.paths as paths
 
@@ -423,7 +423,7 @@ def test_a_failing_cell_becomes_a_row_not_an_exception(ood_cache):
 def test_run_ood_without_a_cache_names_the_fix(tmp_path, monkeypatch):
     import importlib
 
-    monkeypatch.setenv("CREDITICL_STAGING_ROOT", str(tmp_path / "empty"))
+    monkeypatch.setenv("CREDITICL_PROJECT_ROOT", str(tmp_path / "empty"))
     monkeypatch.delenv("VSC_DATA", raising=False)
     import src.utils.paths as paths
 

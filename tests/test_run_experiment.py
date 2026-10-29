@@ -27,7 +27,7 @@ def fake_tree(tmp_path, monkeypatch):
     from src.utils import paths
     from src.utils import run_experiment as pipeline
 
-    for var in ("VSC_DATA", *paths.STAGING_ENV_VARS):
+    for var in ("VSC_DATA", *paths.PROJECT_ENV_VARS, *paths.STAGING_ENV_VARS):
         monkeypatch.delenv(var, raising=False)
     # Off-VSC both tiers resolve through `outputs_dir`, so one patch isolates the whole tree.
     monkeypatch.setattr(paths, "outputs_dir", lambda: tmp_path / "output")

@@ -2,6 +2,19 @@
 
 ## 29-10-2026 — approved 1,500-update deployment
 
+**Tried:** Fresh CPU Exp0 62470861 under controller 62470856, current PROJECT-root override.
+**Result:** Preprocessing/preflight/native Slurm credit checks passed; portable tests exposed
+one cleanup fixture before later test modules ran. SIGINT requested the stored traceback
+through an overlapping Slurm step; 594 tests had passed. All 2,204 Exp1 files still matched
+size/mtime and JSON/CSV hashes after the attempt.
+**Why:** The local-layout fixture removed only legacy staging variables, leaving the new
+CREDITICL_PROJECT_ROOT active. Related pool/planning fixtures needed the same isolation review.
+**Instead:** Clear both root-alias families for local-layout fixtures and use the canonical
+PROJECT override for temporary pool fixtures. Tests simulate inherited aliases and preserve
+an unrelated sentinel. CPU pytest now fails fast on its first failure; a successful run still
+executes every portable test, with GPU coverage unchanged.
+
+
 **Tried:** Controller 62470838 submitted fresh CPU validation 62470841 through the image.
 **Result:** CPU startup stopped in 30 s; the dependency gate kept GPU/production unsubmitted.
 **Why:** Apptainer exported the controller's automatic bind list; sbatch --export=ALL carried

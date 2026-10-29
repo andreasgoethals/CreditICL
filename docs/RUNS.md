@@ -177,6 +177,7 @@ The one thing to do differently.
 | 62470775 | wICE interactive, 1 CPU, 2G, five-minute limit | COMPLETED; host sbatch test-only and actual compute config path verified |
 | 62470810 / 62470817 | wICE controller / interactive CPU child | Deliberately cancelled during runtime acceptance to fix the missing site credit client; no GPU launched |
 | 62470838 / 62470841 | wICE controller / interactive CPU child | CPU startup FAILED (30 s): inherited parent container mount list; controller stopped before GPU |
+| 62470856 / 62470861 | wICE controller / interactive CPU | Native runtime/credit/preflight passed; unit fixture leaked PROJECT-root alias; GPU remained blocked |
 
 The controller used source `cbd755ed9185403865b68a3d65f74e3c3045abb950c0a9841f476b7c3241d35f`
 and image SHA256 `83f8145eafbbbcad0f25a5d109b0329aec12a159e5bc8ab9fc94a9f1e3ed0585`.

@@ -32,7 +32,7 @@ def tree(tmp_path, monkeypatch):
     import importlib
 
     monkeypatch.setenv("VSC_DATA", str(tmp_path / "vsc_data"))
-    monkeypatch.setenv("CREDITICL_STAGING_ROOT", str(tmp_path / "staging"))
+    monkeypatch.setenv("CREDITICL_PROJECT_ROOT", str(tmp_path / "staging"))
     import src.utils.paths as paths
 
     importlib.reload(paths)

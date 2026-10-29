@@ -42,7 +42,7 @@ def pools(tmp_path, monkeypatch, lgd_cfg):
     """
     import importlib
 
-    monkeypatch.setenv("CREDITICL_STAGING_ROOT", str(tmp_path))
+    monkeypatch.setenv("CREDITICL_PROJECT_ROOT", str(tmp_path))
     monkeypatch.delenv("VSC_DATA", raising=False)
     import src.utils.paths as paths
 
@@ -136,7 +136,7 @@ def test_other_task_pools_are_not_mixed_in(pools, tmp_path):
 def test_no_pools_gives_an_empty_list_not_an_error(tmp_path, monkeypatch):
     import importlib
 
-    monkeypatch.setenv("CREDITICL_STAGING_ROOT", str(tmp_path / "empty"))
+    monkeypatch.setenv("CREDITICL_PROJECT_ROOT", str(tmp_path / "empty"))
     monkeypatch.delenv("VSC_DATA", raising=False)
     import src.utils.paths as paths
 
@@ -259,7 +259,7 @@ def test_fallback_generates_live_when_there_are_no_pools(tmp_path, monkeypatch):
     """
     import importlib
 
-    monkeypatch.setenv("CREDITICL_STAGING_ROOT", str(tmp_path / "nothing"))
+    monkeypatch.setenv("CREDITICL_PROJECT_ROOT", str(tmp_path / "nothing"))
     monkeypatch.delenv("VSC_DATA", raising=False)
     import src.utils.paths as paths
 

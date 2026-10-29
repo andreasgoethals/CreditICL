@@ -86,7 +86,7 @@ def plan(phase: str = "gpu") -> list[Stage]:
     stages = [Stage("preflight", (py, "-m", "src.utils.preflight"))]
     stages.append(Stage("slurm-client", (py, "-m", "src.validation.slurm_client"), cpu=True))
     suites = (
-        ("unit", ("tests", "-m", "not vsc"), True),
+        ("unit", ("tests", "-m", "not vsc", "-x"), True),
         ("vsc", ("tests/test_vsc.py", "--run-vsc", "-x"), False),
     )
     if phase == "cpu":
