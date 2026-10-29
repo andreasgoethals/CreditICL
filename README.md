@@ -72,16 +72,16 @@ Full rationale in
 |---|---|---|---|
 | **0** | **Does the revised pipeline run correctly?** | CPU + GPU Slurm jobs: portable tests, CUDA/save/resume checks, full-table benchmarks, 34 long-context probes and 16 retention-method round trips | 3 base training routes |
 | **1** | **Does the prior help at matched compute?** | four mixtures × three seeds, plus five component removals × three seeds; 12,500 steps | 27 |
-| **2** | **Does continued pretraining transfer?** | two released backbones × four mixtures × two peak rates × three seeds, 10,000 updates | 48 |
+| **2** | **Does continued pretraining transfer?** | two released backbones × four mixtures × one pilot-selected rate × three seeds, 2,500 updates | 24 + 8 pilots |
 | **3** | **Which constraints preserve generality?** | fixed 50% mixture; no decay, L2-SP, DiagScale, Q/V LoRA; three seeds | 24 new + 6 reused; 18 pilots |
 
 Counts include seeds and both prediction tasks: **Exp1 = (4 mixtures + 5 component removals) × 3 seeds × 2 tasks = 54 runs**;
-**Exp2 = 2 backbones × 4 mixtures × 2 rates × 3 seeds × 2 tasks = 96 runs**.
+**Exp2 = 2 backbones × 4 mixtures × 1 selected rate × 3 seeds × 2 tasks = 48 main runs, plus 16 development-only LR pilots**.
 **Exp3 = 48 new main runs + 12 reused Exp2 baselines + 36 development-only pilots**.
 The component removals are compared with the main 50% mixture; they are not additional mixture levels.
 The 25% Exp1 extension was approved on 26-10-2026 after the initial 48-run campaign. It appends
 indices 9–11 per task, preserving existing run names and benchmark tags. Completed runs stay valid;
-the extra six runs and their benchmarks remain to be done. Figures sort mixtures numerically.
+the six additional runs finished on 28-10; their remaining benchmarks are selected by the planner. Figures sort mixtures numerically.
 
 Exp2's TabICLv2 arm uses the upstream final-stage table distribution: **400–60,000 rows,
 log-uniform, 79–81% context**, with the upstream row-dependent synthetic feature ceiling.
@@ -246,9 +246,11 @@ pull and Exp0-only cleanup sequence is in [VSC](docs/VSC.md).
 After Exp1's extension and benchmarks, continue without changing the validated code:
 
 ```bash
-python -m src.utils.run_experiment 2 --single-cluster --submit
-# Repeat after training to submit missing benchmarks; after the required final benchmarks:
+python -m src.utils.run_experiment 2 --variant pilots --single-cluster --submit
+# Repeat after pilot training to submit its development benchmarks. Then:
 python -m src.experiments.selection --stage learning-rate
+python -m src.utils.run_experiment 2 --single-cluster --submit
+# Repeat after training to submit missing benchmarks; then the retention pilots:
 python -m src.utils.run_experiment 3 --variant pilots --single-cluster --submit
 # Repeat the pilot planner after training; after all pilot development benchmarks:
 python -m src.experiments.selection --stage adapters
@@ -256,9 +258,9 @@ python -m src.utils.run_experiment 3 --single-cluster --submit
 # Repeat the main planner after training to submit missing benchmarks.
 ```
 
-Selection uses complete development folds only. Exp2 retains every mixture/rate. Exp3 freezes
-the full-model rate and adapter settings in hashed receipts; no YAML edit or retraining of the
-12 reused Exp2 baselines is needed. Its eight-checkpoint figures report credit and native OOD
+Selection uses complete development folds only. Exp2 uses one frozen rate per backbone/task
+for all four mixtures. Exp3 reuses that rate and freezes adapter settings in hashed receipts;
+no YAML edit or retraining of the 12 reused baselines is needed. Its five-checkpoint figures report credit and native OOD
 trajectories separately. See [the registered design](docs/EXPERIMENTAL_DESIGN.md).
 
 The Experiment 1 planner includes its main grid and component ablations. Repeat each experiment's

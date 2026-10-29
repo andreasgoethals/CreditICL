@@ -102,8 +102,9 @@ def test_the_main_benchmark_scores_both_models_and_the_reference_column():
     from src.eval.benchmark_status import n_slots, slot_for
 
     total = n_slots(2, "lgd")
-    assert total == 48 * 8 + 4
+    assert total == 24 * 5 + 4
     assert slot_for(2, "lgd", total - 1).tag == "reference_lgd_linear"
+    assert n_slots(2, "lgd", variant="pilots") == 8
 
 
 # -- the same columns for every model ----------------------------------------------------------------
@@ -221,7 +222,7 @@ def test_tabpfn_continued_pretraining_trains_saves_resumes_and_is_scored(tmp_pat
     from src.train.tabpfn_trainer import TabPFNTrainer
     from src.utils.config import expand_with_seeds, load
 
-    run = copy.deepcopy(next(r for r in expand_with_seeds(load(ROOT / "config" / f"Exp2_{track.upper()}.yaml"))
+    run = copy.deepcopy(next(r for r in expand_with_seeds(load(ROOT / "config" / f"Exp2_{track.upper()}.yaml", allow_placeholders=True))
                              if r["architecture"] == "tabpfn3"))
     run["prior"].update(n_rows_range=[96, 96], n_features_range=[3, 5], max_features=8,
                         n_nodes_range=[2, 4], max_filter_attempts=3, credit_fraction=0.5)
@@ -265,7 +266,7 @@ def test_a_tabpfn_arm_refuses_tabicls_encoding(tmp_path):
     from src.train.tabpfn_trainer import TabPFNTrainer
     from src.utils.config import expand_with_seeds, load
 
-    run = copy.deepcopy(next(r for r in expand_with_seeds(load(ROOT / "config" / "Exp2_PD.yaml"))
+    run = copy.deepcopy(next(r for r in expand_with_seeds(load(ROOT / "config" / "Exp2_PD.yaml", allow_placeholders=True))
                              if r["architecture"] == "tabpfn3"))
     run["prior"]["encoding"] = "tabicl"
     run["logging"] = {"console": False, "to_file": False}

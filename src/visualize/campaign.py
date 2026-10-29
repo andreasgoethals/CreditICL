@@ -46,7 +46,8 @@ def coverage(track: str, exp: str = "exp1", *, components: bool = False) -> pd.D
         label = (COMPONENTS[run["arm"]] if run.get("arm") in COMPONENTS
                  else style.prior_mix_label(run["prior"]["credit_fraction"]))
         if exp == "exp2" and not components:
-            label = ("TabPFN-3" if "tabpfn3" in run["_run_name"] else "TabICLv2") + " · " + label + f" · LR {run['train']['lr']:g}"
+            rate = "pending LR pilot" if run.get("design_unresolved") else f"LR {run['train']['lr']:g}"
+            label = ("TabPFN-3" if "tabpfn3" in run["_run_name"] else "TabICLv2") + " · " + label + " · " + rate
         rows.append({"run": run["_run_name"], "seed": run["seed"],
                      "label": label, "credit_fraction": float(run["prior"]["credit_fraction"]),
                      "architecture": str(run.get("architecture", "tabicl")), "lr_index": run.get("lr_index", 0),
@@ -160,7 +161,7 @@ def continuation_recipe(track: str) -> pd.DataFrame:
     """Display the actual expanded recipe, including backbone-specific shape overrides."""
     import math
 
-    runs = expand_with_seeds(load(paths.config_path(f"Exp2_{track.upper()}")))
+    runs = expand_with_seeds(load(paths.config_path(f"Exp2_{track.upper()}"), allow_placeholders=True))
     rows = []
     for architecture in ("tabicl", "tabpfn3"):
         selected = [r for r in runs if r["architecture"] == architecture]
@@ -170,7 +171,7 @@ def continuation_recipe(track: str) -> pd.DataFrame:
         mean = lo if lo == hi else ((hi-lo)/math.log(hi/lo) if law == "log_uniform" else (lo+hi)/2)
         tasks = t["max_steps"] * t["batch_size"]
         rows.append({"Backbone": "TabICLv2" if architecture == "tabicl" else "TabPFN-3",
-                     "Runs per track": len(selected), "Peak LRs": ", ".join(f"{lr:g}" for lr in sorted({r["train"]["lr"] for r in selected}, reverse=True)),
+                     "Runs per track": len(selected), "Peak LR": ("pending development pilot" if selected[0].get("design_unresolved") else f"{t['lr']:g}"),
                      "Weight decay": t["weight_decay"], "Updates": t["max_steps"], "Tables per run": f"{tasks:,}",
                      "Rows per table": f"{lo:,}" if lo == hi else f"{lo:,}–{hi:,} ({law.replace('_', '-')})",
                      "Context share": "–".join(f"{v:.0%}" for v in p["train_frac_range"]),

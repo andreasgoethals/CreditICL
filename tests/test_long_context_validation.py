@@ -44,7 +44,7 @@ def test_precision_probe_observes_real_tabicl_forward_and_backward(tmp_path, lgd
 
 @pytest.mark.parametrize("track", ["pd", "lgd"])
 def test_full_batch_probe_keeps_production_tables_and_model_recipe(track):
-    production = next(c for c in expand_with_seeds(load(f"config/Exp2_{track.upper()}.yaml"))
+    production = next(c for c in expand_with_seeds(load(f"config/Exp2_{track.upper()}.yaml", allow_placeholders=True))
                       if c["arm"] == "tabicl" and c["seed"] == 0
                       and c["prior"]["credit_fraction"] == .5)
     probe = lc.diagnostic_config(track)

@@ -1,5 +1,43 @@
 # Agents' memory — runs and dead ends
 
+## 29-10-2026 — Budget A, development-only pilots and node-local working storage
+
+Andreas approves Budget A after the literature/cost comparison. Exp2 now has 48 main runs:
+2 backbones × 2 tasks × 4 mixtures × 3 seeds, 2,500 updates; retain 125/250/500/1000/2500.
+16 separate LR pilots use seed 990, the 0%/50% mixtures and two rates per backbone, stopping at
+500 on the same 2,500-update schedule. Only development data enter the score; one frozen LR
+per backbone/task applies to all main mixtures. Primary holdout/OOD results are separate;
+historical holdout exposure remains disclosed. Main runs restart released weights, not pilot states.
+Exp3 uses 36 development-only 500-update pilots at seed 991, 48 new 2,500-update main runs
+(no decay, L2-SP, DiagScale, Q/V LoRA), and 12 reused Exp2 50% baselines. No L2-SP in Exp2.
+No package or training-implementation change: Exp1's 54 runs and benchmark compatibility persist.
+
+Latest VSC transcript (29-10, 11:39): Exp2-only reset at be6de6e removed 15,071 files / 95.010 GB.
+GPFS scratch is now 422.4/500G, project 616.9G/1T, DATA 56,261/76,800M. Available credits 95,813,864.
+No new job submission is evidenced. Other projects own unknown portions of the remaining GPFS usage.
+Mindwell now stages to VSC_SCRATCH_NODE, with no automatic shared-GPFS fallback. Every save is
+published atomically to project storage; only the latest working checkpoint stays on the node.
+`src.utils.scratch_cleanup` only removes retired CreditICL caches/byte-verified checkpoint copies;
+it preserves unpublished checkpoints, all persistent results and unrelated projects.
+The source/config changes require fresh CPU/GPU Exp0 acceptance before production submission.
+TFM pin 26156f36eb7676e8d9050547817346db548b0e85; VSC pin 1c29213086a0ae76b8f95cdd8eccbb9db8d6ca87.
+
+Final local acceptance: **1,970 passed, 36 VSC-only skipped**, 1,189.41 s, with PYTHONHASHSEED=0,
+one-thread BLAS and the existing Git Bash on PATH. All 12 notebooks ran (40 figures); the five
+Exp2/3 notebooks were rerun after the final changes (5/5, three design figures). Captions and final
+printed summaries are saved. New design PDFs and populated trajectory/pilot layouts were inspected
+visually; populated layouts used test fixtures, not invented research results. The local imported
+notebook snapshot is still explicitly dated 24-10; the 54-completion statement uses the later VSC evidence.
+Training implementation remains `01a5f056044cc261b83b3973956d55211c64b4e81ee58d285712e852109007e4`;
+final executable source fingerprint is `c362bdf9b52134e3eb2727175db669037e7e1bd86c2a902072c87e7700710eb7`.
+No cluster job, package installation or user-output deletion was performed in this turn.
+
+**Tried:** full local pytest after replacing the 96-run/10k-step grid with Budget A.
+**Result:** 1,964 passed, six failed, 36 VSC-only skipped; all six old-expectation cases passed in a 47-test rerun.
+**Why:** curve fixtures, benchmark-slot counts and geometry-grid assertions still described two main rates and the old checkpoint list.
+**Instead:** update those fixtures to the approved single frozen rate, 24 main runs per task and five milestones; retain geometry, pairing and reference assertions.
+
+
 ## 29-10-2026 — TabPFN loss-range correction and authorized Exp2 restart
 
 Andreas authorizes fixing the numerical bug and discarding all Exp2 run output for a fresh

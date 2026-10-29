@@ -68,7 +68,7 @@ def _regenerate_production_batch_685():
     from src.train.tabpfn_trainer import TabPFNTaskPreparer, resolve_tabpfn_weights
     from src.utils.config import expand_with_seeds, load
 
-    run = next(r for r in expand_with_seeds(load('config/Exp2_LGD.yaml'))
+    run = next(r for r in expand_with_seeds(load('config/Exp2_LGD.yaml', allow_placeholders=True))
                if r['architecture'] == 'tabpfn3' and r['seed'] == 0
                and r['prior']['credit_fraction'] == 0 and r['lr_index'] == 0)
     slots = [plan_batch(0, 685, run['prior'], 16, regression=True, credit_fraction=f).slots[15]

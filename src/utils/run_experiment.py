@@ -193,7 +193,7 @@ def unconfigured_tracks(exp: int, tracks: list[str], variant: str | None = None)
         try:
             if find_placeholders(cfg):
                 blocked.append(track)
-            elif exp == 3:
+            elif exp in (2, 3):
                 load(_config(exp, track, variant))
         except (ValueError, OSError) as exc:
             blocked.append(f"{track}: {exc}")

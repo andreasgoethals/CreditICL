@@ -97,7 +97,7 @@ unchanged, including the appended 25% mixture. This change does not require retr
 |---|---|---|
 | 0 | Do the current code, inputs, native model routes and hardware paths pass validation? | Diagnostic CPU job, then resumable GPU campaign; no research arms |
 | 1 | Does the credit prior package help a scratch TabICL at a matched budget? | 54 = (4 mixtures + 5 component removals) × 3 seeds × 2 tasks |
-| 2 | How does credit-biased continuation affect each released backbone? | 96 = 2 backbones × 4 mixtures × 2 peak rates × 3 seeds × 2 tasks |
+| 2 | How does credit-biased continuation affect each released backbone? | 48 main = 2 backbones × 4 mixtures × 1 selected rate × 3 seeds × 2 tasks; 16 LR pilots |
 | 3 | Which update constraints trade credit adaptation against OOD retention? | 48 new main runs + 12 reused Exp2 baselines; 36 separate pilots |
 
 ### 3.1 Experiment 1: preserved evidence
@@ -111,10 +111,10 @@ may resume across this patch under an additional exact-source and recipe check.
 
 ### 3.2 Experiment 2: full continued pretraining
 
-Every run starts from released weights, updates the full model, and uses a fixed 10,000-update
-budget. Four mixtures are evaluated at both rates; neither Exp1's winning mixture nor OOD scores
-select the grid. The fixed primary checkpoint is update 10,000. Updates
-125, 250, 500, 1,000, 2,500, 5,000, 7,500 and 10,000 are permanently retained and benchmarked.
+Every main run starts from released weights, updates the full model, and uses a fixed 2,500-update
+budget. Four mixtures share one rate per backbone/task. Neither Exp1's winning mixture nor OOD
+scores select the grid. The fixed primary endpoint is update 2,500. Updates
+125, 250, 500, 1,000 and 2,500 are permanently retained and benchmarked.
 Released weights are a shared step-zero reference. Earlier points describe trajectories, not
 post-hoc alternative headline checkpoints.
 
@@ -123,10 +123,10 @@ post-hoc alternative headline checkpoints.
 | Tables per update | 64, one-table gradient accumulation | 16, one preprocessed task at a time |
 | Rows per synthetic table | 400–60,000, log-uniform | 1,024 |
 | Context share | 79–81% | 30–90% |
-| Peak learning rates | 2e-5 and 1e-5 | 1e-5 and 1e-6 |
+| Pilot candidate peak rates; one is frozen | 2e-5 or 1e-5 | 1e-5 or 1e-6 |
 | Optimizer | Native Muon configuration (all trainable parameters) | AdamW |
 | Weight decay | 0.01 | 0.01 |
-| Warm-up | 1% (100 updates) | 10% (1,000 updates) |
+| Warm-up | 1% (25 updates) | 10% (250 updates) |
 | Gradient norm limit | 1 | 1 |
 | Precision | FP32, explicit TF32/efficient SDPA policy | FP32 weights, FP16 autocast and GradScaler |
 | Objective | Native classification / 999-quantile regression | Native differentiable classification / distributional regression |
@@ -157,20 +157,32 @@ The synthetic task stream, warm-up fraction, precision and table geometry are ma
 mixtures within each backbone. Across backbones the adaptation budgets differ; the primary
 contrast is the prior effect within each backbone, not a compute-controlled architecture contest.
 
-Exp2 retains 768 trained checkpoints before adding shared released references. Using the observed
-checkpoint sizes (about 221/229 MB for TabICL PD/LGD and 639/700 MB for TabPFN PD/LGD), these
-permanent snapshots alone require roughly 343 GB in decimal units. Exp1, Exp3, rolling resume
-files and temporary benchmark storage require additional space. This is a planning estimate,
-not a current quota measurement. Estimate runtime from Exp0's B200 throughput measurements;
-short-table Exp1 timings do not establish the cost of this long-table continuation.
+**Learning-rate pilot (Budget A, approved 29-10-2026).** Sixteen separate runs cross both
+backbones/tasks, both candidate rates and the 0%/50% mixtures at seed 990. Each stops at 500
+updates on the **2,500-update schedule prefix**. Only development datasets are benchmarked,
+with all rows/features and five folds; no holdout, OOD or monitoring-based selection. Average
+folds within each dataset, then datasets and the two mixtures equally. Maximize ROC-AUC for PD
+and R² for LGD; exact ties choose the smaller rate. Freeze one rate per backbone/task, shared
+by every main mixture. Main seeds 0/1/2 restart from released weights. Immutable receipts bind
+code, packages, benchmark inputs, all candidate scores and CSV hashes. No YAML edit is required.
+
+Development performance is selection-exposed and reported descriptively. Primary comparisons
+use designated holdout datasets and native OOD, excluded from the pilot. Five-fold CV on the
+selection datasets does not make their selected scores unbiased. Previously inspected holdout
+results remain disclosed; this is a controlled benchmark, not untouched external confirmation.
+
+The 2,500-update endpoint is a compute-budget choice informed by measured costs, not a literature
+claim of optimal convergence. Main storage is 240 retained snapshots, approximately 107 GB,
+plus about 7.2 GB for the 16 pilots, rolling saves and benchmark output. Measured/provisional
+training extrapolation is about 50–53M VSC credits including pilots at the quoted 30,600/hour;
+benchmarking and fresh validation are additional and must be budgeted separately.
 
 ### 3.3 Experiment 3: constrained adaptation at a fixed 50% mixture
 
-The primary experiment uses the same 10k-update geometry and three paired seeds as Exp2.
+The primary experiment uses the same 2,500-update geometry and three paired seeds as Exp2.
 The mixture is fixed in advance at 50%; it is not chosen from Exp1 holdout results.
-For each model/task, select the better of Exp2's two 50% rates by mean development ROC-AUC
-(PD) or R² (LGD), averaging the five folds, datasets equally, and all three training seeds.
-Exact ties choose the smaller numeric rate. Reuse those 12 full-CPT-with-decay runs as baselines.
+Reuse the rate already frozen by the Exp2 LR pilot; do not select it again on main results.
+Reuse the 12 main 50% full-CPT-with-decay runs as baselines.
 
 | Additional method | Trainable parameters | Settings |
 |---|---|---|
@@ -179,11 +191,11 @@ Exact ties choose the smaller numeric rate. Reuse those 12 full-CPT-with-decay r
 | DiagScale | Query-scaling deltas only | AdamW; LR in {0.001, 0.01, 0.03}; adapter decay 0.01 |
 | Q/V LoRA | Rank-16 Q/V factors only | Alpha 16, no dropout; AdamW; LR in {1e-5, 1e-4, 1e-3}; adapter decay 0.01 |
 
-The three tuned methods each receive three 2,500-update pilots at seed 991 per backbone/task:
-36 pilots total. Each pilot follows the first 2,500 updates of the main 10,000-update schedule,
+The three tuned methods each receive three 500-update pilots at seed 991 per backbone/task:
+36 pilots total. Each pilot follows the first 500 updates of the main 2,500-update schedule,
 not a compressed cosine cycle. Only complete development five-fold results choose a candidate.
 Pilots neither benchmark holdout/OOD nor monitor them. All candidate scores are recorded.
-The selected setting is then run from the released weights at seeds 0/1/2 for 10k updates;
+The selected setting is then run from the released weights at seeds 0/1/2 for 2,500 updates;
 pilots are never counted as independent main-seed observations. No-decay needs no pilot.
 
 L2-SP adds alpha/2 times the squared displacement from the **released** parameters. The anchor
@@ -231,8 +243,8 @@ cleaned by this process.
 
 **Matched within each backbone, not across papers.** Mixture arms of the same backbone receive
 the same optimizer steps, task count and planned row/feature/context distribution. In Exp2,
-TabICLv2 receives 640,000 tasks (batch 64, stage-3 geometry) and TabPFN-3 receives 160,000 tasks
-(batch 16, 1,024 rows), each over 10,000 updates. Common random numbers pair shape draws across
+TabICLv2 receives 160,000 tasks (batch 64, stage-3 geometry) and TabPFN-3 receives 40,000 tasks
+(batch 16, 1,024 rows), each over 2,500 updates. Common random numbers pair shape draws across
 mixtures within a backbone. Each task contributes equally, so longer tables do not implicitly
 receive greater loss weight. Cross-backbone contrasts include different adaptation budgets;
 the primary prior effect is the contrast between mixtures within each backbone. This is **not**
@@ -289,8 +301,8 @@ without claiming an independently verified default-event definition or reversing
 by looking at real-data results — which learning rate or adapter strength Exp3 uses. A choice
 made on a set of datasets is fitted to them: the winning configuration's score there is biased upward
 (the winner's curse), exactly as a hyperparameter chosen on test data is. Training on synthetic data
-removes the leak through the weights, not the leak through the choice. Exp2 reports both rates and
-all four mixtures. Exp3 fixes the 50% mixture, selects the base rate on Exp2 development scores,
+removes the leak through the weights, not the leak through the choice. Exp2 selects one rate per backbone/task on separate development-only pilots and reports
+all four mixtures. Exp3 fixes the 50% mixture and reuses that frozen rate,
 then selects method strengths on separate development-only pilots. Every Exp1 and Exp2 result
 is reported on all eligible datasets, with the designated holdout shown separately. This separation
 does not erase the effects of earlier inspection and must not be described as an unbiased fresh test.
@@ -334,7 +346,7 @@ columns, so wide-table extrapolation is shared across prior arms. Source audit: 
 601-feature prediction and regression-quantile probes, and both released classifiers passed
 2,986-feature probes matching the widest local table's width. Exp0 repeats wide probes on CUDA. Every
 saved permanent checkpoint is scored: Exp1 keeps its existing 2,500-step cadence; Exp2/Exp3 keep
-125, 250, 500, 1,000, 2,500, 5,000, 7,500 and 10,000. Exp3 pilots benchmark only 2,500 on
+125, 250, 500, 1,000 and 2,500. Both kinds of pilots benchmark only 500 on
 development. Exp1 and Exp2/Exp3's TabPFN-3 arms train on 1,024-row tables;
 Exp2/Exp3's TabICLv2 arms use 400–60,000 rows. All main runs are scored on full contexts of up to ~426,000 rows.
 Length exposure is matched across mixtures within each backbone, but it differs across experiments
@@ -467,7 +479,7 @@ are preserved. This closes known exclusions; it does not certify every anonymise
    within 0.001 on 49.2% of 594 rows, not the historical 57%. Source dictionaries and LGD target
    definitions remain necessary; weak univariate prediction does not certify absence of leakage.
 6. **Exp2's reported checkpoint** — resolved 30-09-2026: with no search there is no chosen checkpoint;
-   the final one (currently proposed as 10,000 steps) is the result, the others a learning curve.
+   the final one (fixed at 2,500 steps after the 29-10 budget revision) is the result, the others a learning curve.
    The 26-10 review does not establish 10,000 as optimal; freeze any pilot-informed replacement
    budget for all mixtures of a backbone before the production comparison.
    `eval.headline_step`, if a config sets it, is honoured by `results_plots.load_results`.

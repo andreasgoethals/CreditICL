@@ -42,7 +42,7 @@ def test_the_final_checkpoint_is_reported_by_default_and_a_headline_step_when_na
 
 
 def test_no_config_names_a_headline_step_today():
-    """Both Exp2 recipes fix 10,000 steps; nothing selects a checkpoint."""
+    """Both Exp2 recipes fix the final step; nothing selects a checkpoint."""
     from src.visualize import results_plots as rp
 
     for exp in ("exp1", "exp2", "exp3"):

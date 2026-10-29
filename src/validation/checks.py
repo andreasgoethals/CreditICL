@@ -434,7 +434,7 @@ def check_configs(rep: Report) -> None:
         text = (ROOT / "scripts" / "slurm" / f"{script}.slurm").read_text(encoding="utf-8")
         m = re.search(r"#SBATCH --array=0-(\d+)", text)
         header[script] = int(m.group(1)) + 1 if m else None
-    for exp, variant in ((0, None), (1, None), (1, "ablations"), (2, None), (3, None), (3, "pilots")):
+    for exp, variant in ((0, None), (1, None), (1, "ablations"), (2, None), (2, "pilots"), (3, None), (3, "pilots")):
         for track in ("pd", "lgd"):
             name = f"Exp{exp}_{track.upper()}{'_' + variant if variant else ''}"
             path = ROOT / "config" / f"{name}.yaml"

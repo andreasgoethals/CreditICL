@@ -19,7 +19,7 @@ def diagnostic_config(track: str, backbone: str, method: str) -> dict:
     from src.utils.config import expand_with_seeds, load
     from src.experiments.design import apply_design
 
-    cfg = copy.deepcopy(next(r for r in expand_with_seeds(load(f"config/Exp2_{track.upper()}.yaml"))
+    cfg = copy.deepcopy(next(r for r in expand_with_seeds(load(f"config/Exp2_{track.upper()}.yaml", allow_placeholders=True))
                              if r["arm"] == backbone and r["seed"] == 0
                              and r["lr_index"] == 0 and r["prior"]["credit_fraction"] == .5))
     cfg.update(design="retention_pilot", method=method, candidate=1)

@@ -56,7 +56,7 @@ def test_quarter_mixture_is_nested_and_control_tasks_remain_paired(track):
     from src.prior.stream import plan_batch
     from src.utils.config import expand_with_seeds, load
 
-    runs = expand_with_seeds(load(f'config/Exp2_{track.upper()}.yaml'))
+    runs = expand_with_seeds(load(f'config/Exp2_{track.upper()}.yaml', allow_placeholders=True))
     for arm in ('tabicl', 'tabpfn3'):
         cfg = next(c for c in runs if c['arm'] == arm and c['seed'] == 0
                    and c['prior']['credit_fraction'] == .25)

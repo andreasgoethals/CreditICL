@@ -11,14 +11,14 @@ from src.experiments.design import MILESTONES, RATES
 
 @pytest.mark.parametrize("task", ["pd", "lgd"])
 def test_exp2_crosses_each_recipe_without_changing_geometry(task):
-    runs = expand_with_seeds(load(f"config/Exp2_{task.upper()}.yaml"))
-    assert len(runs) == len({r["_run_name"] for r in runs}) == 48
+    runs = expand_with_seeds(load(f"config/Exp2_{task.upper()}.yaml", allow_placeholders=True))
+    assert len(runs) == len({r["_run_name"] for r in runs}) == 24
     assert {(r["architecture"], r["train"]["lr"], r["prior"]["credit_fraction"], r["seed"])
             for r in runs} == {(model, rate, mix, seed) for model, rates in RATES.items()
-                              for rate in rates for mix in (0, .25, .5, 1) for seed in range(3)}
+                              for rate in rates[:1] for mix in (0, .25, .5, 1) for seed in range(3)}
     for r in runs:
         t, p = r["train"], r["prior"]
-        assert t["keep_steps"] == list(MILESTONES) and t["max_steps"] == 10000
+        assert t["keep_steps"] == list(MILESTONES) and t["max_steps"] == 2500
         assert t["weight_decay"] == .01
         assert t["batch_size"] == (64 if r["architecture"] == "tabicl" else 16)
         assert p["n_rows_range"] == ([400, 60000] if r["architecture"] == "tabicl" else [1024, 1024])
@@ -34,12 +34,12 @@ def test_exp3_is_bounded_and_requires_frozen_selection(task, isolated_output):
     assert all(r["design_unresolved"] for r in main + pilots)
     for r in main + pilots:
         assert r["init"]["strategy"] == "full" and r["prior"]["credit_fraction"] == .5
-        assert r["train"]["schedule_total_steps"] == 10000
+        assert r["train"]["schedule_total_steps"] == 2500
         if r["method"] in {"lora", "diagscale"}:
             assert r["train"]["optimizer"] == "adamw" and r["train"]["weight_decay"] == .01
         else:
             assert r["train"]["weight_decay"] == 0
-    assert all(r["train"]["max_steps"] == 2500 and r["seed"] == 991 for r in pilots)
+    assert all(r["train"]["max_steps"] == 500 and r["seed"] == 991 for r in pilots)
     assert all(not r["eval"]["holdout_datasets"] and not r["eval"]["include_ood"]
                and r["progress"]["every_datasets"] == 0 for r in pilots)
 
@@ -68,11 +68,11 @@ def test_early_checkpoints_are_published_and_never_pruned(tmp_path):
         publish_checkpoint(folder, step, permanent_every=2500, keep_steps=MILESTONES,
                            final=False, stopped=False)
     prune_checkpoints(folder, save_perm_every=2500, max_temp=2, keep_steps=MILESTONES)
-    assert all((folder / f"step-{s}.ckpt").exists() and (destination / f"step-{s}.ckpt").exists()
+    assert all((destination / f"step-{s}.ckpt").exists()
                for s in (125, 250, 500, 1000))
     assert not (folder / "step-750.ckpt").exists()
-    cfg = expand_with_seeds(load("config/Exp2_PD.yaml"))[0]
-    assert checkpoint_steps(cfg) == [10000, 125, 250, 500, 1000, 2500, 5000, 7500]
+    cfg = expand_with_seeds(load("config/Exp2_PD.yaml", allow_placeholders=True))[0]
+    assert checkpoint_steps(cfg) == [2500, 125, 250, 500, 1000]
 
 
 def test_stale_gpu_campaign_starts_fresh_but_corrupt_matching_campaign_does_not(monkeypatch):

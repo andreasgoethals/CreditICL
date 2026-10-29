@@ -52,16 +52,16 @@ def test_pilot_uses_the_prefix_of_the_main_learning_rate_schedule():
     from src.train.optim import build_scheduler
     from src.experiments.design import apply_design
     from src.utils.config import expand_with_seeds, load
-    base = expand_with_seeds(load("config/Exp2_PD.yaml"))[0]
+    base = expand_with_seeds(load("config/Exp2_PD.yaml", allow_placeholders=True))[0]
     pilot = copy.deepcopy(base)
     pilot.update(design="retention_pilot", method="lora", candidate=1)
     apply_design(pilot, {"choices": {"pd/tabicl": {"full_lr": 2e-5}}})
-    pilot["train"]["max_steps"] = 2500
+    pilot["train"]["max_steps"] = 500
     opt_a = torch.optim.AdamW([torch.nn.Parameter(torch.zeros(1))], lr=pilot["train"]["lr"])
     opt_b = torch.optim.AdamW([torch.nn.Parameter(torch.zeros(1))], lr=pilot["train"]["lr"])
     a = build_scheduler(opt_a, pilot["train"], pilot["train"]["schedule_total_steps"])
-    b = build_scheduler(opt_b, pilot["train"], 10000)
-    for step in range(2501):
+    b = build_scheduler(opt_b, pilot["train"], 2500)
+    for step in range(501):
         assert opt_a.param_groups[0]["lr"] == opt_b.param_groups[0]["lr"]
         opt_a.step(); opt_b.step(); a.step(); b.step()
 
@@ -113,8 +113,6 @@ def test_two_stage_selection_is_frozen_complete_and_invalidated_by_environment(t
         for track in ("pd", "lgd"):
             cfg = load(bs.config_path(exp, track, variant))
             for index, run in enumerate(expand_with_seeds(cfg)):
-                if run["prior"]["credit_fraction"] != .5:
-                    continue
                 tag = f"e{exp}-{track}-{index}"
                 metric = "roc_auc" if track == "pd" else "r2"
                 # The lower full-model LR wins; the middle adapter candidate wins.
@@ -127,7 +125,7 @@ def test_two_stage_selection_is_frozen_complete_and_invalidated_by_environment(t
                 (tmp_path / (tag + ".json")).write_text('{"valid": true}')
                 records[exp, track, index] = (tag, {}, {"credit": csv})
 
-    prepare(2)
+    prepare(2, "pilots")
     first = selection.freeze("learning-rate")
     assert first == selection.freeze("learning-rate")  # idempotent, not a new search
     frozen = selection.load_selection("retention_pilot")

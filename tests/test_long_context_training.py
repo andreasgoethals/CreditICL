@@ -144,8 +144,8 @@ def test_efficient_attention_requires_backend_support(monkeypatch):
 def test_exp2_geometry_and_controls_are_matched_within_backbone(track):
     from src.utils.config import expand_with_seeds, load
 
-    runs = expand_with_seeds(load(f'config/Exp2_{track}.yaml'))
-    assert len(runs) == 48
+    runs = expand_with_seeds(load(f'config/Exp2_{track}.yaml', allow_placeholders=True))
+    assert len(runs) == 24
     for architecture in ('tabicl', 'tabpfn3'):
         selected = [r for r in runs if r['architecture'] == architecture]
         assert {r['prior']['credit_fraction'] for r in selected} == {0., .25, .5, 1.}
@@ -153,9 +153,8 @@ def test_exp2_geometry_and_controls_are_matched_within_backbone(track):
         for p in prior:
             p.pop('credit_fraction')
         assert all(p == prior[0] for p in prior)
-        for lr_index in (0, 1):
-            same_rate = [r for r in selected if r['lr_index'] == lr_index]
-            assert all(r['train'] == same_rate[0]['train'] for r in same_rate)
+        assert {r['lr_index'] for r in selected} == {0}
+        assert all(r['train'] == selected[0]['train'] for r in selected)
         p, t = selected[0]['prior'], selected[0]['train']
         if architecture == 'tabicl':
             assert p['n_rows_range'] == [400, 60000]

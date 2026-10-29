@@ -58,7 +58,7 @@ def diagnostic_config(track: str, *, rows: int | None = None,
         raise ValueError("Unknown synthetic source")
     if (rows is None) != (source == "mixed"):
         raise ValueError("Mixed probes require the full sampled batch; corners require a source")
-    matches = [c for c in expand_with_seeds(load(f"config/Exp2_{track.upper()}.yaml"))
+    matches = [c for c in expand_with_seeds(load(f"config/Exp2_{track.upper()}.yaml", allow_placeholders=True))
                if c["arm"] == "tabicl" and c["seed"] == 0
                and float(c["prior"]["credit_fraction"]) == .5 and c.get("lr_index", 0) == 0]
     if len(matches) != 1:

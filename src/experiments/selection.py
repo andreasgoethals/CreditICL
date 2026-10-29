@@ -1,4 +1,4 @@
-"""Freeze Experiment 3 choices using complete development folds only.
+"""Freeze Experiment 2 learning rates and Experiment 3 adapters on development only.
 
 python -m src.experiments.selection --stage learning-rate
 python -m src.experiments.selection --stage adapters
@@ -18,8 +18,9 @@ from src.utils import paths
 
 
 def selection_path(design: str) -> Path:
-    return paths.experiment_dir(3) / "selection" / (
-        "learning_rate.json" if design == "retention_pilot" else "adapters.json")
+    if design in {"cpt", "retention_pilot"}:
+        return paths.experiment_dir(2) / "selection" / "learning_rate.json"
+    return paths.experiment_dir(3) / "selection" / "adapters.json"
 
 
 def load_selection(design: str, *, optional=False, for_analysis=False) -> dict | None:
@@ -35,15 +36,16 @@ def load_selection(design: str, *, optional=False, for_analysis=False) -> dict |
     if not path.exists() and optional:
         return None
     if not path.exists():
-        stage = "learning-rate" if design == "retention_pilot" else "adapters"
-        raise ValueError(f"Experiment 3 selection is not frozen. Run python -m "
+        stage = "learning-rate" if design in {"cpt", "retention_pilot"} else "adapters"
+        raise ValueError(f"Experiment selection is not frozen. Run python -m "
                          f"src.experiments.selection --stage {stage} after the required benchmarks.")
     saved = json.loads(path.read_text(encoding="utf-8"))
-    if (saved.get("schema") != 1 or saved.get("design") != design
+    expected_design = "cpt" if design == "retention_pilot" else design
+    if (saved.get("schema") != 2 or saved.get("design") != expected_design
             or saved.get("source_fingerprint") != source_fingerprint()
             or set(saved.get("choices", {})) != {f"{t}/{m}" for t in ("pd", "lgd") for m in ("tabicl", "tabpfn3")}
             or not saved.get("inputs")):
-        raise ValueError("Invalid or stale Experiment 3 selection receipt")
+        raise ValueError("Invalid or stale experiment selection receipt")
     from src.experiments.design import RATES, CANDIDATES
     for identity, choice in saved["choices"].items():
         if choice.get("full_lr") not in RATES[identity.split("/")[1]]:
@@ -68,6 +70,8 @@ def development_score(frame: pd.DataFrame, datasets: list[str], name: str, metri
     """Equal dataset/fold weights; complete five folds with no hidden row budget."""
     from src.eval.protocol import N_FOLDS
 
+    if not datasets or len(set(datasets)) != len(datasets):
+        raise ValueError("Development datasets must be nonempty and unique")
     part = frame[frame.dataset.isin(datasets)].copy()
     expected = {(d, 0, f) for d in datasets for f in range(N_FOLDS)}
     keys = list(part[["dataset", "seed", "fold"]].itertuples(index=False, name=None))
@@ -98,7 +102,7 @@ def freeze(stage: str) -> Path:
     original_environment = environment_fingerprint()
     original_inputs = input_inventory()
     pilot = stage == "adapters"
-    exp, variant = (3, "pilots") if pilot else (2, None)
+    exp, variant = (3, "pilots") if pilot else (2, "pilots")
     previous = load_selection("retention_pilot") if pilot else None
     choices = {k: dict(v) for k, v in previous["choices"].items()} if previous else {}
     inputs, rankings, baselines = {}, [], []
@@ -111,8 +115,6 @@ def freeze(stage: str) -> Path:
         runs = expand_with_seeds(cfg)
         scores = {}
         for index, run in enumerate(runs):
-            if run["prior"]["credit_fraction"] != .5:
-                continue
             # Final checkpoint slots precede learning-curve slots.
             if not bs.complete(exp, track, index, variant=variant):
                 raise ValueError(f"Required final benchmark is incomplete: Exp{exp} {track} slot {index}")
@@ -133,27 +135,37 @@ def freeze(stage: str) -> Path:
                 for (backbone, treatment, candidate), observations in scores.items():
                     if (backbone, treatment) != (model, method):
                         continue
-                    if len(observations) != (1 if pilot else 3):
-                        raise ValueError("Missing paired training seeds")
+                    if pilot:
+                        valid = len(observations) == 1 and observations[0][1]["seed"] == 991
+                    else:
+                        valid = (len(observations) == 2 and
+                                 {(r["prior"]["credit_fraction"], r["seed"]) for _, r in observations}
+                                 == {(0.0, 990), (0.5, 990)})
+                    if not valid:
+                        raise ValueError("Missing paired pilot mixtures or seed")
                     value = CANDIDATES[method][candidate] if pilot else observations[0][1]["train"]["lr"]
                     rows.append(dict(track=track, model=model, method=method, candidate=candidate,
                                      value=value, score=float(np.mean([x[0] for x in observations])),
-                                     training_seeds=[x[1]["seed"] for x in observations], metric=metric))
+                                     training_seeds=sorted({x[1]["seed"] for x in observations}),
+                                     mixtures=sorted({x[1]["prior"]["credit_fraction"] for x in observations}),
+                                     metric=metric))
                 if len(rows) != (3 if pilot else 2):
                     raise ValueError(f"Missing candidates for {identity}/{method}")
                 winner = choose(rows)
                 rankings.extend(rows)
                 choices[identity][method if pilot else "full_lr"] = winner["candidate"] if pilot else winner["value"]
-                if not pilot:
-                    baselines.extend({"track": track, "model": model, "run_name": run_name(r),
-                                      "array_index": r["_grid"]["array_index"], "seed": r["seed"]}
-                                     for _, r in scores[(model, method, winner["candidate"])])
-    design = "retention" if pilot else "retention_pilot"
+        if not pilot:
+            # Baselines are the separate three-seed main runs, never pilot weights.
+            main = expand_with_seeds(load(bs.config_path(2, track), allow_placeholders=True))
+            baselines.extend({"track": track, "model": r["architecture"], "run_name": run_name(r),
+                              "array_index": r["_grid"]["array_index"], "seed": r["seed"]}
+                             for r in main if r["prior"]["credit_fraction"] == .5)
+    design = "retention" if pilot else "cpt"
     destination = selection_path(design)
-    payload = dict(schema=1, design=design, source_fingerprint=source_fingerprint(), inputs=inputs,
+    payload = dict(schema=2, design=design, source_fingerprint=source_fingerprint(), inputs=inputs,
                    environment_fingerprint=original_environment, validation_inputs=original_inputs,
                    choices=choices, candidates=rankings, baselines=baselines,
-                   criterion="development ROC-AUC (PD) / R2 (LGD); equal dataset and seed weights; lower value on exact tie")
+                   criterion="development ROC-AUC (PD) / R2 (LGD); equal dataset and pilot-mixture weights; lower value on exact tie")
     if (source_fingerprint() != original_source or environment_fingerprint() != original_environment
             or input_inventory() != original_inputs
             or any(bs.input_digest(Path(p)) != h for p, h in inputs.items())):

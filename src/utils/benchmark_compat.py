@@ -58,6 +58,19 @@ REVIEWED_TRANSITIONS['src/eval/benchmark_status.py'] = (
 )
 
 
+# Budget A changes only the selection CLI explanation; Exp1 predictions are unchanged.
+_before, _after = REVIEWED_TRANSITIONS["src/eval/selection.py"]
+REVIEWED_TRANSITIONS["src/eval/selection.py"] = (
+    _before | _after, _after | frozenset(['a664729176dc4b31266c8e69b6088eece8bf0ffc4c4b9b94b6aa1abc33f2e40d', 'c326e779c94f20278755694659c73945ecc55f5a50abd4ba7b259de8ccaa4d80']),
+)
+
+
+# Workspace description only; the prediction implementation is identical.
+REVIEWED_TRANSITIONS["src/eval/tabicl_memory.py"] = (
+    frozenset(['2dd1ac97ebbc849424cbc1ce6f742eba6918b6bfef557c4dda1098bc00867d35', '9ef0f00013debd76bb53f8df221ed11a6425e8b034a02e576b3bb3c5cced614e']), frozenset(['094f50b18d0ecb949ab45e2f4161fb33ea1355357956b38a137275b68b594cbb', 'b43848335996c286d0357c8397f7433f52255674d587586c7df8f538eb2d4aca']),
+)
+
+
 def compatible_requests(recorded: object, wanted: dict) -> bool:
     """Allow changed grid counts only when every scientific input is identical."""
     if recorded == wanted:

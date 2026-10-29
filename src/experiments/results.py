@@ -27,7 +27,7 @@ def released_score(track, backbone, domain, metric):
         return None
     part = frame[identities(frame).eq("tabiclv2" if backbone == "tabicl" else "tabpfn3")]
     if domain == "credit":
-        cfg = load(paths.config_path(f"Exp2_{track.upper()}"))
+        cfg = load(paths.config_path(f"Exp2_{track.upper()}"), allow_placeholders=True)
         part = part[part.dataset.isin(cfg["eval"]["holdout_datasets"])]
     if part.empty or not np.isfinite(part[metric]).all():
         return None
@@ -65,7 +65,7 @@ def benchmark_frames(track: str, experiment: int, *, domain="credit", final_only
     if experiment == 3:
         from src.experiments.selection import load_selection
         saved = load_selection("retention", for_analysis=True)
-        baselines = expand_with_seeds(load(paths.config_path(f"Exp2_{track.upper()}")))
+        baselines = expand_with_seeds(load(paths.config_path(f"Exp2_{track.upper()}"), allow_placeholders=True))
         for item in saved["baselines"]:
             if item["track"] == track:
                 run = baselines[item["array_index"]]

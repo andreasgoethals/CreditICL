@@ -194,7 +194,8 @@ def test_exp3_refuses_to_run_while_still_a_template(fake_tree, capsys):
     from src.utils.run_experiment import main, unconfigured_tracks
 
     assert [item.split(":", 1)[0] for item in unconfigured_tracks(3, ["lgd", "pd"])] == ["lgd", "pd"]
-    assert unconfigured_tracks(2, ["lgd", "pd"]) == [], "Exp2 runs at the published recipes"
+    assert unconfigured_tracks(2, ["lgd", "pd"]), "Exp2 requires a frozen pilot receipt"
+    assert unconfigured_tracks(2, ["lgd", "pd"], "pilots") == []
     assert unconfigured_tracks(1, ["lgd", "pd"]) == [], "Exp1 is fully configured"
 
     rc = main(["3", "--submit"])

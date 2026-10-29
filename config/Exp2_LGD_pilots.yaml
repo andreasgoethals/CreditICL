@@ -1,0 +1,20 @@
+# Development-only LR pilots: a 500-update prefix of the main 2,500-update schedule.
+prior_file: Exp2_LGD.yaml
+experiment: exp2pilots_lgd
+design: cpt_pilot
+sweep:
+  arm: [tabicl, tabpfn3]
+  lr_index: [0, 1]
+  prior.credit_fraction: [0.0, 0.5]
+  seeds: [990]
+train:
+  max_steps: 500
+  keep_steps: [500]
+  save_perm_every: 500
+progress:
+  every_datasets: 0
+  n_ood: 0
+eval:
+  holdout_datasets: []
+  include_reference_slots: false
+  include_ood: false

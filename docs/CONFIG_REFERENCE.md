@@ -136,12 +136,13 @@ on synthetic tasks. Its private original pretraining recipe is not claimed repro
 | Experiment | Updates / run | Main runs total | Permanent checkpoints / run |
 |---|---:|---:|---|
 | Exp1 | 12,500 | 54 | Existing cadence preserved |
-| Exp2 | 10,000 | 96 | 125, 250, 500, 1k, 2.5k, 5k, 7.5k, 10k |
-| Exp3 pilots | 2,500 (10k schedule prefix) | 36 | 2,500 |
-| Exp3 main | 10,000 | 48 new + 12 reused Exp2 | Same eight milestones as Exp2 |
+| Exp2 LR pilots | 500 (2.5k schedule prefix) | 16 | 500 |
+| Exp2 main | 2,500 | 48 | 125, 250, 500, 1k, 2.5k |
+| Exp3 pilots | 500 (2.5k schedule prefix) | 36 | 500 |
+| Exp3 main | 2,500 | 48 new + 12 reused Exp2 | Same five milestones as Exp2 |
 
-10,000 is a registered budget with upstream precedent, not an established optimum. Learning
-curves assess under/over-adaptation. At 64/16 tables per update, full runs consume 640k/160k
+2,500 is the approved cost-constrained budget; upstream stage 3 used 10,000, not evidence that our smaller budget is optimal. Learning
+curves assess under/over-adaptation. At 64/16 tables per update, full runs consume 160k/40k
 tasks for TabICL/TabPFN respectively. Benchmark jobs are separate and can dominate total cost.
 
 ## 6. `optimizer`
@@ -168,7 +169,7 @@ credit path rather than the unmodified TabICL prior. `0.0` is the control. Exp1 
 Mixing rather than replacing retains native-prior exposure, a plausible defence against forgetting;
 it does not guarantee non-degradation. Tanna 2026 reports collapse under a different setting,
 per-dataset supervised adaptation, which motivates measuring retention rather than predicting the
-outcome of this synthetic continuation. The 0% arm measures additional native-prior training against
+outcome of this synthetic continuation. The 0% arm measures additional generic TabICL-prior training against
 the released weights; it is not assumed to improve or match them by construction.
 
 **`prior.encoding`** — whose prediction path a credit table imitates: `tabicl` (TabICL's — gaps filled
@@ -233,7 +234,7 @@ The authoritative registered design and source limitations are in
 `src/experiments/design.py` maps stable candidate indices to numeric settings; changing a numeric
 setting invalidates validation/selection evidence rather than silently reusing a run.
 
-Exp2: 48 runs per track (2 backbones × 4 mixtures × 2 rates × 3 seeds).
+Exp2: 24 main runs per track (2 backbones × 4 mixtures × 1 selected rate × 3 seeds), plus 8 LR pilots.
 TabICLv2 uses Muon, peak 2e-5/1e-5, decay .01, warm-up .01, 64 tables/update,
 400–60,000 log-uniform rows and 79–81% context. TabPFN-3 uses AdamW, peak 1e-5/1e-6,
 decay .01, warm-up .1, 16 tables/update, 1,024 rows and 30–90% context. Both clip the global
@@ -241,14 +242,14 @@ unscaled gradient norm to 1. TabICL remains FP32 under the validated TF32/effici
 policy; TabPFN uses FP32 parameters with FP16 AMP and finite-gradient replay. These are
 backbone-specific recipes, not matched cross-backbone compute.
 
-`train.keep_steps: [125,250,500,1000,2500,5000,7500,10000]` adds permanent milestones
-independently of rolling saves. All eight receive full-table credit/native-OOD five-fold evaluation;
+`train.keep_steps: [125,250,500,1000,2500]` adds permanent milestones
+independently of rolling saves. All five receive full-table credit/native-OOD five-fold evaluation;
 final-step slots remain first. `max_temp_checkpoints: 2` applies only to nonpermanent saves.
-The primary endpoint is 10,000; intermediate scores are trajectories, not selected winners.
+The primary endpoint is 2,500; intermediate scores are trajectories, not selected winners.
 
 Exp3 replaces the old 200k scratch grid. `Exp3_*_pilots.yaml` has 18 pilots per task,
-seed 991, max_steps 2500 and schedule_total_steps 10000, development benchmarks only.
-`Exp3_*.yaml` has 24 main runs per task, max_steps 10000, three seeds, fixed 50% mixture.
+seed 991, max_steps 500 and schedule_total_steps 2500, development benchmarks only.
+`Exp3_*.yaml` has 24 main runs per task, max_steps 2500, three seeds, fixed 50% mixture.
 Full-CPT-with-decay baselines reuse 12 selected Exp2 runs. Candidate settings:
 
 | Method | Optimizer and peak LR | Decay / anchor |

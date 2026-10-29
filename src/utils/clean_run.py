@@ -335,7 +335,7 @@ def _exp2_accounting_jobs(job_ids: set[str]) -> set[str]:
         for line in result.stdout.splitlines():
             fields = line.strip().split("|")
             if (len(fields) >= 2 and fields[0] in job_ids
-                    and re.fullmatch(r"(?:crediticl|cicl)-exp2(?:[-_].*)?", fields[1])):
+                    and re.fullmatch(r"(?:crediticl|cicl)-exp2(?:pilots)?(?:[-_].*)?", fields[1])):
                 found.add(fields[0])
     return found
 
@@ -364,18 +364,18 @@ def reset_exp2(*, clean: bool = False) -> tuple[int, int]:
                 raise RuntimeError(f"Linked output locks: {lock_root}")
             if lock_root.is_dir():
                 for item in lock_root.iterdir():
-                    if re.match(r"exp2(?:_|bench_)", item.name):
+                    if re.match(r"exp2(?:pilots)?(?:_|bench_)", item.name):
                         candidates[item] = project
         legacy = project / "checkpoints"
         if _linked(legacy):
             raise RuntimeError(f"Linked legacy checkpoints: {legacy}")
         if legacy.is_dir():
             for item in legacy.iterdir():
-                if item.name.startswith("exp2_"):
+                if re.match(r"exp2(?:pilots)?_", item.name):
                     candidates[item] = project
         if project.is_dir():
             for item in project.iterdir():
-                if re.fullmatch(r"slurm-(?:crediticl|cicl)-exp2(?:-[A-Za-z]+)*-\d+(?:_\d+)?\.(?:out|err)", item.name):
+                if re.fullmatch(r"slurm-(?:crediticl|cicl)-exp2(?:pilots)?(?:-[A-Za-z]+)*-\d+(?:_\d+)?\.(?:out|err)", item.name):
                     candidates[item] = project
 
     if paths.on_vsc():
@@ -420,7 +420,7 @@ def reset_exp2(*, clean: bool = False) -> tuple[int, int]:
         if not item.exists():
             continue
         legacy_run = (item.parent == paths.pretrained_dir().resolve()
-                      and item.name.startswith("exp2_"))
+                      and re.match(r"exp2(?:pilots)?_", item.name))
         protected_inputs = inputs[:2] if legacy_run else inputs
         if any(p.resolve().is_relative_to(item) or item.is_relative_to(p.resolve()) for p in protected_inputs):
             raise RuntimeError(f"Input data or released weights overlap Exp2 output: {item}")

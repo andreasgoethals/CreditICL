@@ -10,6 +10,9 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 29-10-2026
 
+- Implement Budget A: 48×2,500-update Exp2 runs, 16 development-only LR pilots, frozen selection receipts and five checkpoint milestones; align Exp3 and notebooks without changing Exp1 recipes.
+- Move Mindwell working files to node-local disk, publish rolling checkpoints, and add verified retired-scratch cleanup; record the completed 95 GB Exp2 reset.
+
 - Fix native TabPFN LGD target-loss overflow with wider arithmetic; test batch 685 through released weights and add mandatory CUDA checks.
 - Add an Exp2-only reset across both tiers and identified scratch jobs; stop copying inputs just to hash them, report quota errors clearly and remove failed checkpoint temporaries.
 - Preserve all 54 completed Exp1 runs and reviewed benchmark receipts across the numerical fix; verify current B200 allocation pricing before revising the Exp2 budget.

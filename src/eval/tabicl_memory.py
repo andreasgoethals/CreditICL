@@ -139,7 +139,7 @@ def install(estimator) -> None:
 
 @contextmanager
 def prediction_storage(estimator):
-    """Give each prediction temporary disk storage, on GPFS for Mindwell jobs.
+    """Give each prediction temporary disk storage in the configured job workspace.
 
     Preserve upstream's storage dtype and all inference settings affecting
     predictions. Disable pooled asynchronous copies so multiple large pinned

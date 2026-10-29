@@ -71,9 +71,9 @@ def test_task_matches_filename(path):
 
 
 @pytest.mark.parametrize("path", CONFIGS)
-def test_exp1_is_runnable_now(path):
-    """Exp0, Exp1 and Exp2 depend on nothing, so they load without the escape hatch."""
-    cfg = load(ROOT / path)
+def test_configs_contain_no_unfilled_recipe_placeholders(path):
+    """Resolved design choices are receipt-gated; no YAML value needs manual editing."""
+    cfg = load(ROOT / path, allow_placeholders=True)
     assert find_placeholders(cfg) == []
 
 
@@ -103,16 +103,16 @@ def test_exp1_budget_is_preserved_and_exp3_is_continuation():
     for track in ("LGD", "PD"):
         assert _load(f"config/Exp1_{track}.yaml")["train"]["max_steps"] == 12500
         cfg = _load(f"config/Exp3_{track}.yaml")
-        assert cfg["train"]["max_steps"] == 10000
+        assert cfg["train"]["max_steps"] == 2500
         assert cfg["init"]["strategy"] == "full"
 
 
-def test_exp3_has_three_paired_seeds_and_eight_kept_milestones():
+def test_exp3_has_three_paired_seeds_and_five_kept_milestones():
     from src.experiments.design import MILESTONES
     for track in ("LGD", "PD"):
         cfg = _load(f"config/Exp3_{track}.yaml")
         assert cfg["seeds"] == [0, 1, 2]
-        assert cfg["train"]["max_steps"] == 10000
+        assert cfg["train"]["max_steps"] == 2500
         assert tuple(cfg["train"]["keep_steps"]) == MILESTONES
 
 
@@ -365,14 +365,14 @@ def test_the_control_arm_prior_never_carries_a_placeholder():
 # -- Exp2 is continued pre-training, not pretraining ---------------------------
 
 
-def test_exp2_has_two_predeclared_rates_per_backbone():
+def test_exp2_has_one_pilot_selected_rate_per_backbone():
     from src.experiments.design import RATES
     for track in ("LGD", "PD"):
-        runs = expand_with_seeds(load(ROOT / f"config/Exp2_{track}.yaml"))
+        runs = expand_with_seeds(load(ROOT / f"config/Exp2_{track}.yaml", allow_placeholders=True))
         assert {r["architecture"] for r in runs} == {"tabicl", "tabpfn3"}
         for r in runs:
             t = r["train"]
-            assert t["max_steps"] == 10000
+            assert t["max_steps"] == 2500
             assert t["lr"] == RATES[r["architecture"]][r["lr_index"]]
             assert t["gradient_clipping"] == 1.0
             assert t["weight_decay"] == .01
@@ -424,7 +424,8 @@ def test_config_folder_holds_exactly_the_experiments():
     named, which is how a stale config gets submitted."""
     found = sorted(p.name for p in (ROOT / "config").iterdir())
     expected = [Path(p).name for p in EXPERIMENTS] + ["Exp1_PD_ablations.yaml", "Exp1_LGD_ablations.yaml",
-                                                                   "Exp3_PD_pilots.yaml", "Exp3_LGD_pilots.yaml"]
+                                                                   "Exp3_PD_pilots.yaml", "Exp3_LGD_pilots.yaml",
+                                                                   "Exp2_PD_pilots.yaml", "Exp2_LGD_pilots.yaml"]
     assert found == sorted(expected), f"unexpected: {found}"
 
 

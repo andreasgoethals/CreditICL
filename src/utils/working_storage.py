@@ -1,7 +1,7 @@
-"""Mindwell's repeated large I/O belongs on GPFS; project storage is permanent.
+"""Node-local working I/O; project storage is permanent.
 
-Inputs are copied once per job. Rolling checkpoints stay on GPFS; permanent,
-interrupted and final checkpoints are copied back atomically before completion.
+Inputs are copied once per job. Every saved checkpoint is published atomically;
+only the latest working copy is needed. Node-local disk can vanish at any time.
 The canonical paths in receipts always name project storage, never scratch.
 """
 from __future__ import annotations
@@ -22,10 +22,13 @@ def work_root() -> Path | None:
         return Path(override)
     if os.environ.get("SLURM_CLUSTER_NAME", "").lower() != "mindwell":
         return None
-    scratch = os.environ.get("VSC_SCRATCH_GPFS1") or os.environ.get("VSC_SCRATCH")
+    scratch = os.environ.get("VSC_SCRATCH_NODE")
     job = os.environ.get("SLURM_JOB_ID", "")
     if not scratch or not re.fullmatch(r"[0-9_]+", job):
-        raise RuntimeError("Mindwell requires GPFS scratch and a Slurm job ID; refusing Lustre working I/O")
+        raise RuntimeError("Mindwell requires VSC_SCRATCH_NODE and a Slurm job ID. "
+                           "No automatic fallback to the nearly-full shared GPFS quota.")
+    if not Path(scratch).is_absolute():
+        raise RuntimeError("VSC_SCRATCH_NODE must be an absolute node-local path")
     return Path(scratch) / "CreditICL" / "jobs" / job
 
 
@@ -84,10 +87,19 @@ def checkpoint_work_dir(permanent: Path) -> Path:
 def publish_checkpoint(folder: Path, step: int, *, permanent_every: int,
                        final: bool, stopped: bool, keep_steps=()) -> None:
     marker = folder / "destination.txt"
-    if not marker.is_file() or not (final or stopped or step in keep_steps or (permanent_every > 0 and step % permanent_every == 0)):
+    if not marker.is_file():
         return
     destination = Path(marker.read_text(encoding="utf-8"))
     atomic_copy(folder / f"step-{step}.ckpt", destination / f"step-{step}.ckpt")
+    # Publish rolling saves too: node-local scratch is removed at job end and a
+    # forced termination may never execute a signal handler or an EXIT trap.
+    from src.train.checkpoint import prune_checkpoints
+
+    prune_checkpoints(destination, save_perm_every=permanent_every, max_temp=2, keep_steps=keep_steps)
+    # Historical snapshots now live on PROJECT, not duplicated in job scratch.
+    for previous in folder.glob("step-*.ckpt"):
+        if previous.name != f"step-{step}.ckpt":
+            previous.unlink()
 
 
 def cleanup_successful_job() -> None:
@@ -101,7 +113,7 @@ def cleanup_successful_job() -> None:
     root = work_root()
     if root is None or not root.exists():
         return
-    scratch = Path(os.environ.get("VSC_SCRATCH_GPFS1") or os.environ["VSC_SCRATCH"]).resolve()
+    scratch = Path(os.environ["VSC_SCRATCH_NODE"]).resolve()
     base = scratch / "CreditICL" / "jobs"
     if (root.resolve() != base / os.environ["SLURM_JOB_ID"]
             or root.name != os.environ["SLURM_JOB_ID"]):

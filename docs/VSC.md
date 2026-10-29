@@ -186,20 +186,35 @@ Mindwell jobs keep frequent small writes off Lustre (the rule below), while a be
 once, at the end. Downloading both halves (§10) gives every log, run record and benchmark score; the
 figures are drawn locally. `paths.resolve_writable()` probes staging with a real write at job start and
 fails before training if project storage is unwritable; it never redirects checkpoint output.
-On Mindwell, `working_storage.py` copies repeated-read inputs once per job to GPFS. Rolling
-checkpoints stay there; permanent snapshots, interruption checkpoints and final checkpoints
-are copied atomically to project storage before completion is recorded. Successful jobs and
-saved walltime continuations release their job-specific scratch after verifying the latest
-checkpoint's permanent copy by hash; failed/cancelled jobs retain scratch for diagnosis.
-A hard node loss may
-lose work since the last published checkpoint; scratch is recoverable only while it still exists.
+On Mindwell, `working_storage.py` now uses **`$VSC_SCRATCH_NODE/CreditICL/jobs/<jobid>`**
+for staged inputs, prediction offload and one latest working checkpoint. There is no automatic
+shared-GPFS fallback. Every checkpoint save, including rolling recovery states, is copied atomically
+to project storage before older working copies are removed. Permanent milestones and two rolling
+states are retained on project storage. Node-local disk is temporary and removed at job end;
+a hard loss can therefore lose at most the work since the last successfully published save.
+Successful jobs verify the latest publication before releasing their working directory.
 
-**The Lustre-vs-GPFS rule, enforced:** wICE jobs must do I/O on **Lustre**, Mindwell jobs on
-**GPFS** — `$VSC_SCRATCH` already resolves to the right one, so *use `$VSC_SCRATCH`, never a hard-coded
-path*; non-complying jobs can be cancelled without notice. **Purge trap:** scratch deletes by *last
-access*, and `mv`/`rsync -t` carry an old atime — so **copy (not move) then `touch`**, and copy
-checkpoints back to project storage. The copier refreshes access time and preserves modification
-time for input identity. Small logs and run summaries remain on `$VSC_DATA`.
+**Native I/O:** Mindwell repeated I/O belongs on GPFS or node-local scratch; wICE uses Lustre.
+Project-Lustre access from Mindwell is restricted here to input staging and checkpoint publication,
+not repeated training reads or offload. This follows VSC library pin
+`1c29213086a0ae76b8f95cdd8eccbb9db8d6ca87`. Small logs remain on `$VSC_DATA`.
+`CREDITICL_WORK_ROOT` is an explicit override; leave it unset for the node-local default.
+
+To remove old shared-scratch copies without deleting persistent experiment results, while no
+CreditICL job is queued/running:
+
+```bash
+python -m src.utils.scratch_cleanup
+python -m src.utils.scratch_cleanup --clean
+myquota
+```
+
+This only considers configured GPFS/Lustre `CreditICL/jobs` directories positively identified
+by Slurm accounting as terminated CreditICL jobs. Disposable staged inputs/offload may be removed;
+checkpoint folders require byte-identical persistent copies. Unknown jobs, unpublished/corrupt
+checkpoints and other projects are retained. Preview messages identify anything requiring review.
+The 29-10 Exp2 reset already removed 95.010 GB; the remaining shared-GPFS usage is not all attributed
+to this project. Do not delete other projects to recover it.
 
 ## 6. The Python environment
 
@@ -292,25 +307,26 @@ Completed Exp1 training on B200, batch 64 and micro-batch 4, with explicit proje
 | one Exp1 arm, 12,500 steps | **6.43–7.38 training GPU-h**, measured in the completed 24-10-2026 snapshot |
 | **Completed original Exp1, 24 arms/track (9 main + 15 component)** | **323.616 recorded training GPU-h** for all 48 completed arms, excluding startup and benchmarks; see [RUNS, 24-10-2026](RUNS.md#24-10-2026--exp1-training-complete--all-48-runs-successful) |
 | **Completed Exp1 extension: 3 more arms/track** | 25% credit, three seeds, indices 9–11; all six completed on 28-10, making 54 completed training runs. Their recorded training totals about 40.7 GPU-h; quarter-mixture benchmarks remain pending in the 29-10 snapshot. |
-| Current 96-run Exp2, 10k updates | Production TabICL timing projects 210–225 GPU-h/arm; combined with the provisional TabPFN subtotal, **12,189–12,909 GPU-h / 373–395M training credits**, excluding benchmarking. New budget remains under review. |
+| Superseded 96-run Exp2, 10k updates | Production TabICL timing projects 210–225 GPU-h/arm; combined with the provisional TabPFN subtotal, **12,189–12,909 GPU-h / 373–395M training credits**, excluding benchmarking. Replaced by Budget A below. |
+| Budget A Exp2 | 48 main runs × 2,500 updates plus 16 LR pilots × 500: approximately **50–53M training credits**, extrapolated from measured/provisional throughput; excludes validation and benchmarking. |
 | Current Exp3 | Retention-method runtime remains unmeasured; do not extrapolate scratch throughput. The old 200k scratch Exp3 is abandoned. |
 | TabICLv2's own full pretraining | 24.5 GPU-days per model (the paper's figure) |
 
 The revised configurations generate tasks live in every experiment. Exp1 uses 12,500 updates,
-2.5% of upstream's 500k-step first stage; Exp2/3 adapt released weights for 10k updates.
+2.5% of upstream's 500k-step first stage; Exp2/3 adapt released weights for 2,500 updates.
 Neither reproduces upstream's complete curriculum. Exp1 times describe its frozen completed
 campaign; they do not measure the new Exp2/Exp3 recipes. Wall-clock completion also depends
 on queue delays and concurrent allocations, and benchmarks add their own runtime.
 
-For Experiment 2 (capacity measured in Experiment 0 before launch): 48 arms per track (2 models × 4
-mixes × 2 rates × 3 seeds), 10,000 steps each, using upstream TabICL and TabPFN's differentiable
+For Experiment 2 (capacity checked in Experiment 0 before launch): 24 main arms per track (2 models × 4
+mixes × 1 frozen rate × 3 seeds), 2,500 steps each, using upstream TabICL and TabPFN's differentiable
 fine-tuning interface on synthetic tasks. The 24-10 revision changes TabICLv2 to 400–60,000 log-uniform rows, 79–81%
 context and one task per microbatch, retaining 64 tasks per update. Its expected row exposure is
-about 7.6 billion per arm, 11.6 times the former 1,024-row proposal; this is **not** a runtime ratio.
+about 1.9 billion per main arm, 11.6 times the former 1,024-row proposal; this is **not** a runtime ratio.
 TabPFN-3 retains 16 tasks per update and 1,024 rows through its own preprocessing. The old ~400
 GPU-hour estimate is **obsolete**. Never extrapolate TabICLv2 Exp2 cost from Exp0's 1,024-row
 route checks. Fresh capacity and representative-batch probes must establish feasibility first;
-one representative update gives a timing observation, not a reliable 96-run campaign ETA.
+one representative update gives a timing observation, not a reliable campaign ETA.
 Benchmark probes measure selected tables only: their times do not establish
 the runtime of the complete publication benchmark matrix.
 
@@ -512,21 +528,24 @@ sbatch --clusters=wice scripts/slurm/exp0_cpu.slurm
 python -m src.utils.preflight --require-exp0-cpu && sbatch --clusters=mindwell scripts/slurm/exp0.slurm
 # Once GPU completes successfully:
 python -m src.utils.preflight --require-exp0 && python -m src.validation.verify
-python -m src.utils.run_experiment 1 --submit
-python -m src.utils.run_experiment 2 --single-cluster --submit
+python -m src.utils.run_experiment 1 --phase benchmark --submit
 ```
 
 Each experiment planner is safe to repeat: it skips completed/queued arms and waits for training
 before benchmarking. Exp1 includes only missing quarter-mixture work if the other 48 runs and
-benchmarks are already complete. Run Exp2 after the Exp1 extension; repeat its planner after
-training to submit the missing eight-checkpoint benchmarks. All rows/features/five folds remain.
+benchmarks are already complete. All 54 training runs were complete in the 29-10 snapshot.
+Run Exp2 pilots after Exp1 benchmarking; repeat its planner after training to submit development benchmarks.
+Main Exp2 retains five checkpoint benchmarks per run. All rows/features/five folds remain.
 For Exp2/Exp3, keep `--single-cluster`: these commands use the Mindwell B200 allocation validated
 by Exp0. The planner's optional historical LGD split across wICE A100s is not validated by a B200
 capacity result and is not the launch recipe here.
 
 ```bash
-# After complete Exp2 final results for both 50% learning rates and all three seeds:
+python -m src.utils.run_experiment 2 --variant pilots --single-cluster --submit
+# Repeat after pilot training to submit the development-only benchmarks. Once they finish:
 python -m src.experiments.selection --stage learning-rate
+python -m src.utils.run_experiment 2 --single-cluster --submit
+# Repeat after main training to submit missing benchmarks. Then proceed with Exp3:
 python -m src.utils.run_experiment 3 --variant pilots --single-cluster --submit
 # Repeat the pilot planner after training; once all development pilot benchmarks finish:
 python -m src.experiments.selection --stage adapters

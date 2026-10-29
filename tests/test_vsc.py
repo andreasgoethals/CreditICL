@@ -135,7 +135,7 @@ def test_cluster_working_storage_publishes_complete_checkpoint():
     if os.environ.get("SLURM_CLUSTER_NAME", "").lower() == "mindwell":
         assert work_root() in work.parents and work != permanent
     (work / "step-1.ckpt").write_bytes(b"complete checkpoint probe")
-    publish_checkpoint(work, 1, permanent_every=10, final=False, stopped=True)
+    publish_checkpoint(work, 1, permanent_every=10, final=False, stopped=False)
     assert (permanent / "step-1.ckpt").read_bytes() == b"complete checkpoint probe"
 
 

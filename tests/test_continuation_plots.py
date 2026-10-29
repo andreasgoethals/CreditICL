@@ -10,7 +10,7 @@ from src.experiments.design import MILESTONES
 def curve_cells(experiment=2):
     rows = []
     for backbone in ("tabicl", "tabpfn3"):
-        for lr in (0, 1) if experiment == 2 else (0,):
+        for lr in (0,):
             for method in (0., .25, .5, 1.) if experiment == 2 else tuple(c.METHODS):
                 for step in MILESTONES:
                     for seed in (0, 1, 2):
@@ -24,23 +24,24 @@ def curve_cells(experiment=2):
 
 
 @pytest.mark.parametrize("experiment", [2, 3])
-def test_checkpoint_curves_separate_rates_and_show_shared_released_reference(monkeypatch, experiment):
+def test_checkpoint_curves_show_fixed_rate_and_shared_released_reference(monkeypatch, experiment):
     monkeypatch.setattr(c.results, "benchmark_frames", lambda *a, **k: curve_cells(experiment))
     monkeypatch.setattr(c.results, "released_score", lambda *a: .67)
     fig = c.checkpoint_curves("pd", "tabicl", experiment=experiment)
     fig.canvas.draw()
-    assert len(fig.axes) == (4 if experiment == 2 else 2)
+    assert len(fig.axes) == 2
     for ax in fig.axes:
         assert ax.get_xscale() == "log"
+        assert len(ax.get_xticks(minor=True)) == 0
         assert len(ax.lines) == (5 if experiment == 2 else 6)
-        assert all(len(line.get_xdata()) == 8 for line in ax.lines[:-1])
+        assert all(list(line.get_xdata()) == list(MILESTONES) for line in ax.lines[:-1])
     assert "Released weights (step 0)" in [t.get_text() for t in fig.legends[0].texts]
     plt.close(fig)
 
 
 def test_retention_effects_require_all_methods_and_pair_reused_control(monkeypatch):
     frame = curve_cells(3)
-    frame = frame[frame.checkpoint_step.eq(10000)].copy()
+    frame = frame[frame.checkpoint_step.eq(2500)].copy()
     frame.loc[frame.treatment.eq("l2sp"), "roc_auc"] += .025
     monkeypatch.setattr(c.results, "benchmark_frames", lambda *a, **k: frame)
     fig = c.retention_effects("pd", "tabicl")

@@ -8,7 +8,9 @@ from __future__ import annotations
 RATES = {"tabicl": (2e-5, 1e-5), "tabpfn3": (1e-5, 1e-6)}
 CANDIDATES = {"l2sp": (3e-4, 3e-3, 3e-2),
               "diagscale": (1e-3, 1e-2, 3e-2), "lora": (1e-5, 1e-4, 1e-3)}
-MILESTONES = (125, 250, 500, 1000, 2500, 5000, 7500, 10000)
+MAIN_STEPS = 2500
+PILOT_STEPS = 500
+MILESTONES = (125, 250, 500, 1000, MAIN_STEPS)
 
 
 def apply_design(run: dict, selection: dict | None = None) -> dict:
@@ -17,21 +19,26 @@ def apply_design(run: dict, selection: dict | None = None) -> dict:
         return run
     model, task = run["architecture"], run["task"]
     train = run["train"]
-    if design == "cpt":
+    if design == "cpt_pilot":
         train["lr"] = RATES[model][int(run["lr_index"])]
+        train["schedule_total_steps"] = MAIN_STEPS
+        run["progress"].update(every_datasets=0, n_ood=0)
         return run
-    if design not in {"retention_pilot", "retention"}:
+    if design not in {"cpt", "retention_pilot", "retention"}:
         raise ValueError(f"Unknown experimental design: {design}")
     run["design_unresolved"] = selection is None
     selected = (selection or {}).get("choices", {}).get(f"{task}/{model}", {})
     train["lr"] = float(selected.get("full_lr", RATES[model][0]))
+    train["schedule_total_steps"] = MAIN_STEPS
+    if design == "cpt":
+        return run
     if design == "retention_pilot":
         run["progress"].update(every_datasets=0, n_ood=0)
     method = run["method"]
     if method not in {"no_decay", *CANDIDATES}:
         raise ValueError(f"Unknown retention treatment: {method}")
     train.update(adaptation="full", l2sp_alpha=0.0, weight_decay=0.0,
-                 schedule_total_steps=10000)
+                 schedule_total_steps=MAIN_STEPS)
     if method == "no_decay":
         return run
     candidate = (int(run["candidate"]) if design == "retention_pilot"

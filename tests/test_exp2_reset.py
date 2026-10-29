@@ -32,6 +32,9 @@ def exp2_storage(isolated_output, monkeypatch):
         kept.extend([put(root / 'reference/benchmark/keep.csv'),
                      put(root / 'locks/exp1_pd.lock')])
         removed.append(put(root.parent / 'slurm-crediticl-exp2-lgd-22.out'))
+        removed.append(put(root.parent / 'slurm-crediticl-exp2pilots-pd-bench-25.err'))
+        removed.append(put(root / 'locks/exp2pilotsbench_pd_a0.lock'))
+        kept.append(put(root / 'locks/exp20_pd.lock'))
         removed.append(put(root.parent / 'checkpoints/exp2_old/step-1.ckpt'))
     kept.extend([put(paths.datasets_dir() / 'raw/keep.csv'),
                  put(paths.pretrained_dir() / 'released.ckpt'),
@@ -107,9 +110,9 @@ def test_accounting_classification_rejects_other_names_and_ids(monkeypatch):
         calls.append(args)
         return SimpleNamespace(returncode=0, stdout=(
             '21|crediticl-exp2-lgd|\n22|crediticl-exp1-pd|\n'
-            '23|crediticl-exp20-pd|\n24|jevpfn-exp2|\n999|crediticl-exp2-pd|\n'))
+            '23|crediticl-exp20-pd|\n24|jevpfn-exp2|\n25|crediticl-exp2pilots-pd|\n999|crediticl-exp2-pd|\n'))
     monkeypatch.setattr(subprocess, 'run', accounting)
-    assert clean_run._exp2_accounting_jobs({'21', '22', '23', '24'}) == {'21'}
+    assert clean_run._exp2_accounting_jobs({'21', '22', '23', '24', '25'}) == {'21', '25'}
     assert len(calls) == 2
 
 

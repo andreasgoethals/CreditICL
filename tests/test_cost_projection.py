@@ -16,13 +16,13 @@ def _summaries():
 
 @pytest.mark.parametrize("track", ["pd", "lgd"])
 def test_current_exp2_reports_unknown_long_context_cost_and_only_tabpfn_subtotal(track, capsys):
-    runs = expand_with_seeds(load(f"config/Exp2_{track.upper()}.yaml"))
+    runs = expand_with_seeds(load(f"config/Exp2_{track.upper()}.yaml", allow_placeholders=True))
     _print_training_costs(2, "", track, runs, _summaries())
     text = capsys.readouterr().out
 
     assert f"Exp2 {track} TabICL: GPU-hours unknown" in text
     assert "single capacity-test update is not a reliable campaign estimate" in text
-    assert f"Exp2 {track} TabPFN: 24 runs, about 333.3 GPU-h (short-run extrapolation; subtotal only)" in text
+    assert f"Exp2 {track} TabPFN: 12 runs, about 41.7 GPU-h (short-run extrapolation; subtotal only)" in text
     assert f"Exp2 {track} total: unknown" in text
     assert "48 runs, about" not in text
     assert "TabICL: 24 runs, about" not in text
@@ -44,7 +44,7 @@ def test_compatible_scratch_route_projection_is_unchanged(exp, variant, count, h
 def test_incomplete_tabpfn_route_cannot_supply_even_a_subtotal(capsys):
     summaries = _summaries()
     summaries["finetune_tabpfn3"]["completed"] = False
-    runs = expand_with_seeds(load("config/Exp2_PD.yaml"))
+    runs = expand_with_seeds(load("config/Exp2_PD.yaml", allow_placeholders=True))
     _print_training_costs(2, "", "pd", runs, summaries)
     text = capsys.readouterr().out
 
@@ -61,7 +61,7 @@ def test_legacy_report_cannot_project_long_context_from_complete_short_routes(ca
     for track in ("pd", "lgd"):
         assert f"Exp2 {track} finetune_tabicl: GPU-hours unknown" in text
         assert f"Exp2 {track} finetune_tabpfn3" in text
-    assert "Exp2 TabPFN subtotal only: ~267 GPU-h" in text
+    assert "Exp2 TabPFN subtotal only: ~33 GPU-h" in text
     assert "Exp2 total: unknown" in text
     assert "Exp2 total: ~" not in text
     assert "Exp1 total: ~167 GPU-h" in text

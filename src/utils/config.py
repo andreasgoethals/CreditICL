@@ -168,6 +168,14 @@ def load(path: str | Path, *, allow_placeholders: bool = False) -> dict[str, Any
         parent = apply_sweep_block(load_yaml(resolved.parent / prior_file))
         # Array ordering belongs to a campaign, not to its inherited prior.
         parent.pop("array_append", None)
+        # A child's sweep replaces an inherited fixed knob. Keep the conflict
+        # check for duplicates written in the child itself.
+        for dotted in cfg.get("sweep", {}):
+            node = parent
+            parts = dotted.split(".")
+            for part in parts[:-1]:
+                node = node.get(part, {})
+            node.pop(parts[-1], None)
         cfg = _deep_merge(parent, cfg)
 
     if not allow_placeholders:
@@ -180,7 +188,7 @@ def load(path: str | Path, *, allow_placeholders: bool = False) -> dict[str, Any
                 f"chosen value. Refusing to expand it, because a config that runs with a "
                 f"placeholder wastes GPU-hours measuring nothing."
             )
-    if cfg.get("design") in {"retention", "retention_pilot"}:
+    if cfg.get("design") in {"cpt", "retention", "retention_pilot"}:
         from src.experiments.selection import load_selection
 
         selection = load_selection(cfg["design"], optional=allow_placeholders, for_analysis=allow_placeholders)

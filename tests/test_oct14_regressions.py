@@ -174,7 +174,7 @@ def test_unwritable_checkpoint_storage_never_falls_back(tmp_path, monkeypatch):
     assert not fallback.exists()
 
 
-def test_gpfs_working_checkpoints_publish_only_at_safe_boundaries(tmp_path, monkeypatch):
+def test_working_checkpoints_publish_every_saved_state(tmp_path, monkeypatch):
     from src.utils.working_storage import checkpoint_work_dir, publish_checkpoint
     permanent = tmp_path / "permanent"
     permanent.mkdir()
@@ -185,7 +185,7 @@ def test_gpfs_working_checkpoints_publish_only_at_safe_boundaries(tmp_path, monk
     for step in (11, 20, 21, 22):
         (work / f"step-{step}.ckpt").write_bytes(str(step).encode())
         publish_checkpoint(work, step, permanent_every=10, final=step == 22, stopped=step == 21)
-    assert not (permanent / "step-11.ckpt").exists()
+    assert not (permanent / "step-11.ckpt").exists()  # two later rolling saves prune it
     assert all((permanent / f"step-{s}.ckpt").is_file() for s in (10, 20, 21, 22))
 
 
@@ -217,7 +217,7 @@ def test_staged_input_is_reused_and_invalidated_on_change(tmp_path, monkeypatch)
 
 def test_mindwell_does_not_silently_use_project_storage(monkeypatch):
     from src.utils.working_storage import work_root
-    for name in ("CREDITICL_WORK_ROOT", "VSC_SCRATCH", "VSC_SCRATCH_GPFS1"):
+    for name in ("CREDITICL_WORK_ROOT", "VSC_SCRATCH", "VSC_SCRATCH_GPFS1", "VSC_SCRATCH_NODE"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("SLURM_CLUSTER_NAME", "mindwell")
     monkeypatch.setenv("SLURM_JOB_ID", "123")
@@ -231,7 +231,7 @@ def test_success_cleanup_never_loses_an_unpublished_checkpoint(tmp_path, monkeyp
     monkeypatch.delenv("CREDITICL_WORK_ROOT", raising=False)
     monkeypatch.setenv("SLURM_CLUSTER_NAME", "mindwell")
     monkeypatch.setenv("SLURM_JOB_ID", "123")
-    monkeypatch.setenv("VSC_SCRATCH_GPFS1", str(tmp_path / "scratch"))
+    monkeypatch.setenv("VSC_SCRATCH_NODE", str(tmp_path / "scratch"))
     permanent = tmp_path / "permanent"
     work = storage.checkpoint_work_dir(permanent)
     (work / "step-10.ckpt").write_bytes(b"trained state")

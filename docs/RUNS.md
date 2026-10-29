@@ -167,6 +167,34 @@ The one thing to do differently.
 
 ## Runs
 
+## 29-10-2026 — Authorized Exp2 reset completed; Budget A not yet submitted
+
+**Evidence:** VSC terminal attachment `00dae2ae-033f-49f8-8ee4-4792c8c616ec`, ending 11:39.
+Andreas pulled be6de6e, activated the existing environment, previewed and applied
+`python -m src.utils.clean_run --reset-exp2 --clean`. The utility reports **15,071 generated files,
+95.010 GB removed**, preserving inputs and released reference weights. Targets include both output
+tiers and classified Exp2 scratch jobs; Exp1 was outside the reset scope.
+
+| Resource after cleanup | Used / limit |
+|---|---|
+| DATA | 56,261M / 76,800M |
+| GPFS scratch | 422.4G / 500G |
+| Lustre scratch | 28.5G / 500G |
+| Project stg_00211 | 616.9G / 1T |
+| Account credits | 96,335,099 balance; 521,235 reserved; 95,813,864 available |
+
+No new scheduler submission or benchmark completion appears in this transcript. The prior snapshot
+still establishes 54 completed Exp1 training runs, with the quarter-mixture benchmark work outstanding.
+The remaining GPFS use has not been attributed to CreditICL; do not delete unrelated project data.
+
+**Approved replacement:** Budget A has 48 × 2,500-update main Exp2 runs plus 16 × 500-update LR
+pilots, development-only selection and no changes to Exp1. At the quoted 30,600 credits/allocation-hour,
+the provisional training-only estimate is 50–53M credits including those pilots. Benchmark/validation
+cost and Exp3 are additional. Exp3 keeps matched 2,500-update controls, 36 short method pilots and
+48 new main runs. The implementation moves temporary Mindwell I/O to node-local disk and publishes
+every saved checkpoint to project storage; hardware acceptance requires a new Exp0 CPU/GPU pair.
+
+
 ## 29-10-2026 — Exp1 training completed; Exp2 stopped on GPFS quota and TabPFN loss overflow
 
 **Evidence** Downloads `output CreditICL.zip`, modified 29-10-2026 08:51:08, 28,122,513 bytes,

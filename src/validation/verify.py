@@ -227,8 +227,8 @@ def _long_context_cost_notice(label: str) -> None:
 def _print_legacy_training_costs(speeds: dict, sizes: dict) -> None:
     """Keep historical route estimates from becoming a false long-context campaign ETA."""
     # (experiment, arm kind in Exp0, steps, arms per track, kept checkpoints per arm)
-    plan = [("Exp1", "scratch_tabicl", 12_500, 12, 5 + 2), ("Exp2", "finetune_tabicl", 10_000, 24, 8 + 2),
-            ("Exp2", "finetune_tabpfn3", 10_000, 24, 8 + 2)]
+    plan = [("Exp1", "scratch_tabicl", 12_500, 12, 5 + 2), ("Exp2", "finetune_tabicl", 2_500, 12, 5 + 2),
+            ("Exp2", "finetune_tabpfn3", 2_500, 12, 5 + 2)]
     totals: dict[str, list[float]] = {}
     for exp, arm, steps, arms_per_track, kept in plan:
         for track in ("pd", "lgd"):

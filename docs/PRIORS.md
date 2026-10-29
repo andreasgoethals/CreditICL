@@ -1,10 +1,10 @@
 # PRIORS — how TabICLv2 makes its synthetic data, and what we change
 
-A tabular foundation model never sees a real table during pretraining; it sees millions of
-**synthetic** ones from a generator called the **prior**. The prior decides what "a table" means to
-the model, so it decides what the model is good at. This project changes that generator. Here is
-what upstream does, what we add, and why every mechanism — and every number in it — comes from the credit-risk
-literature rather than from the datasets the models are scored on.
+This project's training stream contains **synthetic** tables from a generator called the
+**prior**. That generator defines the task distribution on which the model learns. This project
+changes it toward credit-risk mechanisms. The account below distinguishes the upstream code,
+literature motivations and project design choices. Benchmark inspection helped motivate parts of
+the design; this is not a claim that every setting was established independently of these datasets.
 
 Original in-repo source audit (pin `de324efcca55be392feb0c01830b3b6ce364587f`; later checks record their own pins): paper `tfm-library/papers/2026/02_Qu_et_al._TabICLv2_*.pdf`; code
 `tfm-library/repositories/TabICL.txt`, including their own `scripts/train_v2_{clf,reg}_stage{1,2,3}.sh`.
