@@ -171,7 +171,7 @@ def continuation_recipe(track: str) -> pd.DataFrame:
         mean = lo if lo == hi else ((hi-lo)/math.log(hi/lo) if law == "log_uniform" else (lo+hi)/2)
         tasks = t["max_steps"] * t["batch_size"]
         rows.append({"Backbone": "TabICLv2" if architecture == "tabicl" else "TabPFN-3",
-                     "Runs per track": len(selected), "Peak LR": ("pending development pilot" if selected[0].get("design_unresolved") else f"{t['lr']:g}"),
+                     "Runs per track": len(selected), "Peak LR": ("pending all-credit pilot" if selected[0].get("design_unresolved") else f"{t['lr']:g}"),
                      "Weight decay": t["weight_decay"], "Updates": t["max_steps"], "Tables per run": f"{tasks:,}",
                      "Rows per table": f"{lo:,}" if lo == hi else f"{lo:,}–{hi:,} ({law.replace('_', '-')})",
                      "Context share": "–".join(f"{v:.0%}" for v in p["train_frac_range"]),

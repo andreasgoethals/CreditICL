@@ -1,9 +1,10 @@
-"""Freeze Experiment 2 learning rates and Experiment 3 adapters on development only.
+"""Freeze Experiment 2A learning rates on all credit and Exp3 adapters on development.
 
 python -m src.experiments.selection --stage learning-rate
 python -m src.experiments.selection --stage adapters
 Neither command submits a job or changes the runnable YAML. Receipts record all
-candidate scores and input hashes. Holdout and OOD metrics never enter a score.
+candidate scores and input hashes. Credit outcomes in Exp2/3 are tuning-benchmark
+results, not independent holdout evidence. OOD metrics never enter a score.
 """
 from __future__ import annotations
 
@@ -41,10 +42,13 @@ def load_selection(design: str, *, optional=False, for_analysis=False) -> dict |
                          f"src.experiments.selection --stage {stage} after the required benchmarks.")
     saved = json.loads(path.read_text(encoding="utf-8"))
     expected_design = "cpt" if design == "retention_pilot" else design
-    if (saved.get("schema") != 2 or saved.get("design") != expected_design
+    if (saved.get("schema") != 3 or saved.get("design") != expected_design
             or saved.get("source_fingerprint") != source_fingerprint()
             or set(saved.get("choices", {})) != {f"{t}/{m}" for t in ("pd", "lgd") for m in ("tabicl", "tabpfn3")}
-            or not saved.get("inputs")):
+            or not saved.get("inputs")
+            or saved.get("credit_evaluation_role") != "tuning_benchmark"
+            or saved.get("selection_scope") != ("all_credit" if expected_design == "cpt" else "development")
+            or saved.get("ood_used_for_selection") is not False):
         raise ValueError("Invalid or stale experiment selection receipt")
     from src.experiments.design import RATES, CANDIDATES
     for identity, choice in saved["choices"].items():
@@ -82,6 +86,22 @@ def development_score(frame: pd.DataFrame, datasets: list[str], name: str, metri
     return float(part.groupby("dataset")[metric].mean().mean())
 
 
+def selection_datasets(cfg: dict, stage: str) -> list[str]:
+    """Explicit tuning scope; legacy partition names do not imply a test holdout."""
+    evaluation = cfg["eval"]
+    if stage == "learning-rate":
+        if evaluation.get("selection_scope") != "all_credit":
+            raise ValueError("Experiment 2A requires the declared all-credit tuning scope")
+        datasets = evaluation["dev_datasets"] + evaluation["holdout_datasets"]
+    elif stage == "adapters":
+        datasets = evaluation["dev_datasets"]
+    else:
+        raise ValueError(f"Unknown selection stage: {stage}")
+    if not datasets or len(datasets) != len(set(datasets)):
+        raise ValueError("Selection datasets must be nonempty and unique")
+    return datasets
+
+
 def choose(rows: list[dict]) -> dict:
     """Highest primary metric; exact ties prefer the smaller numeric candidate."""
     if not rows or any(not np.isfinite(r["score"]) for r in rows):
@@ -105,13 +125,15 @@ def freeze(stage: str) -> Path:
     exp, variant = (3, "pilots") if pilot else (2, "pilots")
     previous = load_selection("retention_pilot") if pilot else None
     choices = {k: dict(v) for k, v in previous["choices"].items()} if previous else {}
-    inputs, rankings, baselines = {}, [], []
+    inputs, rankings, baselines, dataset_inventory = {}, [], [], {}
     if previous:
         path = selection_path("retention_pilot")
         inputs[str(path.resolve())] = bs.input_digest(path)
         baselines = previous["baselines"]
     for track in ("pd", "lgd"):
         cfg = load(bs.config_path(exp, track, variant))
+        datasets = selection_datasets(cfg, stage)
+        dataset_inventory[track] = datasets
         runs = expand_with_seeds(cfg)
         scores = {}
         for index, run in enumerate(runs):
@@ -122,7 +144,7 @@ def freeze(stage: str) -> Path:
             for path in [files["credit"], bs.receipt_path(tag)]:
                 inputs[str(path.resolve())] = bs.input_digest(path)
             metric = "roc_auc" if track == "pd" else "r2"
-            score = development_score(pd.read_csv(files["credit"]), cfg["eval"]["dev_datasets"],
+            score = development_score(pd.read_csv(files["credit"]), datasets,
                                       run_name(run), metric)
             key = (run["architecture"], run.get("method", "full"),
                    run["candidate"] if pilot else run["lr_index"])
@@ -162,10 +184,14 @@ def freeze(stage: str) -> Path:
                              for r in main if r["prior"]["credit_fraction"] == .5)
     design = "retention" if pilot else "cpt"
     destination = selection_path(design)
-    payload = dict(schema=2, design=design, source_fingerprint=source_fingerprint(), inputs=inputs,
+    payload = dict(schema=3, design=design, source_fingerprint=source_fingerprint(), inputs=inputs,
                    environment_fingerprint=original_environment, validation_inputs=original_inputs,
                    choices=choices, candidates=rankings, baselines=baselines,
-                   criterion="development ROC-AUC (PD) / R2 (LGD); equal dataset and pilot-mixture weights; lower value on exact tie")
+                   selection_scope="development" if pilot else "all_credit",
+                   selection_datasets=dataset_inventory, credit_evaluation_role="tuning_benchmark",
+                   ood_used_for_selection=False,
+                   criterion=("development" if pilot else "all-credit") +
+                   " ROC-AUC (PD) / R2 (LGD); equal dataset and pilot-mixture weights; lower value on exact tie")
     if (source_fingerprint() != original_source or environment_fingerprint() != original_environment
             or input_inventory() != original_inputs
             or any(bs.input_digest(Path(p)) != h for p, h in inputs.items())):

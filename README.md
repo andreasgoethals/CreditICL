@@ -76,7 +76,7 @@ Full rationale in
 | **3** | **Which constraints preserve generality?** | fixed 50% mixture; no decay, L2-SP, DiagScale, Q/V LoRA; three seeds | 24 new + 6 reused; 18 pilots |
 
 Counts include seeds and both prediction tasks: **Exp1 = (4 mixtures + 5 component removals) × 3 seeds × 2 tasks = 54 runs**;
-**Exp2 = 2 backbones × 4 mixtures × 1 selected rate × 3 seeds × 2 tasks = 48 main runs, plus 16 development-only LR pilots**.
+**Exp2 = 2 backbones × 4 mixtures × 1 selected rate × 3 seeds × 2 tasks = 48 main runs, plus 16 all-credit LR pilots (Experiment 2A)**.
 **Exp3 = 48 new main runs + 12 reused Exp2 baselines + 36 development-only pilots**.
 The component removals are compared with the main 50% mixture; they are not additional mixture levels.
 The 25% Exp1 extension was approved on 26-10-2026 after the initial 48-run campaign. It appends
@@ -247,7 +247,7 @@ After Exp1's extension and benchmarks, continue without changing the validated c
 
 ```bash
 python -m src.utils.run_experiment 2 --variant pilots --single-cluster --submit
-# Repeat after pilot training to submit its development benchmarks. Then:
+# Repeat after pilot training to submit its all-credit benchmarks. Then:
 python -m src.experiments.selection --stage learning-rate
 python -m src.utils.run_experiment 2 --single-cluster --submit
 # Repeat after training to submit missing benchmarks; then the retention pilots:
@@ -258,7 +258,8 @@ python -m src.utils.run_experiment 3 --single-cluster --submit
 # Repeat the main planner after training to submit missing benchmarks.
 ```
 
-Selection uses complete development folds only. Exp2 uses one frozen rate per backbone/task
+Exp2A selects on complete five-fold results for all credit datasets; later credit results
+are tuning-benchmark outcomes. OOD never selects a setting. Exp2 uses one frozen rate per backbone/task
 for all four mixtures. Exp3 reuses that rate and freezes adapter settings in hashed receipts;
 no YAML edit or retraining of the 12 reused baselines is needed. Its five-checkpoint figures report credit and native OOD
 trajectories separately. See [the registered design](docs/EXPERIMENTAL_DESIGN.md).

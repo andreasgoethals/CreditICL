@@ -157,25 +157,74 @@ The synthetic task stream, warm-up fraction, precision and table geometry are ma
 mixtures within each backbone. Across backbones the adaptation budgets differ; the primary
 contrast is the prior effect within each backbone, not a compute-controlled architecture contest.
 
-**Learning-rate pilot (Budget A, approved 29-10-2026).** Sixteen separate runs cross both
+**Experiment 2A: learning-rate pilot (Budget A, amended 29-10-2026).** Sixteen separate runs cross both
 backbones/tasks, both candidate rates and the 0%/50% mixtures at seed 990. Each stops at 500
-updates on the **2,500-update schedule prefix**. Only development datasets are benchmarked,
-with all rows/features and five folds; no holdout, OOD or monitoring-based selection. Average
+updates on the **2,500-update schedule prefix**. All 14 PD and 7 LGD credit datasets are
+benchmarked with all eligible rows/features and five folds. Both legacy partitions enter LR
+selection; OOD and monitoring results do not. This changes the evaluation interpretation, not
+the Exp1 split or its existing results. Average
 folds within each dataset, then datasets and the two mixtures equally. Maximize ROC-AUC for PD
 and R² for LGD; exact ties choose the smaller rate. Freeze one rate per backbone/task, shared
 by every main mixture. Main seeds 0/1/2 restart from released weights. Immutable receipts bind
 code, packages, benchmark inputs, all candidate scores and CSV hashes. No YAML edit is required.
 
-Development performance is selection-exposed and reported descriptively. Primary comparisons
-use designated holdout datasets and native OOD, excluded from the pilot. Five-fold CV on the
-selection datasets does not make their selected scores unbiased. Previously inspected holdout
-results remain disclosed; this is a controlled benchmark, not untouched external confirmation.
+All later Exp2/3 credit results are tuning-benchmark outcomes, not independent holdout evidence.
+Five-fold CV and different main training seeds do not undo dataset-level LR selection. OOD
+remains excluded from tuning. Report the selection method and retain candidate scores, fold
+metrics, configs and the immutable receipt; large pilot checkpoints can be retired afterward.
+Describe this tuning in Methods; a separate pilot results section is unnecessary.
+
+**Learning-rate and regularization review, 29-10-2026.** Checked against the primary texts
+and repository snapshots at TFM pin `26156f36eb7676e8d9050547817346db548b0e85`:
+
+| Evidence | Reported setting | Implication for this experiment |
+|---|---|---|
+| [TabICLv2](../tfm-library/papers/text/2026/09_Qu_et_al._TabICLv2_A_better_faster_scalable_and_open_tabular_foundation_model.txt), stage 3 | Muon, peak 2e-5, 10k updates, batch 64, decay .01 | Direct anchor for TabICL geometry and the higher candidate. Appendix D says decay/no-decay comparisons were inconclusive. |
+| [TabPFN-Wide](../tfm-library/papers/text/2026/03_Kolberg_et_al._TabPFN_Wide_Continued_Pre_Training_for_Extreme_Feature_Counts.txt) | TabPFN-v2 synthetic CPT: AdamW, 1e-5, 10k updates, batch 16 (8 for widest tasks), decay 1e-4 | Supports a synthetic-CPT candidate, not a proven TabPFN-3 optimum. Its decay differs from the public TabPFN fine-tuning default .01 used here. |
+| [Real-TabPFN](../tfm-library/papers/text/2025/07_Garg_et_al._Real_TabPFN_Improving_Tabular_Foundation_Models_via_Continued_Pre_training_With_Real_World_Data.txt) | TabPFN-v2 real-table CPT: 3e-7, 20k updates, batch 1, L2-SP .003 | Motivates a conservative alternative and the separate anchor penalty; its rate cannot be transferred independently of its objective and task batch. |
+| [Ning et al.](../tfm-library/papers/text/2026/10_Ning_et_al._Test_Time_Compute_for_Tabular_Foundation_Models_Mechanisms_Gains_and_Limits.txt), B.3 | Single-table full FT selects 1e-5 for TabICLv2 and 1e-6 for TabPFN-3 | Supports the lower candidates. This is task-specific FT, not multi-table CPT. A.4 explicitly discloses study-level LR selection on aggregate test results. |
+| [Rubachev et al.](../tfm-library/papers/text/2025/06_Rubachev_et_al._On_Finetuning_Tabular_Foundation_Models_1.txt) | Single-table LR search spans 5e-6 to 5e-4 | Reinforces dependence on the fitting protocol; it does not establish a universal continuation rate. |
+| [EXAONE Tabular](../tfm-library/papers/text/2026/08_Eo_et_al._EXAONE_Tabular_1.0_Technical_Report.txt), [Mitra v2](../tfm-library/papers/text/2026/09_Tao_et_al._Mitra_v2_Technical_Report.txt), [KumoRFM 2](../tfm-library/papers/text/2026/04_Hudovernik_et_al._KumoRFM_2_Scaling_Foundation_Models_for_Relational_Learning.txt) | Different initial-training objectives, optimizers, table batches and adaptation procedures | No matched experiment establishes a better recipe for credit-prior CPT of these two released backbones. Initial-pretraining rates are not substitutes for continuation rates. |
+
+The public TabICL source (`repositories/TabICL.txt`, `train_v2_clf_stage3.sh`,
+`train_v2_reg_stage3.sh`, `Trainer.configure_optimizer`, `Muon.step`) uses regular .01 decay;
+the paper's cautious-decay discussion does not establish that the released training command
+enabled it. Preserve the verified source behavior. Decay multiplies current weights by
+`1 - lr * weight_decay`; it is not a reset to zero and does not anchor the released checkpoint.
+At 2e-5 over the present cosine schedule its isolated, exact-arithmetic shrinkage would be
+about .025% over 2,500 updates, ignoring gradients and rounding. This is an illustration of scale,
+not a bound on its effect on optimization. Keep .01 in Exp2 and estimate its removal in Exp3.
+L2-SP stays in Exp3 so the main prior comparison does not change both prior and anchor penalty.
+Precision can make the no-decay contrast redundant: a 29-10 local Torch 2.13.0+cpu probe
+with FP32 parameters, zero gradients and foreach AdamW changed no entries at LR 1e-6 / decay .01,
+but changed nonzero entries at LR 1e-5. This does not attest CUDA Torch 2.11 behavior.
+Before launching Exp3's no-decay arm, verify the effective decay on that allocation at the
+selected rate; if it is numerically identical throughout the schedule, report that and amend
+the design to reuse the equivalent baseline instead of paying for a duplicate. Do not increase
+decay after viewing benchmark scores merely to manufacture a treatment difference.
+
+Both recipes use one linear warm-up followed by cosine decay to 1e-7. Candidate rates are
+**peak** rates; training starts below that peak. AdamW's coordinate scaling and Muon's matrix
+update transformation do not remove the global learning-rate multiplier. General CPT work
+supports re-warming/re-decaying with replay ([Ibrahim et al., 2024](https://arxiv.org/abs/2403.08763));
+WSD/infinite schedules can help when the continuation budget is unknown
+([Wen et al., 2025](https://arxiv.org/abs/2410.05192),
+[Singh et al., 2026](https://proceedings.mlr.press/v330/singh26b.html)). These are not direct
+comparisons on this TFM task. With a fixed 2,500-update endpoint, retain the native-style cosine
+schedule and do not add repeated restarts, benchmark-driven plateau control or another scheduler grid.
+The 500-update pilot is a budgeted proxy: especially with TabPFN's 250-update warm-up, it cannot
+guarantee the same ranking at 2,500. Retained main checkpoints document that trajectory; the
+headline endpoint stays fixed instead of being chosen afterward.
 
 The 2,500-update endpoint is a compute-budget choice informed by measured costs, not a literature
 claim of optimal convergence. Main storage is 240 retained snapshots, approximately 107 GB,
 plus about 7.2 GB for the 16 pilots, rolling saves and benchmark output. Measured/provisional
 training extrapolation is about 50–53M VSC credits including pilots at the quoted 30,600/hour;
 benchmarking and fresh validation are additional and must be budgeted separately.
+Exp2A's all-credit evaluation contains 840 dataset/fold/model cells (8 pilots per task times
+5 folds times 14 PD or 7 LGD datasets), versus 400 for the former development-only pilot.
+Full-table inference on the widest datasets may increase cost by more than that count ratio.
+The training estimate above does not price this expanded benchmark.
 
 ### 3.3 Experiment 3: constrained adaptation at a fixed 50% mixture
 
@@ -221,8 +270,8 @@ not exhaustive optimization. Other retention techniques are outside this registe
 `python -m src.experiments.selection --stage learning-rate` freezes the first receipt;
 `--stage adapters` freezes the pilot selection. Both bind complete benchmark receipts, CSV hashes
 and current source. They never rewrite YAML or submit jobs. A changed or missing receipt blocks
-Exp3. Holdout/OOD are reporting outcomes only. The historical inspection of designated holdout
-data is still disclosed; development-only selection now does not erase that exposure.
+Exp3. Exp2A uses all credit data for LR selection; Exp3 adapter candidates use development
+data only. Exp2/3 credit reporting is therefore tuning-exposed throughout. OOD is reporting only.
 
 ### 3.4 Experiment 0: implementation and capacity gates
 
@@ -274,7 +323,9 @@ the code looked like the hour it finished.
 
 ## 5. Evaluation
 
-The designated split lives in every config's `eval:` block; selection uses `select_on: dev`.
+The legacy designated split lives in each config's `eval:` block. Exp1 and Exp3 adapter
+selection use development datasets. Exp2A explicitly uses both partitions through
+`selection_scope: all_credit`; its later credit outcomes have no independent holdout interpretation.
 The September results across these datasets have already been inspected. The designated holdout
 is therefore not an untouched confirmatory set for subsequent design changes. Freeze this revised
 protocol, report that history, and obtain an independent source/time cohort for confirmatory claims.
@@ -301,17 +352,19 @@ without claiming an independently verified default-event definition or reversing
 by looking at real-data results — which learning rate or adapter strength Exp3 uses. A choice
 made on a set of datasets is fitted to them: the winning configuration's score there is biased upward
 (the winner's curse), exactly as a hyperparameter chosen on test data is. Training on synthetic data
-removes the leak through the weights, not the leak through the choice. Exp2 selects one rate per backbone/task on separate development-only pilots and reports
+removes the leak through the weights, not the leak through the choice. Exp2A selects one rate per backbone/task on all-credit pilots and Exp2 reports
 all four mixtures. Exp3 fixes the 50% mixture and reuses that frozen rate,
 then selects method strengths on separate development-only pilots. Every Exp1 and Exp2 result
-is reported on all eligible datasets, with the designated holdout shown separately. This separation
+is reported on all eligible datasets. Exp1 retains its original partitions; Exp2/3 credit results
+are tuning-benchmark outcomes. This reporting
 does not erase the effects of earlier inspection and must not be described as an unbiased fresh test.
 
 Five-fold CV estimates each fixed model's performance; selecting a mixture using those same
 assessment scores and then reporting only its winning score would still induce selection bias.
 Exp2 therefore retains every predeclared mixture and the final checkpoint, with paired effects
 against the matching continued-pretraining control and released model reported separately.
-Only Exp3's rates and method strengths are selected, using development datasets and the primary metric alone.
+Exp2A selects the base rate using all credit datasets; Exp3 selects method strengths using
+development datasets and the primary metric alone.
 OOD retention is an outcome to report, not an extra rule for re-ranking those choices. Existing
 holdout exposure remains disclosed; this separation cannot make past inspection disappear.
 These distinctions follow [Cawley & Talbot (2010)](https://www.jmlr.org/papers/v11/cawley10a.html)
@@ -346,8 +399,7 @@ columns, so wide-table extrapolation is shared across prior arms. Source audit: 
 601-feature prediction and regression-quantile probes, and both released classifiers passed
 2,986-feature probes matching the widest local table's width. Exp0 repeats wide probes on CUDA. Every
 saved permanent checkpoint is scored: Exp1 keeps its existing 2,500-step cadence; Exp2/Exp3 keep
-125, 250, 500, 1,000 and 2,500. Both kinds of pilots benchmark only 500 on
-development. Exp1 and Exp2/Exp3's TabPFN-3 arms train on 1,024-row tables;
+125, 250, 500, 1,000 and 2,500. Both kinds of pilots benchmark only update 500: Exp2A on all credit data, Exp3 on development. Exp1 and Exp2/Exp3's TabPFN-3 arms train on 1,024-row tables;
 Exp2/Exp3's TabICLv2 arms use 400–60,000 rows. All main runs are scored on full contexts of up to ~426,000 rows.
 Length exposure is matched across mixtures within each backbone, but it differs across experiments
 and backbones. Released TabICLv2 also completed its earlier training stages; extending our Exp2
@@ -364,7 +416,7 @@ the aggregate. A binary-only upstream control would be an additional attribution
 not a repair needed to execute the currently approved package comparison.
 
 **Inference scope.** Dataset-paired sign tests use datasets, not overlapping CV folds, as units.
-Only three LGD datasets are in the holdout: even unanimous non-tied differences have a minimum
+Only three LGD datasets are in Exp1's designated holdout: even unanimous non-tied differences have a minimum
 two-sided sign-test p-value of 0.25. LGD holdout and component results are consequently descriptive
 at this sample size; effect sizes, all per-dataset scores and uncertainty must be reported.
 Moving inspected development tasks into the confirmatory test or counting folds as independent
@@ -434,7 +486,7 @@ are preserved. This closes known exclusions; it does not certify every anonymise
 | prior×architecture interaction | TabICLv2 ablations show divergence on the old prior | log all loss curves; report divergence as an outcome |
 | nano→frontier gap | untested at scale (O'Prior's own caveat) | state as a limitation; scope any frontier confirmation separately |
 | credit is not distinctive | if the default prior already covers credit's regime the premise is weak | the `0.2`/`0.3` notebooks measure this before credits are spent |
-| meta-overfitting | 21 datasets, many iterations, historical holdout results already inspected | dev-only selection and frozen protocol now; independent source/time cohort for confirmatory claims |
+| meta-overfitting | 21 datasets, many iterations, historical holdout results already inspected | disclosed all-credit LR tuning for Exp2/3; independent source/time cohort needed for confirmatory credit claims |
 | i.i.d.-only result | Purucker 2026 | temporal splits where the data allows ([§7](#7-open-decisions)) |
 | outcome information in the features | the 29-09-2026 audit found outcome-construction and workout fields ([§7](#7-open-decisions) item 5) | known fields excluded under protocol 5; dictionaries needed for remaining fields. Giving every model leaked inputs does not remove the bias |
 | the same loans in dev and holdout | 5,696 of `lendingclub`'s 9,578 loans are in `hackerearth`; `base_modelisation` shares defaults with `base_model` | fixed 30-09-2026: both pairs are on the development side ([§5](#5-evaluation)) |

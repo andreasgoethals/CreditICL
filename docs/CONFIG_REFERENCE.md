@@ -234,7 +234,8 @@ The authoritative registered design and source limitations are in
 `src/experiments/design.py` maps stable candidate indices to numeric settings; changing a numeric
 setting invalidates validation/selection evidence rather than silently reusing a run.
 
-Exp2: 24 main runs per track (2 backbones × 4 mixtures × 1 selected rate × 3 seeds), plus 8 LR pilots.
+Exp2: 24 main runs per track (2 backbones × 4 mixtures × 1 selected rate × 3 seeds), plus 8 all-credit LR pilots (Exp2A). The existing dev/holdout names remain for Exp1 compatibility;
+both partitions select Exp2A rates, so neither is an independent Exp2/3 credit test set.
 TabICLv2 uses Muon, peak 2e-5/1e-5, decay .01, warm-up .01, 64 tables/update,
 400–60,000 log-uniform rows and 79–81% context. TabPFN-3 uses AdamW, peak 1e-5/1e-6,
 decay .01, warm-up .1, 16 tables/update, 1,024 rows and 30–90% context. Both clip the global

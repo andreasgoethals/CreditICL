@@ -135,6 +135,7 @@ output CreditICL/*/benchmark/
 output CreditICL/*/checkpoints/
 output CreditICL/*/report/
 output CreditICL/*/storage_probe/
+output CreditICL/*/notebooks/
 output CreditICL/prior_cache/
 output CreditICL/logs/
 output CreditICL/locks/

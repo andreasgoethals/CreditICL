@@ -1,5 +1,46 @@
 # Agents' memory — runs and dead ends
 
+## 29-10-2026 — Exp2A scope amendment and notebook Git conflicts
+
+Andreas requests LR selection on all 14 PD / 7 LGD datasets. This supersedes the
+development-only LR pilot below, while keeping the 16 runs, two rates per backbone,
+500-update schedule prefix, paired 0%/50% mixtures and independent pilot seed 990.
+Retain the compact candidate evidence and selection receipt; later Exp2/3 credit scores
+are tuning-benchmark results, not independent holdout evidence. OOD never selects the LR.
+Exp3 adapter pilots still use development datasets; the inherited base LR was tuned on all credit.
+Keep Exp2 weight decay .01 and Exp3's no-decay contrast; no Exp1 recipe or training code changes.
+
+**Tried:** VSC pull be6de6e -> 065703e followed by scratch cleanup, 29-10 at 13:02.
+**Result:** Pull aborted on modified tracked notebooks/PDFs; the chained cleanup never ran.
+**Why:** CPU validation executed notebooks and saved generated figures into tracked publication files.
+**Instead:** Preserve existing edits with a scoped Git stash; new VSC notebook renders go to
+the current validation attempt's notebooks folder, including executed copies and summaries.
+
+**Tried:** The full local suite from the desktop's default executable search path.
+**Result:** 1,943 passed, 65 skipped, two shell tests failed after 1,296.51 s.
+**Why:** The existing Git Bash was absent from PATH, repeating the already documented host prerequisite.
+**Instead:** Add `C:/Users/U0152019/AppData/Local/Programs/Git/bin` to the test process PATH,
+fix PYTHONHASHSEED=0 and one-thread BLAS, and rerun; both failed shell cases pass with Bash available.
+
+Weight-decay probe: local Torch 2.13.0+cpu, FP32 foreach AdamW and zero gradients showed no
+parameter change at peak LR 1e-6 / decay .01 (1e-5 did change nonzero entries). This is not CUDA
+evidence. Check actual VSC arithmetic after LR selection before paying for an equivalent no-decay
+Exp3 contrast. The executable grid remains unchanged; any resulting amendment must be recorded.
+
+Final local suite: **1,974 passed, 36 VSC-only skipped**, 1,590.64 s, with the existing Git Bash
+on PATH, PYTHONHASHSEED=0 and one-thread BLAS. No dependency or training implementation change;
+the training implementation remains `01a5f056044cc261b83b3973956d55211c64b4e81ee58d285712e852109007e4`.
+Final executable source fingerprint: `7c0ba9b8ad670883ccd9b32a12e1aac0afa475ac82b8d5857fe9810981ffa4c4`.
+Fresh VSC acceptance is still required; local tests do not certify the B200 allocation.
+All **12 notebooks passed**, producing 40 PDFs, captions and final printed summaries.
+Visually inspected the regenerated Exp2/3 design PDFs, PD missingness and LGD endpoint ties,
+plus the populated all-credit pilot layout using test data outside the published outputs.
+No new research results were synthesized; the local imported campaign snapshot remains dated 24-10.
+Final review corrected two summary sentences to describe the registered pilot rather than claim
+that it had already run; all 100 relevant plotting, selection and saved-output checks passed afterward.
+All nine Experiment 1–3 notebooks were then refreshed successfully; all 12 saved notebooks have
+final printed summaries and no error outputs. Publication artifacts contain 40 PDFs.
+
 ## 29-10-2026 — Budget A, development-only pilots and node-local working storage
 
 Andreas approves Budget A after the literature/cost comparison. Exp2 now has 48 main runs:

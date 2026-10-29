@@ -6,6 +6,9 @@
 
 It prints a line as each notebook finishes, and every 30 s names the ones not finished yet.
 A partial run (`--only`) keeps every other notebook's block in `All_Results.md`.
+On VSC, executed copies, figures and summaries go under the current Experiment 0
+attempt's `notebooks/` directory; tracked publication artifacts stay unchanged.
+Locally the default still updates the published notebooks and figures in place.
 
     output CreditICL/figures/<notebook>/*.pdf             written by the notebooks themselves
     output CreditICL/CAPTIONS.md                           ONE file, all notebooks, notebook order
@@ -53,6 +56,8 @@ from src.utils.paths import (
     captions_path,
     figures_dir,
     notebooks_dir,
+    notebook_output_root,
+    on_vsc,
     outputs_dir,
 )
 
@@ -235,6 +240,13 @@ def _execute(nb_path: Path, timeout: int) -> tuple[dict, str, str]:
     return nb, "".join(printed), error
 
 
+def executed_notebook_path(source: Path) -> Path:
+    """Save cluster execution evidence without dirtying the shared checkout."""
+    if on_vsc() or os.environ.get("CREDITICL_NOTEBOOK_OUTPUT_ROOT"):
+        return notebook_output_root() / "executed" / source.relative_to(notebooks_dir())
+    return source
+
+
 def run_one(name: str, timeout: int = DEFAULT_TIMEOUT) -> NotebookResult:
     """Execute one notebook in a fresh kernel and save its outputs into it. Never raises."""
     started = time.time()
@@ -250,7 +262,9 @@ def run_one(name: str, timeout: int = DEFAULT_TIMEOUT) -> NotebookResult:
         return NotebookResult(name, False, time.time() - started, 0, f"{type(exc).__name__}: {exc}")
 
     # Saved even when a cell failed: the notebook then shows the error where it happened.
-    nb_path.write_text(json.dumps(nb, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    destination = executed_notebook_path(nb_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(nb, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     n_figs = len(list(out_dir.glob("*.pdf")))
     if error:
         # Only the tail: a full traceback from twelve notebooks buries the one that matters.

@@ -1,1 +1,1 @@
-"""Prespecified experimental designs and development-only selection."""
+"""Prespecified experimental designs with explicit tuning and reporting scopes."""

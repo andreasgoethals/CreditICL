@@ -130,12 +130,19 @@ def test_two_stage_selection_is_frozen_complete_and_invalidated_by_environment(t
     assert first == selection.freeze("learning-rate")  # idempotent, not a new search
     frozen = selection.load_selection("retention_pilot")
     assert len(frozen["baselines"]) == 12
+    assert frozen["selection_scope"] == "all_credit"
+    assert frozen["credit_evaluation_role"] == "tuning_benchmark"
+    assert frozen["ood_used_for_selection"] is False
+    assert len(frozen["selection_datasets"]["pd"]) == 14
+    assert len(frozen["selection_datasets"]["lgd"]) == 7
     assert frozen["choices"]["pd/tabicl"]["full_lr"] == 1e-5
     assert frozen["choices"]["pd/tabpfn3"]["full_lr"] == 1e-6
     prepare(3, "pilots")
     selection.freeze("adapters")
     frozen = selection.load_selection("retention")
     assert len(frozen["candidates"]) == 36
+    assert frozen["selection_scope"] == "development"
+    assert frozen["credit_evaluation_role"] == "tuning_benchmark"
     assert all(c[m] == 1 for c in frozen["choices"].values() for m in ("lora", "diagscale", "l2sp"))
     assert all(not r["design_unresolved"] for r in expand_with_seeds(load("config/Exp3_PD.yaml")))
     monkeypatch.setattr(environment, "environment_fingerprint", lambda: "different-environment")

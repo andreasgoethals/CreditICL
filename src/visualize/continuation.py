@@ -107,7 +107,7 @@ def checkpoint_curves(track, backbone, *, experiment=2, metric=None):
                     ax.plot(part.checkpoint_step, part["mean"], color=color,
                             marker=style.MILESTONE_MARKER, markersize=style.CURVE_MARKER)
                     ax.fill_between(part.checkpoint_step, part.minimum, part.maximum, color=color, alpha=.12)
-            title = "Designated credit holdout" if domain == "credit" else "Native OOD"
+            title = "Credit tuning benchmark" if domain == "credit" else "Native OOD"
             ax.set(title=title, xlabel="Optimizer updates", xscale="log")
             ax.set_xticks([125, 250, 500, 1000, 2500], ["125", "250", "500", "1,000", "2,500"])
             ax.minorticks_off()  # Only the five measured milestones need labels.
@@ -146,7 +146,7 @@ def retention_effects(track, backbone, *, metric=None):
             ax.plot([row.ci_low, row.ci_high], [i, i], color=style.METHOD_COLORS[method], linewidth=style.EFFECT_LINE)
             ax.scatter(row.mean_difference, i, color=style.METHOD_COLORS[method], s=style.EFFECT_POINT)
         ax.axvline(0, color=style.MUTED, linestyle=":")
-        ax.set(title="Credit holdout" if domain == "credit" else "Native OOD",
+        ax.set(title="Credit tuning benchmark" if domain == "credit" else "Native OOD",
                xlabel=f"Δ {style.metric_label(metric)} vs full CPT + decay")
         ax.set_yticks(range(4), [METHODS[m] for m in methods])
     fig.suptitle(f"{BACKBONES[backbone]} · retention methods at 2,500 updates")
@@ -174,18 +174,18 @@ def pilot_scores(track, backbone):
 
 
 def learning_rate_pilot(track, backbone):
-    """Both LR candidates; the development statistic is not a final test score."""
+    """Both LR candidates; all-credit tuning scores are not independent test scores."""
     from src.experiments.selection import load_selection
     receipt = load_selection("cpt", optional=True, for_analysis=True)
     if receipt is None:
-        return campaign.availability("The development learning-rate pilot has not been frozen.")
+        return campaign.availability("Experiment 2A's all-credit learning-rate pilot has not been frozen.")
     frame = pd.DataFrame(receipt["candidates"])
     frame = frame[frame.track.eq(track) & frame.model.eq(backbone)].sort_values("value")
     style.apply()
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_HALF, .8))
     ax.plot(frame.value, frame.score, color=style.REFERENCE, marker=style.MILESTONE_MARKER)
     ax.set(xscale="log", xlabel="Candidate peak learning rate",
-           ylabel=f"Development {style.metric_label('roc_auc' if track == 'pd' else 'r2')}")
+           ylabel=f"All-credit {style.metric_label('roc_auc' if track == 'pd' else 'r2')}")
     ax.set_xticks(frame.value, [f"{v:g}" for v in frame.value])
     ax.set_title(f"{BACKBONES[backbone]} · 500-update pilot")
     return fig
@@ -215,5 +215,5 @@ def retention_summary():
                 trajectories.append(name + ": " + ("no complete three-seed checkpoint groups" if scores.empty
                                     else "\n" + scores.to_string(index=False)))
     lines += ["D · ADAPTATION TRAJECTORIES", "Five retained checkpoints; incomplete seed/fold groups are withheld.",
-              *trajectories, "Holdout/OOD do not select hyperparameters. Historical holdout exposure remains disclosed."]
+              *trajectories, "Registered protocol: select the base LR using all credit datasets in Experiment 2A; credit results are tuning-benchmark outcomes. OOD is excluded from selection."]
     return "\n".join(lines)

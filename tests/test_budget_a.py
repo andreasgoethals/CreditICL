@@ -10,7 +10,7 @@ from src.utils.config import expand_with_seeds, load
 
 
 @pytest.mark.parametrize("task", ["PD", "LGD"])
-def test_pilot_datasets_and_seeds_are_separate_from_main(task, isolated_output):
+def test_lr_pilot_uses_all_credit_but_independent_training_seed(task, isolated_output):
     cfg = load(f"config/Exp2_{task}.yaml", allow_placeholders=True)
     pilot_cfg = load(f"config/Exp2_{task}_pilots.yaml")
     main, pilots = expand_with_seeds(cfg), expand_with_seeds(pilot_cfg)
@@ -19,7 +19,8 @@ def test_pilot_datasets_and_seeds_are_separate_from_main(task, isolated_output):
     with pytest.raises(ValueError, match="selection is not frozen"):
         load(f"config/Exp2_{task}.yaml")
     assert pilot_cfg["eval"]["dev_datasets"] == cfg["eval"]["dev_datasets"]
-    assert not pilot_cfg["eval"]["holdout_datasets"]
+    assert pilot_cfg["eval"]["holdout_datasets"] == cfg["eval"]["holdout_datasets"]
+    assert pilot_cfg["eval"]["selection_scope"] == "all_credit"
     assert not pilot_cfg["eval"]["include_ood"]
     assert {r["seed"] for r in pilots}.isdisjoint(r["seed"] for r in main)
     assert {r["prior"]["credit_fraction"] for r in pilots} == {0., .5}
@@ -59,6 +60,25 @@ def test_same_frozen_rate_applies_to_every_mixture_and_retention_baseline():
         apply_design(no_decay, receipt)
         assert no_decay["train"]["lr"] == run["train"]["lr"]
         assert no_decay["train"]["schedule_total_steps"] == run["train"]["schedule_total_steps"] == 2500
+
+
+def test_all_credit_selection_includes_former_holdout_and_excludes_ood():
+    import pandas as pd
+    from src.experiments.selection import development_score, selection_datasets
+
+    cfg = {"eval": {"dev_datasets": ["dev"], "holdout_datasets": ["former_holdout"],
+                    "selection_scope": "all_credit"}}
+    datasets = selection_datasets(cfg, "learning-rate")
+    frame = pd.DataFrame([dict(dataset=d, seed=0, fold=f, status="ok", info_run_name="run", roc_auc=s)
+                          for d, s in (("dev", .9), ("former_holdout", .5), ("ood", -1000))
+                          for f in range(5)])
+    assert development_score(frame, datasets, "run", "roc_auc") == pytest.approx(.7)
+    assert development_score(frame, selection_datasets(cfg, "adapters"), "run", "roc_auc") == pytest.approx(.9)
+    with pytest.raises(ValueError, match="Incomplete"):
+        development_score(frame[frame.dataset.ne("former_holdout")], datasets, "run", "roc_auc")
+    cfg["eval"]["selection_scope"] = "development"
+    with pytest.raises(ValueError, match="all-credit"):
+        selection_datasets(cfg, "learning-rate")
 
 
 def test_checkpoint_plot_draws_measured_milestones_and_step_zero(monkeypatch):

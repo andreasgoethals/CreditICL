@@ -28,7 +28,7 @@ def released_score(track, backbone, domain, metric):
     part = frame[identities(frame).eq("tabiclv2" if backbone == "tabicl" else "tabpfn3")]
     if domain == "credit":
         cfg = load(paths.config_path(f"Exp2_{track.upper()}"), allow_placeholders=True)
-        part = part[part.dataset.isin(cfg["eval"]["holdout_datasets"])]
+        part = part[part.dataset.isin(cfg["eval"]["dev_datasets"] + cfg["eval"]["holdout_datasets"])]
     if part.empty or not np.isfinite(part[metric]).all():
         return None
     return float(part.groupby("dataset")[metric].mean().mean())
@@ -92,9 +92,8 @@ def benchmark_frames(track: str, experiment: int, *, domain="credit", final_only
             frame = read_cells(path, datasets, identity=run_name(run), step=step)
             if frame is None:
                 continue
-            if domain == "credit":
-                frame = frame[frame.dataset.isin(cfg["eval"]["holdout_datasets"])].copy()
             frames.append(frame.assign(architecture=run["architecture"], treatment=method,
+                evaluation_role="tuning_benchmark" if domain == "credit" else "ood_not_used_for_selection",
                 learning_rate=run["train"]["lr"], lr_index=run.get("lr_index", 0),
                 mixture=run["prior"]["credit_fraction"], training_seed=run["seed"], checkpoint_step=step))
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()

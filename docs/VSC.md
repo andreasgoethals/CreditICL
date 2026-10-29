@@ -522,6 +522,20 @@ while a campaign is active. `exp0.slurm` continues only matching code/packages/i
 a stale previous campaign starts a fresh isolated attempt. `DEFERRED` can be resubmitted without
 changes; a current `FAILED` needs diagnosis. Preserve Exp1 outputs throughout.
 
+If old cluster notebook executions block a pull, preserve just those tracked artifacts first:
+
+```bash
+git stash push -m "VSC notebook renders before update" -- notebooks "output CreditICL/All_Results.md" "output CreditICL/CAPTIONS.md" "output CreditICL/figures"
+git pull --ff-only
+git submodule update --init --recursive
+```
+
+The stash excludes untracked experiment results/checkpoints. Keep it until any handwritten
+notebook changes have been recovered; do not automatically pop old rendered artifacts back.
+New VSC notebook execution writes copies, figures and summaries under the current Exp0
+attempt's `notebooks/` directory. Local publishing still saves the tracked artifacts in place.
+This deliberate cluster-only template adaptation avoids changing checkout files during validation.
+
 ```bash
 sbatch --clusters=wice scripts/slurm/exp0_cpu.slurm
 # Once CPU completes successfully:
@@ -534,7 +548,7 @@ python -m src.utils.run_experiment 1 --phase benchmark --submit
 Each experiment planner is safe to repeat: it skips completed/queued arms and waits for training
 before benchmarking. Exp1 includes only missing quarter-mixture work if the other 48 runs and
 benchmarks are already complete. All 54 training runs were complete in the 29-10 snapshot.
-Run Exp2 pilots after Exp1 benchmarking; repeat its planner after training to submit development benchmarks.
+Run Exp2A pilots after Exp1 benchmarking; repeat its planner after training to submit all-credit benchmarks.
 Main Exp2 retains five checkpoint benchmarks per run. All rows/features/five folds remain.
 For Exp2/Exp3, keep `--single-cluster`: these commands use the Mindwell B200 allocation validated
 by Exp0. The planner's optional historical LGD split across wICE A100s is not validated by a B200
@@ -542,7 +556,7 @@ capacity result and is not the launch recipe here.
 
 ```bash
 python -m src.utils.run_experiment 2 --variant pilots --single-cluster --submit
-# Repeat after pilot training to submit the development-only benchmarks. Once they finish:
+# Repeat after pilot training to submit all-credit benchmarks. Once they finish:
 python -m src.experiments.selection --stage learning-rate
 python -m src.utils.run_experiment 2 --single-cluster --submit
 # Repeat after main training to submit missing benchmarks. Then proceed with Exp3:

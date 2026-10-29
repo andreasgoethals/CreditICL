@@ -1,4 +1,4 @@
-# Development-only LR pilots: a 500-update prefix of the main 2,500-update schedule.
+# Experiment 2A: all-credit LR tuning, a 500-update prefix of the main schedule.
 prior_file: Exp2_LGD.yaml
 experiment: exp2pilots_lgd
 design: cpt_pilot
@@ -15,6 +15,6 @@ progress:
   every_datasets: 0
   n_ood: 0
 eval:
-  holdout_datasets: []
+  selection_scope: all_credit
   include_reference_slots: false
   include_ood: false

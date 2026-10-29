@@ -349,9 +349,26 @@ def chapter_of(notebook: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def notebook_output_root() -> Path:
+    """Keep VSC renders outside Git's published notebook/figure artifacts.
+
+    Training and benchmark inputs keep their canonical paths. Experiment 0's
+    attempt identifier also isolates its notebook validation evidence.
+    """
+    override = os.environ.get("CREDITICL_NOTEBOOK_OUTPUT_ROOT")
+    if override:
+        destination = Path(override).expanduser()
+        if not destination.is_absolute():
+            raise ValueError("CREDITICL_NOTEBOOK_OUTPUT_ROOT must be absolute")
+        return destination
+    if on_vsc():
+        return experiment_dir(0) / "notebooks"
+    return outputs_dir()
+
+
 def figures_root() -> Path:
     """Every notebook's figures, one folder per notebook. SMALL (drawn on a laptop)."""
-    return outputs_dir() / "figures"
+    return notebook_output_root() / "figures"
 
 
 def figures_dir(notebook: str) -> Path:
@@ -369,12 +386,12 @@ def all_figure_dirs() -> list[Path]:
 
 def all_results_path() -> Path:
     """Every notebook's text summary, concatenated in notebook order."""
-    return outputs_dir() / "All_Results.md"
+    return notebook_output_root() / "All_Results.md"
 
 
 def captions_path() -> Path:
     """The single shared captions file for every generated figure."""
-    return outputs_dir() / "CAPTIONS.md"
+    return notebook_output_root() / "CAPTIONS.md"
 
 
 def repo_dir() -> Path:

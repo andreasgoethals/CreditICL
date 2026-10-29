@@ -271,7 +271,9 @@ def test_end_to_end_a_notebook_saves_its_own_figure(isolated_output, monkeypatch
     assert not list(folder.glob("*.png"))  # PDF only
 
     # ...and the notebook FILE now holds the run: the inline figure and the printed summary.
-    outputs = json.loads((nb_dir / "smoke.ipynb").read_text(encoding="utf-8"))["cells"][0]["outputs"]
+    source = nb_dir / "smoke.ipynb"
+    assert json.loads(source.read_text(encoding="utf-8"))["cells"][0]["outputs"] == []
+    outputs = json.loads(rn.executed_notebook_path(source).read_text(encoding="utf-8"))["cells"][0]["outputs"]
     assert any("image/png" in o.get("data", {}) for o in outputs), "the figure is not in the notebook"
     assert any(o.get("name") == "stdout" and "SMOKE SUMMARY" in o["text"] for o in outputs)
 
@@ -281,6 +283,34 @@ def test_end_to_end_a_notebook_saves_its_own_figure(isolated_output, monkeypatch
     rn.write_all_results(("smoke",))
     assert "A line from (0,0) to (1,1)." in captions_path().read_text(encoding="utf-8")
     assert "SMOKE SUMMARY: 1 figure" in all_results_path().read_text(encoding="utf-8")
+
+
+def test_vsc_notebook_execution_keeps_publication_and_training_paths_separate(isolated_output, monkeypatch):
+    from src.utils import paths
+    source = isolated_output / "sources" / "2. Experiment 2" / "2.1_test.ipynb"
+    source.parent.mkdir(parents=True)
+    make_notebook(source, ["print('summary')"])
+    original = source.read_bytes()
+    monkeypatch.setattr(rn, "notebooks_dir", lambda: isolated_output / "sources")
+    monkeypatch.setenv("CREDITICL_EXP0_ATTEMPT", "cpu_test")
+    before = paths.run_checkpoints_dir("exp1_pd__s0")
+    executed = json.loads(source.read_text(encoding="utf-8"))
+    executed["cells"][0]["outputs"] = [{"output_type": "stream", "name": "stdout", "text": "summary"}]
+    monkeypatch.setattr(rn, "_execute", lambda *a: (executed, "summary", ""))
+    assert rn.run_one("2.1_test").ok
+    assert source.read_bytes() == original
+    root = paths.experiment_dir(0) / "notebooks"
+    assert rn.executed_notebook_path(source) == root / "executed" / "2. Experiment 2" / source.name
+    assert paths.figures_root() == root / "figures"
+    assert paths.all_results_path().parent == paths.captions_path().parent == root
+    assert paths.run_checkpoints_dir("exp1_pd__s0") == before
+
+
+def test_local_notebook_publishing_stays_in_place(tmp_path, monkeypatch):
+    monkeypatch.setattr(rn, "on_vsc", lambda: False)
+    monkeypatch.delenv("CREDITICL_NOTEBOOK_OUTPUT_ROOT", raising=False)
+    source = tmp_path / "source.ipynb"
+    assert rn.executed_notebook_path(source) == source
 
 
 def test_the_runner_starts_every_kernel_with_the_training_hash_seed():

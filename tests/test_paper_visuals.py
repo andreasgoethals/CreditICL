@@ -21,6 +21,15 @@ def close_figures():
     plt.close("all")
 
 
+def test_credit_scope_preserves_exp1_and_labels_exp2_tuning_population(monkeypatch):
+    monkeypatch.setattr(paper, "load", lambda *a, **kw: {
+        "eval": {"dev_datasets": ["dev"], "holdout_datasets": ["old_holdout"]}})
+    frame = pd.DataFrame({"dataset": ["dev", "old_holdout", "unrelated"]})
+    assert list(paper._role(frame, "pd", "exp1").dataset) == ["old_holdout"]
+    assert list(paper._role(frame, "pd", "exp2").dataset) == ["dev", "old_holdout"]
+    assert list(paper._role(frame, "pd", "exp3").dataset) == ["dev", "old_holdout"]
+
+
 def _cells(name, score, datasets=("a", "b", "c"), seeds=(0, 1, 2)):
     trained = name.startswith("exp")
     return [dict(dataset=dataset, model="crediticl" if trained else name,

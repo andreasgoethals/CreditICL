@@ -10,6 +10,8 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 29-10-2026
 
+- Make Exp2A an explicitly recorded all-credit LR pilot; label Exp2/3 credit outcomes as tuning-exposed and keep OOD out of selection.
+- Save VSC notebook executions inside validation output, preventing tracked notebook/PDF changes from blocking later pulls.
 - Implement Budget A: 48×2,500-update Exp2 runs, 16 development-only LR pilots, frozen selection receipts and five checkpoint milestones; align Exp3 and notebooks without changing Exp1 recipes.
 - Move Mindwell working files to node-local disk, publish rolling checkpoints, and add verified retired-scratch cleanup; record the completed 95 GB Exp2 reset.
 
