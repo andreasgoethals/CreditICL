@@ -2,6 +2,15 @@
 
 ## 29-10-2026 — approved 1,500-update deployment
 
+Runtime mode repair 62468816 completed: Ruff 0.16.2 and Torch helper executability
+verified. Candidate r3 SHA256 is
+`83f8145eafbbbcad0f25a5d109b0329aec12a159e5bc8ab9fc94a9f1e3ed0585`.
+CPU probe 62468931 passed 97 checks and failed one child-process import test; adding
+only the mounted checkout to the container's PYTHONPATH fixes that independent-cwd
+import route. Compiler/model/plot caches are explicitly redirected to scratch.
+The candidate remains unaccepted until the current full CPU/GPU Exp0 pair passes.
+
+
 The user chooses 64 Exp2 runs (two seeds 0/1, both fixed rates, four mixtures, two
 backbones, PD/LGD), 1,500 updates and checkpoints 125/250/500/1000/1500. Exp3 uses
 32 new runs and eight matched Exp2 baselines at the same horizon/seeds. Exp1 remains

@@ -171,6 +171,15 @@ The one thing to do differently.
 
 ## 29-10-2026 — PROJECT runtime rebuild and 1,500-update deployment
 
+Runtime mode repair 62468816 completed: Ruff 0.16.2 and Torch helper executability
+verified. Candidate r3 SHA256 is
+`83f8145eafbbbcad0f25a5d109b0329aec12a159e5bc8ab9fc94a9f1e3ed0585`.
+CPU probe 62468931 passed 97 checks and failed one child-process import test; adding
+only the mounted checkout to the container's PYTHONPATH fixes that independent-cwd
+import route. Compiler/model/plot caches are explicitly redirected to scratch.
+The candidate remains unaccepted until the current full CPU/GPU Exp0 pair passes.
+
+
 - **Authorization:** the user requested the 64-run/two-seed design, runtime migration,
   scoped stale-output cleanup, full CPU/GPU acceptance, remaining Exp1 benchmarking and Exp2 launch.
 - **Build:** wICE interactive job **62468678**, eight CPUs, two-hour limit.

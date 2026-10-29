@@ -24,6 +24,10 @@ for name in CREDITICL_RUNTIME_IMAGE CREDITICL_EXPECTED_COMMIT CREDITICL_PROJECT_
 done
 export APPTAINERENV_CREDITICL_IN_CONTAINER=1
 export APPTAINERENV_PYTHONNOUSERSITE=1
+export APPTAINERENV_PYTHONPATH="$repo"
+for cache in HF_HOME TORCH_HOME TRITON_CACHE_DIR TORCHINDUCTOR_CACHE_DIR NUMBA_CACHE_DIR MPLCONFIGDIR; do
+    export "APPTAINERENV_$cache=$work/cache/$cache"
+done
 export APPTAINERENV_LD_LIBRARY_PATH=/opt/compat:/lib64:/usr/lib64:/.singularity.d/libs
 runner=(apptainer exec --cleanenv --pwd "$repo" --bind "$repo:$repo:ro"
     --bind "$repo/output CreditICL:$repo/output CreditICL:rw"
