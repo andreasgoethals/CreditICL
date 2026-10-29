@@ -8,6 +8,10 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 29-10-2026
+
+- Record completed quarter-mixture Exp1 training and diagnose Exp2's full GPFS quota, reproducible TabPFN target-loss overflow and measured long-context cost; preserve checkpoints and validated executable code.
+
 ## 28-10-2026
 
 - Sync TEMPLATE.md: flexible experiment folders and staged experiment-0 VSC validation; preserve this project's code, layout and run evidence.

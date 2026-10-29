@@ -1,5 +1,43 @@
 # Agents' memory — runs and dead ends
 
+## 29-10-2026 — all Exp1 training complete; Exp2 blocked by scratch quota and target-loss overflow
+
+Downloads `output CreditICL.zip`, 29-10 08:51:08, 28,122,513 bytes, SHA256
+`38901be1f55cd06c655b5f8fa22a6518e51bd015e3682ac9923b2cedf2365c74`.
+
+| Job | Configuration | Observed outcome | Headline |
+|---|---|---|---|
+| 11747538, Mindwell | Exp1 LGD quarter mixture, indices 9–11 | All three completed | 12,500 updates and 800,000 tables each; 6.51–6.61 h |
+| 11747539, Mindwell | Exp1 PD quarter mixture, indices 9–11 | All three completed | Same budget; 6.97–7.01 h |
+| 11747551, Mindwell | Exp2 LGD, 48 arms | No completed arm | 11 configurations started; three stopped/resubmitted at 550/551; three TabPFN arms failed at 685; storage blocked the rest |
+| 11747552, Mindwell | Exp2 PD, 48 arms | No completed arm | Eight TabICL configurations started; checkpoint writes failed; remaining 40 refused at preflight |
+
+Exp1 now has **54/54 completed training summaries**, with finite post-zero recorded training
+losses in the six new runs and no failed quarter-run logs. The same 128 old benchmark tasks
+end OK; no quarter-mixture benchmark jobs appear. Project-tier CSV/checkpoint bytes are absent
+from the ZIP. Exp0 reports remain PASS; all 228 available referenced artifact hashes still match.
+
+Andreas's live 29-10 08:53–08:54 check shows GPFS scratch **497.7G/500G**, CreditICL/jobs 84G,
+project stg_00211 623.5G/1T (CreditICL 50G, its output 47G), DATA 56,221M/76,800M.
+No CreditICL job remains in Mindwell's queue; only unrelated JEVPFN 11750830 is RUNNING.
+Do not delete other projects' work or reset validated/production output. Disposable per-job
+`inputs/` copies can be rebuilt; `checkpoints/` may contain the newest recoverable state.
+
+Tried: running the full Exp2 arrays after successful current Exp0 validation.
+Result: 99 logged attempts: three checkpointed/resubmitted, 14 checkpoint-stream write failures, 79 explicit quota failures and three non-finite TabPFN losses.
+Why: the shared GPFS scratch quota filled; readiness hashes stage validation inputs per job and then mislabel copy/quota errors as a need to rerun Exp0. The exact contributor to the other approximately 414G is not established.
+Instead: recover scratch capacity without deleting checkpoints, preserve the passing Exp0 artifacts, and distinguish storage-access errors from stale/failed validation before resubmitting.
+
+Tried: TabPFN LGD seed-0 arms at 0/25/50% credit with native transformed-target CRPS+MSE.
+Result: all three fail at update 685; recorded finite losses also reach approximately 1.2e31 earlier.
+Why: local regeneration of batch 685, original-prior slot 15, gives a transformed target around 1.034e25; native float32 MSE overflows even for finite logits. This slot is identical across those three mixtures.
+Instead: validate wider-range loss/target-transform arithmetic without silently clipping targets or dropping tasks; add this exact batch as a regression probe. This audit implements no training change and establishes no GPU fix.
+
+Observed TabICL throughput implies roughly 210–225 GPU-hours per 10k-update run, about
+10k GPU-hours for its 48-arm subtotal. This is a production-log extrapolation, not measured
+completion or billing. Review the campaign budget before full resubmission. Further details,
+including reproduction package differences and recovery limits, are in RUNS.md.
+
 ## 28-10-2026 — Exp1 quarter-mixture extension and Exp2 submitted
 
 Terminal attachment `723611bd-b126-4ffc-a791-5f8c749844a7/Pasted text.txt` supersedes the

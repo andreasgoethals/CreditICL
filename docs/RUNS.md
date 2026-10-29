@@ -167,6 +167,148 @@ The one thing to do differently.
 
 ## Runs
 
+## 29-10-2026 — Exp1 training completed; Exp2 stopped on GPFS quota and TabPFN loss overflow
+
+**Evidence** Downloads `output CreditICL.zip`, modified 29-10-2026 08:51:08, 28,122,513 bytes,
+1,944 entries, 657,442,508 uncompressed bytes; SHA256
+`38901be1f55cd06c655b5f8fa22a6518e51bd015e3682ac9923b2cedf2365c74`.
+Andreas also supplied live `myquota`, Mindwell `squeue` and `du` output at 08:53–08:54 CET.
+The ZIP retains compact output, not the project-tier checkpoint binaries/benchmark CSVs.
+Runtime logs identify commit `673dba5`, TFM pin `702d9ab0b66f`, torch 2.11.0+cu128 and
+TabPFN 9.1.0. That commit pins VSC `3bcdf55e576d10161d6189b40ac39380bbba9eca`.
+The executable source fingerprint remains
+`4b31d59be2048f41f894db9a26c49919f759e65e9fdfae4305dd52e27ae164d0` locally during this audit.
+
+### Experiment 1: completed training, quarter-mixture benchmarks pending
+
+All six quarter-mixture runs report completed=true, 12,500 updates and 800,000 synthetic tables.
+They use the existing scratch-training recipe with 64 tables/update, 25% credit prior and seeds
+0/1/2; per-arm resolved configs are in their `experiment_1/runs/.../config.json` records.
+Their training fingerprint is `f78b9ab09ce66d3107c77c8505624842e8497bb1fefb64b7cf5785b4aae1a3f5`.
+
+| Array / arm | Task / seed | Training seconds | Successful end, 28-10 CET |
+|---|---|---:|---|
+| 11747538 / 9 | LGD / 0 | 23,773.1 | 16:20:07 |
+| 11747538 / 10 | LGD / 1 | 23,448.4 | 16:14:34 |
+| 11747538 / 11 | LGD / 2 | 23,802.2 | 16:20:43 |
+| 11747539 / 9 | PD / 0 | 25,175.1 | 16:43:34 |
+| 11747539 / 10 | PD / 1 | 25,095.6 | 16:42:15 |
+| 11747539 / 11 | PD / 2 | 25,252.5 | 16:45:02 |
+
+Each new telemetry file has 175 rows; no non-finite post-zero recorded training losses were
+found. Their wrappers end OK without scratch-cleanup warnings. The Python-module warning
+precedes successful project-venv activation and did not stop these runs.
+The complete Exp1 training count is **54** (24 main mixture runs and 30 component ablations).
+The old 48 records remain present. Benchmark wrapper logs still number 128 and end OK;
+no quarter-mixture benchmark jobs appear. This is not independent verification of project-tier
+checkpoint bytes or detailed metric coverage.
+
+### Experiment 2: what ran and what failed
+
+Arrays 11747551 (LGD) and 11747552 (PD) use the resolved two-backbone, four-mixture, two-rate,
+three-seed grid documented in the preceding submission entry: 48 arms per task, 10k updates.
+All observed arms have seed 0. There are **19 resolved production run configs**, **zero completed
+Exp2 runs**, and three partial summaries. The configured remaining 77 arms failed before training.
+
+The 99 wrapper attempts classify as:
+
+| Outcome | Attempts | Evidence |
+|---|---:|---|
+| Checkpointed and resubmitted | 3 | LGD TabICL primary-rate 0/25/50% arms, steps 551/550/550 |
+| Checkpoint stream-write failure | 14 | PyTorch `basic_ios::clear: iostream error` / `unexpected pos` |
+| Explicit quota failure | 79 | 77 initial arms plus two continuations; preflight/input-copy failures |
+| Non-finite loss | 3 | LGD TabPFN primary-rate 0/25/50%, all at update 685 |
+
+The three partial TabICL summaries retain approximately 42,500 training seconds each. Their
+permanent stop checkpoints were logged as published. The 0% continuation subsequently logs
+step 700 before failing on its next checkpoint write; the 25% continuation fails copying its
+step-550 state to scratch. Other started TabICL arms log step 200 and saved step 125 before
+the step-250 write fails. The TabPFN arms save step 500 before failing at 685. These are
+recovery candidates, not verified intact checkpoint bytes: inspect both tiers before deleting.
+
+Across 21 attempts with complete Date/END banners, their elapsed intervals sum to about
+118.22 GPU-hours. This excludes startup outside those banners and the 78 preflight-only
+attempts; it is neither Slurm billing nor a claim that all of that work is lost. Several states
+were checkpointed and can potentially resume after integrity/provenance checks.
+
+### Storage diagnosis and misleading readiness message
+
+The live quota output reports:
+
+| Tier | Used / quota | CreditICL footprint from supplied du |
+|---|---|---|
+| DATA | 56,221M / 76,800M | Not separately supplied |
+| GPFS scratch | 497.7G / 500G | 84G, all under `CreditICL/jobs` |
+| Lustre scratch | 27.25G / 500G | Not separately supplied |
+| Shared project stg_00211 | 623.5G / 1T | 50G total: 47G output, 2.5G data, 640M released checkpoints, 28M prior cache |
+
+GPFS scratch is the immediate exhausted tier. Roughly 414G of its usage belongs outside
+CreditICL; its ownership/disposability is not established. Mindwell's live queue contains
+only JEVPFN job 11750830, so no CreditICL job remains active there. Do not touch JEVPFN's
+workspace or indiscriminately delete the shared scratch root.
+
+An explicit failure copies a known project checkpoint into
+`/gpfs1/scratch/383/vsc38338/CreditICL/jobs/11750317/checkpoints/.../.step-550.ckpt....copying`
+and raises Errno 122. Other failures occur while staging Exp0 validation checkpoints into
+per-job `inputs/`. `campaign.readiness` checks artifact hashes through `input_digest`, which
+uses `working_storage.local_input` and copies each input per job. Its generic exception
+message then says to rerun CPU/GPU Exp0. That instruction does not establish invalid Exp0:
+both stored reports remain PASS, and all 23 CPU plus 205 available GPU artifact hashes match.
+The other 48 GPU artifacts are absent from this ZIP. Failed copy attempts and failed training
+jobs retain scratch; successful quarter-mixture jobs report no cleanup warning.
+
+Per-job `inputs/` are staged read-only copies and are reconstructible. Per-job `checkpoints/`
+may contain the newest state, including rolling checkpoints not yet on project storage.
+Free only identified disposable caches after checking the queue; recover/verify checkpoints
+before retiring a whole job directory. A full output reset would destroy useful results and
+passing validation evidence without correcting the numerical issue.
+
+### Numerical diagnosis: original-prior batch 685
+
+The three LGD TabPFN arms fail with `FloatingPointError: non-finite loss at step 685`.
+They also record very large finite training losses, reaching about 1.205e31 before failure,
+and AMP retries/full-float32 replays on earlier batches. Their code raises immediately on a
+non-finite forward loss; the existing FP32 replay path handles gradient overflow.
+
+A CPU-only reproduction regenerated seed-0 batch 685 from the archived resolved config.
+Slot 15 is an identical original-prior task in the 0/25/50% mixtures: 1,024 rows, 727 context
+rows and 297 query rows. TabPFN's estimator-specific target transformation gives a maximum
+absolute target of **1.0339849692701e25**, although the raw target remains finite. For finite
+zero logits, native `_compute_regression_loss` with unchanged CRPS+MSE weights produces:
+
+| Loss arithmetic | Result |
+|---|---:|
+| float32 | infinity |
+| float64 | 1.7998735970984676e47, finite |
+
+This isolates loss-range overflow without training or changing model weights. The local
+environment differs from VSC: torch 2.13.0 rather than 2.11.0+cu128, NumPy 2.5.1 rather than
+2.5.2; TabPFN 9.1.0, TabICL 2.1.1 and scikit-learn 1.9.0 match. It establishes a reproducible
+failure mechanism, not bitwise equivalence of every VSC tensor or a validated GPU fix.
+Wider target-transform/loss arithmetic is a candidate correction that retains the mathematical
+objective; silently clipping targets or dropping the shared task would change the experiment.
+
+### Cost, validation limits and next steps
+
+Production TabICL logs show roughly 76–80 seconds per 64-table update, approximately
+760,000 rows/update, with forward/backward accounting for over 99% of measured phases.
+The first 200–500 updates imply roughly **210–225 GPU-hours per 10k-update arm**: about
+10k GPU-hours for 48 TabICL arms, before TabPFN and benchmarking. This is a measured-throughput
+extrapolation, not observed campaign completion, scheduler ETA or billing. Review the budget
+before another full-grid submission; the old short-table timing was deliberately not used.
+
+Exp0's native TabPFN stop/resume route ended at update 600, so it did not reach failing batch
+685; its short tests also could not certify a full concurrent campaign under another project's
+growing shared scratch usage. Add a direct regression probe for that batch and capacity/error
+handling checks rather than claiming that the previous PASS tested every future synthetic task.
+
+Preserve all Exp1 output, current Exp0 artifacts and Exp2 recovery candidates. Restore scratch
+capacity, then the current unchanged Exp1 benchmark planner can fill the 25% slots. Correct and
+validate the numerical path and storage/readiness behavior before resuming Exp2; any code
+revision needs current validation without discarding compatible completed Exp1 results.
+Exp3 remains unstarted and dependent on Exp2's development-only choices. This audit makes
+no executable change, deletes no output and submits no jobs.
+
 ## 28-10-2026 — six Exp1 extension runs and 96 Exp2 CPT runs submitted
 
 **Evidence** Terminal attachment `723611bd-b126-4ffc-a791-5f8c749844a7/Pasted text.txt`,
