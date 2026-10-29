@@ -2,6 +2,16 @@
 
 ## 29-10-2026 — approved 1,500-update deployment
 
+**Tried:** CPU validation 62470908 under controller 62470900, after alias-fixture repair.
+**Result:** 954 portable tests passed before the notebook output-contract fixture failed;
+no GPU launched. Preflight, site credit client and both clusters' submission dry runs passed.
+**Why:** One older fixture edited os.environ directly using the legacy staging alias, so it
+was missed by the first setenv-focused search and did not override the production PROJECT root.
+**Instead:** Audit every alias reference, use the canonical PROJECT variable in that fixture,
+and stop the campaign immediately after a unit or scheduler-client failure. Runtime wrapper
+publication now uses a unique temporary symlink plus atomic rename for parallel arrays.
+
+
 **Tried:** Fresh CPU Exp0 62470861 under controller 62470856, current PROJECT-root override.
 **Result:** Preprocessing/preflight/native Slurm credit checks passed; portable tests exposed
 one cleanup fixture before later test modules ran. SIGINT requested the stored traceback

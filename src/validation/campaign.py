@@ -675,7 +675,7 @@ def run_validation(*, hours: float = 23.5, phase: str = "gpu", resume: bool = Fa
                         print(f"[Experiment 0] {failure['test']}:\n{failure['message']}", flush=True)
                     if row.get("log_tail"):
                         print(f"[Experiment 0] Last lines of {stage.name}:\n{row['log_tail']}", flush=True)
-                    if row["status"] == "FAIL" and (stage.name in ("preflight", "preprocess", "vsc") or stage.phase != "diagnostics"):
+                    if row["status"] == "FAIL" and (stage.name in ("preflight", "preprocess", "unit", "slurm-client", "vsc") or stage.phase != "diagnostics"):
                         raise RuntimeError(f"Stopping after {stage.name}; dependent work cannot be validated")
                 if any(s["status"] != "PASS" for s in saved["stages"]):
                     raise RuntimeError("One or more validation stages failed")

@@ -181,6 +181,8 @@ def test_failed_diagnostic_blocks_training_and_cannot_reuse_older_pass(monkeypat
 
 @pytest.mark.parametrize("name, phase, cause", [
     ("vsc", "diagnostics", "CUDA resume failed"),
+    ("unit", "diagnostics", "portable tests failed"),
+    ("slurm-client", "diagnostics", "site credit check failed"),
     ("credit-pd-4", "capacity", "full-table capacity failed"),
 ])
 def test_mandatory_gpu_failure_stops_dependent_work_and_prints_cause(

@@ -33,7 +33,11 @@ mkdir -p "$_repo/output CreditICL"
 # Use the host Python wrapper without changing the legacy environment or shell hooks.
 _wrappers="$_repo/.runtime-build/bin"
 mkdir -p "$_wrappers"
-ln -sfn "$_repo/scripts/slurm/container_python" "$_wrappers/python"
+if [[ ! -L "$_wrappers/python" || "$(readlink "$_wrappers/python")" != "$_repo/scripts/slurm/container_python" ]]; then
+    _wrapper_temp="$_wrappers/.python-${SLURM_JOB_ID:-login}-${BASHPID}"
+    ln -s "$_repo/scripts/slurm/container_python" "$_wrapper_temp"
+    mv -Tf "$_wrapper_temp" "$_wrappers/python"
+fi
 export PATH="$_wrappers:$PATH"
 unset VIRTUAL_ENV PYTHONPATH PYTHONHOME
 hash -r

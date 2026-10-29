@@ -87,7 +87,7 @@ def test_benchmarks_checkpoints_and_pools_go_to_project_storage():
 
     original = dict(__import__("os").environ)
     try:
-        __import__("os").environ["CREDITICL_STAGING_ROOT"] = str(ROOT / "_probe_staging")
+        __import__("os").environ["CREDITICL_PROJECT_ROOT"] = str(ROOT / "_probe_staging")
         importlib.reload(p)
         for big in (p.run_checkpoints_dir("exp1_pd__a__s0"), p.prior_cache_root(), p.benchmark_dir(1, "pd"),
                     p.benchmark_dir("reference", "receipts")):
