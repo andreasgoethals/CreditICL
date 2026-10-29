@@ -40,7 +40,22 @@ for cache in HF_HOME TORCH_HOME TRITON_CACHE_DIR TORCHINDUCTOR_CACHE_DIR NUMBA_C
     export "APPTAINERENV_$cache=$work/cache/$cache"
 done
 export APPTAINERENV_LD_LIBRARY_PATH=/opt/compat:/lib64:/usr/lib64:/.singularity.d/libs
-runner=(apptainer exec --cleanenv --pwd "$repo" --bind "$repo:$repo:ro"
+_checkout_mode=ro
+_maintenance=${CREDITICL_MAINTENANCE:-0}
+if [[ "${1:-}" == -m && "${2:-}" == src.utils.clean_run ]]; then
+    for flag in "$@"; do [[ "$flag" != --clean ]] || _maintenance=1; done
+fi
+if [[ "$_maintenance" == 1 ]]; then
+    [[ -z "${SLURM_JOB_ID:-}" ]] || { echo 'Writable maintenance is login-only' >&2; exit 1; }
+    _queue=$(squeue --clusters=wice,mindwell --me -h -o '%j') || exit 1
+    while read -r job; do
+        case "$job" in crediticl|crediticl-*|crediticl_*|cicl|cicl-*|cicl_*)
+            echo 'Writable maintenance refused while CreditICL jobs are active' >&2; exit 1;;
+        esac
+    done <<< "$_queue"
+    _checkout_mode=rw
+fi
+runner=(apptainer exec --cleanenv --pwd "$repo" --bind "$repo:$repo:$_checkout_mode"
     --bind "$repo/output CreditICL:$repo/output CreditICL:rw"
     --bind "$assets:$assets:rw" --bind "$work:$work:rw"
     --bind "$work/passwd:/etc/passwd:ro" --bind "$work/group:/etc/group:ro")

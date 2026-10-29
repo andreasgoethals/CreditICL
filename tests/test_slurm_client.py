@@ -65,3 +65,34 @@ def test_container_uses_current_host_configuration_not_inherited_container_path(
                             cwd=tmp_path, env=env, capture_output=True, text=True, check=True)
     lines = result.stdout.splitlines()
     assert lines[0].endswith("/slurm.conf") and lines[1] == "unset"
+
+
+@pytest.mark.parametrize("allocated,queued,ok", [(False, "", True), (True, "", False),
+                                                (False, "crediticl-exp2-pd", False),
+                                                (False, "another-project", True)])
+def test_writable_maintenance_requires_login_and_no_project_consumers(allocated, queued, ok):
+    text = (slurm_client.REPO_ROOT / "scripts/slurm/container_python").read_text()
+    guard = "_checkout_mode=ro" + text.split("_checkout_mode=ro", 1)[1].split("runner=(", 1)[0]
+    script = 'squeue() { printf "%s" "$TEST_QUEUE"; };\n' + guard + '\nprintf "%s" "$_checkout_mode"'
+    env = dict(os.environ, CREDITICL_MAINTENANCE="1", TEST_QUEUE=queued)
+    env.pop("SLURM_JOB_ID", None)
+    if allocated:
+        env["SLURM_JOB_ID"] = "123"
+    result = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True)
+    assert (result.returncode == 0) == ok
+    if ok:
+        assert result.stdout == "rw"
+
+
+@pytest.mark.parametrize("args,mode", [([], "ro"), (["-m", "src.utils.clean_run"], "ro"),
+    (["-m", "src.utils.clean_run", "--reset-exp0", "--clean"], "rw")])
+def test_only_explicit_cleanup_opens_idle_checkout_for_deletion(args, mode):
+    text = (slurm_client.REPO_ROOT / "scripts/slurm/container_python").read_text()
+    guard = "_checkout_mode=ro" + text.split("_checkout_mode=ro", 1)[1].split("runner=(", 1)[0]
+    script = 'squeue() { return 0; };\n' + guard + '\nprintf "%s" "$_checkout_mode"'
+    env = dict(os.environ)
+    env.pop("CREDITICL_MAINTENANCE", None)
+    env.pop("SLURM_JOB_ID", None)
+    result = subprocess.run(["bash", "-c", script, "bash", *args], env=env,
+                            capture_output=True, text=True, check=True)
+    assert result.stdout == mode

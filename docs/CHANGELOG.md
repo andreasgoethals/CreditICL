@@ -10,6 +10,8 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 29-10-2026
 
+- Keep computation read-only while allowing guarded login cleanup of checkout-root Slurm fallback logs.
+
 - Resolve host Slurm configuration and serializer dependencies inside the image; exercise dry-run submissions in CPU/GPU validation and use the measured free CPU debug allocation.
 
 - Include the immutable runtime launcher in validation fingerprints and every miniature-repository test fixture.

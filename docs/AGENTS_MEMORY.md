@@ -28,6 +28,10 @@ CPU runtime probe **62468952 COMPLETED**: 98 passed; Python 3.12.3 and all 135 d
 requirements, Git/Slurm clients, child imports and executable helpers passed inside the
 PROJECT image. Whole-environment fingerprint remains identical to the old DATA venv.
 The fresh full CPU/GPU Exp0 pair is still required for acceptance.
+A login cleanup probe also caught that checkout-root Slurm fallback logs cannot be unlinked
+through the normal read-only code bind. Explicit clean_run --clean now opens the checkout
+only on a login node after confirming no CreditICL consumer; previews and computation stay
+read-only. Compute-node and active-campaign refusals have direct Bash regression tests.
 
 Cleanup preserved all 2,204 Exp1 files (metadata plus JSON/CSV hashes), archived compact
 old diagnostics on PROJECT, reset 546 old Exp0 files (4.500 GB), retired 3.869 GB of
