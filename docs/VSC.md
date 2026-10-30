@@ -249,6 +249,39 @@ documented migration exception; it has not been relocated or replaced by this po
 Do not pull, update submodules or mutate environments while active/queued jobs use that checkout.
 Use a separate actual DATA checkout for a new revision, or wait for those jobs to finish.
 
+**Measured storage review, 30-10-2026.** The canonical template still matches byte-for-byte;
+VSC reference pin `0ed4ffa89d312b9bb6411681b6a14f81672439f3`. Sizes below are CreditICL-only,
+not account/allocation quotas:
+
+| Location | Allocated size | Disposition |
+|---|---:|---|
+| DATA checkout | 11.02 GiB | Includes 9.77 GiB `.venv-skylake`; remaining Git/code/records are about 1.26 GiB |
+| DATA `miniconda3/envs/CreditICL` | 5.96 GiB | Separate legacy environment; TabPFN 8.2.0/Torch 2.13.0 differ from the candidate |
+| PROJECT `CreditICL/` | 46.62 GiB | 31.45 GiB retained Exp1 checkpoints/results, 5.33 GiB SIF, 6.74 GiB sealed rebuild inputs, plus datasets/released weights |
+| CreditICL shared GPFS/Lustre scratch | About 21 KiB total | Empty scaffolding; account-wide scratch usage belongs to other work too |
+
+The 422 retained Exp1 batch/child logs occupy about 0.57 GiB on DATA (largest about 4 MiB).
+They are retained run evidence and remain in place; no checkpoint or result was removed.
+The runtime directory contains the selected SIF and compressed rebuild archive, with no unpacked
+environment or abandoned build workspace. Its archive reproduces `.venv-skylake` dependencies;
+it does **not** establish recovery coverage for the different Conda environment.
+
+The obsolete CreditICL auto-venv line was removed from `.bashrc` through the existing deployed
+`shell_hook.sh --uninstall`. The backup is `$VSC_HOME/.bashrc.crediticl.bak`; before/after hashes
+and byte-identical preservation of unrelated lines are recorded in DATA
+`.runtime-build/storage-review-20261030.json`. Existing interactive shells retain loaded hooks:
+open a fresh shell, then explicitly `source scripts/slurm/_activate_env.sh`. A native SSH
+metadata check confirmed `sys.prefix == '/opt/venv'` after activation. Do not reinstall the old
+auto-venv hook or use the Conda environment for current experiments.
+
+Retirement remains gated: full current CPU **and** GPU acceptance for image r3; matching rebuild
+hashes and distinct Conda recovery/inventory; no active, queued, resumable or interactive consumer.
+Only then retire exact project-owned environment prefixes, measuring actual reclaimed quota
+(Conda hardlinks may retain shared blocks). Do not move unpacked environments onto PROJECT.
+The PROJECT rebuild archive is recovery material on the same filesystem, not an independent
+backup of Exp1 checkpoints; verify a separate durable checkpoint copy before claiming backup coverage.
+No environment/data migration or retirement occurred in this review; active jobs stay frozen.
+
 | tier | path | holds | backup | quota |
 |---|---|---|---|---|
 | **project staging** | `/lustre1/project/stg_00211/CreditICL` | inputs: `data/` (raw, processed, the OOD cache `ood/`) and `checkpoints/` (the released TabICLv2 / TabPFN-3 weights); the big half of `output CreditICL/`: `{reference,experiment_<N>}/benchmark/`, `experiment_<N>/checkpoints/<run>/`, `prior_cache/` | no | ≥1 TB, **low inode budget** |

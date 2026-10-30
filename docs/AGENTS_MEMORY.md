@@ -1,5 +1,18 @@
 # Agents' memory — runs and dead ends
 
+## 30-10-2026 — live storage audit; legacy interactive hook disabled
+
+Measured DATA checkout 11.02 GiB (9.77 GiB venv), separate Conda 5.96 GiB, PROJECT 46.62 GiB;
+CreditICL shared scratch is empty scaffolding. PROJECT runtimes are 5.33 GiB SIF + 6.74 GiB
+sealed rebuild archive, not stale unpacked build files. Candidate still needs full current
+CPU/GPU acceptance. Retain both environments; the Conda tree has different package versions
+and is not covered merely by the venv rebuild archive. No result/checkpoint was deleted.
+
+**Tried:** Keep the old interactive auto-venv hook during container cutover.
+**Result:** It can select the DATA venv at a prompt despite the explicit PROJECT runtime workflow.
+**Why:** The legacy hook still auto-activates `.venv-*`; Slurm activation independently selects the SIF.
+**Instead:** Used the deployed `shell_hook.sh --uninstall` to remove only its startup line; verified the `.bashrc` backup and every unrelated byte. Native SSH explicit activation reports `/opt/venv`. Reopen existing interactive shells; do not reinstall the hook. Record: `.runtime-build/storage-review-20261030.json`. Active source/image/jobs are unchanged; retirement and independent checkpoint-backup checks remain in `docs/VSC.md`.
+
 ## 30-10-2026 — frozen notebook refresh; fresh CPU validation
 
 | Job | Configuration | Outcome |
