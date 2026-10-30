@@ -694,16 +694,18 @@ sbatch --clusters=wice scripts/slurm/exp0_cpu.slurm
 python -m src.utils.preflight --require-exp0-cpu && sbatch --clusters=mindwell scripts/slurm/exp0.slurm
 # Once GPU completes successfully:
 python -m src.utils.preflight --require-exp0 && python -m src.validation.verify
-python -m src.utils.run_experiment 1 --phase benchmark --submit
+python -m src.utils.run_experiment 1 --single-cluster --phase benchmark --submit
+python -m src.utils.run_experiment 2 --single-cluster --phase train --submit
 ```
 
 Each experiment planner is safe to repeat: it skips completed/queued arms and waits for training
 before benchmarking. Exp1 includes only missing quarter-mixture work if the other 48 runs and
 benchmarks are already complete. All 54 training runs were complete in the 29-10 snapshot.
-Run the fixed Exp2 grid after Exp1 benchmarking and current validation.
-The explicitly authorized one-off `scripts/slurm/deploy.slurm` controller performs that
-sequence and stops immediately after submitting Exp2; its durable JSON receipt records
-all accepted job IDs. It stops on failed validation or incomplete Exp1 benchmark receipts.
+**Current authorization, 30-10:** after complete current Exp0 acceptance and quota/budget
+checks, submit both the missing Exp1 benchmarks and the fixed 64-run Exp2 training grid.
+Exp2 need not wait for Exp1 benchmark completion. Use the phase-specific planners above
+with receipt-backed admission. The earlier `scripts/slurm/deploy.slurm` controller retains
+its sequential Exp1-completion gate and is not used for this revised workflow.
 On 30-10, GPU **11754388** failed after 1m52s at a stale inventory-test assertion, before
 production work. Controller **62471655** stopped, and its dependency-bound continuation
 **62473912** correctly rejected that failure. All three are terminal; their evidence is retained
@@ -724,8 +726,10 @@ GPU **11756026** is RUNNING on Mindwell r11g12, B200/24 CPU/180G/24h, from the s
 frozen source and image. Its receipt is `manifests/submissions/restart-runtime-context-20261030-gpu.json`;
 quote 734,400 credits maximum. Full GPU acceptance and environment retirement remain pending.
 Keep that checkout frozen; later documentation-only pushes are not an instruction to pull during jobs.
-The user-requested Codex monitor checks this chat every 30 minutes and must delete its schedule
-after verified submission of all 64 Exp2 runs and final cleanup. It never renews SSH credentials.
+The user-requested monitor checks both workloads 30 minutes after final verified admission.
+If queue/progress, logs and storage are healthy, record the outcome, delete the schedule and
+leave both workloads running. Investigate failures before stopping; do not wait for the full
+campaign to finish or launch Exp2 benchmarks/Exp3. The monitor never renews SSH credentials.
 Exp2 retains five checkpoint benchmarks per run. All rows/features/five folds remain.
 For Exp2/Exp3, keep `--single-cluster`: these commands use the Mindwell B200 allocation validated
 by Exp0. The planner's optional historical LGD split across wICE A100s is not validated by a B200

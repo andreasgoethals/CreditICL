@@ -1,5 +1,15 @@
 # Agents' memory — runs and dead ends
 
+## 30-10-2026 — revised campaign stopping condition
+
+Andreas authorizes the remaining Exp1 benchmarks and all 64 Exp2 training runs to be
+submitted after full current Exp0 acceptance, without waiting for Exp1 benchmarks to finish.
+Use phase-specific planners and receipt-backed admission; the old deployment controller
+retains its earlier sequential policy and is not used for this workflow. Check both workloads
+30 minutes after final admission; if acceptance, queue/progress, logs and storage are healthy,
+record the outcome, delete the monitor and leave the jobs running. Investigate failures before
+stopping. Do not submit Exp2 benchmarks or Exp3; preserve active code and existing results.
+
 ## 30-10-2026 — keep conversational status reads bounded and split
 
 **Tried:** Combined runtime activation, live logs and full Exp1/Exp2 provenance planning in one 210-second SSH payload.

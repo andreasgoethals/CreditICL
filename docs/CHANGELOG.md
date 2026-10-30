@@ -10,6 +10,7 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 30-10-2026
 
+- Record parallel Exp1 benchmark/Exp2 training authorization after Exp0, with one final 30-minute health check before retiring the monitor.
 - Keep VSC runtime provenance identical in allocation and login readiness checks; test the full cross-context gate before paid GPU admission.
 - Verify live storage and separate legacy-environment recovery gates; disable the obsolete interactive DATA-venv hook with a checked rollback copy.
 - Align all notebooks with the 64-run/two-seed continuation and fixed retention design; refresh Exp1 evidence and clarify checkpoint, dose and uncertainty plots. Fix the container inventory test to validate runtime provenance separately from model inputs.
