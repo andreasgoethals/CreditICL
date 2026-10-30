@@ -54,6 +54,8 @@ authorization; access alone does not authorize new workloads, installations or m
 
 ### VSC access and storage
 
+- Follow local edit/test, Git commit/push, then pull into a safe DATA checkout before Slurm
+  execution. Never deploy implementation by copying untracked scripts or editing remote code.
 - Read the current access/storage sections in `docs/TEMPLATE.md` and the project-specific
   adoption state in `docs/VSC.md`. The template is already synchronized as of 29-10-2026;
   compare it byte-for-byte with the canonical template before assuming a newer copy is needed.
@@ -83,6 +85,8 @@ authorization; access alone does not authorize new workloads, installations or m
   only verified, retired, project-owned scratch after checking live jobs and recovery needs.
 - Computational debugging belongs in authorized Slurm allocations. Distinguish local tests,
   a verified SSH read, Slurm status and actual CPU/GPU acceptance in every report.
+- Create periodic task monitoring only when requested; remove its schedule after the task is
+  complete. Monitoring never renews authentication or overrides validation/submission gates.
 
 ## 5. Windows PowerShell 5.1 — no `&&`
 

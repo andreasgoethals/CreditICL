@@ -665,6 +665,13 @@ Run the fixed Exp2 grid after Exp1 benchmarking and current validation.
 The explicitly authorized one-off `scripts/slurm/deploy.slurm` controller performs that
 sequence and stops immediately after submitting Exp2; its durable JSON receipt records
 all accepted job IDs. It stops on failed validation or incomplete Exp1 benchmark receipts.
+The 30-10 operator continuation **62473912** is dependency-bound to controller **62471655**;
+it resumes only a confirmed controller TIMEOUT in the GPU-wait phase and reuses GPU **11754388**.
+It does not change scientific source or start a duplicate validation job. Its ignored,
+hash-pinned operating scripts and fresh pre-Exp2 quota gate are recorded in `RUNS.md`.
+Do not submit another controller alongside either one; reconcile their durable receipts first.
+The user-requested Codex monitor checks this chat every 30 minutes and must delete its schedule
+after verified submission of all 64 Exp2 runs and final cleanup. It never renews SSH credentials.
 Exp2 retains five checkpoint benchmarks per run. All rows/features/five folds remain.
 For Exp2/Exp3, keep `--single-cluster`: these commands use the Mindwell B200 allocation validated
 by Exp0. The planner's optional historical LGD split across wICE A100s is not validated by a B200

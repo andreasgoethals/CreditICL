@@ -8,6 +8,10 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 30-10-2026
+
+- Record final CPU acceptance and preserved Exp1 results; reinforce Git-first deployment and the requested temporary 30-minute monitor.
+
 ## 29-10-2026
 
 - Treat definite dry-run queue-capacity refusals as transient; CPU waits for real resource acceptance, while GPU transport checks require the matching completed CPU proof.

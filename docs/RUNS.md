@@ -169,6 +169,61 @@ The one thing to do differently.
 
 ## Runs
 
+### 30-10-2026 — operator continuation for a long GPU queue
+
+Job **62473912**, wICE `batch_long`, one CPU/default 3,400 MiB, seven days, has
+`afterany:62471655`. Its maximum seven-day CPU reservation quotes **20,160 credits**.
+Actual scheduler state was PENDING/Dependency. GPU **11754388** remains the sole GPU
+validation job; its provisional forecast moved to 01-11 23:10, while parent controller
+62471655 ends at 01-11 23:28. No other campaign was changed or cancelled.
+
+This is an explicit operator-only deviation from deploying all executable files through Git:
+the continuation lives in ignored `.runtime-build/20261029-two-seeds/`, leaving the current
+scientific source and image unchanged. The Slurm-copied launcher verifies helper SHA256
+`dc2a7f997d08df77123d8c0a82efece6d0bece4ae01554e650f4489a31442001`;
+launcher SHA256 is `5f42c2592be788a55bfa4f21f821c183417d31d61e2912be3472c5b72c140cac`.
+The helper pins commit 931d593 and source fingerprint f6a16dd, requires the parent's actual
+TIMEOUT accounting and original GPU-wait phase, waits for that same GPU job, then requires
+complete current Exp0 evidence and complete Exp1 receipts. It uses the normal admission
+manager and retains submission receipts; an already-completed parent exits without duplication.
+Other parent failures or later partial-submission phases stop for manual reconciliation.
+
+Before submitting Exp2 it runs a native wICE quota child and requires at least 5 GiB/20,000
+free DATA files and 250 GiB/2,500 free PROJECT files. Quota script SHA256:
+`e12c86a5a079997f032079becfa380aaeca1aac6f924dafd29ffd1619ff1e1ca`.
+Local operator tests passed **18 continuation guard cases + seven quota parser cases**;
+both launchers passed Bash syntax checks. Actual site `sbatch --test-only` passed and the
+receipt records acceptance 62473912. These operator checks do not replace GPU acceptance.
+Scientific code, packages, experiment settings and library pins remain frozen as below.
+The user-requested 30-minute Codex continuation `finish-crediticl-validation-and-launch`
+was created and verified ACTIVE in this chat. It must delete itself after verified acceptance
+of all 64 Exp2 training work IDs and final runtime/cleanup/documentation checks.
+
+### 29-10-2026 — capacity-aware final validation
+
+Controller **62471655** accepted CPU **62471657**, same allocations/image/design as the
+previous entry. Frozen commit `931d5934811cb551ae8cc0a2294e0c7aee0198da`, source
+`f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728`.
+Training implementation and both library pins remain unchanged. All seven files from
+the preceding failed CPU attempt were archived and every member hash verified before
+its nine generated files were removed; Exp1 and shared production references survived.
+**CPU outcome, 30-10-2026:** COMPLETED 0:0, **1h55m04s**, including about 84 minutes waiting
+for real Mindwell dry-run acceptance at the 500-job ceiling. All **14/14 stages passed**.
+JUnit: **2,108 passed, two allowed skips, zero failures/errors**; the 36 VSC GPU cases were
+properly deselected for CPU. Skips are the absent external TabPFNCredit checkout and fresh
+PDF outputs before rendering. All **12 notebooks executed**, 338.05s. Portable tests took
+1,062.11s including harness overhead (pytest reports 1,057.54s). Data/five-fold inventories,
+determinism, priors, configurations, orchestration, storage and native site clients passed.
+The entire dependency fingerprint still matches the preserved legacy environment.
+The controller proceeds to GPU admission; GPU acceptance remains pending. Code and image
+stay frozen. The archived earlier attempts are not reused as this revision's acceptance.
+
+GPU job **11754388** was accepted on Mindwell and is pending. The post-CPU preservation
+audit rechecked all **2,204 existing Exp1 files**: sizes/mtimes unchanged, **1,110 JSON/CSV
+SHA256 hashes matched**, zero differences. The proof is stored in the ignored runtime
+deployment ledger; completed checkpoints and production benchmark receipts are intact.
+
+
 ### 29-10-2026 — frozen final acceptance and authorized deployment
 
 Controller **62471630** (wICE batch, one CPU, 72h) accepted CPU validation **62471633**

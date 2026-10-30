@@ -1,5 +1,28 @@
 # Agents' memory — runs and dead ends
 
+## 30-10-2026 — current CPU passed; guarded queue continuation
+
+| Job | Configuration | Outcome |
+|---|---|---|
+| 62471657 | Full CPU Exp0, frozen 931d593, PROJECT image r3, wICE interactive 8 CPU/48G | COMPLETED 0:0, 1h55m04s; 14/14 stages PASS, 2,108 tests passed, two allowed skips; all 12 notebooks executed |
+| 11754388 | Full GPU Exp0, same source/image, B200 24 CPU/180G, 24h | Accepted; PENDING Priority on 30-10 morning; provisional 01-11 evening start forecast |
+| 62473912 | Operator continuation, wICE batch_long 1 CPU, 7 days, afterany:62471655 | Accepted; waits for the parent. Continues only after confirmed TIMEOUT in the original GPU-wait phase; preserves the existing GPU job and frozen source |
+
+**Tried:** Wait under the original 72-hour deployment controller while the B200 queue is busy.
+**Result:** GPU forecast moved to 01-11 23:10, only 18 minutes before the controller deadline.
+**Why:** Queue delay can exceed the controller reservation; this is not a scientific failure.
+**Instead:** Hash-pin a separate operator continuation in the ignored deployment ledger, with
+afterany dependency, strict parent/source checks, receipt-backed submissions and fresh quota
+gate before Exp2. Its local tests cover 18 continuation guards and seven quota cases; they are
+operator tests, not additional completed GPU acceptance. The 7-day CPU reservation quotes
+20,160 credits maximum; no additional GPU validation is submitted. All 2,204 Exp1 files still
+match size/mtime, and all 1,110 JSON/CSV hashes match the pre-cleanup preservation record.
+Andreas requested a 30-minute continuation on 30-10: Codex heartbeat
+`finish-crediticl-validation-and-launch`, bound to this chat, watches these existing jobs and
+continues authorized work. Delete it after all 64 Exp2 work IDs are accepted and cleanup/docs
+are resolved; ask for manual SSH renewal only when needed. Do not pull documentation updates
+into the frozen VSC checkout while jobs still consume commit 931d593.
+
 ## 29-10-2026 — approved 1,500-update deployment
 
 **Tried:** CPU 62471633 before the reviewed unthrottled launch, at 500 Mindwell submissions.
