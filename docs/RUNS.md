@@ -171,6 +171,12 @@ The one thing to do differently.
 
 ### 30-10-2026 — GPU inventory-test failure and notebook refresh
 
+CPU **62474587**, revision df14174, was deliberately cancelled after **2m24s** during the
+unit stage: final caption inspection caught an obsolete "four checkpoint evaluations"
+phrase in both Exp2 design captions. Configuration and figures already used five. Both
+captions and their regression check were corrected; 86 affected tests passed. No GPU
+was submitted for that revision; its partial CPU evidence is retained before replacement.
+
 **11754388**, Mindwell B200, 24 CPU/180G, 24-hour limit, commit 931d593 and the unchanged
 PROJECT image r3: **FAILED 1:0 after 1m52s**. Preflight and native Slurm checks passed;
 the VSC suite passed 19 tests before its input-inventory assertion failed (71.06s).
@@ -191,7 +197,7 @@ break curves; native-OOD regression CRPS stays per dataset because target units 
 All captions and section-ordered printed summaries were regenerated. No scientific
 training, prediction or benchmark settings changed.
 Full local pytest: **2,148 passed, 36 allocation-only VSC skips, zero failures**, 1,201.55s.
-Targeted reporting/regression Ruff checks pass. The full project scan retains 170 legacy lint
+Targeted continuation/caption-regression Ruff checks pass. The full project scan retains 170 legacy lint
 findings; unrelated lint cleanup is deferred rather than mixed into this scientific freeze.
 
 The compact VSC snapshot captured at **07:58:56 UTC** contains 1,220 Exp1/reference

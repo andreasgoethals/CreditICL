@@ -158,10 +158,11 @@ def test_notebook_descriptions_keep_exp1_and_continuation_seed_counts_distinct()
         source = "\n".join("".join(cell["source"]) for cell in json.loads(path.read_text(encoding="utf-8"))["cells"])
         if path.name.startswith(("2.", "3.")):
             assert "three training seeds" not in source and "three complete seeds" not in source
-            assert "Four checkpoints" not in source and "96 total" not in source
+            assert "four checkpoint" not in source.lower() and "96 total" not in source
         if path.name.startswith(("2.1", "2.2")):
             total = 2 * len(expand_with_seeds(load("config/Exp2_PD.yaml")))
             assert f"{total} total" in source
+            assert "Five checkpoint evaluations" in source
         if path.name.startswith("1."):
             assert "choosing an Experiment 3 mixture" not in source
 

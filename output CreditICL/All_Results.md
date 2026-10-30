@@ -191,7 +191,7 @@ References (tfm-library pin cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a):
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 2059fb8afe081941445ac4177ddf9031a3fb3ecdb94446a0a53037dec8c44178.
+Local notebook-code fingerprint: 8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732.
 Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
 Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
 Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
@@ -203,7 +203,7 @@ Final credit/OOD benchmarking is a separate completion gate; monitoring is not i
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 2059fb8afe081941445ac4177ddf9031a3fb3ecdb94446a0a53037dec8c44178.
+Local notebook-code fingerprint: 8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732.
 Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
 Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
 Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
@@ -253,7 +253,7 @@ Different synthetic-task losses do not rank downstream prediction quality.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 2059fb8afe081941445ac4177ddf9031a3fb3ecdb94446a0a53037dec8c44178.
+Local notebook-code fingerprint: 8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732.
 Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
 Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
 Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
@@ -265,7 +265,7 @@ Final credit/OOD benchmarking is a separate completion gate; monitoring is not i
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 2059fb8afe081941445ac4177ddf9031a3fb3ecdb94446a0a53037dec8c44178.
+Local notebook-code fingerprint: 8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732.
 Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
 Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
 Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
@@ -386,7 +386,7 @@ Dataset bootstrap intervals are descriptive; training seeds/folds are not extra 
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 2059fb8afe081941445ac4177ddf9031a3fb3ecdb94446a0a53037dec8c44178.
+Local notebook-code fingerprint: 8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732.
 Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
 Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
 Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
@@ -404,7 +404,7 @@ No local monitoring curves yet.
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 2059fb8afe081941445ac4177ddf9031a3fb3ecdb94446a0a53037dec8c44178.
+Local notebook-code fingerprint: 8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732.
 Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
 Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
 Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
@@ -438,7 +438,7 @@ Different synthetic-task losses do not rank downstream prediction quality.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 2059fb8afe081941445ac4177ddf9031a3fb3ecdb94446a0a53037dec8c44178.
+Local notebook-code fingerprint: 8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732.
 Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
 Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
 Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
@@ -456,7 +456,7 @@ No local monitoring curves yet.
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 2059fb8afe081941445ac4177ddf9031a3fb3ecdb94446a0a53037dec8c44178.
+Local notebook-code fingerprint: 8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732.
 Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
 Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
 Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
