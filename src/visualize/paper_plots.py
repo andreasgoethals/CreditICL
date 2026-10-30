@@ -14,8 +14,12 @@ from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator
 
 from src.eval import analysis
-from src.eval.comparisons import (identities, paired_ablation_effects,
-                                 paired_prior_effects, paired_reference_effects)
+from src.eval.comparisons import (
+    identities,
+    paired_ablation_effects,
+    paired_prior_effects,
+    paired_reference_effects,
+)
 from src.eval.metrics import METRIC_DIRECTIONS
 from src.eval.protocol import PROTOCOL
 from src.eval.results import load_results
@@ -76,7 +80,7 @@ def components_ready(track):
 def development_selection(track, exp="exp1", *, backbone=None):
     frame = final_credit(track, exp, "development")
     if frame is None:
-        return campaign.availability("Complete current-protocol development results are required for mixture selection.")
+        return campaign.availability("Complete current-protocol development results are required for this descriptive comparison.")
     frame = _backbone(frame, backbone)
     part = frame.assign(identity=identities(frame))
     part["configuration"] = part.identity.str.replace(r"__s\d+$", "", regex=True)
@@ -325,7 +329,7 @@ def endpoint_mass(exp="exp1", *, backbone=None):
     fig, axes = plt.subplots(1, 2, figsize=style.figsize(style.WIDTH_FULL, .58), sharex=True, sharey=True)
     configurations = sorted(means.configuration.unique())
     for endpoint, ax in enumerate(axes):
-        for i, name in enumerate(configurations):
+        for name in configurations:
             rows = means[means.configuration.eq(name)]
             for identity, values in rows.groupby("identity"):
                 found = re.search(r"credit_fraction=([0-9p.]+)", name)
@@ -369,7 +373,7 @@ def results_summary(track, exp="exp1"):
     dev = final_credit(track, exp, "development")
     lines = ["A · DEVELOPMENT AND COMPARISON CONTRACT",
              ("Both backbones and all four mixtures (0%, 25%, 50%, 100%) are fixed; no Experiment 1 winner is selected for Experiment 2."
-              if exp == "exp2" else "Fixed training recipes; any subsequent mixture choice uses complete development results only."),
+              if exp == "exp2" else "Exp2 retains all four mixtures; Exp3 uses the fixed 50% mixture, independent of this ranking."),
              ("Both predetermined learning rates are reported; no pilot or best-on-test selection. Historical benchmark exposure remains disclosed."
               if exp in {"exp2", "exp3"} else
               "The designated holdout has historical project exposure; it is not untouched confirmation."),

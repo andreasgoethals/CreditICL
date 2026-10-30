@@ -12,7 +12,8 @@ import pytest
 import torch
 
 from src.eval.protocol import PROTOCOL
-from src.visualize import campaign, exposure, paper_plots as paper
+from src.visualize import campaign, exposure
+from src.visualize import paper_plots as paper
 
 
 @pytest.fixture(autouse=True)
@@ -154,7 +155,7 @@ def test_endpoint_panel_omits_point_only_models(monkeypatch, final_tables):
     labels = [t.get_text() for t in fig.legends[0].texts]
     assert "linear" not in labels
     assert len(fig.axes) == 2
-    assert "Observed portfolio mass" == fig.axes[0].get_xlabel()
+    assert fig.axes[0].get_xlabel() == "Observed portfolio mass"
 
 
 def test_raw_credit_endpoints_cannot_include_standardised_targets():
@@ -165,7 +166,8 @@ def test_raw_credit_endpoints_cannot_include_standardised_targets():
     assert len(fig.axes) == 1 and len(fig.axes[0].collections) == 1
     with pytest.raises(ValueError, match="raw"):
         plot_boundary_mass_sources({"credit": [generic]})
-    missing = copy.deepcopy(raw); missing.meta = {}
+    missing = copy.deepcopy(raw)
+    missing.meta = {}
     with pytest.raises(ValueError, match="context split"):
         plot_standardised_endpoint_ties({"credit": [missing]})
 
@@ -189,11 +191,12 @@ def test_production_observer_does_not_change_task_or_acceptance():
 
 
 def test_accepted_stream_keeps_native_slot_class_counts():
-    from src.utils.config import load
+    from src.utils.config import expand_with_seeds, load
     cfg = copy.deepcopy(load("config/Exp1_PD.yaml"))
     cfg["prior"].update(n_rows_range=[128, 128], n_features_range=[4, 8], max_features=8)
     frame = exposure.accepted_stream(cfg, n=8, seed=1729)
-    assert frame.groupby("mixture").accepted.sum().tolist() == [8, 8, 8]
+    assert frame.groupby("mixture").accepted.sum().tolist() == [8, 8, 8, 8]
+    assert set(frame.mixture) == {r["prior"]["credit_fraction"] for r in expand_with_seeds(cfg)}
     assert frame.loc[frame.accepted & frame.mixture.eq(0), "classes"].gt(2).any()
     assert frame.loc[frame.accepted & frame.mixture.eq(1), "classes"].eq(2).all()
     assert not frame.loc[frame.source.eq("credit"), "statistically_judged"].any()
@@ -205,7 +208,8 @@ def test_local_coverage_distinguishes_partial_absent_complete(tmp_path, monkeypa
     monkeypatch.setattr(paths, "runs_dir", lambda *a: tmp_path)
     expected = campaign.coverage("pd")
     a, b = [tmp_path / name for name in expected.run[:2]]
-    a.mkdir(); b.mkdir()
+    a.mkdir()
+    b.mkdir()
     (a / "summary.json").write_text(json.dumps({"completed": True, "steps": 12500}))
     (b / "progress.csv").write_text("step,train_loss\n100,0.2\n")
     actual = campaign.coverage("pd")
@@ -328,6 +332,7 @@ def test_single_raw_credit_distance_panel_names_each_real_portfolio():
 
 def test_clustered_dataset_names_do_not_intersect():
     from matplotlib.text import Text
+
     from src.visualize.data_plots import plot_shapes
     points = [(9578, 12), (16002, 20), (5627, 13), (5960, 8), (7000, 10)]
     names = ["lendingclub", "lgd_freddie", "lgd_lendingclub", "hmeq", "myhom"]

@@ -112,11 +112,11 @@ Training loss against update for each main run, smoothed over five logged batche
 
 **04_training_cost** — `training_cost`
 
-Recorded training time, synthetic tasks per second and final loss against updates per downloaded main run, grouped by prior mixture.
+Median recorded optimizer updates per second for each main training run on the left, and the implied hours for 12,500 updates on the right; color and shape identify mixtures, and black bars mark mixture medians.
 
 **05_gradient_health** — `gradient_health`
 
-Recorded total and block gradient norms against training update for downloaded main runs, with clipping reference and mixture colours.
+Mean recorded gradient norms by architecture block on the left and gradient-to-weight norm ratios on the right, against training update on logarithmic vertical axes; curves average available main runs after interpolation to common updates, and line patterns identify blocks.
 
 **06_development_curves** — `development_curves`
 
@@ -150,11 +150,11 @@ Training loss against update for each main run, smoothed over five logged batche
 
 **04_training_cost** — `training_cost`
 
-Recorded training time, synthetic tasks per second and final loss against updates per downloaded main run, grouped by prior mixture.
+Median recorded optimizer updates per second for each main training run on the left, and the implied hours for 12,500 updates on the right; color and shape identify mixtures, and black bars mark mixture medians.
 
 **05_gradient_health** — `gradient_health`
 
-Recorded total and block gradient norms against training update for downloaded main runs, with clipping reference and mixture colours.
+Mean recorded gradient norms by architecture block on the left and gradient-to-weight norm ratios on the right, against training update on logarithmic vertical axes; curves average available main runs after interpolation to common updates, and line patterns identify blocks.
 
 **06_development_curves** — `development_curves`
 

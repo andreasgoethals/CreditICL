@@ -33,7 +33,7 @@ credit/OOD frontier is not populated from short-context training monitors.
 Experiment 2 retains four mixtures and both peak rates per backbone, with separate plots
 for each backbone/rate and full-table checkpoint trajectories. Experiment 3 fixes the 50%
 mixture and predeclared full-model/adapter settings, and reuses the primary-rate Exp2 baseline.
-Both experiments retain 125/250/500/1,500 updates; paired-retention and checkpoint panels stay
+Both experiments use two training seeds and retain 125/250/500/1,000/1,500 updates; paired-retention and checkpoint panels stay
 empty until the required evidence exists. The designated holdout has historical project
 exposure; it is **not untouched confirmation**. No plot or notebook chooses a setting.
 
@@ -43,6 +43,10 @@ seeds and folds do not inflate the dataset count. Native binary/multiclass OOD
 subsets are diagnostics alongside the fixed aggregate. LGD endpoint plots report
 aggregate mass matching at tolerance 1e-4 using 99 predictive quantiles, not
 conditional calibration.
+
+Checkpoint panels break lines at missing milestones and distinguish treatments by color,
+shape and line pattern. Seed ranges are descriptive. Native-regression OOD CRPS is retained
+per dataset rather than averaged across different target units; OOD trajectories use R².
 
 ## Run and export
 

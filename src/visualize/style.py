@@ -242,6 +242,8 @@ MILESTONE_MARKER = "o"
 RATE_MARKERS = ("o", "D")
 METHOD_COLORS = {"full_wd": ORIGINAL, "no_decay": CREDIT, "l2sp": REFERENCE,
                  "diagscale": QUERY, "lora": EXTERNAL}
+METHOD_MARKERS = {"full_wd": "o", "no_decay": "s", "l2sp": "^", "diagscale": "D", "lora": "v"}
+METHOD_LINES = {"full_wd": "--", "no_decay": "-", "l2sp": "-.", "diagscale": ":", "lora": "-"}
 
 #: Named colormaps, both colour-blind-safe and monotone in lightness so they survive a greyscale
 #: photocopy — `CMAP_SEQ` for one-directional intensity (a correlation magnitude, a density),
@@ -259,6 +261,7 @@ SERIES = [
 #: Semantic map for the two tasks. LGD shares CREDIT's blue; PD gets a violet so a figure
 #: showing both is readable without a legend.
 TASK_COLOR = {"lgd": "#2b6cb0", "pd": "#7c3aed"}
+TASK_MARKER = {"lgd": "s", "pd": "o"}
 
 _PROJECT_RC: dict = {
     # Minus signs as a proper typographic minus rather than a hyphen.

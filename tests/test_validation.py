@@ -10,6 +10,41 @@ from src.utils import paths
 from src.validation import campaign as v
 
 
+@pytest.mark.parametrize("damage", [None, "missing_model", "missing_runtime", "wrong_runtime", "missing_credit", "missing_ood"])
+def test_gpu_input_inventory_assertion_checks_models_and_runtime_separately(monkeypatch, damage):
+    """Run the exact GPU inventory assertion portably with real inventory assembly."""
+    import test_vsc
+
+    from src.eval import benchmark_status
+
+    monkeypatch.setattr(paths, "on_vsc", lambda: True)
+    monkeypatch.setenv("SLURM_JOB_ID", "inventory-regression")
+    monkeypatch.setenv("CREDITICL_IN_CONTAINER", "1")
+    monkeypatch.setenv("CREDITICL_RUNTIME_SHA256", "a" * 64)
+    monkeypatch.setattr("src.utils.preflight.run_checks", lambda: [])
+    monkeypatch.setattr(benchmark_status, "request", lambda *args: (None, {
+        "credit_inputs": {"credit": "digest"}, "ood_inputs": {f"table{i}": "digest" for i in range(25)}
+    }, None))
+    inventory = v.input_inventory()
+    assert len(inventory) == 9  # Eight model requests plus the immutable runtime image.
+    if damage == "missing_model":
+        del inventory["pd/tabiclv2"]
+    elif damage == "missing_runtime":
+        del inventory["runtime_image"]
+    elif damage == "wrong_runtime":
+        inventory["runtime_image"]["sha256"] = "b" * 64
+    elif damage == "missing_credit":
+        inventory["pd/tabiclv2"]["credit_inputs"] = {}
+    elif damage == "missing_ood":
+        inventory["lgd/tabpfn3"]["ood_inputs"].pop("table0")
+    monkeypatch.setattr(v, "input_inventory", lambda: inventory)
+    if damage is None:
+        test_vsc.test_every_real_input_and_released_weight_is_present()
+    else:
+        with pytest.raises((AssertionError, KeyError)):
+            test_vsc.test_every_real_input_and_released_weight_is_present()
+
+
 def test_attempt_isolates_both_tiers_and_reference_without_touching_exp1(isolated_output):
     normal = (paths.experiment_dir(0), paths.reference_dir(big=True), paths.experiment_dir(1))
     with v.attempt_scope("new_attempt"):

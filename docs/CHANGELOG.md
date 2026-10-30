@@ -10,6 +10,7 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 30-10-2026
 
+- Align all notebooks with the 64-run/two-seed continuation and fixed retention design; refresh Exp1 evidence and clarify checkpoint, dose and uncertainty plots. Fix the container inventory test to validate runtime provenance separately from model inputs.
 - Record final CPU acceptance and preserved Exp1 results; reinforce Git-first deployment and the requested temporary 30-minute monitor.
 
 ## 29-10-2026

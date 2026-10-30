@@ -174,8 +174,11 @@ def test_every_real_input_and_released_weight_is_present():
     failures = [c for c in run_checks() if not c.ok]
     assert not failures, failures
     inventory = input_inventory()
-    assert len(inventory) == 8
-    for request in inventory.values():
+    references = {key: value for key, value in inventory.items() if key != "runtime_image"}
+    assert set(references) == {f"{task}/{model}" for task in ("pd", "lgd")
+                               for model in ("tabiclv2", "tabpfn3", "catboost", "linear")}
+    assert inventory["runtime_image"] == {"sha256": os.environ["CREDITICL_RUNTIME_SHA256"]}
+    for request in references.values():
         assert request["credit_inputs"] and len(request["ood_inputs"]) >= 25
 
 

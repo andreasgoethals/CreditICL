@@ -2,19 +2,33 @@
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
-import numpy as np
 import pandas as pd
+from matplotlib.lines import Line2D
 
-from src.experiments.design import MAIN_STEPS, MILESTONES, RATES, SEEDS
 from src.experiments import results
+from src.experiments.design import MAIN_STEPS, MILESTONES, RATES, SEEDS
 from src.utils import paths
 from src.utils.config import expand_with_seeds, load
-from src.visualize import style, campaign, training_plots as training
+from src.visualize import campaign, style
+from src.visualize import training_plots as training
 
 METHODS = {"full_wd": "Full CPT + decay (reused)", "no_decay": "Full CPT, no decay",
            "l2sp": "L2-SP anchor", "diagscale": "DiagScale", "lora": "Q/V LoRA"}
 BACKBONES = {"tabicl": "TabICLv2", "tabpfn3": "TabPFN-3"}
+
+
+def checkpoint_description():
+    return ", ".join(f"{step:,}" for step in MILESTONES)
+
+
+def trajectory_caption(track, metric, *, experiment=2):
+    domains = ("credit benchmark only; native-OOD CRPS has different target units across datasets"
+               if track == "lgd" and metric == "crps" else "credit benchmark and native OOD")
+    groups = "four mixtures at each fixed peak rate" if experiment == 2 else "four methods and the reused full-CPT baseline"
+    return (f"Full-table five-fold {style.metric_label(metric)} against optimizer updates {checkpoint_description()} "
+            f"for {groups}, on the {domains}. Points average the {len(SEEDS)} registered training seeds; "
+            "shading spans their dataset-mean scores, not a confidence interval. Missing checkpoints "
+            "are not connected; the final update is the primary endpoint.")
 
 
 def design_figure(experiment=2):
@@ -66,15 +80,18 @@ def training_curves(track, backbone, *, metric="loss"):
                 series = pd.Series(value.to_numpy(), index=frame.step).dropna()
                 if series.empty:
                     continue
-                ax.plot(series.index, series, color=color, alpha=.25, linewidth=style.TRACE_LINE)
+                ax.plot(series.index, series, color=color, alpha=.25, linewidth=style.TRACE_LINE,
+                        linestyle=style.credit_fraction_line(fraction))
                 curves.append(series.rename(r["seed"]))
             if len(curves) == len(SEEDS):
                 common = pd.concat(curves, axis=1, join="inner").dropna()
-                ax.plot(common.index, common.mean(axis=1), color=color, linewidth=style.EFFECT_LINE)
+                ax.plot(common.index, common.mean(axis=1), color=color, linewidth=style.EFFECT_LINE,
+                        linestyle=style.credit_fraction_line(fraction))
         ax.set(xlabel="Optimizer updates", title=f"Fixed peak LR {RATES[backbone][lr_index]:g}")
     axes[0].set_ylabel("Synthetic query loss" if metric == "loss" else f"Development {style.metric_label(metric)}")
     fig.suptitle(BACKBONES[backbone] + (" · optimization" if metric == "loss" else " · small-context monitoring"))
-    style.legend_below(fig, [Line2D([], [], color=style.credit_fraction_colour(f), label=style.prior_mix_label(f))
+    style.legend_below(fig, [Line2D([], [], color=style.credit_fraction_colour(f),
+                             linestyle=style.credit_fraction_line(f), label=style.prior_mix_label(f))
                              for f in (0, .25, .5, 1)], ncol=4)
     return fig
 
@@ -82,7 +99,10 @@ def training_curves(track, backbone, *, metric="loss"):
 def checkpoint_curves(track, backbone, *, experiment=2, metric=None):
     """Saved-checkpoint benchmarks; explicit steps and complete registered seed pairs."""
     metric = metric or ("roc_auc" if track == "pd" else "r2")
-    frames = {d: results.benchmark_frames(track, experiment, domain=d) for d in ("credit", "ood")}
+    # CRPS is in target units: averaging arbitrary native regression scales would
+    # let the largest-scale dataset dominate. Credit LGD shares the [0,1] scale.
+    domains = ("credit",) if track == "lgd" and metric == "crps" else ("credit", "ood")
+    frames = {d: results.benchmark_frames(track, experiment, domain=d) for d in domains}
     scores = {d: results.complete_scores(f, metric, experiment=experiment) for d, f in frames.items()}
     scores = {d: f[f.architecture.eq(backbone)] if not f.empty else f for d, f in scores.items()}
     if all(f.empty for f in scores.values()):
@@ -90,53 +110,67 @@ def checkpoint_curves(track, backbone, *, experiment=2, metric=None):
                                      "Monitoring values do not populate these panels.")
     style.apply()
     nrows = 2 if experiment == 2 else 1
-    fig, axes = plt.subplots(nrows, 2, squeeze=False,
-                             figsize=style.grid_figsize(2, nrows, panel_ratio=1.0))
+    fig, axes = plt.subplots(nrows, len(domains), squeeze=False, sharey="col",
+                             figsize=style.grid_figsize(len(domains), nrows, panel_ratio=.78))
     labels = (0, .25, .5, 1) if experiment == 2 else tuple(METHODS)
     reference_present = False
     for i, row in enumerate(axes):
-        for domain, ax in zip(("credit", "ood"), row):
+        for domain, ax in zip(domains, row):
             frame = scores[domain]
             if not frame.empty:
                 frame = frame[frame.architecture.eq(backbone)]
                 if experiment == 2:
                     frame = frame[frame.lr_index.eq(i)]
-                for j, label in enumerate(labels):
-                    part = frame[frame["mixture" if experiment == 2 else "treatment"].eq(label)].sort_values("checkpoint_step")
+                for label in labels:
+                    part = frame[frame["mixture" if experiment == 2 else "treatment"].eq(label)]
+                    # Reindex before plotting so absent milestones break the
+                    # curve rather than implying unmeasured intermediate scores.
+                    part = part.set_index("checkpoint_step").reindex(MILESTONES)
                     color = style.credit_fraction_colour(label) if experiment == 2 else style.METHOD_COLORS[label]
-                    ax.plot(part.checkpoint_step, part["mean"], color=color,
-                            marker=style.credit_fraction_marker(label) if experiment == 2 else style.MILESTONE_MARKER,
-                            markersize=style.CURVE_MARKER)
-                    ax.fill_between(part.checkpoint_step, part.minimum, part.maximum, color=color, alpha=.12)
+                    ax.plot(part.index, part["mean"], color=color,
+                            marker=style.credit_fraction_marker(label) if experiment == 2 else style.METHOD_MARKERS[label],
+                            linestyle=style.credit_fraction_line(label) if experiment == 2 else style.METHOD_LINES[label],
+                            markersize=style.CURVE_MARKER, label=str(label))
+                    ax.fill_between(part.index, part.minimum, part.maximum, color=color, alpha=.12)
+            if frame.empty:
+                ax.text(.5, .5, "Complete seed pairs pending", ha="center", va="center",
+                        transform=ax.transAxes, color=style.MUTED, fontsize=style.PANEL_TEXT)
             title = "Credit benchmark" if domain == "credit" else "Native OOD"
             if experiment == 2:
                 title += f" · LR {RATES[backbone][i]:g}"
             ax.set(title=title, xlabel="Optimizer updates", xscale="log")
             ax.set_xticks(MILESTONES, [f"{s:,}" for s in MILESTONES])
             ax.minorticks_off()
-            reference = results.released_score(track, backbone, domain, metric)
+            reference = results.released_score(track, backbone, domain, metric) if not frame.empty else None
             if reference is not None:
                 ax.axhline(reference, color=style.REFERENCE, linestyle="--")
                 reference_present = True
         row[0].set_ylabel(style.metric_label(metric))
     fig.suptitle(f"{BACKBONES[backbone]} · full-table five-fold {style.metric_label(metric)}")
     handles = [Line2D([], [], color=style.credit_fraction_colour(x) if experiment == 2 else style.METHOD_COLORS[x],
+                      marker=style.credit_fraction_marker(x) if experiment == 2 else style.METHOD_MARKERS[x],
+                      linestyle=style.credit_fraction_line(x) if experiment == 2 else style.METHOD_LINES[x],
                       label=style.prior_mix_label(x) if experiment == 2 else METHODS[x]) for x in labels]
     if reference_present:
         handles.append(Line2D([], [], color=style.REFERENCE, linestyle="--", label="Released weights (step 0)"))
     style.legend_below(fig, handles,
-                       ncol=2 if experiment == 3 else 4)
+                       ncol=2 if experiment == 3 else 3)
     return fig
 
 
 def retention_effects(track, backbone, *, metric=None):
+    from src.visualize.paper_plots import seed_differences
+
     metric = metric or ("roc_auc" if track == "pd" else "r2")
-    tables = {}
+    tables, raw = {}, {}
     for domain in ("credit", "ood"):
         frame = results.benchmark_frames(track, 3, domain=domain, final_only=True)
         if not frame.empty:
             frame = frame[frame.architecture.eq(backbone)]
         tables[domain] = results.paired_retention(frame, metric)
+        if not frame.empty:
+            raw[domain] = frame.assign(info_run_name=[f"exp3_{m}__s{s}" for m, s in
+                                                       zip(frame.treatment, frame.training_seed)])
     if any(f.empty for f in tables.values()):
         return campaign.availability("The retention comparison requires all four methods and the reused full-CPT "
                                      "baseline, with both registered seeds and complete credit/OOD folds.")
@@ -147,22 +181,91 @@ def retention_effects(track, backbone, *, metric=None):
         for i, method in enumerate(methods):
             row = frame[frame.configuration.eq(f"exp3_{method}")].iloc[0]
             ax.plot([row.ci_low, row.ci_high], [i, i], color=style.METHOD_COLORS[method], linewidth=style.EFFECT_LINE)
-            ax.scatter(row.mean_difference, i, color=style.METHOD_COLORS[method], s=style.EFFECT_POINT)
+            ax.scatter(row.mean_difference, i, color=style.METHOD_COLORS[method],
+                       marker=style.METHOD_MARKERS[method], s=style.EFFECT_POINT, zorder=4)
+            for j, (seed, value) in enumerate(seed_differences(raw[domain], f"exp3_{method}", "exp3_full_wd", metric)):
+                ax.scatter(value, i + (j - .5) * .28, color=style.MUTED,
+                           marker=style.SEED_MARKERS[seed], s=style.SEED_POINT, zorder=3)
         ax.axvline(0, color=style.MUTED, linestyle=":")
         ax.set(title="Credit benchmark" if domain == "credit" else "Native OOD",
                xlabel=f"Δ {style.metric_label(metric)} vs full CPT + decay")
         ax.set_yticks(range(4), [METHODS[m] for m in methods])
     fig.suptitle(f"{BACKBONES[backbone]} · retention methods at {MAIN_STEPS:,} updates")
+    style.legend_below(fig, [Line2D([], [], color=style.MUTED, linestyle="none",
+        marker=style.SEED_MARKERS[s], label=f"paired seed {s}") for s in SEEDS], ncol=len(SEEDS))
     return fig
+
+
+def checkpoint_summary(track, *, experiment=2):
+    """Numerical trajectory summary, respecting native regression target units."""
+    lines = [f"Retained updates: {checkpoint_description()}; final {MAIN_STEPS:,} is primary.",
+             f"Each point requires all {len(SEEDS)} training seeds and complete five-fold dataset cells."]
+    metrics = ("roc_auc", "log_loss", "brier") if track == "pd" else ("r2", "crps")
+    for domain in ("credit", "ood"):
+        frame = results.benchmark_frames(track, experiment, domain=domain)
+        for metric in metrics:
+            if track == "lgd" and domain == "ood" and metric == "crps":
+                lines.append("Native-OOD CRPS remains per dataset in the benchmark files; different target units are not averaged.")
+                continue
+            table = results.complete_scores(frame, metric, experiment=experiment)
+            lines.append(f"{domain} / {style.metric_label(metric)}: " +
+                         ("no complete seed/fold groups" if table.empty else "\n" + table.to_string(index=False)))
+    return "\n".join(lines)
+
+
+def results_summary(track):
+    """Exp2's final cell follows its A/B/C/D/E section order exactly."""
+    from src.visualize import paper_plots as paper
+
+    lines = ["A · DEVELOPMENT COMPARISON",
+             "All four mixtures and both fixed rates are reported; development scores select no settings.",
+             campaign.continuation_recipe(track).to_string(index=False),
+             f"Complete final credit table available: {paper.final_ready(track, 'exp2')}.",
+             "\nB · CREDIT EFFECTS"]
+    dev = paper.final_credit(track, "exp2", "development")
+    if dev is not None and not dev.empty:
+        from src.eval.comparisons import identities
+        metric = "roc_auc" if track == "pd" else "r2"
+        means = dev.assign(run=identities(dev)).groupby(["run", "dataset"])[metric].mean().groupby("run").mean()
+        lines.insert(-1, "Development dataset means per training run:\n" + means.to_string())
+    credit = paper.final_credit(track, "exp2")
+    metrics = ("roc_auc", "log_loss", "brier") if track == "pd" else ("r2",)
+    for reference in (False, True):
+        lines.append("Comparator: released weights" if reference else "Comparator: matched 0% continuation")
+        for metric in metrics:
+            table = pd.DataFrame() if credit is None else paper._table(credit, metric, track, reference=reference)
+            lines.append(style.metric_label(metric) + ": " + ("not completely benchmarked" if table.empty
+                                                                else "\n" + table.to_string(index=False)))
+    lines += ["\nC · CHECKPOINT TRAJECTORIES", checkpoint_summary(track),
+              "\nD · NATIVE OOD", f"Complete final OOD table available: {paper.ood_ready(track, 'exp2')}."]
+    from src.eval import analysis
+    ood = analysis.load_ood_results(track, "exp2")
+    for metric in (("roc_auc", "log_loss") if track == "pd" else ("r2",)):
+        table = pd.DataFrame() if ood is None else paper._table(ood, metric, track)
+        lines.append(style.metric_label(metric) + ": " + ("not completely benchmarked" if table.empty
+                                                            else "\n" + table.to_string(index=False)))
+    if track == "lgd":
+        lines.append("\nE · DISTRIBUTIONAL ENDPOINTS")
+        for metric in ("crps", "boundary_mass_abs_err"):
+            table = pd.DataFrame() if credit is None else paper._table(credit, metric, track)
+            lines.append(style.metric_label(metric) + ": " + ("not completely benchmarked" if table.empty
+                                                                else "\n" + table.to_string(index=False)))
+        lines.append("Credit LGD shares the [0,1] scale. Endpoint-mass agreement is aggregate, not conditional calibration.")
+    lines += ["Dataset-bootstrap intervals are descriptive; seeds and folds are not extra datasets.",
+              "Historical benchmark exposure remains disclosed; no rate, mixture or checkpoint is selected here."]
+    return "\n".join(lines)
 
 
 def retention_recipe():
     """Fixed settings are descriptive metadata, never selected from benchmark scores."""
     rows = []
     for backbone in BACKBONES:
-        for run in expand_with_seeds(load(paths.config_path("Exp3_PD"))):
-            if run["architecture"] != backbone or run["seed"] != 0:
-                continue
+        baseline = next(r for r in expand_with_seeds(load(paths.config_path("Exp2_PD")))
+                        if r["architecture"] == backbone and r["seed"] == SEEDS[0]
+                        and r["lr_index"] == 0 and r["prior"]["credit_fraction"] == .5)
+        methods = [r for r in expand_with_seeds(load(paths.config_path("Exp3_PD")))
+                   if r["architecture"] == backbone and r["seed"] == SEEDS[0]]
+        for run in [dict(baseline, method="full_wd"), *methods]:
             t = run["train"]
             rows.append({"Backbone": BACKBONES[backbone], "Method": METHODS[run["method"]],
                          "Peak LR": f"{t['lr']:g}", "Weight decay": t["weight_decay"],

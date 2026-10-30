@@ -13,6 +13,7 @@ the `.ipynb` means these checks run without executing anything.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from pathlib import Path
@@ -27,21 +28,35 @@ from src.visualize import figures, style  # noqa: E402
 
 NOTEBOOKS = discover()
 
-#: `caption=("a" "b")` implicit concatenation across lines, or `caption="one line"`.
-_CAPTION_CALL = re.compile(r'caption=\(?\s*((?:"[^"]*"\s*)+)\)?', re.S)
 _SAVE_CALL = re.compile(r"FIGS\.save\(")
 
 
 def _code(name: str) -> str:
     nb = json.loads(notebook_path(name).read_text(encoding="utf-8"))
-    return "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
+    return "\n\n".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
 
 
 def _captions(name: str) -> list[str]:
-    """Every caption string in one notebook, un-concatenated."""
+    """Validate literal captions and the explicitly tested design-aware helper."""
+    from src.visualize.continuation import trajectory_caption
+
     found = []
-    for match in _CAPTION_CALL.finditer(_code(name)):
-        found.append("".join(re.findall(r'"([^"]*)"', match.group(1))))
+    code = "\n".join(line for line in _code(name).splitlines() if not line.lstrip().startswith("%"))
+    for call in ast.walk(ast.parse(code)):
+        if (not isinstance(call, ast.Call) or not isinstance(call.func, ast.Attribute)
+                or not isinstance(call.func.value, ast.Name) or call.func.value.id != "FIGS"
+                or call.func.attr != "save"):
+            continue
+        caption = next((kw.value for kw in call.keywords if kw.arg == "caption"), None)
+        if isinstance(caption, ast.Constant) and isinstance(caption.value, str):
+            found.append(caption.value)
+        elif (isinstance(caption, ast.Call) and isinstance(caption.func, ast.Attribute)
+              and isinstance(caption.func.value, ast.Name) and caption.func.value.id == "continuation"
+              and caption.func.attr == "trajectory_caption"):
+            found.append(trajectory_caption("lgd" if "lgd" in name else "pd", "r2" if "lgd" in name else "roc_auc",
+                                             experiment=3 if name.startswith("3.") else 2))
+        else:
+            raise AssertionError(f"{name}: absent or unvalidated generated caption")
     return found
 
 

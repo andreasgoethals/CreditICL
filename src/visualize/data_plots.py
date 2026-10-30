@@ -38,6 +38,7 @@ from src.visualize import style
 def feature_policy_inventory(by_task: dict[str, dict]) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Mechanical policy counts and named exclusions; observation timing stays unknown."""
     import json
+
     from src.eval.feature_policy import prediction_features
 
     counts, details = [], []
@@ -271,6 +272,7 @@ def plot_shapes(datasets_by_task: dict[str, dict[str, Any]]):
         xs = [ds.n_rows for ds in datasets.values()]
         ys = [ds.n_features for ds in datasets.values()]
         ax.scatter(xs, ys, s=60, alpha=0.85, color=style.TASK_COLOR[task],
+                   marker=style.TASK_MARKER[task],
                    label=f"{task.upper()} ({len(xs)} datasets)", edgecolor="white", zorder=3)
         xs_all += xs
         ys_all += ys

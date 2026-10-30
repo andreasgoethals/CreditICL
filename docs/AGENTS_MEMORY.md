@@ -1,12 +1,23 @@
 # Agents' memory — runs and dead ends
 
+## 30-10-2026 — notebook refresh; GPU inventory-test failure
+
+**Tried:** Full GPU Exp0 11754388 at frozen 931d593 with PROJECT image r3.
+**Result:** FAILED 1:0 after 1m52s: 19 tests passed; the input-inventory assertion expected eight entries but received nine. Controller 62471655 and its guarded continuation 62473912 stopped; no production work launched.
+**Why:** Container validation correctly adds a runtime-image hash alongside eight reference-model requests. The older test counted and iterated over both record types together.
+**Instead:** Check the exact eight model keys and runtime hash separately. Six portable cases exercise the actual GPU assertion through real inventory assembly, rejecting missing models, missing/changed runtime provenance and incomplete inputs. Training code, settings and dependencies are unchanged; require fresh current-source CPU/GPU acceptance before production.
+
+Reporting: all 12 notebooks reran locally, saving 40 visually inspected PDFs. Another 38 synthetic-only figure previews were inspected outside the repository; they are layout tests, not results. A read-only VSC snapshot added 932 files and matched 288 existing files without overwriting any; all 54 Exp1 training runs, including the quarter-mixture extension, are now visible locally. Benchmark efficacy panels remain pending until receipts are complete. Preserve the empty legacy figure directory whose removal was blocked by automatic approval review; it holds no results.
+Full local pytest: **2,148 passed, 36 VSC-only skips, zero failures**, 20m01s. Edited reporting helpers/regression modules pass targeted Ruff; the broader project still has 170 legacy lint findings, so no repository-wide lint-clean claim is made.
+
 ## 30-10-2026 — current CPU passed; guarded queue continuation
 
 | Job | Configuration | Outcome |
 |---|---|---|
 | 62471657 | Full CPU Exp0, frozen 931d593, PROJECT image r3, wICE interactive 8 CPU/48G | COMPLETED 0:0, 1h55m04s; 14/14 stages PASS, 2,108 tests passed, two allowed skips; all 12 notebooks executed |
-| 11754388 | Full GPU Exp0, same source/image, B200 24 CPU/180G, 24h | Accepted; PENDING Priority on 30-10 morning; provisional 01-11 evening start forecast |
-| 62473912 | Operator continuation, wICE batch_long 1 CPU, 7 days, afterany:62471655 | Accepted; waits for the parent. Continues only after confirmed TIMEOUT in the original GPU-wait phase; preserves the existing GPU job and frozen source |
+| 11754388 | Full GPU Exp0, same source/image, B200 24 CPU/180G, 24h | FAILED 1:0, 1m52s; 19 tests passed before the stale eight-vs-nine inventory assertion |
+| 62471655 | Deployment controller, frozen 931d593, wICE 1 CPU, 72h | FAILED 1:0 after GPU failure; no production benchmarks or training submitted |
+| 62473912 | Operator continuation, wICE batch_long 1 CPU, 7 days, afterany:62471655 | FAILED 1:0, 39s; correctly rejected the parent's ordinary failure rather than treating it as TIMEOUT |
 
 **Tried:** Wait under the original 72-hour deployment controller while the B200 queue is busy.
 **Result:** GPU forecast moved to 01-11 23:10, only 18 minutes before the controller deadline.

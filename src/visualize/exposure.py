@@ -65,11 +65,14 @@ def illustrative_variants(config_path, *, n=500, seed=0):
     return loaded, "fresh live unfiltered diagnostic; binary PD / raw credit LGD"
 
 
-def accepted_stream(config, *, n=48, seed=1729, mixtures=(0., .5, 1.)):
+def accepted_stream(config, *, n=48, seed=1729, mixtures=None):
     """Candidate and accepted task observations for a small matched slot audit."""
     from src.prior.filters import predictability
 
     prior = config.get("prior", config)
+    if mixtures is None:
+        configured = prior.get("credit_fraction", (0., .25, .5, 1.))
+        mixtures = sorted(configured) if isinstance(configured, (list, tuple)) else [float(configured)]
     rows = []
     for mixture in mixtures:
         cfg = copy.deepcopy(prior)
@@ -136,7 +139,7 @@ def class_exposure(frame):
     for ax in axes:
         ax.yaxis.set_major_formatter(PercentFormatter(1))
     axes[1].xaxis.set_major_formatter(PercentFormatter(1))
-    style.legend_below(fig, handles, ncol=1)
+    style.legend_below(fig, handles, ncol=2)
     return fig
 
 
@@ -184,7 +187,7 @@ def feature_exposure(frame):
     for ax in axes:
         ax.yaxis.set_major_formatter(PercentFormatter(1))
     axes[1].xaxis.set_major_formatter(PercentFormatter(1))
-    style.legend_below(fig, ncol=3)
+    style.legend_below(fig, ncol=2)
     return fig
 
 

@@ -78,6 +78,9 @@ canonical validation-loop synchronization during this task). No additional
 template synchronization or per-project SSH installation is needed. The shared VSC reference pin
 for this review is `0ed4ffa89d312b9bb6411681b6a14f81672439f3`.
 
+Rechecked 30-10 after the single-branch/monitoring update: the local and canonical template
+copies match byte-for-byte, SHA256 `9e113ac591a7d702bc61060a3bce703419cb7a296fcf9cf77283c1e5ffd27a20`.
+
 Andreas renews access manually in **Windows PowerShell**:
 
 ```powershell
@@ -665,11 +668,12 @@ Run the fixed Exp2 grid after Exp1 benchmarking and current validation.
 The explicitly authorized one-off `scripts/slurm/deploy.slurm` controller performs that
 sequence and stops immediately after submitting Exp2; its durable JSON receipt records
 all accepted job IDs. It stops on failed validation or incomplete Exp1 benchmark receipts.
-The 30-10 operator continuation **62473912** is dependency-bound to controller **62471655**;
-it resumes only a confirmed controller TIMEOUT in the GPU-wait phase and reuses GPU **11754388**.
-It does not change scientific source or start a duplicate validation job. Its ignored,
-hash-pinned operating scripts and fresh pre-Exp2 quota gate are recorded in `RUNS.md`.
-Do not submit another controller alongside either one; reconcile their durable receipts first.
+On 30-10, GPU **11754388** failed after 1m52s at a stale inventory-test assertion, before
+production work. Controller **62471655** stopped, and its dependency-bound continuation
+**62473912** correctly rejected that failure. All three are terminal; their evidence is retained
+in `RUNS.md`. The repaired test distinguishes eight model requests from runtime-image metadata;
+fresh current-source CPU/GPU acceptance is required. Do not duplicate an active controller;
+reconcile its durable receipt and accounting first.
 The user-requested Codex monitor checks this chat every 30 minutes and must delete its schedule
 after verified submission of all 64 Exp2 runs and final cleanup. It never renews SSH credentials.
 Exp2 retains five checkpoint benchmarks per run. All rows/features/five folds remain.

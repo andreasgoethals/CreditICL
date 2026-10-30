@@ -230,7 +230,7 @@ def _config_label(run_name: str, *, mix: bool = True) -> str:
 #: fraction always comes first in a configuration's sort key, so its effect reads as a block.
 _ORDER = {"intensity": ("mild", "aggressive"), "filter": ("off", "tabicl", "banded"),
           "strategy": ("full", "icl_only", "head_only", "scratch"), "l2sp": ("L2-SP off", "L2-SP on"),
-          "model": ("tabicl", "tabpfn3"), "credit_fraction": ("cf=0", "cf=0.0", "cf=0.5", "cf=1", "cf=1.0")}
+          "model": ("tabicl", "tabpfn3")}
 
 
 def _config_sort_key(run_name: str, exp: str = "exp1") -> tuple:
@@ -245,6 +245,8 @@ def _config_sort_key(run_name: str, exp: str = "exp1") -> tuple:
 
 
 def _value_order(lever: str, values) -> list:
+    if lever == "credit_fraction":
+        return sorted(values, key=lambda value: (float(value.split("=", 1)[1].replace("p", ".")), str(value)))
     order = _ORDER.get(lever)
     return sorted(values, key=lambda v: (order.index(v) if order and v in order else 99, str(v)))
 

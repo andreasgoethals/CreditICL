@@ -169,6 +169,38 @@ The one thing to do differently.
 
 ## Runs
 
+### 30-10-2026 — GPU inventory-test failure and notebook refresh
+
+**11754388**, Mindwell B200, 24 CPU/180G, 24-hour limit, commit 931d593 and the unchanged
+PROJECT image r3: **FAILED 1:0 after 1m52s**. Preflight and native Slurm checks passed;
+the VSC suite passed 19 tests before its input-inventory assertion failed (71.06s).
+The expected eight reference requests were present; a ninth runtime-image hash record
+was correctly included. The stale test expected only eight and would also have treated
+runtime metadata as a model request. The fix validates both record types separately;
+six portable regressions exercise the same assertion and its rejection cases. This is
+a test repair, not evidence of defective trained checkpoints. Controllers **62471655**
+and **62473912** failed closed; no Exp1 benchmark or Exp2 task was launched by them.
+The earlier CPU PASS remains historical evidence, not acceptance of the repaired source.
+Training implementation remains `01a5f056044cc261b83b3973956d55211c64b4e81ee58d285712e852109007e4`;
+both library pins and the image digest are unchanged from the preceding entries.
+
+**Local reporting:** all 12 notebooks executed; 40 exported PDFs and 38 synthetic-only
+preview figures were visually inspected. Plots now match the 64-run/two-seed Exp2 and
+fixed 50% Exp3, all five checkpoint steps, and separate models/rates. Missing milestones
+break curves; native-OOD regression CRPS stays per dataset because target units differ.
+All captions and section-ordered printed summaries were regenerated. No scientific
+training, prediction or benchmark settings changed.
+Full local pytest: **2,148 passed, 36 allocation-only VSC skips, zero failures**, 1,201.55s.
+Targeted reporting/regression Ruff checks pass. The full project scan retains 170 legacy lint
+findings; unrelated lint cleanup is deferred rather than mixed into this scientific freeze.
+
+The compact VSC snapshot captured at **07:58:56 UTC** contains 1,220 Exp1/reference
+JSON/JSONL/CSV files: **932 new, 288 byte-identical, zero overwritten**. Archive SHA256
+`ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a` and per-file hashes
+are recorded in ignored `output CreditICL/manifests/notebook_snapshot*.json`.
+All 54 training runs are complete; missing benchmark slots remain pending. No datasets
+or checkpoints were downloaded, and the temporary transfer ZIP was removed after verification.
+
 ### 30-10-2026 — operator continuation for a long GPU queue
 
 Job **62473912**, wICE `batch_long`, one CPU/default 3,400 MiB, seven days, has

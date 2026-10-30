@@ -11,7 +11,6 @@ from src.utils import paths
 from src.utils.config import expand_with_seeds, load
 from src.visualize import style
 
-
 COMPONENTS = {
     "no_macro_target": "Without macro target term",
     "no_informative_missingness": "Without covariate-coupled gaps",
@@ -132,21 +131,24 @@ def training_summary(track: str, exp: str = "exp1") -> str:
                   "The 25% mixture is an extension approved after the initial 48-run campaign; "
                   "six new runs bring the planned total to 54, preserving completed results."]
     if exp == "exp2":
-        lines += ["PLANNED CONTINUATION (not completed training)",
+        lines += ["REGISTERED CONTINUATION RECIPE",
                   continuation_recipe(track).to_string(index=False),
                   "Matched mixtures within each backbone; row/task budgets differ between backbones.",
                   "0% is an extra-training control, not a guarantee against forgetting."]
     lines.append("\nB · OPTIMISATION HEALTH")
     runs = tp.load_progress(track, exp)
-    if not runs:
-        lines += ["No downloaded progress CSVs. Training health cannot be measured from this checkout.",
-                  "\nC · DEVELOPMENT MONITORING", "No local curves; no mixture is selected here."]
-        return "\n".join(lines)
-    for name, frame in sorted(runs.items()):
+    traces = tp.load_loss_logs(track, exp) or runs
+    if not traces:
+        lines.append("No downloaded loss or progress traces. Training health is unavailable locally.")
+    for name, frame in sorted(traces.items()):
         losses = frame.get("train_loss", pd.Series(dtype=float)).dropna()
         lines.append(f"{name}: {int(frame.step.max())} updates recorded; "
                      f"last recorded training loss {losses.iloc[-1]:.5g}." if len(losses)
                      else f"{name}: no finite training loss recorded.")
+    if not runs:
+        lines += ["\nC · DEVELOPMENT MONITORING", "No downloaded monitoring CSVs; no mixture is selected here.",
+                  "Different synthetic-task losses do not rank downstream prediction quality."]
+        return "\n".join(lines)
     metric = tp.HEADLINE[track]
     kept, excluded = tp.comparable_datasets(runs, metric)
     lines += ["\nC · DEVELOPMENT MONITORING",
