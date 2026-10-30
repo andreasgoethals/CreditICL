@@ -1,5 +1,12 @@
 # Agents' memory — runs and dead ends
 
+## 30-10-2026 — keep conversational status reads bounded and split
+
+**Tried:** Combined runtime activation, live logs and full Exp1/Exp2 provenance planning in one 210-second SSH payload.
+**Result:** No verified response envelope; no submission/mutation was requested. A subsequent deliberate stdout/stderr/exit-7 probe verified the channel.
+**Why:** The combined read did not complete within its bound; the interrupted stage was not established, so its partial output cannot support a result claim.
+**Instead:** Separate activation/live logs from compact two-tier manifest reads. Verified PROJECT `/opt/venv`, all 54 completed Exp1 training summaries and 120 Exp1 + 8 shared protocol-9 benchmark receipts. Read receipts on PROJECT, not only DATA. Full source/input/result gates still precede production submissions.
+
 ## 30-10-2026 — current-source CPU PASS; GPU validation running
 
 | Job | Configuration | Outcome |
