@@ -1,5 +1,12 @@
 # Agents' memory — runs and dead ends
 
+## 30-10-2026 — investigate LGD batch-217 loss spike without changing the run
+
+**Tried:** Inspect GPU 11756026 after 16 AMP retries and FP32 replay at LGD batch 217; the step-220 loss window reached 6.026e31.
+**Result:** The next window returned to 0.95019. Local deterministic reproduction found original-prior slot 6: raw target magnitude 8.4543, transformed query magnitude 3.3905e18; zero-logit native MSE reproduces the window's scale (6.027e31).
+**Why:** The upstream fitted target transform extrapolates a query; the registered unclipped MSE is correspondingly huge. This is the existing finite-tail safety path, not sufficient evidence of model divergence.
+**Instead:** Preserve the source, objective, tasks and running job. Inspect post-spike monitoring and final benchmark/weight checks before acceptance; the next monitoring point after the spike is still pending. Evidence: local `lgd-batch-217-targets.json` and the allocation's `resume-lgd-2.log`.
+
 ## 30-10-2026 — revised campaign stopping condition
 
 Andreas authorizes the remaining Exp1 benchmarks and all 64 Exp2 training runs to be

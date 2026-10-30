@@ -171,6 +171,15 @@ The one thing to do differently.
 
 ### 30-10-2026 — CPU 62475000 accepted; GPU 11756026 started
 
+During LGD resume, batch 217 exhausted AMP retries and used the existing FP32 replay.
+The step-220 mean loss was 6.026e31; the next window was 0.95019. Local deterministic
+reproduction found original-prior slot 6: raw target magnitude 8.4543, transformed query
+magnitude 3.3905e18. With zero logits, the unchanged native MSE gives a comparable
+20-update-window contribution of 6.027e31. This identifies a transformed-target tail,
+not sustained divergence by itself. No code, task, target or objective was changed and
+the job was not interrupted. Post-spike monitoring and final benchmark/weight checks
+remain required before GPU acceptance.
+
 CPU **62475000** completed **0:0 in 32m51s**: all **14/14 stages PASS**, unit JUnit
 **2,142 passed/two allowed skips/zero failures/errors**, and all 12 notebooks executed
 (303.12s). Native `preflight --require-exp0-cpu` accepted the complete current receipt,
