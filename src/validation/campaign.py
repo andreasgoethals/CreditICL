@@ -232,7 +232,9 @@ def input_inventory() -> dict:
                 result[f"{track}/{slot.model}"] = wanted
     if len(result) != 8:
         raise ValueError("Expected four reference models for each track")
-    if paths.on_vsc() and os.environ.get("SLURM_JOB_ID"):
+    # Readiness is also checked from login nodes. The image identity must be
+    # present there exactly as in the allocation that produced the receipt.
+    if paths.on_vsc():
         digest = os.environ.get("CREDITICL_RUNTIME_SHA256", "")
         if len(digest) != 64 or os.environ.get("CREDITICL_IN_CONTAINER") != "1":
             raise ValueError("Validation requires a verified PROJECT runtime image")
@@ -565,7 +567,7 @@ def readiness(phase: str = "gpu") -> list:
             if [s["name"] for s in actual] != expected or any(s["status"] != "PASS" for s in actual):
                 raise ValueError("Not every mandatory stage passed")
             if saved.get("inputs") != input_inventory():
-                raise ValueError("Input data/released weights changed since Experiment 0")
+                raise ValueError("Input data, released weights or runtime image changed since Experiment 0")
             artifacts = saved.get("artifacts", {})
             if not artifacts or any(input_digest(Path(p)) != h for p, h in artifacts.items()):
                 raise ValueError("Validation artifacts missing or modified")

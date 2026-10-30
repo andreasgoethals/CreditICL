@@ -280,6 +280,9 @@ Only then retire exact project-owned environment prefixes, measuring actual recl
 (Conda hardlinks may retain shared blocks). Do not move unpacked environments onto PROJECT.
 The PROJECT rebuild archive is recovery material on the same filesystem, not an independent
 backup of Exp1 checkpoints; verify a separate durable checkpoint copy before claiming backup coverage.
+Andreas confirmed on 30-10 that no separate checkpoint copy exists and the working checkpoints
+should remain on PROJECT. Keep them there, disclose this protection limit, and continue validation;
+an additional backup is not a prerequisite for the current campaign or an instruction to transfer data.
 No environment/data migration or retirement occurred in this review; active jobs stay frozen.
 
 | tier | path | holds | backup | quota |
@@ -707,8 +710,10 @@ production work. Controller **62471655** stopped, and its dependency-bound conti
 in `RUNS.md`. The repaired test distinguishes eight model requests from runtime-image metadata;
 fresh current-source CPU/GPU acceptance is required. Do not duplicate an active controller;
 reconcile its durable receipt and accounting first.
-Fresh CPU **62474628** is running at frozen **79609ff**, source `8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732`,
-using the unchanged PROJECT image r3. The existing heartbeat now supervises the stagewise
+CPU **62474628** passed all 14 stages at frozen **79609ff**, source `8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732`,
+using the unchanged PROJECT image r3. Login readiness then exposed an inventory-context defect;
+no GPU was submitted. The repair retains verified image identity both inside and outside Slurm
+and requires fresh current-source validation. The existing heartbeat supervises the stagewise
 submissions directly; require each receipt/artifact gate and a fresh native quota check
 before production, rather than leaving another CPU controller idle in a GPU queue.
 The user-requested Codex monitor checks this chat every 30 minutes and must delete its schedule

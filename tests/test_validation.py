@@ -10,6 +10,81 @@ from src.utils import paths
 from src.validation import campaign as v
 
 
+@pytest.fixture
+def container_inventory(monkeypatch):
+    from src.eval import benchmark_status
+
+    monkeypatch.setattr(paths, "on_vsc", lambda: True)
+    monkeypatch.setenv("CREDITICL_IN_CONTAINER", "1")
+    monkeypatch.setenv("CREDITICL_RUNTIME_SHA256", "a" * 64)
+    monkeypatch.setattr(benchmark_status, "request", lambda *args: (None, {
+        "credit_inputs": {"credit": "digest"}, "ood_inputs": {f"table{i}": "digest" for i in range(25)}
+    }, None))
+
+
+def test_runtime_inventory_matches_between_allocation_and_login(monkeypatch, container_inventory):
+    monkeypatch.setenv("SLURM_JOB_ID", "cpu-proof")
+    allocated = v.input_inventory()
+    monkeypatch.delenv("SLURM_JOB_ID")
+    assert v.input_inventory() == allocated
+    assert allocated["runtime_image"] == {"sha256": "a" * 64}
+
+
+@pytest.mark.parametrize("job", [None, "allocated-proof"])
+@pytest.mark.parametrize("damage", ["missing_hash", "short_hash", "outside_container"])
+def test_vsc_inventory_always_requires_verified_image(monkeypatch, container_inventory, job, damage):
+    if job is None:
+        monkeypatch.delenv("SLURM_JOB_ID", raising=False)
+    else:
+        monkeypatch.setenv("SLURM_JOB_ID", job)
+    if damage == "outside_container":
+        monkeypatch.delenv("CREDITICL_IN_CONTAINER")
+    else:
+        monkeypatch.setenv("CREDITICL_RUNTIME_SHA256", "" if damage == "missing_hash" else "short")
+    with pytest.raises(ValueError, match="verified PROJECT runtime"):
+        v.input_inventory()
+
+
+def test_off_cluster_inventory_keeps_local_runtime_supported(monkeypatch, container_inventory):
+    monkeypatch.setattr(paths, "on_vsc", lambda: False)
+    monkeypatch.delenv("CREDITICL_RUNTIME_SHA256")
+    monkeypatch.delenv("CREDITICL_IN_CONTAINER")
+    inventory = v.input_inventory()
+    assert len(inventory) == 8 and "runtime_image" not in inventory
+
+
+@pytest.mark.parametrize("damage", [None, "changed_image", "missing_image", "outside_container"])
+@pytest.mark.parametrize("phase", ["cpu", "gpu"])
+def test_readiness_from_login_compares_the_complete_allocation_inventory(monkeypatch, isolated_output, damage, phase):
+    original_inventory = v.input_inventory
+    fake_campaign(monkeypatch, isolated_output)
+    from src.eval import benchmark_status
+
+    monkeypatch.setenv("CREDITICL_IN_CONTAINER", "1")
+    monkeypatch.setenv("CREDITICL_RUNTIME_SHA256", "a" * 64)
+    monkeypatch.setattr(benchmark_status, "request", lambda *args: (None, {
+        "credit_inputs": {"credit": "digest"}, "ood_inputs": {f"table{i}": "digest" for i in range(25)}
+    }, None))
+    monkeypatch.setattr(v, "input_inventory", original_inventory)
+    receipt = v.receipt_path("cpu")
+    saved = json.loads(receipt.read_text())
+    saved["inputs"] = v.input_inventory()
+    v.write_json(receipt, saved)
+    if phase == "gpu":
+        assert v.run_validation(phase="gpu") == 0
+    monkeypatch.delenv("SLURM_JOB_ID")
+    if damage == "changed_image":
+        monkeypatch.setenv("CREDITICL_RUNTIME_SHA256", "b" * 64)
+    elif damage == "missing_image":
+        monkeypatch.delenv("CREDITICL_RUNTIME_SHA256")
+    elif damage == "outside_container":
+        monkeypatch.delenv("CREDITICL_IN_CONTAINER")
+    checks = v.readiness(phase)
+    assert all(row.ok for row in checks) == (damage is None)
+    if damage == "changed_image":
+        assert "runtime image changed" in checks[0].detail
+
+
 @pytest.mark.parametrize("damage", [None, "missing_model", "missing_runtime", "wrong_runtime", "missing_credit", "missing_ood"])
 def test_gpu_input_inventory_assertion_checks_models_and_runtime_separately(monkeypatch, damage):
     """Run the exact GPU inventory assertion portably with real inventory assembly."""

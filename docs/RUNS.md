@@ -169,9 +169,30 @@ The one thing to do differently.
 
 ## Runs
 
+### 30-10-2026 — CPU acceptance; cross-context readiness defect
+
+CPU **62474628** completed **0:0 in 32m06s**, wICE k28i14, 8 CPU/48G, image r3 and
+commit 79609ff/source 8b2be00 unchanged. **14/14 stages PASS**; JUnit has **2,126 passed,
+two allowed skips, zero failures/errors**. All 12 notebooks executed (352.07s stage).
+The login-node `preflight --require-exp0-cpu` then failed before any GPU submission.
+Direct comparison found only `runtime_image` missing from the login inventory; all eight
+shared data/weight records matched, as did the verified SIF hash. No dataset or weight
+change caused this refusal. The GPU admission receipt does not exist; no GPU was submitted.
+
+The defect was an allocation-only condition around runtime provenance. The fix records
+the verified image for all VSC callers, including login-node readiness, and still rejects
+missing/changed image identities; ordinary local venvs remain supported. New regression
+cases exercise allocation-to-login equality and the complete readiness round trip. A
+fresh current-source CPU/GPU campaign is required after the tested Git deployment;
+the passed old receipt remains historical evidence. Training implementation is unchanged.
+Local verification: the collected full suite passed **2,160 tests**, with 36 VSC-only
+skips (24m20s); after adding GPU parametrization, all eight final CPU/GPU round-trip
+cases passed separately. The earlier affected suite passed 135 tests. No notebook
+or visualization implementation changed in this repair.
+
 ### 30-10-2026 — corrected reporting frozen for fresh validation
 
-CPU **62474628** is RUNNING on wICE k28i14: eight CPUs, 48G, four-hour limit,
+CPU **62474628** was submitted on wICE k28i14: eight CPUs, 48G, four-hour limit,
 PROJECT image r3 unchanged. Frozen commit **79609ffc9c50d64c9fa21e824efb8c0d2cb0b0b1**,
 source `8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732`.
 Local evidence: full suite 2,148 passed/36 VSC-only skips, then 86 affected checks after
