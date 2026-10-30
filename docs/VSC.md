@@ -718,7 +718,11 @@ submissions directly; require each receipt/artifact gate and a fresh native quot
 before production, rather than leaving another CPU controller idle in a GPU queue.
 The repaired frozen revision is **56edade**, source `0d9017bb83b5406362e6e81076220274a04aff081c6d99fe65fb196022d6f370`;
 its actual login inventory matches all nine saved allocation records. Fresh CPU **62475000**
-is RUNNING on k28i16 after verified archival/reset of the old attempt, with all Exp1 evidence preserved.
+completed 0:0 in 32m51s on k28i16: all 14 stages PASS, 2,142 tests passed/two allowed skips,
+and all 12 notebooks executed. Native login readiness accepts the current artifacts.
+GPU **11756026** is RUNNING on Mindwell r11g12, B200/24 CPU/180G/24h, from the same
+frozen source and image. Its receipt is `manifests/submissions/restart-runtime-context-20261030-gpu.json`;
+quote 734,400 credits maximum. Full GPU acceptance and environment retirement remain pending.
 Keep that checkout frozen; later documentation-only pushes are not an instruction to pull during jobs.
 The user-requested Codex monitor checks this chat every 30 minutes and must delete its schedule
 after verified submission of all 64 Exp2 runs and final cleanup. It never renews SSH credentials.

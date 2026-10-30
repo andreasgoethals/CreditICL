@@ -1,10 +1,23 @@
 # Agents' memory — runs and dead ends
 
+## 30-10-2026 — current-source CPU PASS; GPU validation running
+
+| Job | Configuration | Outcome |
+|---|---|---|
+| 11756026 | Full GPU Exp0, frozen 56edade/image r3, Mindwell B200 24 CPU/180G, 24h | Accepted and RUNNING on r11g12; source-bound report RUNNING; no production submission |
+
+CPU 62475000 completed 0:0 in 32m51s: 14/14 stages PASS, 2,142 tests passed plus two
+allowed skips, all 12 notebooks executed. Actual login preflight now accepts all current
+stages/artifacts. GPU receipt: `manifests/submissions/restart-runtime-context-20261030-gpu.json`.
+Site MaxSubmitPU 500 verified; quote 734,400 credits maximum (not actual spending),
+90,907,892 available before admission. Keep source/image frozen and both legacy environments
+until full GPU acceptance; Exp1 remains preserved.
+
 ## 30-10-2026 — cross-context fix deployed; CPU acceptance restarted
 
 | Job | Configuration | Outcome |
 |---|---|---|
-| 62475000 | Full CPU Exp0, frozen 56edade, image r3, wICE interactive 8 CPU/48G, 4h | Accepted and RUNNING on k28i16; startup dependencies PASS; no GPU/production submission |
+| 62475000 | Full CPU Exp0, frozen 56edade, image r3, wICE interactive 8 CPU/48G, 4h | COMPLETED 0:0, 32m51s; all 14 stages PASS; 2,142 tests passed + 2 allowed skips |
 
 Source `0d9017bb83b5406362e6e81076220274a04aff081c6d99fe65fb196022d6f370`;
 training implementation unchanged. Local full suite: 2,160 passed/36 VSC-only skips,

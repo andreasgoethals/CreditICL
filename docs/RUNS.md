@@ -169,6 +169,27 @@ The one thing to do differently.
 
 ## Runs
 
+### 30-10-2026 — CPU 62475000 accepted; GPU 11756026 started
+
+CPU **62475000** completed **0:0 in 32m51s**: all **14/14 stages PASS**, unit JUnit
+**2,142 passed/two allowed skips/zero failures/errors**, and all 12 notebooks executed
+(303.12s). Native `preflight --require-exp0-cpu` accepted the complete current receipt,
+inputs, runtime identity and artifact hashes; the login/allocation defect is resolved.
+
+GPU **11756026** was admitted through the receipt manager and is RUNNING on Mindwell
+**r11g12**, B200, 24 CPU/180G/24h, unchanged image r3 and frozen **56edade**/source
+`0d9017bb83b5406362e6e81076220274a04aff081c6d99fe65fb196022d6f370`.
+Actual source-bound report is RUNNING, attempt `gpu_20261030T104216Z_j11756026_72bc0183`;
+receipt `manifests/submissions/restart-runtime-context-20261030-gpu.json` records the
+accepted ID with no uncertain in-flight acknowledgment. Startup and native accounting
+were inspected; full GPU acceptance remains pending. No production work was launched.
+
+Live site MaxSubmitPU **500**; full-allocation quote **734,400 credits maximum**, with
+**90,907,892** available before admission. These are a quote/balance, not a billing record.
+Quota then: DATA 45,912M/76,800M (390k/10M files), PROJECT 638.8G/1T (48,242/150k files).
+Shared scratch account totals include other projects; no environment or checkpoint cleanup
+was performed. Preserve both legacy environments until GPU/recovery/consumer checks pass.
+
 ### 30-10-2026 — runtime-context repair deployed; CPU 62475000
 
 Git-first deployment froze **56edadef4efe81120ea104870e6ba2e497f89b6a**, source
