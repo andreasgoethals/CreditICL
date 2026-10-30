@@ -177,8 +177,10 @@ reproduction found original-prior slot 6: raw target magnitude 8.4543, transform
 magnitude 3.3905e18. With zero logits, the unchanged native MSE gives a comparable
 20-update-window contribution of 6.027e31. This identifies a transformed-target tail,
 not sustained divergence by itself. No code, task, target or objective was changed and
-the job was not interrupted. Post-spike monitoring and final benchmark/weight checks
-remain required before GPU acceptance.
+the job was not interrupted. At step 400 the ordinary loss is 0.87454, LendingClub
+monitoring RMSE 0.130209/R2 0.746569 (initially 0.130918/0.743799), and a checkpoint
+was saved. This shows no collapse on that monitoring table. Full benchmark/weight
+checks remain required before GPU acceptance.
 
 CPU **62475000** completed **0:0 in 32m51s**: all **14/14 stages PASS**, unit JUnit
 **2,142 passed/two allowed skips/zero failures/errors**, and all 12 notebooks executed
