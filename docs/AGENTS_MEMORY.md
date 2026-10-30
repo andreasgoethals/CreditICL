@@ -1,5 +1,12 @@
 # Agents' memory — runs and dead ends
 
+## 30-10-2026 — waiting for manual VSC authentication renewal
+
+At 23:42 CET, SSH refused authentication; the native agent's certificate expired at
+23:39 CET. Andreas was asked once to run `step ssh login --context VSC` and confirm.
+Do not retry or repeat the request before his confirmation. No job was changed; the last
+verified GPU state had 98 stages PASS and stable post-spike step-400 monitoring.
+
 ## 30-10-2026 — investigate LGD batch-217 loss spike without changing the run
 
 **Tried:** Inspect GPU 11756026 after 16 AMP retries and FP32 replay at LGD batch 217; the step-220 loss window reached 6.026e31.
