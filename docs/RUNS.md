@@ -169,6 +169,26 @@ The one thing to do differently.
 
 ## Runs
 
+### 30-10-2026 — runtime-context repair deployed; CPU 62475000
+
+Git-first deployment froze **56edadef4efe81120ea104870e6ba2e497f89b6a**, source
+`0d9017bb83b5406362e6e81076220274a04aff081c6d99fe65fb196022d6f370`, with
+unchanged training implementation and image r3. On the actual login node, repaired
+inventory equals all **nine** records saved by CPU 62474628. This verifies the context
+defect directly; it does not substitute for fresh source-bound CPU/GPU acceptance.
+
+CPU **62475000** is RUNNING on wICE k28i16, eight CPUs/48G/four hours; quote **0**,
+dependencies and PROJECT `/opt/venv` startup checks PASS. Admission receipt:
+`manifests/submissions/restart-runtime-context-20261030-cpu.json` under output.
+Tracked checkout is unchanged; generated untracked records explain the job's dirty flag.
+No GPU or production work was submitted. Wait for the complete CPU receipt before GPU admission.
+
+Before reset, 103 files from the old CPU attempt were archived and each member hash checked:
+`/lustre1/project/stg_00211/CreditICL/recovery/20261030-before-context-rerun/exp0-62474628.zip`
+(2,843,468 bytes; SHA256 `967f4a67819b2cf933402f723ea0303e5a2ba765a779f829d432b185cdc81300`).
+Scoped reset removed 101 generated Exp0 files. All 2,204 preserved Exp1 sizes/mtimes
+and 1,110 recorded JSON/CSV hashes matched both before and after; all inputs remain.
+
 ### 30-10-2026 — CPU acceptance; cross-context readiness defect
 
 CPU **62474628** completed **0:0 in 32m06s**, wICE k28i14, 8 CPU/48G, image r3 and

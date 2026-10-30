@@ -716,6 +716,10 @@ no GPU was submitted. The repair retains verified image identity both inside and
 and requires fresh current-source validation. The existing heartbeat supervises the stagewise
 submissions directly; require each receipt/artifact gate and a fresh native quota check
 before production, rather than leaving another CPU controller idle in a GPU queue.
+The repaired frozen revision is **56edade**, source `0d9017bb83b5406362e6e81076220274a04aff081c6d99fe65fb196022d6f370`;
+its actual login inventory matches all nine saved allocation records. Fresh CPU **62475000**
+is RUNNING on k28i16 after verified archival/reset of the old attempt, with all Exp1 evidence preserved.
+Keep that checkout frozen; later documentation-only pushes are not an instruction to pull during jobs.
 The user-requested Codex monitor checks this chat every 30 minutes and must delete its schedule
 after verified submission of all 64 Exp2 runs and final cleanup. It never renews SSH credentials.
 Exp2 retains five checkpoint benchmarks per run. All rows/features/five folds remain.

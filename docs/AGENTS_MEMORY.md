@@ -1,5 +1,19 @@
 # Agents' memory — runs and dead ends
 
+## 30-10-2026 — cross-context fix deployed; CPU acceptance restarted
+
+| Job | Configuration | Outcome |
+|---|---|---|
+| 62475000 | Full CPU Exp0, frozen 56edade, image r3, wICE interactive 8 CPU/48G, 4h | Accepted and RUNNING on k28i16; startup dependencies PASS; no GPU/production submission |
+
+Source `0d9017bb83b5406362e6e81076220274a04aff081c6d99fe65fb196022d6f370`;
+training implementation unchanged. Local full suite: 2,160 passed/36 VSC-only skips,
+then all eight final CPU/GPU cross-context cases passed. Native login inventory now
+matches all nine records of the completed allocation. Its 103 archived files were
+hash-verified before clearing 101 generated files; all 2,204 Exp1 sizes/mtimes and
+1,110 hashes matched before/after. Receipt: `manifests/submissions/restart-runtime-context-20261030-cpu.json`.
+Freeze this checkout while validation runs; do not pull later documentation-only commits.
+
 ## 30-10-2026 — CPU passed; login/allocation inventory mismatch blocks GPU
 
 **Tried:** After CPU 62474628 passed, ran login-node preflight before any GPU submission.
