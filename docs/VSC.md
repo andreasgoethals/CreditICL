@@ -674,6 +674,10 @@ production work. Controller **62471655** stopped, and its dependency-bound conti
 in `RUNS.md`. The repaired test distinguishes eight model requests from runtime-image metadata;
 fresh current-source CPU/GPU acceptance is required. Do not duplicate an active controller;
 reconcile its durable receipt and accounting first.
+Fresh CPU **62474628** is running at frozen **79609ff**, source `8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732`,
+using the unchanged PROJECT image r3. The existing heartbeat now supervises the stagewise
+submissions directly; require each receipt/artifact gate and a fresh native quota check
+before production, rather than leaving another CPU controller idle in a GPU queue.
 The user-requested Codex monitor checks this chat every 30 minutes and must delete its schedule
 after verified submission of all 64 Exp2 runs and final cleanup. It never renews SSH credentials.
 Exp2 retains five checkpoint benchmarks per run. All rows/features/five folds remain.

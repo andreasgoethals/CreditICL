@@ -1,5 +1,15 @@
 # Agents' memory — runs and dead ends
 
+## 30-10-2026 — frozen notebook refresh; fresh CPU validation
+
+| Job | Configuration | Outcome |
+|---|---|---|
+| 62474628 | Full CPU Exp0, frozen 79609ff, unchanged PROJECT image r3, wICE interactive 8 CPU/48G, 4h | Accepted and RUNNING on k28i14; no GPU/production job submitted yet |
+
+Source `8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732`; training implementation unchanged. All 12 notebooks reran after the caption correction; all 40 rendered figures are pixel-identical to the visually reviewed exports. The two retired Exp0 attempts were hash-verified in PROJECT recovery before 112 + 10 generated files were removed. All 2,204 preserved Exp1 files and 1,110 recorded hashes still match. Admission receipt: `manifests/submissions/restart-caption-20261030-cpu.json` under output.
+
+The existing 30-minute Codex heartbeat now supervises native CPU → GPU → missing Exp1 benchmarks → 64 Exp2 submissions directly, with fresh quota checks before production. The old controllers are terminal; do not reuse them. Keep VSC at 79609ff while any job consumes it; later documentation-only commits need no pull. Retire the DATA legacy environment only after full GPU acceptance and verified recovery/no consumer. Delete the heartbeat after all 64 training work IDs are accepted and cleanup/docs are resolved.
+
 ## 30-10-2026 — notebook refresh; GPU inventory-test failure
 
 **Tried:** Final exported-caption audit after deploying df14174 and starting CPU 62474587.

@@ -169,6 +169,31 @@ The one thing to do differently.
 
 ## Runs
 
+### 30-10-2026 — corrected reporting frozen for fresh validation
+
+CPU **62474628** is RUNNING on wICE k28i14: eight CPUs, 48G, four-hour limit,
+PROJECT image r3 unchanged. Frozen commit **79609ffc9c50d64c9fa21e824efb8c0d2cb0b0b1**,
+source `8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732`.
+Local evidence: full suite 2,148 passed/36 VSC-only skips, then 86 affected checks after
+the caption-only correction; all 12 notebooks executed again, zero errors. All 40 final
+PDF renderings match the visually reviewed images exactly. No GPU acceptance is claimed.
+
+Before each reset, archives and every member hash were verified on PROJECT:
+`recovery/20261030-before-inventory-test-rerun/exp0-62471657-11754388.zip`
+(118 members, 2,861,843 bytes; SHA256 `3b88750c00f40eaa13483e2f0d6a16aaa0d0677c3651e586160b8dbc3f71dcea`)
+and `recovery/20261030-before-caption-rerun/exp0-62474587.zip`
+(12 members, 25,748 bytes; SHA256 `7623c591b36f56c6ed860659232f9d728f90f1236ff0d879a8fe9506f4807ccf`).
+Only retired Exp0 output was cleared (112 then 10 files); all 2,204 Exp1 files retained
+their sizes/mtimes and all 1,110 recorded JSON/CSV hashes matched before and after.
+Datasets, released weights, completed checkpoints and production receipts were preserved.
+
+The 30-minute heartbeat supervises the remaining stages instead of starting another
+idle CPU controller. Require actual CPU PASS, then full GPU PASS and verified artifacts,
+then finish only missing Exp1 benchmark slots; recheck native quotas before submitting
+the 64 Exp2 training work IDs. Preserve all admission receipts and stop after acceptance,
+without starting Exp2 benchmarks or Exp3. The DATA legacy environment remains rollback
+until full GPU acceptance and verified recovery/no consumers. No active-checkout pull.
+
 ### 30-10-2026 — GPU inventory-test failure and notebook refresh
 
 CPU **62474587**, revision df14174, was deliberately cancelled after **2m24s** during the
