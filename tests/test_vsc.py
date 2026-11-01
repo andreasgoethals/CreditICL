@@ -12,6 +12,14 @@ import torch
 pytestmark = pytest.mark.vsc
 
 
+@pytest.mark.parametrize("index", [11, 15])
+def test_tabpfn_constant_context_repair_preserves_full_cuda_update(tmp_path, index):
+    """Exercise both registered rates on the production batch before long GPU validation."""
+    from test_context_validity import assert_native_cuda_update_accepts_the_full_repaired_production_batch
+
+    assert_native_cuda_update_accepts_the_full_repaired_production_batch(tmp_path, index)
+
+
 @pytest.fixture(autouse=True)
 def require_compute_allocation():
     assert sys.platform == "linux", "VSC validation requires Linux"

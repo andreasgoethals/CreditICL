@@ -67,6 +67,7 @@ pip-wheel-metadata/
 
 # Virtual environments (local and VSC per-architecture)
 .venv/
+.venv-*/
 venv/
 venv-*/
 env/
@@ -134,6 +135,7 @@ output CreditICL/*/runs/
 output CreditICL/*/benchmark/
 output CreditICL/*/checkpoints/
 output CreditICL/*/report/
+output CreditICL/*/validation/
 output CreditICL/*/storage_probe/
 output CreditICL/*/notebooks/
 output CreditICL/prior_cache/

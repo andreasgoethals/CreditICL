@@ -449,7 +449,7 @@ class TabPFNTrainer:
         payload = torch.load(path, map_location="cpu", weights_only=False)
         from src.train.checkpoint import validate_resume_config, validate_training_fingerprint
 
-        validate_training_fingerprint(payload)
+        validate_training_fingerprint(payload, self.cfg)
         old_cfg = payload.get("crediticl_config") or {}
         validate_resume_config(old_cfg, self.cfg)
         old_steps = old_cfg.get("train", {}).get("max_steps")

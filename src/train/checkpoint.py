@@ -34,8 +34,11 @@ def validate_training_fingerprint(payload: dict[str, Any], current_config: dict 
 
     if payload.get("training_fingerprint") != training_fingerprint():
         if current_config is not None:
-            from src.utils.completed_runs import reviewed_exp1_resume
+            from src.utils.completed_runs import reviewed_context_fix_state, reviewed_exp1_resume
             if reviewed_exp1_resume(payload, current_config):
+                return
+            if reviewed_context_fix_state(payload, current_config, payload.get("crediticl_config"),
+                                           checkpoint=True):
                 return
         raise ValueError("Checkpoint training code differs or has no recorded fingerprint. "
                          "Preserve it for evaluation; use a new run name for the current recipe.")

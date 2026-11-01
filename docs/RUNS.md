@@ -169,6 +169,72 @@ The one thing to do differently.
 
 ## Runs
 
+### 01-11-2026 — repair raw constant contexts; preserve valid CPT work
+
+**Cause and scope.** The only failed task is PD `11762003_11` (TabPFN-3, LR 1e-5,
+100% credit, seed 0), at batch 37/slot 15. Its 1,024-row/two-feature table varies overall,
+but all 823 context rows are constant. Native TabPFN removes every feature and raises
+`TabPFNValidationError`. PD index 15 has the same synthetic stream at the other fixed rate.
+This is synthetic preprocessing validity, not a fault in the real credit datasets.
+
+**Repair.** Match native constant-feature removal, including NaN behavior, on the raw
+context after any class-balance row permutation. Redraw an unusable candidate using the
+next deterministic attempt seed for the same source/slot/shape/split. Keep every update's
+16 TabPFN tables, zero skipped tasks, 1,500 updates, both seeds/rates and all mixtures.
+Encoded TabICL/Exp1 samples are unchanged. Persistently invalid sampling still fails at
+the existing bounded attempt limit; no easy-task or downstream-performance filter was added.
+
+Old implementation `01a5f056044cc261b83b3973956d55211c64b4e81ee58d285712e852109007e4`
+to reviewed `5300c294e4078273fa635f18b82714ebfdb17169046f25035e356aa2392a8e75`:
+only exact registered recipes, seeds 0/1, unchanged dependency versions and full table
+accounting may resume. Completed pre-fix updates necessarily passed native preprocessing;
+the repair changes no previously completed update. Original fingerprints are retained,
+not relabelled. Changed/unknown recipes, packages, skipped budgets and source fail closed.
+
+**Safe shutdown.** Pending Python would read files at startup, but Slurm caches batch scripts
+and all old submissions require commit 56edade. Updating their checkout in place would mix
+versions or fail that guard. Held/cancelled 30 pending tasks; sent USR1 to 17 running batch
+scripts, verified each stopped summary's step/table count and nonempty PROJECT checkpoint,
+then cancelled their requeued slots. No old CreditICL consumers remain. Preserve the 16
+completed TabPFN LGD runs and every valid unfinished checkpoint; replace only the remaining
+48 IDs (LGD 0–7,16–23; PD 0–31). Other projects' jobs were untouched.
+
+**Evidence and cleanup.** Recovery root on PROJECT:
+`CreditICL/recovery/20261101-constant-context/`.
+
+- `failed-pd-11762003_11.zip`: eight files/63,013 bytes; SHA256
+  `9645f894cef504e0899030136f9ce3e56d11719a3a0c51677b2916ebad824f37`.
+- `retired-incomplete-segment-logs.zip`: 58 files/1,785,438 bytes; SHA256
+  `990faceb06575735cda118b130ea033301e306d0200d134ae3545a7716e9ff8c`.
+- `accepted-exp0/{data,project}`: previous accepted validation, moved out of active Exp0
+  only after all 612 transferred files matched hashes and no consumers remained.
+
+Archive members were verified before exact active files were removed. Configs, summaries,
+metrics and valid checkpoints remain for resume. Operational ledgers are under DATA
+`.runtime-build/repair-constant-context/`; all 64 original job/run mappings and the
+pre-deployment recipe comparison are saved in output manifests.
+
+**Local verification.** Full pytest: **2,254 passed, 38 VSC skips**, 23m48s, zero failures.
+Final relocated regression selection: 90 passed/38 VSC skips; 164 broader affected checks
+previously passed. Native preprocessing accepts the repaired full 16-table production
+batch. Both rates have mandatory CUDA optimizer-update regressions in the actual
+`tests/test_vsc.py` GPU suite (38 collected cases); local tests do not claim CUDA acceptance.
+Fresh full source-bound CPU/GPU Exp0 and dependency-gated replacement admissions follow.
+
+**Full output transfer.** User-authorized Exp0/Exp1 download includes checkpoints, not raw
+datasets or released weights: **3,206 files, 41,295,352,039 bytes**, every source SHA256
+verified locally. Inventory SHA256
+`50a9d416ba5a59540888251f67fc916210caae72d4a0e1032312ee6b3f79deaa`.
+Inventory/verification are in ignored `.runtime-build/output-transfer-20261101/`; local
+canonical output receives a manifest and preserves older conflicting files before merging.
+This provides an independent local Exp1 checkpoint copy; PROJECT remains the working store.
+
+**Resources before deployment.** DATA 46,255M/76,800M and 394k/10M files; PROJECT
+773.2G/1T and 53,051/150k files. Exp2 has 210 checkpoint files/108,453,609,594 bytes.
+Account available 61,062,908 credits. Fresh quotes: CPU 0, GPU validation 734,400,
+replacement LGD 5,875,200 and PD 11,750,400 credits maximum for the first allocations;
+actual billing/requeues differ. No new scientific setting or recurring monitor is added.
+
 ### 01-11-2026 — Exp1 complete; Exp2 live audit and constant-context failure
 
 **Acceptance.** GPU 11756026 completed 0:0 in **17h47m45s**, ending 31-10 at 05:29:29 CET:

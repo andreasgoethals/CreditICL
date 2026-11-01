@@ -10,12 +10,13 @@ Check [upstream review flags](../vsc-library/UPSTREAM_CHANGES.md) and the
 
 How to submit, what it costs, and how a multi-day sweep survives a cluster that stops routinely.
 
-**Current campaign, 01-11-2026:** CPU/GPU Exp0 passed (14/117 stages; final verifier 123
-checks, zero failures); PROJECT image r3 is accepted. Exp1 is complete: all 54 training runs
-and 158 benchmark slots pass current provenance gates, including 25% mixtures. Exp2 arrays
-11762002/11762003 accepted all 64 training IDs. At 20:52 CET: 16 complete, 18 running,
-29 queued/requeued, PD index 11 failed on a constant synthetic context. See [RUNS.md](RUNS.md).
-Keep DATA revision 56edade frozen. The requested monitor is deleted; no Exp2 benchmark/Exp3 submitted.
+**Current campaign, 01-11-2026:** Exp1 is complete: all 54 training runs and 158 benchmark
+slots pass provenance gates, including 25% mixtures. Original Exp0 passed at 56edade; the
+constant-context repair requires fresh source-bound CPU/GPU validation. All unfinished old
+Exp2 submissions are now quiescent, with 17 running prefixes saved/verified before replacement;
+16 completed LGD runs remain valid. Replace only 48 unfinished IDs and gate them behind the
+repaired GPU validation. See [RUNS.md](RUNS.md) for actual admissions/status. No monitor,
+Exp2 benchmark or Exp3 is submitted. Keep any newly active checkout frozen.
 Distilled from `vsc-library/VSC Repository.txt` (pin `289ed81df5d101512f91ae1ea3b0083a2de08a96`, checked 20-10-2026) plus what we learned
 running on it; where the docs are silent this file says so. **Verify charge rates and partitions
 against the live docs before a large run.** The recovery procedure after *any* interruption is one
@@ -291,6 +292,11 @@ Andreas confirmed on 30-10 that no separate checkpoint copy exists and the worki
 should remain on PROJECT. Keep them there, disclose this protection limit, and continue validation;
 an additional backup is not a prerequisite for the current campaign or an instruction to transfer data.
 No environment/data migration or retirement occurred in this review; active jobs stay frozen.
+
+**Checkpoint copy, 01-11-2026:** Andreas subsequently requested the complete Exp0/Exp1 output
+download. All 3,206 files, including Exp1 checkpoints, were independently checksum verified
+locally; the ignored transfer and output manifests record coverage. Keep working checkpoints
+on PROJECT. This is a verified local copy, not a claim that PROJECT itself is backed up.
 
 | tier | path | holds | backup | quota |
 |---|---|---|---|---|

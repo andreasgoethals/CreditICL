@@ -10,6 +10,8 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 01-11-2026
 
+- Reject unusable raw TabPFN contexts without dropping training tables; test the production failure and strictly preserve reviewed completed runs/checkpoint prefixes across the repair.
+- Archive retired logs, verify the complete Exp0/Exp1 download, and refresh prior documentation to the registered continuation/retention design.
 - Record complete Exp0/Exp1 acceptance and live Exp2 audit, including the constant-context failure; remove the requested monitor while preserving active code and results.
 
 ## 30-10-2026

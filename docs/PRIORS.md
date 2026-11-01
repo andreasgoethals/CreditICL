@@ -185,6 +185,13 @@ in as recorded — gaps as NaN, features untransformed, the LGD target on [0, 1]
 preprocessing does the rest, in training and at prediction alike. The control keeps upstream's
 training encoding in both cases.
 
+Raw TabPFN tasks must retain at least one feature under its native constant-feature removal
+on the **context rows**, including its NaN semantics. Query variation cannot make a constant
+context usable. An unusable candidate is redrawn within the existing bounded validity budget,
+with the same source, slot, table shape and context/query split; it never reduces tables per
+update. This is a preprocessing validity condition, not a difficulty or downstream-score filter.
+The encoded TabICL/Exp1 stream is unchanged (`tests/test_context_validity.py`).
+
 ### 5.4 Sources
 
 In the library (`tfm-library/`, cite by path): Baesens et al. (2026),
@@ -233,26 +240,28 @@ check each before it goes into the manuscript's bibliography.
 
 ## 6. Per experiment
 
-Each config owns its prior inline — they are *not* shared, because the three experiments do genuinely
-different things. The prior *design* differs as below; the training knobs (LR, steps, optimizer,
+Exp1 and Exp2 register their own prior geometry; Exp3 inherits Exp2 through `prior_file`.
+The prior *design* differs as below; the training knobs (LR, steps, optimizer,
 L2-SP, freeze strategy) are in [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md).
 
 | | prior | init | steps |
 |---|---|---|---|
 | **Exp0** | Exp1's prior, `credit_fraction` 0 / 0.5 / 1 and the Exp2 paths — a debug suite, no result | scratch and released | 600 |
 | **Exp1** | `credit_fraction` 0 / 0.25 / 0.5 / 1 of the literature-grounded credit prior × 3 seeds = 12 main arms per track; 25% added after the original campaign | scratch | 12,500 |
-| **Exp2** | Exp1's prior. TabICLv2 and TabPFN-3 × `credit_fraction` 0 / 0.5 / 1 × 3 seeds = 18 arms per track, with recipes adapted from published continued pretraining | released TabICLv2 and TabPFN-3 | 10,000 |
-| **Exp3** | Exp1's prior: the control and the mix Exp1 selects × 2 paired seeds | scratch | 200,000 |
+| **Exp2** | two backbones × four mixtures (0 / 0.25 / 0.5 / 1) × two fixed learning rates × two paired seeds = 32 arms per track | released TabICLv2 and TabPFN-3 | 1,500 |
+| **Exp3** | fixed 50% mixture; no decay, L2-SP, DiagScale and Q/V LoRA, at the primary CPT rate × two backbones × two seeds = 16 new arms per track; reuse four Exp2 decay baselines | released TabICLv2 and TabPFN-3 | 1,500 |
 
 **Exp2 is continued pre-training with a published precedent** — TabPFN-Wide (Kolberg et al. 2026)
-extends a model through continued pretraining on a customised synthetic prior and reports it matches
-or exceeds the base; its recipe is what Exp2 follows. It sweeps `credit_fraction` all the way to 1.0
+extends TabPFN-v2 through continued pretraining on a customised synthetic prior. It is a precedent,
+not a validated optimal recipe for TabPFN-3; the registered model-specific choices and limitations
+are in CONFIG_REFERENCE.md. Exp2 sweeps `credit_fraction` all the way to 1.0
 because the model *already knows* the original prior, so how much of ours to add is the question, and
 Mitra (Zhang et al. 2025) finds mixtures beat single priors — expect an interior optimum, with 1.0
-included to measure what forgetting the original prior costs.
+included to measure the credit/general-domain trade-off. All mixtures and both fixed rates are
+reported; Exp1 does not select an Exp2 winner. Exp3 replaces the abandoned scratch-scale study.
 
 **For scale:** TabICLv2's own budget is `500k + 40k + 10k` steps at batch 64 ≈ 35M datasets, ~24.5
-GPU-days per model; Exp1 is 2.3 % of that, Exp3 36 %. **Every result here is a statement about priors at a fixed,
+GPU-days per model; Exp1 is 2.3 % of that update budget. **Every result here is a statement about priors at a fixed,
 small budget, and must be written that way.**
 
 ## 7. Open items

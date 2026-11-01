@@ -1,5 +1,48 @@
 # Agents' memory — runs and dead ends
 
+## 01-11-2026 — constant-context repair and checkpoint-safe replacement
+
+PD index 11 is the only failed Exp2 task; index 15 shares its batch-37/slot-15 stream.
+The whole table varies, but all 823 context rows of its two features are constant.
+Raw tasks now match native TabPFN constant-feature/NaN semantics on the context, redrawing
+the same slot/source/shape/split within the existing validity bound. Encoded Exp1/TabICL is unchanged.
+Local full suite: 2,254 passed/38 VSC-only skips; the repaired full 16-table production batch
+passes native preprocessing. Both registered rates are mandatory CUDA tests in `tests/test_vsc.py`.
+Training implementation `5300c294e4078273fa635f18b82714ebfdb17169046f25035e356aa2392a8e75`
+admits only the exact predecessor, unchanged packages and 32 registered two-seed recipes with
+complete table accounting; original provenance remains intact. Exp1 compatibility is preserved.
+
+| Original jobs | Configuration | Verified outcome |
+|---|---|---|
+| 11762002 / 11762003 | Exp2 64 IDs, 1,500 updates | 16 completed LGD retained; 30 pending cancelled and 17 running signalled USR1, all 17 PROJECT checkpoints verified before cancelling their requeued slots; no old active consumers remain |
+
+Failed output (8 files) and obsolete incomplete-segment logs (58 files) were hash-verified in
+PROJECT recovery before clearing their active paths. Valid prefixes, metrics and all successful
+results remain. Accepted old Exp0 was archived separately before clearing its active namespace.
+All 3,206 Exp0/Exp1 output files (41,295,352,039 bytes) were downloaded and checksum verified,
+including an independent local copy of Exp1 checkpoints. See RUNS.md for archive hashes and new admission records.
+No scheduled task is created; existing PROJECT image r3 and both legacy recovery environments remain.
+
+**Tried:** Update a queued original array in place after a source repair.
+**Result:** Rejected as unsafe; scripts are cached and submissions pin the old expected Git commit.
+**Why:** Python is loaded at execution time, but an old submission cannot safely adopt a different checkout revision.
+**Instead:** Checkpoint running work, cancel exact old consumers, pull only when idle, and submit new source-pinned work IDs.
+
+**Tried:** Full Windows pytest without the existing per-user Git Bash directory on PATH.
+**Result:** Two Bash subprocess checks failed; that test process was stopped and the full suite restarted.
+**Why:** Git was discoverable through its `cmd` directory while `bash.exe` was not.
+**Instead:** Add the existing Git `bin` directory only to the test process PATH; no installation or global environment change.
+
+**Tried:** Save a scientific metadata ledger under container-bound `.runtime-build`, and assume native preprocessing exposes `.fit`.
+**Result:** Read-only checkout refused the ledger; the regression initially used the wrong native API.
+**Why:** PROJECT launch intentionally binds source read-only; native feature removal uses `_fit`.
+**Instead:** Put science ledgers under writable output manifests, keep native operational records outside the container, and test the actual native `_fit` predicate.
+
+**Tried:** Collect a full two-tier inventory and its response in one bounded SSH operation.
+**Result:** Response envelope was lost, although the inventory completed on VSC.
+**Why:** The response could not establish completion; the precise transport cause was not confirmed.
+**Instead:** Reconcile the saved inventory through a small native read and verified SFTP/hash; do not blindly repeat the operation.
+
 ## 01-11-2026 — live audit; monitor removed
 
 | Job | Configuration | Verified outcome |

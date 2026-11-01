@@ -252,6 +252,7 @@ class TaskGenerator:
         if min(self.max_attempts, self.max_invalid_attempts) < 1:
             raise ValueError("prior attempt limits must be positive")
         self.invalid_candidates = 0
+        self.constant_context_rejections = 0
         self.sanity_rejections = 0
         self.filter_fallbacks = 0
 
@@ -264,6 +265,7 @@ class TaskGenerator:
 
     def filter_summary(self) -> dict[str, float]:
         return {**self.filter.stats.summary(), "invalid_candidates": self.invalid_candidates,
+                "constant_context_rejections": self.constant_context_rejections,
                 "sanity_rejections": self.sanity_rejections, "filter_fallbacks": self.filter_fallbacks}
 
     # -- one slot of the stream ------------------------------------------------
@@ -310,14 +312,14 @@ class TaskGenerator:
                 or torch.unique(y).numel() < 2 or int(task.meta.get("d", 0)) < 1):
             return False
         if self.regression:
-            return True
+            return self._usable_context(task, plan)
         # GraphSCM returns y=-100 on invalid graphs; labels must be 0..n_classes-1 integers.
         n_cls = int(plan.num_classes or 2)
         if not bool(((y >= 0) & (y < n_cls) & (y == y.round())).all()):
             return False
         ts = int(plan.train_size)
         if same_classes_on_both_sides(y, ts):
-            return True
+            return self._usable_context(task, plan)
         if task.meta.get("shift", "none") != "none":
             self.sanity_rejections += 1
             return False  # the row order IS the shift; permuting it would undo it
@@ -327,9 +329,32 @@ class TaskGenerator:
             perm = rng.randperm(len(y))
             if same_classes_on_both_sides(y[perm], ts):
                 task.X, task.y = X[perm], y[perm]
-                return True
+                return self._usable_context(task, plan)
         self.sanity_rejections += 1
         return False
+
+    def _usable_context(self, task: SyntheticTask, plan: SlotPlan) -> bool:
+        """Raw TabPFN tasks need a feature that its context preprocessor can retain.
+
+        A globally varying feature can be constant on the context side of a shift.
+        Match native RemoveConstantFeaturesStep, including its NaN behavior; do not
+        filter on query values, targets or predictability. sample_slot then retries
+        this same source/shape/slot with its next seed, retaining the update budget.
+        Encoded TabICL/Exp1 streams remain byte-for-byte unchanged.
+        """
+        if self.encoding != "raw":
+            return True
+        context = task.X[:int(plan.train_size), :int(task.meta["d"])]
+        keep = (context[:1] != context).any(dim=0) & ~torch.isnan(context).all(dim=0)
+        usable = bool(keep.any())
+        if not usable:
+            self.constant_context_rejections += 1
+            from src.utils.logging_setup import get_logger
+
+            get_logger().warning("Rejected raw constant context: batch=%d slot=%d source=%s rows=%d; "
+                                 "redrawing this slot within the existing validity budget",
+                                 plan.batch, plan.slot, task.source, int(plan.train_size))
+        return usable
 
     # -- one candidate ---------------------------------------------------------
     def _candidate(self, plan: SlotPlan, rng: PriorRNG, seed: int) -> SyntheticTask | None:
