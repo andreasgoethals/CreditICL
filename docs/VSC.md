@@ -10,13 +10,13 @@ Check [upstream review flags](../vsc-library/UPSTREAM_CHANGES.md) and the
 
 How to submit, what it costs, and how a multi-day sweep survives a cluster that stops routinely.
 
-**Current campaign, 01-11-2026:** Exp1 is complete: all 54 training runs and 158 benchmark
-slots pass provenance gates, including 25% mixtures. Original Exp0 passed at 56edade; the
-constant-context repair requires fresh source-bound CPU/GPU validation. All unfinished old
-Exp2 submissions are now quiescent, with 17 running prefixes saved/verified before replacement;
-16 completed LGD runs remain valid. Replace only 48 unfinished IDs and gate them behind the
-repaired GPU validation. See [RUNS.md](RUNS.md) for actual admissions/status. No monitor,
-Exp2 benchmark or Exp3 is submitted. Keep any newly active checkout frozen.
+**Current campaign, 02-11-2026:** Exp1 is complete: all 54 training runs and 158 benchmark
+slots pass provenance gates, including 25% mixtures. Repaired source 0494e7a passed fresh
+CPU Exp0 (62516762, all 14 stages); GPU 11763662 is queued. Retain the 16 completed LGD
+runs and all five registered milestones. The 48 unfinished Exp2 replacements are waiting
+for shared submission capacity and will depend on full GPU validation. No scheduled monitor,
+Exp2 benchmark or Exp3 is submitted. Keep the consumed checkout frozen; actual admissions
+and status are recorded in [RUNS.md](RUNS.md).
 Distilled from `vsc-library/VSC Repository.txt` (pin `289ed81df5d101512f91ae1ea3b0083a2de08a96`, checked 20-10-2026) plus what we learned
 running on it; where the docs are silent this file says so. **Verify charge rates and partitions
 against the live docs before a large run.** The recovery procedure after *any* interruption is one

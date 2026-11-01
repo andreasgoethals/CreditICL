@@ -8,6 +8,10 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 02-11-2026
+
+- Publish complete Exp1 credit/OOD notebook results and 56 visually reviewed figures; record repaired CPU acceptance, guarded replacement admission and checkpoint-safe cleanup.
+
 ## 01-11-2026
 
 - Reject unusable raw TabPFN contexts without dropping training tables; test the production failure and strictly preserve reviewed completed runs/checkpoint prefixes across the repair.

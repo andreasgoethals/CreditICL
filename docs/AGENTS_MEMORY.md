@@ -1,5 +1,26 @@
 # Agents' memory — runs and dead ends
 
+## 02-11-2026 — repair validation accepted; waiting for submission capacity
+
+CPU 62516762 passed all 14 stages at 0494e7a; GPU 11763662 is PENDING Priority.
+The expanded Mindwell queue is full at 500 (495 CreditPFN, four JEVPFN, one CreditICL).
+The B200 partition has QoS `normal` with MaxSubmitPU 500; actual job QoS `lp_verbekelab`
+has no `OverPartQOS` flag. Its blank per-job-QoS limit does not remove the partition limit.
+Do not increase the ceiling or cancel other projects to make room. The finite metadata
+submitter uses the existing receipt manager, preserving IDs and rechecking resource reserves
+at each admission opportunity. No scheduled task or additional Slurm controller is created.
+Until receipts confirm otherwise, none of the 48 replacements is claimed as accepted.
+
+Retired only the 32 nonregistered rolling states (750/1,250) from the 16 completed LGD runs:
+22,400,394,360 bytes, with all 80 registered milestone sizes/mtimes unchanged. Every Exp1
+checkpoint and unfinished Exp2 recovery state remains. This restores the unchanged 250 GiB
+PROJECT reserve after the first admission guard stopped below it; no job was submitted then.
+
+**Tried:** Bundle provenance checks and admission waiting inside a 240-second SSH request.
+**Result:** Response envelope ended while the shared queue was full; no admission receipt existed.
+**Why:** Queue admission can outlast a short status-read bound; absence of the response was not completion.
+**Instead:** Verify no in-flight acknowledgment/old owner before restarting the finite CLI with a long bound. Native stdlib Python runs metadata/submission only; science remains inside the PROJECT image. Keep actual accepted receipts and never remove an active owner's lock.
+
 ## 01-11-2026 — constant-context repair and checkpoint-safe replacement
 
 PD index 11 is the only failed Exp2 task; index 15 shares its batch-37/slot-15 stream.
@@ -14,6 +35,8 @@ complete table accounting; original provenance remains intact. Exp1 compatibilit
 
 | Original jobs | Configuration | Verified outcome |
 |---|---|---|
+| 62516762 | Fresh CPU Exp0, repaired 0494e7a/image r3, wICE interactive 8 CPU/48G, 4h | COMPLETED 0:0 in 41m16s; 14/14 stages PASS, 2,232 tests/two expected skips, all 12 notebooks |
+| 11763662 | Fresh GPU Exp0, same 0494e7a/image r3, Mindwell B200, 24 CPU/180G, 24h | Accepted; PENDING Priority; full CUDA acceptance pending |
 | 11762002 / 11762003 | Exp2 64 IDs, 1,500 updates | 16 completed LGD retained; 30 pending cancelled and 17 running signalled USR1, all 17 PROJECT checkpoints verified before cancelling their requeued slots; no old active consumers remain |
 
 Failed output (8 files) and obsolete incomplete-segment logs (58 files) were hash-verified in
@@ -22,6 +45,14 @@ results remain. Accepted old Exp0 was archived separately before clearing its ac
 All 3,206 Exp0/Exp1 output files (41,295,352,039 bytes) were downloaded and checksum verified,
 including an independent local copy of Exp1 checkpoints. See RUNS.md for archive hashes and new admission records.
 No scheduled task is created; existing PROJECT image r3 and both legacy recovery environments remain.
+
+All 12 local notebooks reran successfully with complete credit/OOD evidence; 56 PDFs were
+rendered and visually inspected, with captions and final printed summaries preserved.
+The first Windows run lost its PD drawing pool (`WinError 6`/`BrokenProcessPool`); the exact
+handle failure is unconfirmed. Use the existing `CREDITICL_DRAW_WORKERS=1` option for this
+local rerender (OMP/MKL threads 1, two notebook kernels); PD takes 20m24s. No training recipe
+or drawing code changed. A missing local OOD manifest initially withheld final OOD panels;
+copying its verified metadata, not raw tables, resolved this without weakening completeness gates.
 
 **Tried:** Update a queued original array in place after a source repair.
 **Result:** Rejected as unsafe; scripts are cached and submissions pin the old expected Git commit.
@@ -42,6 +73,11 @@ No scheduled task is created; existing PROJECT image r3 and both legacy recovery
 **Result:** Response envelope was lost, although the inventory completed on VSC.
 **Why:** The response could not establish completion; the precise transport cause was not confirmed.
 **Instead:** Reconcile the saved inventory through a small native read and verified SFTP/hash; do not blindly repeat the operation.
+
+**Tried:** Interpret the CPU Exp0 planner's eight missing reference slots as a production regression.
+**Result:** All eight shared references still pass actual current-source requests and result hashes outside the attempt scope.
+**Why:** `CREDITICL_EXP0_ATTEMPT` deliberately isolates `reference_dir()` to keep validation from overwriting shared production results.
+**Instead:** Inspect production references outside that scope; do not rerun correct benchmarks. The complete three-experiment dry-plan check passed in 623s.
 
 ## 01-11-2026 — live audit; monitor removed
 

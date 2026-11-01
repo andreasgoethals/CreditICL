@@ -1,0 +1,50 @@
+[
+  {
+    "index": 1,
+    "stem": "01_development_selection",
+    "name": "development_selection",
+    "caption": "Complete current-protocol final development ROC-AUC or R\u00b2 per configuration, with one point per training seed after fold and dataset averaging and a horizontal span for its seed range; released references remain separate."
+  },
+  {
+    "index": 2,
+    "stem": "02_paired_credit_effect",
+    "name": "paired_credit_effect",
+    "caption": "Final designated-holdout metric differences against each architecture\u2019s equally trained 0% control, paired within dataset and training seed; large dots are means, lines nominal 95% dataset bootstrap intervals, and small marks individual training seeds."
+  },
+  {
+    "index": 3,
+    "stem": "03_per_dataset_control_gap",
+    "name": "per_dataset_control_gap",
+    "caption": "Mean final ROC-AUC or R\u00b2 difference against the architecture-matched 0% control per designated-holdout dataset and mixture, averaging folds and training seeds within each dataset."
+  },
+  {
+    "index": 4,
+    "stem": "04_paired_native_ood",
+    "name": "paired_native_ood",
+    "caption": "Final native OOD metric differences against the equally trained 0% control, averaged within each dataset over five folds and training seeds, with nominal 95% paired-dataset intervals and seed marks."
+  },
+  {
+    "index": 5,
+    "stem": "05_credit_generality_frontier",
+    "name": "credit_generality_frontier",
+    "caption": "Final credit metric difference on the horizontal axis against native OOD difference on the vertical axis for each mixture and backbone; zero lines mark the equally trained control, and domain-specific nominal 95% dataset intervals and paired seed marks are shown."
+  },
+  {
+    "index": 6,
+    "stem": "06_ood_binary_diagnostic",
+    "name": "ood_binary_diagnostic",
+    "caption": "Final paired OOD ROC-AUC and log-loss differences against the equally trained 0% control, restricted to native binary classification tasks, with dataset counts, training-seed marks and descriptive paired-dataset bootstrap intervals."
+  },
+  {
+    "index": 7,
+    "stem": "07_ood_multiclass_diagnostic",
+    "name": "ood_multiclass_diagnostic",
+    "caption": "Final paired OOD ROC-AUC and log-loss differences against the equally trained 0% control, restricted to native multiclass tasks without binarizing labels, with dataset counts, training-seed marks and descriptive paired-dataset bootstrap intervals."
+  },
+  {
+    "index": 8,
+    "stem": "08_conditional_component_effects",
+    "name": "conditional_component_effects",
+    "caption": "Final designated-holdout metric differences for five component removals against the full seed-matched 50% prior package, with dataset-level nominal 95% bootstrap intervals and individual training-seed marks."
+  }
+]

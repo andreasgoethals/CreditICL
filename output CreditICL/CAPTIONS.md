@@ -174,11 +174,71 @@ Monitoring inventory with one cell per dataset and run, identifying common devel
 
 ## 1.3_pd_results
 
-_No figures produced._
+**01_development_selection** — `development_selection`
+
+Complete current-protocol final development ROC-AUC or R² per configuration, with one point per training seed after fold and dataset averaging and a horizontal span for its seed range; released references remain separate.
+
+**02_paired_credit_effect** — `paired_credit_effect`
+
+Final designated-holdout metric differences against each architecture’s equally trained 0% control, paired within dataset and training seed; large dots are means, lines nominal 95% dataset bootstrap intervals, and small marks individual training seeds.
+
+**03_per_dataset_control_gap** — `per_dataset_control_gap`
+
+Mean final ROC-AUC or R² difference against the architecture-matched 0% control per designated-holdout dataset and mixture, averaging folds and training seeds within each dataset.
+
+**04_paired_native_ood** — `paired_native_ood`
+
+Final native OOD metric differences against the equally trained 0% control, averaged within each dataset over five folds and training seeds, with nominal 95% paired-dataset intervals and seed marks.
+
+**05_credit_generality_frontier** — `credit_generality_frontier`
+
+Final credit metric difference on the horizontal axis against native OOD difference on the vertical axis for each mixture and backbone; zero lines mark the equally trained control, and domain-specific nominal 95% dataset intervals and paired seed marks are shown.
+
+**06_ood_binary_diagnostic** — `ood_binary_diagnostic`
+
+Final paired OOD ROC-AUC and log-loss differences against the equally trained 0% control, restricted to native binary classification tasks, with dataset counts, training-seed marks and descriptive paired-dataset bootstrap intervals.
+
+**07_ood_multiclass_diagnostic** — `ood_multiclass_diagnostic`
+
+Final paired OOD ROC-AUC and log-loss differences against the equally trained 0% control, restricted to native multiclass tasks without binarizing labels, with dataset counts, training-seed marks and descriptive paired-dataset bootstrap intervals.
+
+**08_conditional_component_effects** — `conditional_component_effects`
+
+Final designated-holdout metric differences for five component removals against the full seed-matched 50% prior package, with dataset-level nominal 95% bootstrap intervals and individual training-seed marks.
 
 ## 1.4_lgd_results
 
-_No figures produced._
+**01_development_selection** — `development_selection`
+
+Complete current-protocol final development ROC-AUC or R² per configuration, with one point per training seed after fold and dataset averaging and a horizontal span for its seed range; released references remain separate.
+
+**02_paired_credit_effect** — `paired_credit_effect`
+
+Final designated-holdout metric differences against each architecture’s equally trained 0% control, paired within dataset and training seed; large dots are means, lines nominal 95% dataset bootstrap intervals, and small marks individual training seeds.
+
+**03_per_dataset_control_gap** — `per_dataset_control_gap`
+
+Mean final ROC-AUC or R² difference against the architecture-matched 0% control per designated-holdout dataset and mixture, averaging folds and training seeds within each dataset.
+
+**04_paired_native_ood** — `paired_native_ood`
+
+Final native OOD R² differences against the equally trained 0% control, averaged within each dataset over five folds and training seeds, with nominal 95% paired-dataset intervals and seed marks.
+
+**05_credit_generality_frontier** — `credit_generality_frontier`
+
+Final credit metric difference on the horizontal axis against native OOD difference on the vertical axis for each mixture and backbone; zero lines mark the equally trained control, and domain-specific nominal 95% dataset intervals and paired seed marks are shown.
+
+**06_conditional_component_effects** — `conditional_component_effects`
+
+Final designated-holdout metric differences for five component removals against the full seed-matched 50% prior package, with dataset-level nominal 95% bootstrap intervals and individual training-seed marks.
+
+**07_lgd_distributional_scorecard** — `lgd_distributional_scorecard`
+
+Paired designated-holdout differences in R², approximate CRPS and absolute endpoint-mass error against equally trained 0% controls, using predictive distributions on a 99-level quantile grid and tolerance 1e-4; intervals resample datasets.
+
+**08_observed_predicted_endpoint_mass_tabicl** — `observed_predicted_endpoint_mass_tabicl`
+
+Observed portfolio mass against mean predicted mass at loss 0 and loss 1 for the TabICLv2 family, one point per dataset and training seed after five-fold averaging, with an identity line and named datasets; endpoints use tolerance 1e-4 and a 99-level predictive-quantile approximation.
 
 # 2. Experiment 2
 

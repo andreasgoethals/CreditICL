@@ -169,6 +169,31 @@ The one thing to do differently.
 
 ## Runs
 
+### 02-11-2026 — repair admission waits at the verified site ceiling
+
+Fresh CPU 62516762 is accepted (14/14 stages); GPU 11763662 remains queued for B200
+validation. No repaired Exp2 task is claimed as submitted until its admission receipt exists.
+The expanded Mindwell user queue is 500: 495 CreditPFN, four JEVPFN and this validation job.
+The B200 partition's `normal` QoS has MaxSubmitPU 500; the account QoS does not override it.
+The finite native metadata CLI waits through the existing receipt manager, preserving original
+array indices and checking frozen source/runtime, validation state, quotas and credits again
+at each admission opportunity. No recurring monitor, additional Slurm controller, running-job
+throttle or change to another project was made. Replacements depend on `afterok:11763662`.
+
+The first reserve check stopped before submission with less than 250 GiB free PROJECT space.
+Retired only 32 unregistered rolling checkpoints at steps 750/1,250 from the 16 completed
+TabPFN LGD runs, reclaiming 22,400,394,360 bytes. Verified all 80 registered milestones
+(125/250/500/1,000/1,500) unchanged by size/mtime. Every Exp1 checkpoint and unfinished Exp2
+recovery checkpoint remains. PROJECT then had approximately 256.6 GiB free; the same reserve
+guard remains mandatory at actual submission. Ledger:
+`.runtime-build/repair-constant-context/retired-completed-rolling-checkpoints.json`.
+
+All 12 notebooks reran; all 56 exported PDFs were rendered and visually reviewed. Complete
+Exp1 credit/OOD results, captions and printed summaries are published with the report changes.
+These reporting-only changes must not be pulled into the VSC checkout consumed by job 11763662
+and its dependent repairs, which stays at 0494e7a. Automatic approval review rejected removing
+the local temporary transfer staging folders without a specific reason; they remain intact.
+
 ### 01-11-2026 — repair raw constant contexts; preserve valid CPT work
 
 **Cause and scope.** The only failed task is PD `11762003_11` (TabPFN-3, LR 1e-5,
@@ -234,6 +259,57 @@ This provides an independent local Exp1 checkpoint copy; PROJECT remains the wor
 Account available 61,062,908 credits. Fresh quotes: CPU 0, GPU validation 734,400,
 replacement LGD 5,875,200 and PD 11,750,400 credits maximum for the first allocations;
 actual billing/requeues differ. No new scientific setting or recurring monitor is added.
+
+**Deployment/validation admission.** GitHub push then safe DATA fast-forward to
+`0494e7a14bc320176de3a8665051630461f3c316`; source
+`571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b`.
+The actual PROJECT image reports training fingerprint
+`82dbe27fb913c0bfa180172a2970c90053c1f8a7984b1dc8027ad9aab00089fb`
+and accepts 54 completed Exp1, 16 completed Exp2 and 29 partial Exp2 summaries.
+CPU **62516762** completed 0:0 on wICE k28i14 in **41m16s**: 14/14 stages PASS,
+2,232 tests/two expected skips, all 12 notebooks. PROJECT-image login CPU readiness accepts
+all current artifacts. Receipt: `manifests/submissions/constant-context-repair-20261101-cpu.json`.
+GPU **11763662** accepted on Mindwell (B200/24CPU/180G/24h, quote734,400), currently
+PENDING Priority. Receipt: `manifests/submissions/constant-context-repair-20261101-gpu.json`.
+Full new-source GPU acceptance is pending; do not pull into the consumed checkout.
+
+**Further cleanup.** After independent local verification, retire only the 19 superseded
+Exp0 diagnostic checkpoint binaries (6,711,814,477 bytes) from PROJECT recovery. Their
+full local copies, compact remote reports and exact hash ledger remain; no production
+checkpoint was removed in this diagnostic cleanup. The later retirement of obsolete rolling
+states, with all registered production milestones retained, is recorded above.
+
+Removed 61 empty terminal Exp2 root fallback files after checking no original Exp2 job
+remained active; nonempty successful logs were retained. Local notebook rerender: **12/12
+successful, 56 PDFs**, all visually reviewed from Poppler renders; final summaries/captions
+and native OOD panels are populated. The supported single-worker drawing option avoids an
+intermittent Windows pool-handle failure (its precise cause is unconfirmed); it changes only
+illustrative diagnostic draws, whose worker-dependent seeding was already disclosed. Local
+output checks: 105 passed, with the two Bash-dependent cases verified separately using the
+existing Git Bash PATH. No visualization source or experimental design changed.
+
+**Complete Exp1 interpretation.** Downloading the pinned 50-dataset OOD manifest (metadata
+only, with all 56 shared-reference result files verified) makes the complete native OOD
+tables available locally. Across the designated holdout datasets, mean treatment-minus-0%
+differences are:
+
+| Credit mixture | PD AUROC (8 datasets) | LGD R² (3 datasets) | Classification OOD AUROC (25) | Regression OOD R² (25) |
+|---|---:|---:|---:|---:|
+| 25% | +0.000515 | +0.000664 | −0.000508 | +0.002449 |
+| 50% | −0.000011 | −0.002716 | −0.000724 | −0.003483 |
+| 100% | −0.015259 | −0.070688 | −0.122099 | −0.249794 |
+
+Mixed priors show no clear credit gain here. The pure-credit scratch arm performs worse
+on credit and loses substantial general-domain performance; this measured outcome is not
+the TabPFN context crash (Exp1 uses the unchanged encoded TabICL route). PD pure-credit
+degradation also occurs on binary OOD (−0.022150 AUROC; eight tasks), and is larger on
+multiclass OOD (−0.169134; 17 tasks). The whole-package treatment changes multiple exposures;
+these contrasts alone do not identify one mechanism. LGD has only three holdout datasets,
+so its nominal bootstrap intervals and discrete sign tests require particular restraint.
+Seeds/folds are averaged within datasets, not treated as extra independent tasks; the
+holdout has historical project exposure. No best mixture/rate is selected for Exp2.
+Compact contrasts: `manifests/exp1_interpretation_20261101.json`; complete notebook summaries
+and captions remain in `All_Results.md`/`CAPTIONS.md`.
 
 ### 01-11-2026 — Exp1 complete; Exp2 live audit and constant-context failure
 

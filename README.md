@@ -88,8 +88,9 @@ log-uniform, 79–81% context**, with the upstream row-dependent synthetic featu
 TabPFN-3 keeps 1,024-row tasks. The 0%-credit continuation is the original-TabICL-prior control;
 released weights are a separate reference. No continuation is guaranteed to avoid forgetting.
 Both credit data and 25 native OOD datasets per task are benchmarked with all eligible rows/features
-and five folds. The current recipe passed full VSC CPU/GPU validation on 31-10-2026;
-live campaign progress, failures and measured costs are recorded in [RUNS.md](docs/RUNS.md).
+and five folds. The predecessor passed full VSC CPU/GPU validation on 31-10-2026. The
+constant-context repair passed fresh CPU validation; its GPU validation is queued.
+Live campaign progress, failures and measured costs are recorded in [RUNS.md](docs/RUNS.md).
 
 `credit_fraction` is the master switch: the share of each batch drawn from our credit-targeted path,
 the rest from the unmodified TabICL prior. `0.0` is the control every arm is measured against.

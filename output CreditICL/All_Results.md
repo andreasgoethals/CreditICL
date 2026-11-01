@@ -92,15 +92,15 @@ fresh live unfiltered diagnostic; binary PD / raw credit LGD
 A · ILLUSTRATIVE PRIOR EXPOSURE — PD
 Source: fresh live unfiltered diagnostic; binary PD / raw credit LGD; seed 0; draws per generator: original=500, credit=500
 These are diagnostic generator draws, not recovered production training samples.
-original: binary minority-share median 33.15%; share below 10% 15.40%.
-credit: binary minority-share median 4.93%; share below 10% 67.20%.
+original: binary minority-share median 29.49%; share below 10% 20.40%.
+credit: binary minority-share median 4.74%; share below 10% 66.20%.
 Binary illustration forces two classes; production generic tasks draw 2–10 classes.
 
 B · ACCEPTED PRODUCTION-ROUTE AUDIT
 ACCEPTED PRODUCTION-STREAM AUDIT
 Seed 1729; 48 accepted slots per mixture; same slot shapes and native 2–10-class control route.
          tables  binary
-mixture                
+mixture
 0.00         48      11
 0.25         48      18
 0.50         48      34
@@ -110,8 +110,8 @@ Candidates include invalid attempts; credit bypasses only the statistical filter
 C · CONTROLLED MECHANISMS AND DIFFICULTY
 The applicant outcome is generated before underwriting selection.
 Missingness uses covariates and a shared borrower draw, never realised outcomes.
-original prior: n=120, median ExtraTrees OOB pseudo-R² 0.317.
-credit prior: n=120, median ExtraTrees OOB pseudo-R² -0.053.
+original prior: n=120, median ExtraTrees OOB pseudo-R² 0.363.
+credit prior: n=120, median ExtraTrees OOB pseudo-R² -0.033.
 real: n=14, median ExtraTrees OOB pseudo-R² 0.024.
 Difficulty scores above use unfiltered draws; accepted-stream diagnostics are separately labelled. The figures are generator diagnostics, not downstream performance.
 References (tfm-library pin cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a):
@@ -139,7 +139,7 @@ A · ILLUSTRATIVE PRIOR EXPOSURE — LGD
 Source: fresh live unfiltered diagnostic; binary PD / raw credit LGD; seed 0; draws per generator: original=500, credit=500
 These are diagnostic generator draws, not recovered production training samples.
 original: endpoint ties are on a generic target scale; they are not economic mass at loss 0 or 1.
-credit: raw economic boundary-mass median 53.71%; range 12.50%–95.12%.
+credit: raw economic boundary-mass median 55.27%; range 11.72%–90.82%.
 Common standardized view: context-fitted affine transformation; 1e-4 tolerance at each table's standardized minimum/maximum.
 Affine scaling preserves atoms; the raw credit family need not cover every real portfolio.
 
@@ -148,8 +148,8 @@ The active target is zero-and-one-inflated beta (ZOIB); dormant loss modes are n
 
 C · DIFFICULTY AND MARGINAL COMPARISON
 Marginal histogram distance compares raw credit draws with real targets only; it is not transfer efficacy.
-original prior: n=120, median ExtraTrees OOB pseudo-R² 0.824.
-credit prior: n=120, median ExtraTrees OOB pseudo-R² 0.012.
+original prior: n=120, median ExtraTrees OOB pseudo-R² 0.755.
+credit prior: n=120, median ExtraTrees OOB pseudo-R² 0.013.
 real: n=7, median ExtraTrees OOB pseudo-R² 0.319.
 Difficulty scores above use unfiltered draws; accepted-stream diagnostics are separately labelled. The figures are generator diagnostics, not downstream performance.
 
@@ -161,9 +161,9 @@ Only loss-fraction targets on [0, 1] are comparable; standardized controls are o
 Lower is better. This is a descriptive comparison, not a selection criterion.
 
   variant            mean   closest real dataset       farthest real dataset
-  credit            0.357   base_modelisation  0.195   lgd_lendingclub   0.560
+  credit            0.360   base_modelisation  0.197   lgd_lendingclub   0.571
 
-Closest to real data: credit (mean 0.357).
+Closest to real data: credit (mean 0.360).
 This is a raw credit-versus-real marginal comparison, not a two-prior efficacy ranking.
 Marginal resemblance does not establish conditional prediction quality; only the
 matched final benchmark measures transfer.
@@ -191,7 +191,7 @@ References (tfm-library pin cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a):
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732.
+Local notebook-code fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b.
 Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
 Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
 Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
@@ -203,7 +203,7 @@ Final credit/OOD benchmarking is a separate completion gate; monitoring is not i
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732.
+Local notebook-code fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b.
 Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
 Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
 Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
@@ -253,7 +253,7 @@ Different synthetic-task losses do not rank downstream prediction quality.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732.
+Local notebook-code fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b.
 Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
 Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
 Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
@@ -265,7 +265,7 @@ Final credit/OOD benchmarking is a separate completion gate; monitoring is not i
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732.
+Local notebook-code fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b.
 Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
 Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
 Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
@@ -313,30 +313,75 @@ Different synthetic-task losses do not rank downstream prediction quality.
 ## 1.3_pd_results
 
 ```
-Complete final credit benchmark tables have not been downloaded. Credit effects remain withheld; OOD and component sections use their own complete-data gates. Monitoring is not substituted.
 A · DEVELOPMENT AND COMPARISON CONTRACT
 Exp2 retains all four mixtures; Exp3 uses the fixed 50% mixture, independent of this ranking.
 The designated holdout has historical project exposure; it is not untouched confirmation.
-Development final table available: False.
+Development final table available: True.
 
 B · DESIGNATED-HOLDOUT PACKAGE EFFECTS
-roc_auc: not yet completely benchmarked
-log_loss: not yet completely benchmarked
+roc_auc:
+                      configuration                          control  mean_difference    ci_low   ci_high  datasets  p_value                                               interval_method  small_sample  minimum_sign_p   p_holm
+exp1_pd__prior-credit_fraction=0p25 exp1_pd__prior-credit_fraction=0         0.000515 -0.003738  0.003567         8 0.289062 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.007812 0.578125
+ exp1_pd__prior-credit_fraction=0p5 exp1_pd__prior-credit_fraction=0        -0.000011 -0.003380  0.002748         8 0.726562 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.007812 0.726562
+   exp1_pd__prior-credit_fraction=1 exp1_pd__prior-credit_fraction=0        -0.015259 -0.028971 -0.004156         8 0.007812 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.007812 0.023438
+log_loss:
+                      configuration                          control  mean_difference    ci_low  ci_high  datasets  p_value                                               interval_method  small_sample  minimum_sign_p   p_holm
+exp1_pd__prior-credit_fraction=0p25 exp1_pd__prior-credit_fraction=0         0.002341 -0.001552 0.009040         8 0.726562 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.007812 1.000000
+ exp1_pd__prior-credit_fraction=0p5 exp1_pd__prior-credit_fraction=0         0.001759 -0.001491 0.006941         8 0.726562 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.007812 1.000000
+   exp1_pd__prior-credit_fraction=1 exp1_pd__prior-credit_fraction=0         0.022760  0.006823 0.043644         8 0.007812 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.007812 0.023438
 
 C · FINAL NATIVE OOD AND RETENTION FRONTIER
 FINAL OOD RETENTION vs matched 0% control
 Differences are treatment minus control; lower is better for loss/error metrics.
-roc_auc: not yet completely benchmarked
-Against each architecture's released weights: not yet completely benchmarked
-log_loss: not yet completely benchmarked
-Against each architecture's released weights: not yet completely benchmarked
+roc_auc:
+                      configuration                          control  mean_difference    ci_low   ci_high  datasets      p_value                                               interval_method  small_sample  minimum_sign_p       p_holm
+exp1_pd__prior-credit_fraction=0p25 exp1_pd__prior-credit_fraction=0        -0.000508 -0.000924 -0.000169        25 6.610751e-03 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    1.192093e-07 6.610751e-03
+ exp1_pd__prior-credit_fraction=0p5 exp1_pd__prior-credit_fraction=0        -0.000724 -0.001274 -0.000280        25 1.543880e-03 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    1.192093e-07 3.087759e-03
+   exp1_pd__prior-credit_fraction=1 exp1_pd__prior-credit_fraction=0        -0.122099 -0.163592 -0.081146        25 5.960464e-08 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 1.788139e-07
+Against each architecture's released weights:
+                      configuration  control  mean_difference    ci_low   ci_high  datasets  p_value                                               interval_method  small_sample  minimum_sign_p   p_holm
+   exp1_pd__prior-credit_fraction=0 tabiclv2        -0.004903 -0.010129 -0.001400        25 0.000003 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    1.192093e-07 0.000009
+exp1_pd__prior-credit_fraction=0p25 tabiclv2        -0.005411 -0.010860 -0.001635        25 0.000003 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    1.192093e-07 0.000009
+ exp1_pd__prior-credit_fraction=0p5 tabiclv2        -0.005627 -0.011041 -0.001834        25 0.000003 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    1.192093e-07 0.000009
+   exp1_pd__prior-credit_fraction=1 tabiclv2        -0.127002 -0.169630 -0.086883        25 0.000002 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 0.000006
+log_loss:
+                      configuration                          control  mean_difference   ci_low  ci_high  datasets  p_value                                               interval_method  small_sample  minimum_sign_p   p_holm
+exp1_pd__prior-credit_fraction=0p25 exp1_pd__prior-credit_fraction=0         0.002700 0.001038 0.004642        25 0.014633 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 0.014633
+ exp1_pd__prior-credit_fraction=0p5 exp1_pd__prior-credit_fraction=0         0.006907 0.003445 0.010901        25 0.000911 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 0.001821
+   exp1_pd__prior-credit_fraction=1 exp1_pd__prior-credit_fraction=0         3.163106 2.087833 4.298204        25 0.000002 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 0.000005
+Against each architecture's released weights:
+                      configuration  control  mean_difference   ci_low  ci_high  datasets  p_value                                               interval_method  small_sample  minimum_sign_p   p_holm
+   exp1_pd__prior-credit_fraction=0 tabiclv2         0.027490 0.014432 0.043921        25 0.000019 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 0.000058
+exp1_pd__prior-credit_fraction=0p25 tabiclv2         0.030190 0.016156 0.047424        25 0.000019 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 0.000058
+ exp1_pd__prior-credit_fraction=0p5 tabiclv2         0.034397 0.019590 0.052226        25 0.000019 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 0.000058
+   exp1_pd__prior-credit_fraction=1 tabiclv2         3.190595 2.099344 4.342707        25 0.000002 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 0.000006
 Binary/multiclass OOD subsets are diagnostics, not replacement selection endpoints.
 
 D · CONDITIONAL COMPONENT REMOVALS
-roc_auc: not yet completely benchmarked
-log_loss: not yet completely benchmarked
+roc_auc:
+                                   configuration                            control  mean_difference    ci_low   ci_high  datasets  p_value                                               interval_method  small_sample  minimum_sign_p   p_holm
+          exp1ablations_pd__arm=base_cardinality exp1_pd__prior-credit_fraction=0p5        -0.001755 -0.004831  0.000696         8 0.289062 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.007812 1.000000
+exp1ablations_pd__arm=no_informative_missingness exp1_pd__prior-credit_fraction=0p5         0.001216 -0.000026  0.002358         8 0.289062 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.007812 1.000000
+           exp1ablations_pd__arm=no_macro_target exp1_pd__prior-credit_fraction=0p5        -0.001249 -0.002473 -0.000194         8 0.726562 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.007812 1.000000
+                  exp1ablations_pd__arm=no_shift exp1_pd__prior-credit_fraction=0p5        -0.005681 -0.012391 -0.001510         8 0.070312 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.007812 0.351562
+              exp1ablations_pd__arm=no_tail_warp exp1_pd__prior-credit_fraction=0p5        -0.001185 -0.004355  0.001455         8 0.726562 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.007812 1.000000
+log_loss:
+                                   configuration                            control  mean_difference    ci_low  ci_high  datasets  p_value                                               interval_method  small_sample  minimum_sign_p   p_holm
+          exp1ablations_pd__arm=base_cardinality exp1_pd__prior-credit_fraction=0p5         0.001369 -0.000215 0.003701         8 0.289062 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.007812 1.000000
+exp1ablations_pd__arm=no_informative_missingness exp1_pd__prior-credit_fraction=0p5        -0.000249 -0.001259 0.000967         8 0.289062 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.007812 1.000000
+           exp1ablations_pd__arm=no_macro_target exp1_pd__prior-credit_fraction=0p5         0.001620  0.000066 0.003667         8 0.289062 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.007812 1.000000
+                  exp1ablations_pd__arm=no_shift exp1_pd__prior-credit_fraction=0p5         0.005763  0.000787 0.014914         8 0.070312 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.007812 0.351562
+              exp1ablations_pd__arm=no_tail_warp exp1_pd__prior-credit_fraction=0p5         0.001191 -0.000399 0.003310         8 0.726562 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.007812 1.000000
 Dataset bootstrap intervals are descriptive; training seeds/folds are not extra datasets.
-1.3_pd_results: no figures saved.
+1.3_pd_results: 8 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\1.3_pd_results
+  01  development_selection
+  02  paired_credit_effect
+  03  per_dataset_control_gap
+  04  paired_native_ood
+  05  credit_generality_frontier
+  06  ood_binary_diagnostic
+  07  ood_multiclass_diagnostic
+  08  conditional_component_effects
 ```
 
 ---
@@ -344,35 +389,90 @@ Dataset bootstrap intervals are descriptive; training seeds/folds are not extra 
 ## 1.4_lgd_results
 
 ```
-Complete final credit benchmark tables have not been downloaded. Credit effects remain withheld; OOD and component sections use their own complete-data gates. Monitoring is not substituted.
 A · DEVELOPMENT AND COMPARISON CONTRACT
 Exp2 retains all four mixtures; Exp3 uses the fixed 50% mixture, independent of this ranking.
 The designated holdout has historical project exposure; it is not untouched confirmation.
-Development final table available: False.
+Development final table available: True.
 
 B · DESIGNATED-HOLDOUT PACKAGE EFFECTS
-r2: not yet completely benchmarked
-crps: not yet completely benchmarked
-boundary_mass_abs_err: not yet completely benchmarked
+r2:
+                       configuration                           control  mean_difference    ci_low   ci_high  datasets  p_value                                               interval_method  small_sample  minimum_sign_p  p_holm
+exp1_lgd__prior-credit_fraction=0p25 exp1_lgd__prior-credit_fraction=0         0.000664 -0.005993  0.004107         3     1.00 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25    1.00
+ exp1_lgd__prior-credit_fraction=0p5 exp1_lgd__prior-credit_fraction=0        -0.002716 -0.014834  0.003576         3     1.00 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25    1.00
+   exp1_lgd__prior-credit_fraction=1 exp1_lgd__prior-credit_fraction=0        -0.070688 -0.079694 -0.052898         3     0.25 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25    0.75
+crps:
+                       configuration                           control  mean_difference    ci_low  ci_high  datasets  p_value                                               interval_method  small_sample  minimum_sign_p  p_holm
+exp1_lgd__prior-credit_fraction=0p25 exp1_lgd__prior-credit_fraction=0        -0.000098 -0.000598 0.000721         3     1.00 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25    1.00
+ exp1_lgd__prior-credit_fraction=0p5 exp1_lgd__prior-credit_fraction=0         0.000260 -0.000539 0.001545         3     1.00 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25    1.00
+   exp1_lgd__prior-credit_fraction=1 exp1_lgd__prior-credit_fraction=0         0.010237  0.007712 0.011731         3     0.25 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25    0.75
+boundary_mass_abs_err:
+                       configuration                           control  mean_difference    ci_low   ci_high  datasets  p_value                                               interval_method  small_sample  minimum_sign_p  p_holm
+exp1_lgd__prior-credit_fraction=0p25 exp1_lgd__prior-credit_fraction=0        -0.014304 -0.047509  0.004233         3     1.00 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25    1.00
+ exp1_lgd__prior-credit_fraction=0p5 exp1_lgd__prior-credit_fraction=0        -0.009773 -0.016448 -0.003106         3     0.25 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25    0.75
+   exp1_lgd__prior-credit_fraction=1 exp1_lgd__prior-credit_fraction=0        -0.009154 -0.034268  0.016769         3     1.00 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25    1.00
 
 C · FINAL NATIVE OOD AND RETENTION FRONTIER
 FINAL OOD RETENTION vs matched 0% control
 Differences are treatment minus control; lower is better for loss/error metrics.
-r2: not yet completely benchmarked
-Against each architecture's released weights: not yet completely benchmarked
-crps: not yet completely benchmarked
-Against each architecture's released weights: not yet completely benchmarked
+r2:
+                       configuration                           control  mean_difference    ci_low   ci_high  datasets      p_value                                               interval_method  small_sample  minimum_sign_p       p_holm
+exp1_lgd__prior-credit_fraction=0p25 exp1_lgd__prior-credit_fraction=0         0.002449 -0.001919  0.007563        25 1.000000e+00 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 1.000000e+00
+ exp1_lgd__prior-credit_fraction=0p5 exp1_lgd__prior-credit_fraction=0        -0.003483 -0.010432  0.003271        25 2.295229e-01 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 4.590459e-01
+   exp1_lgd__prior-credit_fraction=1 exp1_lgd__prior-credit_fraction=0        -0.249794 -0.312189 -0.189666        25 5.960464e-08 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 1.788139e-07
+Against each architecture's released weights:
+                       configuration  control  mean_difference    ci_low   ci_high  datasets      p_value                                               interval_method  small_sample  minimum_sign_p       p_holm
+   exp1_lgd__prior-credit_fraction=0 tabiclv2        -0.027738 -0.039826 -0.017793        25 5.960464e-08 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 2.384186e-07
+exp1_lgd__prior-credit_fraction=0p25 tabiclv2        -0.025288 -0.034584 -0.016978        25 5.960464e-08 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 2.384186e-07
+ exp1_lgd__prior-credit_fraction=0p5 tabiclv2        -0.031221 -0.042667 -0.020960        25 5.960464e-08 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 2.384186e-07
+   exp1_lgd__prior-credit_fraction=1 tabiclv2        -0.277532 -0.341271 -0.217561        25 5.960464e-08 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 2.384186e-07
+crps:
+                       configuration                           control  mean_difference    ci_low  ci_high  datasets      p_value                                               interval_method  small_sample  minimum_sign_p       p_holm
+exp1_lgd__prior-credit_fraction=0p25 exp1_lgd__prior-credit_fraction=0         0.000043 -0.000404 0.000440        25 4.243562e-01 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 4.243562e-01
+ exp1_lgd__prior-credit_fraction=0p5 exp1_lgd__prior-credit_fraction=0         0.000994  0.000215 0.001822        25 1.077521e-01 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 2.155043e-01
+   exp1_lgd__prior-credit_fraction=1 exp1_lgd__prior-credit_fraction=0         0.030083  0.021279 0.040505        25 5.960464e-08 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 1.788139e-07
+Against each architecture's released weights:
+                       configuration  control  mean_difference   ci_low  ci_high  datasets      p_value                                               interval_method  small_sample  minimum_sign_p       p_holm
+   exp1_lgd__prior-credit_fraction=0 tabiclv2         0.004398 0.002955 0.006054        25 5.960464e-08 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 2.384186e-07
+exp1_lgd__prior-credit_fraction=0p25 tabiclv2         0.004441 0.003059 0.006074        25 5.960464e-08 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 2.384186e-07
+ exp1_lgd__prior-credit_fraction=0p5 tabiclv2         0.005392 0.003708 0.007255        25 5.960464e-08 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 2.384186e-07
+   exp1_lgd__prior-credit_fraction=1 tabiclv2         0.034481 0.025242 0.045795        25 5.960464e-08 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 2.384186e-07
 Native regression OOD retention is descriptive and does not select the prior mixture.
 
 D · CONDITIONAL COMPONENT REMOVALS
-r2: not yet completely benchmarked
-crps: not yet completely benchmarked
-boundary_mass_abs_err: not yet completely benchmarked
+r2:
+                                    configuration                             control  mean_difference    ci_low  ci_high  datasets  p_value                                               interval_method  small_sample  minimum_sign_p  p_holm
+          exp1ablations_lgd__arm=base_cardinality exp1_lgd__prior-credit_fraction=0p5         0.001561 -0.000210 0.004478         3     1.00 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25     1.0
+exp1ablations_lgd__arm=no_informative_missingness exp1_lgd__prior-credit_fraction=0p5         0.000651  0.000312 0.000922         3     0.25 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25     1.0
+           exp1ablations_lgd__arm=no_macro_target exp1_lgd__prior-credit_fraction=0p5         0.001097 -0.000451 0.003441         3     1.00 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25     1.0
+                  exp1ablations_lgd__arm=no_shift exp1_lgd__prior-credit_fraction=0p5         0.006252  0.000368 0.015779         3     0.25 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25     1.0
+              exp1ablations_lgd__arm=no_tail_warp exp1_lgd__prior-credit_fraction=0p5         0.000175 -0.000424 0.001318         3     1.00 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25     1.0
+crps:
+                                    configuration                             control  mean_difference    ci_low   ci_high  datasets  p_value                                               interval_method  small_sample  minimum_sign_p  p_holm
+          exp1ablations_lgd__arm=base_cardinality exp1_lgd__prior-credit_fraction=0p5        -0.000260 -0.000736  0.000004         3     1.00 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25     1.0
+exp1ablations_lgd__arm=no_informative_missingness exp1_lgd__prior-credit_fraction=0p5        -0.000147 -0.000270 -0.000072         3     0.25 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25     1.0
+           exp1ablations_lgd__arm=no_macro_target exp1_lgd__prior-credit_fraction=0p5        -0.000205 -0.000633  0.000061         3     1.00 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25     1.0
+                  exp1ablations_lgd__arm=no_shift exp1_lgd__prior-credit_fraction=0p5        -0.000964 -0.002466 -0.000080         3     0.25 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25     1.0
+              exp1ablations_lgd__arm=no_tail_warp exp1_lgd__prior-credit_fraction=0p5        -0.000156 -0.000421  0.000018         3     1.00 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25     1.0
+boundary_mass_abs_err:
+                                    configuration                             control  mean_difference    ci_low  ci_high  datasets  p_value                                               interval_method  small_sample  minimum_sign_p  p_holm
+          exp1ablations_lgd__arm=base_cardinality exp1_lgd__prior-credit_fraction=0p5        -0.004102 -0.025325 0.010976         3      1.0 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25     1.0
+exp1ablations_lgd__arm=no_informative_missingness exp1_lgd__prior-credit_fraction=0p5        -0.005653 -0.022445 0.005519         3      1.0 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25     1.0
+           exp1ablations_lgd__arm=no_macro_target exp1_lgd__prior-credit_fraction=0p5         0.014322 -0.000925 0.036412         3      1.0 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25     1.0
+                  exp1ablations_lgd__arm=no_shift exp1_lgd__prior-credit_fraction=0p5         0.009327 -0.008982 0.036614         3      1.0 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25     1.0
+              exp1ablations_lgd__arm=no_tail_warp exp1_lgd__prior-credit_fraction=0p5        -0.002292 -0.006314 0.000264         3      1.0 descriptive paired-dataset percentile bootstrap (nominal 95%)          True            0.25     1.0
 
 E · DISTRIBUTIONAL ENDPOINTS
 Endpoint matching is aggregate, not conditional calibration; tolerance 1e-4; 99 quantile levels.
 Dataset bootstrap intervals are descriptive; training seeds/folds are not extra datasets.
-1.4_lgd_results: no figures saved.
+1.4_lgd_results: 8 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\1.4_lgd_results
+  01  development_selection
+  02  paired_credit_effect
+  03  per_dataset_control_gap
+  04  paired_native_ood
+  05  credit_generality_frontier
+  06  conditional_component_effects
+  07  lgd_distributional_scorecard
+  08  observed_predicted_endpoint_mass_tabicl
 ```
 
 ---
@@ -386,7 +486,7 @@ Dataset bootstrap intervals are descriptive; training seeds/folds are not extra 
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732.
+Local notebook-code fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b.
 Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
 Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
 Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
@@ -404,7 +504,7 @@ No local monitoring curves yet.
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732.
+Local notebook-code fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b.
 Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
 Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
 Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
@@ -438,7 +538,7 @@ Different synthetic-task losses do not rank downstream prediction quality.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732.
+Local notebook-code fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b.
 Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
 Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
 Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
@@ -456,7 +556,7 @@ No local monitoring curves yet.
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732.
+Local notebook-code fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b.
 Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
 Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
 Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
