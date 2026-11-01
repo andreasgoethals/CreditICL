@@ -1,11 +1,40 @@
 # Agents' memory — runs and dead ends
 
+## 01-11-2026 — live audit; monitor removed
+
+| Job | Configuration | Verified outcome |
+|---|---|---|
+| 11756026 | GPU Exp0, 56edade/image r3, B200 24 CPU/180G | COMPLETED 0:0, 17h47m45s; 117/117 stages PASS; CPU 62475000 also PASS |
+| 11762000 / 11762001 | Missing Exp1 LGD/PD benchmarks, 15 IDs each | All COMPLETED 0:0; 158/158 total main/component/reference slots pass current provenance |
+| 11762002 | Exp2 LGD, 32 IDs × 1,500 updates | At 20:52 CET: 16 TabPFN completed, 5 TabICL running, 11 checkpointed/requeued |
+| 11762003 | Exp2 PD, 32 IDs × 1,500 updates | At 20:52 CET: 13 running, 18 pending, index 11 FAILED at step 37 |
+
+All 94 original work IDs were admitted once on 31-10 at 10:36:57–58 CET. Initial twelve-hour
+quotes total 34,516,800 credits; requeues add cost. Final acceptance: 123 checks/zero failures;
+PROJECT runtime r3 is accepted. All 54 Exp1 summaries remain compatible at 12,500 steps.
+Scanned 76 batch/46 child logs (~77.5 MB); no quota/OOM failure. Source remains frozen at
+56edade; new scientific code must not be pulled into these jobs. Details: RUNS.md and output
+`manifests/audit-20261101-*.json`; compact hash-verified local copies in `.runtime-build/audit-20261101/`.
+Andreas cancelled the earlier 30-minute wait and asked to remove the monitor; it was deleted
+on 01-11. No Exp2 benchmark/Exp3 submitted, no job or checkpoint removed.
+
+**Tried:** Exp2 PD index 11: TabPFN, LR 1e-5, credit=1, seed 0.
+**Result:** FAILED 1:0 after 22m55s; native constant-feature validation at step 37, no checkpoint.
+**Why:** Local reproduction finds batch 37/slot 15: two columns, 1,024 rows, 823 context rows with no varying feature; query features vary. Index 15 has the identical task stream and is also exposed.
+**Instead:** Preserve evidence and other runs. Repair deterministic invalid-context handling with a fixed per-update task budget and this regression before any restart; no blind rerun or silent task dropping. Active code was unchanged.
+
+Some TabPFN LGD development scores worsen; large finite target-tail losses/AMP replay remain
+visible. Monitoring predictions are finite, but only later full benchmarks establish performance.
+DATA quota 46,277M/76,800M; PROJECT 760.3G/1T (~263.7 GiB free). Own Exp2 checkpoints ~89 GiB.
+DATA venv remains recovery material pending comprehensive consumer checks; separate Conda
+recovery is unverified. Keep checkpoints on PROJECT; no separate checkpoint backup exists.
+
 ## 30-10-2026 — waiting for manual VSC authentication renewal
 
 At 23:42 CET, SSH refused authentication; the native agent's certificate expired at
 23:39 CET. Andreas was asked once to run `step ssh login --context VSC` and confirm.
-Do not retry or repeat the request before his confirmation. No job was changed; the last
-verified GPU state had 98 stages PASS and stable post-spike step-400 monitoring.
+Andreas confirmed renewal on 31-10; the verified channel was reused for acceptance and
+production admission. No job was changed during the authentication wait.
 
 ## 30-10-2026 — investigate LGD batch-217 loss spike without changing the run
 

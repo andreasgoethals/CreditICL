@@ -169,6 +169,65 @@ The one thing to do differently.
 
 ## Runs
 
+### 01-11-2026 — Exp1 complete; Exp2 live audit and constant-context failure
+
+**Acceptance.** GPU 11756026 completed 0:0 in **17h47m45s**, ending 31-10 at 05:29:29 CET:
+117/117 stages PASS. CPU 62475000 passed 14 stages, 2,142 tests/two allowed skips and all
+12 notebooks. PROJECT-image login preflight and final verifier passed on 31-10 (123 checks,
+zero failures). Image r3 is accepted, with report hashes/job IDs in `.runtime-build/current.json`.
+Frozen commit **56edadef4efe81120ea104870e6ba2e497f89b6a**, source
+`0d9017bb83b5406362e6e81076220274a04aff081c6d99fe65fb196022d6f370`; image SHA256
+`83f8145eafbbbcad0f25a5d109b0329aec12a159e5bc8ab9fc94a9f1e3ed0585`.
+TFM/VSC pins: `26156f36eb7676e8d9050547817346db548b0e85` /
+`0ed4ffa89d312b9bb6411681b6a14f81672439f3`. No scientific setting changed.
+
+**Admitted 31-10 at 10:36:57–58 CET:** Mindwell B200, one GPU/24 CPU/180G/12h per task,
+no extra dependency or running throttle. All **94 original IDs** accepted exactly once:
+
+| Job | Work | IDs | Initial allocation quote, credits |
+|---|---|---|---:|
+| 11762000 | Exp1 LGD benchmarks | 9–11, 21–23, 33–35, 45–47, 57–59 | 5,508,000 |
+| 11762001 | Exp1 PD benchmarks | Same 15 IDs | 5,508,000 |
+| 11762002 | Exp2 LGD training | 0–31 | 11,750,400 |
+| 11762003 | Exp2 PD training | 0–31 | 11,750,400 |
+
+Total initial quote **34,516,800** versus **80,174,739 available**; not a final bill or bound
+on requeues. Quota/file headroom and live site ceiling 500 passed. Arguments/quotes/receipts:
+output `manifests/production-*-20261031.json` and `manifests/submissions/production-20261031/`.
+Exp2 retains the unchanged two-backbone/four-mixture/two-rate/two-seed grid: 64 × 1,500 updates;
+milestones 125/250/500/1,000/1,500. Exact resolved hyperparameters remain in configs/run manifests.
+
+**Exp1 complete.** All 30 new benchmarks completed 0:0 (LGD ~7–8 minutes, PD ~2h17m–2h34m).
+Current provenance checks accept 64/64 main slots per task, including shared references, and
+15/15 component slots per task: **158/158**, with requested credit/OOD cells and five folds.
+All **54** training summaries remain compatible at 12,500 steps, including the six 25% extensions.
+
+**Exp2 at 20:52 CET:** 16 TabPFN LGD runs finished 1,500 updates/zero skipped tasks; five
+TabICL LGD running, eleven checkpointed/requeued at steps 545–554 on SIGUSR1. PD: thirteen
+running, eighteen queued for priority, one failure. TabICL projects ~32–34 GPU-hours per arm;
+further twelve-hour segments are expected. No Exp2 benchmark or Exp3 was launched.
+
+**Failure:** `11762003_11` (underlying job 11763192), TabPFN PD, LR 1e-5, credit=1, seed 0,
+failed 1:0 after 22m55s. At step 37 native preprocessing reported all features constant.
+Local CPU reproduction identifies batch 37/slot 15: 1,024 rows/two columns, 823 context rows
+with no varying feature, while query columns vary. Local TabPFN 9.1.0 matches VSC; local
+Torch 2.13.0 differs from VSC 2.11.0+cu128. Index 15 uses the same task stream and is exposed.
+This is a synthetic-context handling gap, not a real-dataset quality issue. No checkpoint yet;
+preserve the run, define/test deterministic handling and matched task counts before restarting.
+No active source, job or checkpoint was altered during this audit.
+
+**Other observations:** 76 current batch plus 46 child logs (~77.5 MB) scanned; no quota/OOM
+failure found. AMP backoff/FP32 replay and huge finite LGD target-tail loss windows recur.
+Development prediction nonfinite fractions are zero. Some LGD credit/OOD monitoring scores
+worsen; these are development diagnostics, not final five-fold results or grounds to select/change
+the grid. Probability-sum warnings recur, while strict benchmark/result validation passed.
+The dirty-code banner includes untracked artifacts; tracked source is clean and its hash matches.
+DATA quota 46,277M/76,800M; PROJECT 760.3G/1T (~263.7 GiB and 97,585 files free). Own Exp1
+PROJECT output ~31.5 GiB, Exp2 checkpoints ~89 GiB; available credits 63,016,807 at first snapshot.
+Runtime/assets stay on PROJECT; legacy DATA environments remain documented recovery exceptions.
+The monitor was deleted on 01-11 at Andreas's request. Evidence: `manifests/audit-20261101-*.json`;
+compact local files under ignored `.runtime-build/audit-20261101/` were transferred with SHA256 checks.
+
 ### 30-10-2026 — CPU 62475000 accepted; GPU 11756026 started
 
 During LGD resume, batch 217 exhausted AMP retries and used the existing FP32 replay.

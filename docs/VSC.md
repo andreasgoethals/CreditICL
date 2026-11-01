@@ -9,6 +9,13 @@ Check [upstream review flags](../vsc-library/UPSTREAM_CHANGES.md) and the
 [live Leuven status](https://status.vscentrum.be/tier2_leuven.html) before applying a changed policy.
 
 How to submit, what it costs, and how a multi-day sweep survives a cluster that stops routinely.
+
+**Current campaign, 01-11-2026:** CPU/GPU Exp0 passed (14/117 stages; final verifier 123
+checks, zero failures); PROJECT image r3 is accepted. Exp1 is complete: all 54 training runs
+and 158 benchmark slots pass current provenance gates, including 25% mixtures. Exp2 arrays
+11762002/11762003 accepted all 64 training IDs. At 20:52 CET: 16 complete, 18 running,
+29 queued/requeued, PD index 11 failed on a constant synthetic context. See [RUNS.md](RUNS.md).
+Keep DATA revision 56edade frozen. The requested monitor is deleted; no Exp2 benchmark/Exp3 submitted.
 Distilled from `vsc-library/VSC Repository.txt` (pin `289ed81df5d101512f91ae1ea3b0083a2de08a96`, checked 20-10-2026) plus what we learned
 running on it; where the docs are silent this file says so. **Verify charge rates and partitions
 against the live docs before a large run.** The recovery procedure after *any* interruption is one
@@ -355,8 +362,9 @@ Local Windows venvs remain supported.
 
 **Before acceptance the legacy DATA venv is retained for rollback.** `_activate_env.sh` continues to discover existing
 `.venv-${VSC_ARCH_LOCAL}` / `.venv` environments and their recorded Python modules so existing
-recovery paths remain usable. The built candidate r3 already passed full CPU acceptance;
-GPU acceptance is still required before retiring the old DATA runtime. Image selection is
+recovery paths remain usable. Image r3 passed complete CPU/GPU acceptance on 31-10.
+Retirement still needs verified recovery and absence of consumers on other login hosts;
+the separate Conda environment also lacks distinct recovery coverage. Image selection is
 explicitly recorded in `.runtime-build/current.json`, and no job installs packages.
 
 The authorized migration follows these gates:

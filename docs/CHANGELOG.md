@@ -8,6 +8,10 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 01-11-2026
+
+- Record complete Exp0/Exp1 acceptance and live Exp2 audit, including the constant-context failure; remove the requested monitor while preserving active code and results.
+
 ## 30-10-2026
 
 - Record parallel Exp1 benchmark/Exp2 training authorization after Exp0, with one final 30-minute health check before retiring the monitor.
