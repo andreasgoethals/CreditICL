@@ -13,8 +13,9 @@ How to submit, what it costs, and how a multi-day sweep survives a cluster that 
 **Current campaign, 02-11-2026:** Exp1 is complete: all 54 training runs and 158 benchmark
 slots pass provenance gates, including 25% mixtures. Repaired source 0494e7a passed fresh
 CPU Exp0 (62516762, all 14 stages); GPU 11763662 is queued. Retain the 16 completed LGD
-runs and all five registered milestones. The 48 unfinished Exp2 replacements are waiting
-for shared submission capacity and will depend on full GPU validation. No scheduled monitor,
+runs and all five registered milestones. Of 48 unfinished Exp2 replacements, LGD index 0
+(`11763693_0`) is admitted with a dependency on full GPU validation; the other 47 wait for
+shared submission capacity. No scheduled monitor,
 Exp2 benchmark or Exp3 is submitted. Keep the consumed checkout frozen; actual admissions
 and status are recorded in [RUNS.md](RUNS.md).
 Distilled from `vsc-library/VSC Repository.txt` (pin `289ed81df5d101512f91ae1ea3b0083a2de08a96`, checked 20-10-2026) plus what we learned

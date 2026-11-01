@@ -9,7 +9,9 @@ has no `OverPartQOS` flag. Its blank per-job-QoS limit does not remove the parti
 Do not increase the ceiling or cancel other projects to make room. The finite metadata
 submitter uses the existing receipt manager, preserving IDs and rechecking resource reserves
 at each admission opportunity. No scheduled task or additional Slurm controller is created.
-Until receipts confirm otherwise, none of the 48 replacements is claimed as accepted.
+At 00:35 CET the first replacement `11763693_0` is accepted (LGD index 0, PENDING
+Dependency on 11763662, source 0494e7a). The other 47 are not yet admitted; the one
+finite submitter remains active. Preserve its receipt/lock and reconcile before retrying.
 
 Retired only the 32 nonregistered rolling states (750/1,250) from the 16 completed LGD runs:
 22,400,394,360 bytes, with all 80 registered milestone sizes/mtimes unchanged. Every Exp1

@@ -180,6 +180,16 @@ array indices and checking frozen source/runtime, validation state, quotas and c
 at each admission opportunity. No recurring monitor, additional Slurm controller, running-job
 throttle or change to another project was made. Replacements depend on `afterok:11763662`.
 
+At 00:35 CET, **one of 48 replacements is accepted**: `11763693_0` (LGD index 0,
+PENDING Dependency). The other 47 are not yet admitted. Its receipt verifies expected
+commit 0494e7a, unchanged task index and dependency on 11763662, with no uncertain
+acknowledgment. The single finite admission CLI continues waiting; no recurring task
+was created. Latest checks: clean frozen DATA checkout, PROJECT 764.2G/1T and
+53,981/150k files, DATA 46,273M/76,800M, available account balance 62,609,420 credits.
+The fresh admission guard passed. GPU validation remains PENDING Priority, so its new
+38-case CUDA suite has not run. Neither admission nor the predecessor's GPU PASS is
+claimed as current-source GPU acceptance.
+
 The first reserve check stopped before submission with less than 250 GiB free PROJECT space.
 Retired only 32 unregistered rolling checkpoints at steps 750/1,250 from the 16 completed
 TabPFN LGD runs, reclaiming 22,400,394,360 bytes. Verified all 80 registered milestones
