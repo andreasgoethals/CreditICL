@@ -12,12 +12,14 @@ How to submit, what it costs, and how a multi-day sweep survives a cluster that 
 
 **Current campaign, 02-11-2026:** Exp1 is complete: all 54 training runs and 158 benchmark
 slots pass provenance gates, including 25% mixtures. Repaired source 0494e7a passed fresh
-CPU Exp0 (62516762, all 14 stages); GPU 11763662 is queued. Retain the 16 completed LGD
-runs and all five registered milestones. Of 48 unfinished Exp2 replacements, LGD index 0
-(`11763693_0`) is admitted with a dependency on full GPU validation; the other 47 wait for
-shared submission capacity. No scheduled monitor,
-Exp2 benchmark or Exp3 is submitted. Keep the consumed checkout frozen; actual admissions
-and status are recorded in [RUNS.md](RUNS.md).
+CPU Exp0 (62516762, all 14 stages). At 10:35 CET GPU 11763662 is RUNNING: 46 stages
+PASS, including all 38 CUDA cases; full validation is incomplete. All **48 replacements**
+(16 LGD, 32 PD) are accepted and verified PENDING Dependency on `afterok:11763662`.
+Together with 16 preserved completed LGD runs, all 64 Exp2 configurations are covered.
+Every registered checkpoint remains. The finite submitter finished; its locks are gone.
+No scheduled monitor, Exp2 benchmark or Exp3 is submitted. Keep DATA frozen at 0494e7a;
+do not pull reporting-only commits into the consumed checkout. Exact effective job IDs,
+the restored PD3 submission and verification hashes are in [RUNS.md](RUNS.md).
 Distilled from `vsc-library/VSC Repository.txt` (pin `289ed81df5d101512f91ae1ea3b0083a2de08a96`, checked 20-10-2026) plus what we learned
 running on it; where the docs are silent this file says so. **Verify charge rates and partitions
 against the live docs before a large run.** The recovery procedure after *any* interruption is one

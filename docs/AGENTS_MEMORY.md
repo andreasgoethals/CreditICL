@@ -1,27 +1,45 @@
 # Agents' memory — runs and dead ends
 
-## 02-11-2026 — repair validation accepted; waiting for submission capacity
+## 02-11-2026 — all 48 replacements admitted; GPU validation continues
 
-CPU 62516762 passed all 14 stages at 0494e7a; GPU 11763662 is PENDING Priority.
-The expanded Mindwell queue is full at 500 (495 CreditPFN, four JEVPFN, one CreditICL).
-The B200 partition has QoS `normal` with MaxSubmitPU 500; actual job QoS `lp_verbekelab`
-has no `OverPartQOS` flag. Its blank per-job-QoS limit does not remove the partition limit.
-Do not increase the ceiling or cancel other projects to make room. The finite metadata
-submitter uses the existing receipt manager, preserving IDs and rechecking resource reserves
-at each admission opportunity. No scheduled task or additional Slurm controller is created.
-At 00:35 CET the first replacement `11763693_0` is accepted (LGD index 0, PENDING
-Dependency on 11763662, source 0494e7a). The other 47 are not yet admitted; the one
-finite submitter remains active. Preserve its receipt/lock and reconcile before retrying.
+At 10:35 CET, all 48 effective replacements (LGD 0-7/16-23; PD 0-31) are verified
+PENDING Dependency on 11763662, source 0494e7a. Together with 16 preserved completed
+LGD runs, all 64 configurations are covered. No source/runtime/grid change was made.
+The finite submitter exited 0; its PID is gone, locks absent, in-flight fields null.
+Do not restart it or pull report commits into the consumed DATA checkout. No scheduled
+task, Exp2 benchmark, Exp3 or other-project mutation was created.
 
-Retired only the 32 nonregistered rolling states (750/1,250) from the 16 completed LGD runs:
-22,400,394,360 bytes, with all 80 registered milestone sizes/mtimes unchanged. Every Exp1
-checkpoint and unfinished Exp2 recovery state remains. This restores the unchanged 250 GiB
-PROJECT reserve after the first admission guard stopped below it; no job was submitted then.
+| Run | Configuration | Observed outcome |
+|---|---|---|
+| 11763662 | Repaired GPU Exp0, 0494e7a/image r3, B200 24 CPU/180G, 24h | RUNNING; 46 stages PASS, 38 CUDA cases passed/zero failures/errors/skips; full acceptance pending |
+| 48 Exp2 replacements | Same registered 1,500-update/two-seed/two-rate/four-mixture grid | 48 unique effective IDs live; 16 LGD + 32 PD; full mapping in RUNS.md |
 
-**Tried:** Bundle provenance checks and admission waiting inside a 240-second SSH request.
-**Result:** Response envelope ended while the shared queue was full; no admission receipt existed.
-**Why:** Queue admission can outlast a short status-read bound; absence of the response was not completion.
-**Instead:** Verify no in-flight acknowledgment/old owner before restarting the finite CLI with a long bound. Native stdlib Python runs metadata/submission only; science remains inside the PROJECT image. Keep actual accepted receipts and never remove an active owner's lock.
+PD3 is 11763815_3, replacing the never-started 11763812_3 cancelled to free the GPU
+Slurm dry-run slot. Preserve all original receipts plus the separate restore receipt;
+the cancelled predecessor must be excluded from effective coverage. Canonical local/DATA
+proof: `.runtime-build/repair-constant-context/all48-effective-admission-verified-20261102.json`,
+SHA256 `c579251ed273e3370d0fce2463ab745a94eca3fa6d8e65e9c10e9aee9c9e4f00`.
+The full CUDA suite includes both exact constant-context production-update regressions.
+
+**Tried:** Let GPU Slurm-client validation proceed at the full 500-task user ceiling.
+**Result:** Its dry run waited 24 minutes; the GPU-specific refusal path did not activate.
+**Why:** `campaign.execute` strips the attempt tag for every `cpu=True` child, including this client.
+**Instead:** Pause only our submitter at a verified idle RPC boundary, release one own unstarted dependency, obtain real dry-run PASS, restore the identical task, then resume. Add a child-environment integration fix at future idle validation maintenance; never edit the consumed checkout or bypass resource acceptance.
+
+**Tried:** Query Slurm on both login nodes, including clean linker variables and native DNS checks.
+**Result:** Accounting-service lookups returned NXDOMAIN; scheduler discovery failed transiently.
+**Why:** SSH worked but scheduler queries did not; the public status snapshot was dated 30-10.
+**Instead:** Reconcile saved acknowledgments/owners, then let the existing fail-closed manager wait. Service recovered; actual normal QoS MaxSubmitPU 500 and no account OverPartQOS were rechecked. Never infer an empty queue or repeat uncertain submissions.
+
+Retired only 32 nonregistered rolling states (750/1,250) from the 16 completed LGD runs:
+22,400,394,360 bytes, all 80 registered milestones unchanged. Every Exp1 checkpoint and
+unfinished Exp2 recovery state remains. Final PROJECT reserve was about 256.3 GiB;
+DATA about 29.75 GiB; available credits 60,514,238, all shared snapshot values.
+
+**Tried:** Bundle provenance checks and admission waiting into a 240-second SSH request.
+**Result:** Its response ended while the shared queue was full; no admission receipt existed.
+**Why:** Queue admission can outlast a short status-read bound; a lost response is not completion.
+**Instead:** Reconcile in-flight state and old owners before one bounded persistent CLI resumes. Native Python runs metadata/submission only; science stays in the PROJECT image. Preserve accepted receipts and never remove an active lock.
 
 ## 01-11-2026 — constant-context repair and checkpoint-safe replacement
 

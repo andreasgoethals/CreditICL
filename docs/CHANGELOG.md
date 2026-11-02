@@ -10,6 +10,7 @@ a flat dated list, so the dates below are its table of contents.
 
 ## 02-11-2026
 
+- Verify all 48 repaired Exp2 admissions and native CUDA regressions; record full-queue dry-run coordination while preserving frozen code and successful runs.
 - Publish complete Exp1 credit/OOD notebook results and 56 visually reviewed figures; record repaired CPU acceptance, guarded replacement admission and checkpoint-safe cleanup.
 
 ## 01-11-2026

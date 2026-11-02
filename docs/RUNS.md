@@ -169,9 +169,127 @@ The one thing to do differently.
 
 ## Runs
 
-### 02-11-2026 — repair admission waits at the verified site ceiling
+### 02-11-2026 — all repaired admissions complete; GPU validation running
 
-Fresh CPU 62516762 is accepted (14/14 stages); GPU 11763662 remains queued for B200
+**10:35 CET final admission check.** All **48 effective replacements** are accepted and
+observed PENDING Dependency in both expanded `squeue` and `sacct`: 16 LGD and 32 PD.
+Together with the 16 preserved completed LGD runs, all **64 scientific configurations**
+are covered. Original indices, two paired seeds, both fixed rates, four mixtures, both
+backbones and the 1,500-update target remain unchanged. Initial allocations are Mindwell
+B200 / one GPU / 24 CPU / 180G / 12h, with native checkpoint/requeue recovery.
+
+Every replacement binds commit `0494e7a14bc320176de3a8665051630461f3c316`, PROJECT root
+`/lustre1/project/stg_00211` and `afterok:11763662`. No missing or duplicate effective
+logical slot remains. PD3 is **11763815_3**; its never-started predecessor **11763812_3**
+is explicitly CANCELLED and superseded, not counted as active coverage. The same arguments
+were verified in its separate restore receipt. All three receipt locks are absent,
+all in-flight fields are null, and the finite submitter exited 0 at 10:30:11 CET; its PID
+is gone. No scheduled task or deployment controller remains.
+
+Canonical proof on DATA and locally:
+`.runtime-build/repair-constant-context/all48-effective-admission-verified-20261102.json`,
+SHA256 `c579251ed273e3370d0fce2463ab745a94eca3fa6d8e65e9c10e9aee9c9e4f00`.
+The original two admission receipts remain unchanged; the additional PD3 restore receipt
+and slot-handoff ledger document the substitution. The raw base acknowledgment list alone
+includes the cancelled predecessor and must not be treated as effective live coverage.
+
+GPU **11763662** is still **RUNNING** on r11g17: **46 completed stages PASS**, including
+**38/38 CUDA tests**, zero failures/errors/skips. Both constant-context production-batch
+regressions and long-context capacity/mixed-batch checks passed. Full GPU acceptance has
+not finished; the largest full-row credit benchmark is active. The queued training tasks
+also require current-source Exp0 readiness at startup, so they cannot train before PASS.
+No Exp2 benchmark or Exp3 was submitted. Keep DATA at 0494e7a; these reporting changes
+must not be pulled into the consumed checkout. Actual library pins remain TFM
+`26156f36eb7676e8d9050547817346db548b0e85` and VSC
+`0ed4ffa89d312b9bb6411681b6a14f81672439f3`; runtime image r3/SHA83f8145e... is unchanged.
+
+Resource snapshot: DATA 46,336M/76,800M and 397k/10M files; PROJECT 767.7G/1T and
+54,133/150k files (about 256.3 GiB free); account available 60,514,238 credits.
+The admission guards passed before each submission. These are shared-allocation/account
+snapshots, not CreditICL-only usage or an actual billing statement.
+
+Effective parent/index mapping (array fragments reflect site admission capacity):
+
+| Task | Parent job | Original indices |
+|---|---|---|
+| LGD | 11763693 | 0 |
+| LGD | 11763738 | 1 |
+| LGD | 11763742 | 2 |
+| LGD | 11763744 | 3 |
+| LGD | 11763756 | 4 |
+| LGD | 11763761 | 5 |
+| LGD | 11763769 | 6 |
+| LGD | 11763782 | 7 |
+| LGD | 11763797 | 16-22 |
+| LGD | 11763798 | 23 |
+| PD | 11763811 | 0-2 |
+| PD | 11763815 | 3 |
+| PD | 11763820 | 4 |
+| PD | 11763822 | 5 |
+| PD | 11763825 | 6 |
+| PD | 11763832 | 7-8 |
+| PD | 11763857 | 9 |
+| PD | 11763860 | 10-11 |
+| PD | 11763863 | 12 |
+| PD | 11763866 | 13 |
+| PD | 11763871 | 14 |
+| PD | 11763878 | 15 |
+| PD | 11763881 | 16 |
+| PD | 11763885 | 17 |
+| PD | 11763887 | 18 |
+| PD | 11763890 | 19 |
+| PD | 11763895 | 20 |
+| PD | 11763897 | 21 |
+| PD | 11763899 | 22 |
+| PD | 11763901 | 23 |
+| PD | 11763903 | 24 |
+| PD | 11763907 | 25 |
+| PD | 11763909 | 26 |
+| PD | 11763912 | 27 |
+| PD | 11763919 | 28-29 |
+| PD | 11763923 | 30-31 |
+
+
+**09:19 CET progress.** Service access recovered. GPU 11763662 is RUNNING on r11g17,
+source 571c1f6c..., with 15 completed stages PASS. The mandatory CUDA suite passed all
+38 cases in 192.67s, zero failures/errors/skips, including the two full production-batch
+constant-context regressions. Full GPU acceptance is still pending. All 16 LGD replacements
+and PD indices 0–3 are admitted; PD 4–31 (28 tasks) still await shared capacity.
+
+The full queue also blocked the GPU's `sbatch --test-only`. Paused only our admission CLI
+after checking no RPC was in flight, then cancelled only the unstarted dependent PD task
+11763812_3 (runtime zero). Actual Mindwell dry-run acceptance passed at 09:07; the complete
+Slurm-client stage took 1,445.19s. Restored the identical PD index 3 as **11763815_3** through
+`constant-context-repair-20261102-pd3-slot-restore.json`, then resumed the main submitter at
+09:09. No training work, source, runtime, grid or other project's job changed. The original
+acknowledgment remains historical; final effective coverage must substitute 11763815_3 for
+cancelled 11763812_3. Handoff ledger:
+`.runtime-build/repair-constant-context/pd3-dryrun-slot-handoff-20261102.json`.
+
+Driver follow-up for an idle checkout: `campaign.execute` removes `CREDITICL_EXP0_ATTEMPT`
+from every `cpu=True` child, including GPU Slurm-client checks. Consequently its existing
+GPU capacity-response branch cannot recognize the attempt. Preserve that scope for this
+client and add an actual campaign-child environment test at the next validation maintenance.
+The current frozen campaign instead obtained real dry-run acceptance; no gate was bypassed.
+
+**08:22–08:40 CET continuation.** Reconciled eight accepted LGD replacements, indices
+0–7, from parents 11763693, 11763738, 11763742, 11763744, 11763756, 11763761,
+11763769 and 11763782. All retain source 0494e7a and `afterok:11763662`; no uncertain
+acknowledgment or active owner lock remains. Forty tasks still need admission: LGD 16–23
+and PD 0–31. The previous submitter's terminal response is unavailable, so its exact stop
+reason is unconfirmed. The current-source GPU report and startup logs are absent; live
+accounting cannot yet establish a new state.
+
+Both login nodes return Slurm accounting/controller errors. Native DNS queries for the
+configured accounting service return NXDOMAIN; clearing linker variables does not repair it.
+The alternate login route preserved strict host-key checks and verified stdout/stderr/exit 7,
+but showed the same scheduler failure. No system/SSH configuration or backend address was
+changed. A single finite CLI now resumes the existing receipts, checks actual site limits and
+reserves again at admission, and records its owner/lease/log under
+`.runtime-build/repair-constant-context/`. It cannot submit while queue state is unknown.
+No scheduled task is created; code/runtime and other campaigns remain untouched.
+
+**Earlier, 00:35 CET.** Fresh CPU 62516762 is accepted (14/14 stages); GPU 11763662 remains queued for B200
 validation. No repaired Exp2 task is claimed as submitted until its admission receipt exists.
 The expanded Mindwell user queue is 500: 495 CreditPFN, four JEVPFN and this validation job.
 The B200 partition's `normal` QoS has MaxSubmitPU 500; the account QoS does not override it.

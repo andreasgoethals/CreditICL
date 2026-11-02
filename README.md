@@ -89,7 +89,9 @@ TabPFN-3 keeps 1,024-row tasks. The 0%-credit continuation is the original-TabIC
 released weights are a separate reference. No continuation is guaranteed to avoid forgetting.
 Both credit data and 25 native OOD datasets per task are benchmarked with all eligible rows/features
 and five folds. The predecessor passed full VSC CPU/GPU validation on 31-10-2026. The
-constant-context repair passed fresh CPU validation; its GPU validation is queued.
+constant-context repair passed fresh CPU validation and all 38 CUDA tests; full GPU
+validation is running. All 48 unfinished Exp2 replacements are admitted behind its
+success dependency, preserving the 16 completed runs and the full 64-run grid.
 Live campaign progress, failures and measured costs are recorded in [RUNS.md](docs/RUNS.md).
 
 `credit_fraction` is the master switch: the share of each batch drawn from our credit-targeted path,
