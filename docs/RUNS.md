@@ -246,6 +246,14 @@ SHA256 `a735b4e85eca4a9bdba858dfae427c481fa5e47743d8d39742896284364ee3af`).
 Ruff reports the same two pre-existing import-order findings in the changed runner;
 the changed test file has none. No lint-clean claim is made for the broader repository.
 
+**Maintenance test 62527538:** published 00438dc was pulled with `--ff-only` into
+`$VSC_DATA/CreditICL-validation-client-20261103`, not the consumed production checkout.
+wICE interactive, two CPUs/8G/20 minutes, actual quote 0; site normal MaxSubmitPU 500
+was reverified before receipt-backed admission. It failed 1:0 in 3m44s: 100 passed,
+one temporary-script import fixture failed. The isolated launcher omitted PYTHONPATH,
+which the production wrapper supplies. Add that explicit path and preserve child logs
+before node-local cleanup, then retest. Original production jobs/source remain intact.
+
 ### 02-11-2026 — all repaired admissions complete; GPU validation running
 
 **10:35 CET final admission check.** All **48 effective replacements** are accepted and

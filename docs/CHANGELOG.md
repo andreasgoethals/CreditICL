@@ -11,6 +11,7 @@ a flat dated list, so the dates below are its table of contents.
 ## 03-11-2026
 
 - Preserve the validation phase across the Slurm-client child process; add subprocess regressions and an isolated Slurm test launcher. Record full GPU acceptance, live Exp2 coverage and hash-verified retired-log cleanup.
+- Supply the isolated test checkout on PYTHONPATH for temporary child scripts and retain their diagnostics before scratch cleanup.
 
 ## 02-11-2026
 

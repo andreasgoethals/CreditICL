@@ -714,38 +714,17 @@ python -m src.utils.run_experiment 1 --single-cluster --phase benchmark --submit
 python -m src.utils.run_experiment 2 --single-cluster --phase train --submit
 ```
 
-Each experiment planner is safe to repeat: it skips completed/queued arms and waits for training
-before benchmarking. Exp1 includes only missing quarter-mixture work if the other 48 runs and
-benchmarks are already complete. All 54 training runs were complete in the 29-10 snapshot.
-**Current authorization, 30-10:** after complete current Exp0 acceptance and quota/budget
-checks, submit both the missing Exp1 benchmarks and the fixed 64-run Exp2 training grid.
-Exp2 need not wait for Exp1 benchmark completion. Use the phase-specific planners above
-with receipt-backed admission. The earlier `scripts/slurm/deploy.slurm` controller retains
-its sequential Exp1-completion gate and is not used for this revised workflow.
-On 30-10, GPU **11754388** failed after 1m52s at a stale inventory-test assertion, before
-production work. Controller **62471655** stopped, and its dependency-bound continuation
-**62473912** correctly rejected that failure. All three are terminal; their evidence is retained
-in `RUNS.md`. The repaired test distinguishes eight model requests from runtime-image metadata;
-fresh current-source CPU/GPU acceptance is required. Do not duplicate an active controller;
-reconcile its durable receipt and accounting first.
-CPU **62474628** passed all 14 stages at frozen **79609ff**, source `8b2be00fc102b5e1a8f65809977008870676208300769e0bd5247a657d9ca732`,
-using the unchanged PROJECT image r3. Login readiness then exposed an inventory-context defect;
-no GPU was submitted. The repair retains verified image identity both inside and outside Slurm
-and requires fresh current-source validation. The existing heartbeat supervises the stagewise
-submissions directly; require each receipt/artifact gate and a fresh native quota check
-before production, rather than leaving another CPU controller idle in a GPU queue.
-The repaired frozen revision is **56edade**, source `0d9017bb83b5406362e6e81076220274a04aff081c6d99fe65fb196022d6f370`;
-its actual login inventory matches all nine saved allocation records. Fresh CPU **62475000**
-completed 0:0 in 32m51s on k28i16: all 14 stages PASS, 2,142 tests passed/two allowed skips,
-and all 12 notebooks executed. Native login readiness accepts the current artifacts.
-GPU **11756026** is RUNNING on Mindwell r11g12, B200/24 CPU/180G/24h, from the same
-frozen source and image. Its receipt is `manifests/submissions/restart-runtime-context-20261030-gpu.json`;
-quote 734,400 credits maximum. Full GPU acceptance and environment retirement remain pending.
-Keep that checkout frozen; later documentation-only pushes are not an instruction to pull during jobs.
-The user-requested monitor checks both workloads 30 minutes after final verified admission.
-If queue/progress, logs and storage are healthy, record the outcome, delete the schedule and
-leave both workloads running. Investigate failures before stopping; do not wait for the full
-campaign to finish or launch Exp2 benchmarks/Exp3. The monitor never renews SSH credentials.
+Each planner skips completed/queued work and waits for its training prerequisites before
+benchmarking. At the 03-11 audit all Exp1 stages are complete, including the 25% extension;
+Exp2 has all 64 training configurations completed or live. Submit no duplicate training.
+The active production checkout stays at **0494e7a**, with complete CPU 62516762/GPU 11763662
+acceptance and PROJECT image r3. Later source changes are tested in an isolated DATA checkout;
+their targeted tests do not restamp the production Exp0 receipts or authorize a source cutover.
+Use receipt-backed, phase-specific admission for genuinely missing authorized work, after
+fresh quota/budget checks. There is no scheduled monitor. Exp2 benchmarking and Exp3 have
+not been submitted; check prerequisites and authorization before launching them. Historical
+validation failures, retired controllers and their recovery evidence belong in `RUNS.md`.
+The earlier `scripts/slurm/deploy.slurm` sequential controller is not used for this campaign.
 Exp2 retains five checkpoint benchmarks per run. All rows/features/five folds remain.
 For Exp2/Exp3, keep `--single-cluster`: these commands use the Mindwell B200 allocation validated
 by Exp0. The planner's optional historical LGD split across wICE A100s is not validated by a B200

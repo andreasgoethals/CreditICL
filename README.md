@@ -228,8 +228,9 @@ python scripts/evaluate.py --task lgd --models linear,catboost
 
 **While any CreditICL job is queued or running, keep its checkout and environment frozen.**
 Do not pull, update packages, reset output or use the setup commands below in that checkout
-until it finishes. The revised Exp2 needs fresh validation afterwards; completed Exp1
-checkpoints and benchmarks remain evidence for their recorded revision.
+until it finishes. Production revision 0494e7a has passed both validation phases;
+completed results retain their recorded provenance. A later source cutover needs
+matching acceptance before new production submissions.
 
 ```bash
 source scripts/slurm/_activate_env.sh &&

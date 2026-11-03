@@ -30,7 +30,8 @@ trap 'rm -rf -- "$work"' EXIT
 mkdir -p .runtime-build/validation-client
 set +e
 apptainer exec --cleanenv --pwd "$PWD" --bind "$PWD:$PWD:ro" --bind "$work:$work:rw" \
-    --env "TMPDIR=$work" --env CUDA_VISIBLE_DEVICES= --env OMP_NUM_THREADS=1 --env MKL_NUM_THREADS=1 \
+    --env "TMPDIR=$work" --env "PYTHONPATH=$PWD" --env CUDA_VISIBLE_DEVICES= \
+    --env OMP_NUM_THREADS=1 --env MKL_NUM_THREADS=1 \
     "$CREDITICL_RUNTIME_IMAGE" /opt/venv/bin/python -m pytest -q -p no:cacheprovider \
     --basetemp "$work/pytest" --junitxml "$work/junit.xml" \
     tests/test_slurm_client.py tests/test_validation.py
@@ -39,4 +40,11 @@ set -e
 if [[ -f "$work/junit.xml" ]]; then
     cp -- "$work/junit.xml" ".runtime-build/validation-client/${SLURM_JOB_ID}.xml"
 fi
+# Preserve child diagnostics before node-local temporary files are cleared.
+while IFS= read -r -d '' logfile; do
+    relative=${logfile#"$work/"}
+    target=".runtime-build/validation-client/${SLURM_JOB_ID}/$relative"
+    mkdir -p -- "$(dirname "$target")"
+    cp -- "$logfile" "$target"
+done < <(find "$work/pytest" -type f -name '*.log' -print0)
 exit "$status"

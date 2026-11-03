@@ -6,6 +6,7 @@
 |---|---|---|
 | 11763662 | Source 0494e7a/image r3, Mindwell B200, 24 CPU/180G | COMPLETED 0:0 in 18h05m41s; 117/117 stages PASS, all 38 CUDA cases; login verification 123 items/zero failures |
 | 48 Exp2 replacements | Existing 1,500-update/two-seed grid | 09:07 CET: 19 RUNNING, 29 PENDING Priority, zero failed replacements; 16 earlier completed LGD retained; all 64 covered |
+| 62527538 | Isolated validation-only maintenance, 00438dc/r3, wICE interactive 2 CPU/8G | FAILED 1:0 in 3m44s: 100 passed, one temporary-script import fixture failed; production unchanged |
 
 Read all 1,341 logs (793,531,171 bytes) and all 64 metric journals: no new runtime
 crash, nonfinite loss or parse error. Expected offline wrapper warnings use the local
@@ -31,6 +32,16 @@ needs its own recovery coverage. Shared project scratch is only empty scaffoldin
 **Result:** All ten stage checks finished, then the ledger write failed with a read-only-filesystem error.
 **Why:** The runtime correctly protects the consumed checkout; only designated output paths are writable.
 **Instead:** Verify the captured stage records and save the operational ledger natively; keep the mount guard intact.
+
+**Tried:** Recheck legacy-environment consumers on all four login hosts through the previously tested gateway proxy.
+**Result:** All four bounded connections timed out during banner exchange; no remote consumer record was returned.
+**Why:** Alternate transport was unavailable; the certificate is valid and normal gateway reads still work.
+**Instead:** Retain both legacy environments; do not equate missing consumer evidence with zero consumers or initiate authentication.
+
+**Tried:** Run the portable regression suites in the isolated checkout using the SIF directly.
+**Result:** 100 passed; the slow-cell fixture's temporary script exited before its intended guard.
+**Why:** The isolated launcher omitted the checkout PYTHONPATH supplied by the production wrapper; temporary scripts cannot rely on the parent's current directory.
+**Instead:** Export the explicit checkout path inside the image, retain child logs before scratch cleanup, and repeat the real Slurm suites.
 
 ## 02-11-2026 — all 48 replacements admitted; GPU validation continues
 
