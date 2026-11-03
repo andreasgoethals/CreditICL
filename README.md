@@ -81,17 +81,17 @@ Counts include seeds and both prediction tasks: **Exp1 = (4 mixtures + 5 compone
 The component removals are compared with the main 50% mixture; they are not additional mixture levels.
 The 25% Exp1 extension was approved on 26-10-2026 after the initial 48-run campaign. It appends
 indices 9–11 per task, preserving existing run names and benchmark tags. Completed runs stay valid;
-the six additional runs finished on 28-10; their remaining benchmarks are selected by the planner. Figures sort mixtures numerically.
+the six additional runs and their benchmarks are complete. Figures sort mixtures numerically.
 
 Exp2's TabICLv2 arm uses the upstream final-stage table distribution: **400–60,000 rows,
 log-uniform, 79–81% context**, with the upstream row-dependent synthetic feature ceiling.
 TabPFN-3 keeps 1,024-row tasks. The 0%-credit continuation is the original-TabICL-prior control;
 released weights are a separate reference. No continuation is guaranteed to avoid forgetting.
 Both credit data and 25 native OOD datasets per task are benchmarked with all eligible rows/features
-and five folds. The predecessor passed full VSC CPU/GPU validation on 31-10-2026. The
-constant-context repair passed fresh CPU validation and all 38 CUDA tests; full GPU
-validation is running. All 48 unfinished Exp2 replacements are admitted behind its
-success dependency, preserving the 16 completed runs and the full 64-run grid.
+and five folds. The constant-context repair passed full CPU/GPU Experiment 0 on 03-11-2026:
+14 CPU stages, 117 GPU stages, including all 38 CUDA tests. Exp1 is complete (54 training
+runs and 158 benchmark slots). Exp2 has 16 completed runs, 19 running and 29 queued at
+the 03-11 morning audit; all 64 configurations are submitted. Keep their checkout frozen.
 Live campaign progress, failures and measured costs are recorded in [RUNS.md](docs/RUNS.md).
 
 `credit_fraction` is the master switch: the share of each batch drawn from our credit-targeted path,

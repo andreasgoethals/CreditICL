@@ -8,6 +8,10 @@ a flat dated list, so the dates below are its table of contents.
 
 ---
 
+## 03-11-2026
+
+- Preserve the validation phase across the Slurm-client child process; add subprocess regressions and an isolated Slurm test launcher. Record full GPU acceptance, live Exp2 coverage and hash-verified retired-log cleanup.
+
 ## 02-11-2026
 
 - Verify all 48 repaired Exp2 admissions and native CUDA regressions; record full-queue dry-run coordination while preserving frozen code and successful runs.

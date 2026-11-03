@@ -169,6 +169,83 @@ The one thing to do differently.
 
 ## Runs
 
+### 03-11-2026 — full GPU PASS and live campaign audit
+
+**Production revision:** frozen `0494e7a14bc320176de3a8665051630461f3c316`;
+source `571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b`;
+training implementation `5300c294e4078273fa635f18b82714ebfdb17169046f25035e356aa2392a8e75`.
+TFM pin `26156f36eb7676e8d9050547817346db548b0e85`; VSC pin
+`0ed4ffa89d312b9bb6411681b6a14f81672439f3`. Accepted PROJECT image r3 remains SHA256
+`83f8145eafbbbcad0f25a5d109b0329aec12a159e5bc8ab9fc94a9f1e3ed0585`.
+No scientific setting or active job was changed.
+
+The current provenance planner independently accepted all Exp1 stages: 12/12 main
+training and 64/64 benchmark slots per task; 15/15 component training and benchmark
+slots per task. Exp2 training reports 16/32 LGD done and 0/32 PD done, both live with
+no submission commands. Its operational ledger write correctly hit the image's read-only
+checkout guard after these checks; the captured records were verified and saved natively
+as `.runtime-build/audit-20261103/provenance-planner.json`, without relaxing the mount.
+
+**Experiment 0:** CPU 62516762 passed all 14 stages. GPU 11763662 completed 0:0
+in 18:05:41, from 02-11 08:42:43 to 03-11 02:48:24 CET, all **117/117 stages PASS**.
+The 38 mandatory CUDA cases have zero failures/errors/skips, including both exact
+production constant-context regressions. Explicit PROJECT-image login preflight
+`--require-exp0` and `src.validation.verify` passed again: 123 items, zero failures.
+This is actual Slurm/runtime acceptance, not a projection from local tests.
+
+**Experiment 2, 09:07–09:23 CET:** all 64 configurations are accounted for: 16 completed
+TabPFN LGD runs, 19 running replacements (16 TabICL LGD, three TabICL PD), and 29
+PD replacements PENDING Priority. No dependency is stuck and no replacement failed.
+Latest logged steps: LGD 600–800, PD 400–600; metrics are recorded every 100 updates,
+so these are lower bounds. All 64 metric journals parse; all logged losses are finite.
+The completed LGD runs have 1,500 updates, 24,000 tables, zero skipped tasks and all
+five registered checkpoints. Their recorded mixed-precision retries are successful
+fallbacks, not omitted tables. Resumed runs retain prior signal-stop summaries until
+the current segment finishes; these do not mean the current job failed. Long runs use
+the existing checkpoint/requeue mechanism at allocation boundaries. No duplicate
+training, Exp2 benchmark, Exp3 or scheduled task was launched.
+
+**Log audit:** every `.log/.out/.err` under both output tiers plus root CreditICL Slurm
+fallbacks was read: 1,341 files, 793,531,171 bytes. Only expected offline-wrapper
+weight warnings and the two historical failed deployment controllers were flagged.
+The released local weight paths and successful reference probes are explicit in the
+same logs. Inventories, hashes, metrics and scheduler snapshots are retained under
+`.runtime-build/audit-20261103/` on DATA and locally.
+
+**Cleanup:** 465 exact terminal root fallback files (20,585 bytes, mostly empty) were
+archived, every member hash checked, and only then removed. All 38 active fallback
+files were retained. Archive:
+`/lustre1/project/stg_00211/CreditICL/recovery/20261103-audit/terminal-fallbacks.zip`,
+89,477 bytes, SHA256 `833cdd9b99f290d0607b9ef78ce14453c2261fb8984d5425cbcdee690e96a5aa`.
+No successful output or checkpoint was removed. Earlier rejected cleanup paths remain untouched.
+
+**Storage:** canonical/local TEMPLATE matches SHA256
+`9e113ac591a7d702bc61060a3bce703419cb7a296fcf9cf77283c1e5ffd27a20`.
+DATA quota 46,390M/76,800M, 401k/10M files; PROJECT stg_00211 822.1G/1T,
+58,721/150k files (shared allocation, about 201.9 GiB free). This is below the
+250-GiB starting reserve for additional campaigns; existing accepted training is preserved.
+CreditICL itself occupies about 138 GiB on PROJECT, including about 123 GiB outputs
+and 13 GiB runtime/rebuild assets. Shared project scratch is only 17 KiB GPFS/4 KiB Lustre
+scaffolding; account-wide scratch usage belongs partly to other projects. New GPFS project
+prj_00013 appears in quota output, but its paths/access/cutover have not been validated;
+no migration is inferred. Available account credits: 50,956,495 (snapshot, not final billing).
+Current Exp2 checkpoints occupy 84.59 GiB; the five registered milestones for all 64
+runs project to about 133.21 GiB from measured model checkpoint sizes (about 48.62 GiB
+additional, plus rolling/recovery states and logs). The current reserve accommodates
+that estimate; shared-allocation growth can still change available space.
+The 9.77-GiB DATA venv remains a recovery exception pending other-login-host consumer
+clearance; distinct Conda recovery is still unverified. No environment was moved/deleted.
+
+**Validation maintenance:** reproduced the known full-queue delay with a real child process;
+`execute()` now preserves the phase only for `slurm-client`, retaining portable test isolation.
+Three capacity/CPU-proof cases and two isolation cases cover the child boundary. The affected
+local suites passed 101 tests. A separate DATA checkout is required for VSC testing while
+production consumes 0494e7a; this change does not alter the training fingerprint.
+The new 330-file compact audit/Exp0 download was verified member-by-member (1,447,054 bytes,
+SHA256 `a735b4e85eca4a9bdba858dfae427c481fa5e47743d8d39742896284364ee3af`).
+Ruff reports the same two pre-existing import-order findings in the changed runner;
+the changed test file has none. No lint-clean claim is made for the broader repository.
+
 ### 02-11-2026 — all repaired admissions complete; GPU validation running
 
 **10:35 CET final admission check.** All **48 effective replacements** are accepted and

@@ -1,5 +1,37 @@
 # Agents' memory — runs and dead ends
 
+## 03-11-2026 — GPU acceptance and complete live Exp2 coverage
+
+| Run | Configuration | Observed outcome |
+|---|---|---|
+| 11763662 | Source 0494e7a/image r3, Mindwell B200, 24 CPU/180G | COMPLETED 0:0 in 18h05m41s; 117/117 stages PASS, all 38 CUDA cases; login verification 123 items/zero failures |
+| 48 Exp2 replacements | Existing 1,500-update/two-seed grid | 09:07 CET: 19 RUNNING, 29 PENDING Priority, zero failed replacements; 16 earlier completed LGD retained; all 64 covered |
+
+Read all 1,341 logs (793,531,171 bytes) and all 64 metric journals: no new runtime
+crash, nonfinite loss or parse error. Expected offline wrapper warnings use the local
+released weights successfully. Old interrupted summaries remain until the resumed
+segment ends; use current metrics/checkpoints for live progress. Native checkpoint/requeue
+continues long TabICL runs without new submissions. Do not duplicate accepted work.
+
+The full-queue validation delay is reproduced at the real subprocess boundary: the
+Slurm-client stage must retain its attempt phase while portable CPU tests clear it.
+The fix does not change training, priors, rates, precision or benchmarking. Keep production
+DATA at 0494e7a; deploy this maintenance change only to an isolated DATA checkout.
+
+Archived and hash-verified 465 terminal root fallback logs before removing their old
+copies; all 38 active fallback files remain. Archive SHA256
+`833cdd9b99f290d0607b9ef78ce14453c2261fb8984d5425cbcdee690e96a5aa`.
+PROJECT quota is shared: 822.1G/1T, about 201.9 GiB free, below the 250-GiB admission
+reserve for new campaigns. Current admitted training continues; do not lower the guard.
+No environment deletion or active-asset migration was performed. The legacy DATA venv
+still needs other-login-host consumer clearance; the separate Conda environment also
+needs its own recovery coverage. Shared project scratch is only empty scaffolding.
+
+**Tried:** Save the read-only provenance planner's ledger under `.runtime-build` from inside the image.
+**Result:** All ten stage checks finished, then the ledger write failed with a read-only-filesystem error.
+**Why:** The runtime correctly protects the consumed checkout; only designated output paths are writable.
+**Instead:** Verify the captured stage records and save the operational ledger natively; keep the mount guard intact.
+
 ## 02-11-2026 — all 48 replacements admitted; GPU validation continues
 
 At 10:35 CET, all 48 effective replacements (LGD 0-7/16-23; PD 0-31) are verified

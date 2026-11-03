@@ -341,7 +341,10 @@ def execute(stage: Stage, log: Path, *, timeout: float) -> dict:
         env.pop(DEADLINE_ENV, None)
     if stage.cpu:
         env["CUDA_VISIBLE_DEVICES"] = ""
-        env.pop(ATTEMPT_ENV, None)  # portable tests use their own temporary output fixtures
+        # The scheduler probe needs the allocation phase to avoid waiting on a
+        # paid GPU at capacity. Portable tests still isolate their output roots.
+        if stage.name != "slurm-client":
+            env.pop(ATTEMPT_ENV, None)
     started = time.monotonic()
     last_heartbeat = started
     signalled = False

@@ -10,16 +10,15 @@ Check [upstream review flags](../vsc-library/UPSTREAM_CHANGES.md) and the
 
 How to submit, what it costs, and how a multi-day sweep survives a cluster that stops routinely.
 
-**Current campaign, 02-11-2026:** Exp1 is complete: all 54 training runs and 158 benchmark
-slots pass provenance gates, including 25% mixtures. Repaired source 0494e7a passed fresh
-CPU Exp0 (62516762, all 14 stages). At 10:35 CET GPU 11763662 is RUNNING: 46 stages
-PASS, including all 38 CUDA cases; full validation is incomplete. All **48 replacements**
-(16 LGD, 32 PD) are accepted and verified PENDING Dependency on `afterok:11763662`.
-Together with 16 preserved completed LGD runs, all 64 Exp2 configurations are covered.
-Every registered checkpoint remains. The finite submitter finished; its locks are gone.
-No scheduled monitor, Exp2 benchmark or Exp3 is submitted. Keep DATA frozen at 0494e7a;
-do not pull reporting-only commits into the consumed checkout. Exact effective job IDs,
-the restored PD3 submission and verification hashes are in [RUNS.md](RUNS.md).
+**Current campaign, 03-11-2026:** Exp1 is complete: 54 training runs and 158 benchmark
+slots, including 25% mixtures. Repaired source 0494e7a passed CPU 62516762 (14 stages)
+and GPU 11763662 (117 stages, 38 CUDA cases), both exit 0:0. Login readiness and
+`src.validation.verify` also pass (123 items). At 09:07 CET Exp2 has 16 completed,
+19 running and 29 Priority-pending runs: every one of the 64 configurations is covered.
+Preserve their DATA checkout at 0494e7a and accepted PROJECT image r3. A validation-only
+fix must be pulled/tested in a separate DATA checkout while these consumers remain.
+No scheduled monitor, Exp2 benchmark or Exp3 is submitted. Exact IDs and evidence are in
+[RUNS.md](RUNS.md).
 Distilled from `vsc-library/VSC Repository.txt` (pin `289ed81df5d101512f91ae1ea3b0083a2de08a96`, checked 20-10-2026) plus what we learned
 running on it; where the docs are silent this file says so. **Verify charge rates and partitions
 against the live docs before a large run.** The recovery procedure after *any* interruption is one

@@ -1,6 +1,8 @@
 """No paid submission can be hidden inside the runtime compatibility probe."""
 import os
 import subprocess
+import sys
+import textwrap
 from types import SimpleNamespace
 
 import pytest
@@ -82,6 +84,57 @@ def test_paid_gpu_never_idles_for_capacity_and_requires_current_cpu_proof(monkey
     else:
         with pytest.raises(RuntimeError, match='CPU resource validation is missing'):
             slurm_client.check()
+
+
+@pytest.mark.parametrize("phase,cpu_current", [("gpu", True), ("gpu", False), ("cpu", True)])
+def test_campaign_child_preserves_submission_phase_at_capacity(tmp_path, monkeypatch, phase, cpu_current):
+    """Exercise the real child boundary, not only check() in the parent environment."""
+    from src.validation import campaign
+
+    monkeypatch.setenv(campaign.ATTEMPT_ENV, f"{phase}_fixture")
+    payload = textwrap.dedent(f"""
+        import os
+        from types import SimpleNamespace
+        from src.validation import campaign, slurm_client
+        assert os.environ.get(campaign.ATTEMPT_ENV) == {phase + '_fixture'!r}
+        assert os.environ['CUDA_VISIBLE_DEVICES'] == ''
+        os.environ['CREDITICL_IN_CONTAINER'] = '1'
+        os.environ['SLURM_JOB_ID'] = 'fixture'
+        calls, sleeps = [], []
+        def run(args, **kwargs):
+            calls.append(args)
+            full = args[0] == 'sbatch' and ({phase!r} == 'gpu' or len(calls) == 2)
+            return SimpleNamespace(returncode=int(full), stdout='OK',
+                stderr='QOSMaxSubmitJobPerUserLimit' if full else '')
+        def sleep(seconds):
+            assert {phase!r} == 'cpu', 'GPU allocation must not wait for queue capacity'
+            sleeps.append(seconds)
+        campaign.readiness = lambda phase: [SimpleNamespace(ok={cpu_current!r})] if phase == 'cpu' else []
+        slurm_client.subprocess.run = run
+        slurm_client.time.sleep = sleep
+        try:
+            slurm_client.check()
+        except RuntimeError as error:
+            assert {phase!r} == 'gpu' and not {cpu_current!r}
+            assert 'CPU resource validation is missing' in str(error)
+        else:
+            assert {phase!r} == 'cpu' or {cpu_current!r}
+            assert sleeps == ([60] if {phase!r} == 'cpu' else [])
+            assert all('--test-only' in args for args in calls if args[0] == 'sbatch')
+    """)
+    stage = campaign.Stage("slurm-client", (sys.executable, "-c", payload), cpu=True)
+    campaign.execute(stage, tmp_path / "slurm-client.log", timeout=30)
+
+
+@pytest.mark.parametrize("name", ["unit", "notebooks"])
+def test_portable_cpu_children_keep_temporary_output_isolation(tmp_path, monkeypatch, name):
+    from src.validation import campaign
+
+    monkeypatch.setenv(campaign.ATTEMPT_ENV, "gpu_fixture")
+    payload = ("import os; assert 'CREDITICL_EXP0_ATTEMPT' not in os.environ; "
+               "assert os.environ['CUDA_VISIBLE_DEVICES'] == ''")
+    stage = campaign.Stage(name, (sys.executable, "-c", payload), cpu=True)
+    campaign.execute(stage, tmp_path / f"{name}.log", timeout=30)
 
 
 @pytest.mark.parametrize('error', ["Job violates accounting/QOS policy (job submit limit, user's size and/or time limits)",
