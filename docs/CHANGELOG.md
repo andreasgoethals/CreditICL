@@ -12,6 +12,7 @@ a flat dated list, so the dates below are its table of contents.
 
 - Preserve the validation phase across the Slurm-client child process; add subprocess regressions and an isolated Slurm test launcher. Record full GPU acceptance, live Exp2 coverage and hash-verified retired-log cleanup.
 - Supply the isolated test checkout on PYTHONPATH for temporary child scripts and retain their diagnostics before scratch cleanup.
+- Verify 2,259 local tests and 101 native maintenance tests; retire the temporary DATA checkout after archiving evidence and leave all 64 Exp2 training configurations covered.
 
 ## 02-11-2026
 

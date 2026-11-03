@@ -7,6 +7,7 @@
 | 11763662 | Source 0494e7a/image r3, Mindwell B200, 24 CPU/180G | COMPLETED 0:0 in 18h05m41s; 117/117 stages PASS, all 38 CUDA cases; login verification 123 items/zero failures |
 | 48 Exp2 replacements | Existing 1,500-update/two-seed grid | 09:07 CET: 19 RUNNING, 29 PENDING Priority, zero failed replacements; 16 earlier completed LGD retained; all 64 covered |
 | 62527538 | Isolated validation-only maintenance, 00438dc/r3, wICE interactive 2 CPU/8G | FAILED 1:0 in 3m44s: 100 passed, one temporary-script import fixture failed; production unchanged |
+| 62528019 | Corrected isolated launcher, 169fff7/r3, same free allocation | COMPLETED 0:0 in 3m42s: 101 passed, zero failures/errors/skips; 36 evidence files hash-verified before deleting the temporary checkout |
 
 Read all 1,341 logs (793,531,171 bytes) and all 64 metric journals: no new runtime
 crash, nonfinite loss or parse error. Expected offline wrapper warnings use the local
@@ -18,6 +19,13 @@ The full-queue validation delay is reproduced at the real subprocess boundary: t
 Slurm-client stage must retain its attempt phase while portable CPU tests clear it.
 The fix does not change training, priors, rates, precision or benchmarking. Keep production
 DATA at 0494e7a; deploy this maintenance change only to an isolated DATA checkout.
+The corrected maintenance revision was pulled/tested there and the checkout subsequently retired;
+its evidence is on PROJECT under `recovery/20261103-audit/validation-client.zip`.
+Final local regression suite: 2,259 passed, 38 VSC-only skips, zero failures (54m11s);
+those 38 GPU cases passed in production GPU Exp0. Changed test-file Ruff and shell syntax pass;
+the runner retains its two pre-existing import-order findings.
+The later health check still found 16 complete/19 running/29 Priority-pending runs and
+zero Exp2 log errors. All 14,501 rows in 297 diagnostic CSVs have no native error fields set.
 
 Archived and hash-verified 465 terminal root fallback logs before removing their old
 copies; all 38 active fallback files remain. Archive SHA256
@@ -37,6 +45,9 @@ needs its own recovery coverage. Shared project scratch is only empty scaffoldin
 **Result:** All four bounded connections timed out during banner exchange; no remote consumer record was returned.
 **Why:** Alternate transport was unavailable; the certificate is valid and normal gateway reads still work.
 **Instead:** Retain both legacy environments; do not equate missing consumer evidence with zero consumers or initiate authentication.
+Native DNS shows the old `.tier2.hpc.kuleuven.be` login aliases no longer resolve;
+the actual `.genius.hpc.kuleuven.be` names resolve, but the corrected strict gateway
+proxy probe also timed out. The ordinary tested LF-stdin gateway channel remains usable.
 
 **Tried:** Run the portable regression suites in the isolated checkout using the SIF directly.
 **Result:** 100 passed; the slow-cell fixture's temporary script exited before its intended guard.

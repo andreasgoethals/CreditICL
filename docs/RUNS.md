@@ -254,6 +254,50 @@ one temporary-script import fixture failed. The isolated launcher omitted PYTHON
 which the production wrapper supplies. Add that explicit path and preserve child logs
 before node-local cleanup, then retest. Original production jobs/source remain intact.
 
+**Maintenance retry 62528019:** 169fff7 was pushed, then pulled into the now-idle test
+checkout. Same allocation/quote 0, accepted through the separate
+`manifests/submissions/validation-client-20261103-pythonpath.json` receipt. Slurm
+COMPLETED 0:0 in 3m42s; JUnit confirms **101 passed, zero failures/errors/skips**
+(187.09s; batch MaxRSS 685,384K), including the temporary-script guard and all five
+new child-environment cases. Source fingerprint
+`cf25443c2cc992947a9b8340f15f38cd3edd26befea0b79767f7f4b73867daa4`;
+training implementation remains unchanged. These are targeted maintenance tests,
+not replacement full Exp0 receipts for a production-source cutover.
+
+Both maintenance jobs were terminal and no test-checkout consumer remained before
+cleanup. All 36 test logs/reports/records were archived and hash-verified:
+`/lustre1/project/stg_00211/CreditICL/recovery/20261103-audit/validation-client.zip`,
+24,104 bytes, SHA256 `6e249a16afba6acce358b45d2996b5131fe99564b5d028dad826634e5fa8b712`.
+The temporary DATA clone was removed; production HEAD remains 0494e7a.
+
+**09:58 CET health recheck:** 16 complete, 19 RUNNING, 29 PENDING Priority; all 70
+Exp2 logs remain free of error candidates, with finite current losses and advancing
+metrics. Separately read 297 diagnostic CSVs/14,501 rows: no native `error`/`n_errors`
+failures. Numeric PIT-uniformity error columns are performance metrics, not exceptions.
+Nine retained operational logs contain only one already documented old bootstrap-test
+failure, not a new production failure. Per-login-host retirement checks timed out at
+the SSH banner; normal gateway accounting/log reads work. Keep both legacy environments
+until consumer clearance/recovery requirements are resolved. No new authentication flow,
+environment migration, production cancellation or scheduled monitor was initiated.
+
+**Local closure:** `.CreditICL/Scripts/python.exe -m pytest -q` exited 0:
+**2,259 passed, 38 VSC-only skips**, 510 warnings, 54m11s. The changed Python test file
+passes Ruff; the runner's two import-order findings match the prior commit. Shell syntax
+passes. Source and training fingerprints match those verified on the isolated VSC checkout.
+The 10:21 CET production recheck still reports 16 complete/19 running/29 Priority-pending,
+zero errors in 70 Exp2 logs; latest logged LGD steps 700–900, PD 400–700. Every approved
+training ID is already accepted; no duplicate production submission is needed. Remaining
+training continues through the existing requeue guard. Benchmarking and Exp3 remain later stages.
+At 10:25 CET the final quota snapshot is DATA 46,393M/76,800M (401k files), shared
+PROJECT 834.6G/1T (58,737 files; about 189.4 GiB free), and 50,980,457 available
+credits. The production tracked worktree/pins are unchanged and clean. The temporary
+maintenance clone is absent; no runtime/environment/checkpoint was relocated.
+All 13 compact remote audit records were checksum-verified locally. After retaining a
+verified local operator archive, 52 task-owned TEMP helper/result/log files were removed;
+the full pytest log and cleanup ledger remain under `.runtime-build/audit-20261103/`.
+Previously rejected cleanup targets remain untouched. Final reporting-only commits are
+published without pulling them into the consumed production checkout.
+
 ### 02-11-2026 — all repaired admissions complete; GPU validation running
 
 **10:35 CET final admission check.** All **48 effective replacements** are accepted and

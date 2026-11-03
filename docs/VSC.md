@@ -19,6 +19,10 @@ Preserve their DATA checkout at 0494e7a and accepted PROJECT image r3. A validat
 fix must be pulled/tested in a separate DATA checkout while these consumers remain.
 No scheduled monitor, Exp2 benchmark or Exp3 is submitted. Exact IDs and evidence are in
 [RUNS.md](RUNS.md).
+At 10:25 CET shared PROJECT free space is about 189.4 GiB, below the 250-GiB reserve
+required for additional campaigns; existing admitted training is preserved. Both legacy
+DATA environments remain explicit recovery exceptions: cross-login consumer clearance
+is incomplete and the separate Conda environment lacks distinct recovery coverage.
 Distilled from `vsc-library/VSC Repository.txt` (pin `289ed81df5d101512f91ae1ea3b0083a2de08a96`, checked 20-10-2026) plus what we learned
 running on it; where the docs are silent this file says so. **Verify charge rates and partitions
 against the live docs before a large run.** The recovery procedure after *any* interruption is one
