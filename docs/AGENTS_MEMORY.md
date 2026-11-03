@@ -1,5 +1,28 @@
 # Agents' memory — runs and dead ends
 
+## 03-11-2026 — complete local Exp0/Exp1 file mirror
+
+VSC's provenance planner again accepts all 54 Exp1 training runs and 158 benchmark slots
+(120 main checkpoints, 30 component tests, eight shared references). No submission is missing.
+The local `experiment_0`, `experiment_1` and `reference` file trees now match the merged DATA/PROJECT
+snapshot exactly: 3,332 files, 41,306,487,936 bytes, every SHA256 verified. All 2,594 Exp1 files
+were already identical; 669 changed/missing files were downloaded. Local-only old Exp0 files
+(547) and 52 replaced versions were preserved outside the active tree in
+`.runtime-build/exp01-sync-20261103/local-before-sync/`. Do not delete the previously blocked transfer paths.
+Verification ledger: `.runtime-build/exp01-sync-20261103/sync-verified.json`.
+Remote file-inventory SHA256: `cbd5bff093daa60360feed95d6d39c08c74fceca8099c1939b8414cf314f31e3`.
+The downloaded manifest ZIP is metadata only; output payloads were transferred separately by SFTP.
+Notebook provenance now records this complete mirror instead of the stale 30-10 snapshot label.
+All seven General/Exp1 notebooks reran successfully: 53 PDFs, captions and final printed summaries.
+All 53 renders match the preceding reviewed figures pixel-for-pixel; visual inspection found no new defects.
+The 47 loader/runner checks and 91 output/readability checks pass. Scientific files were rehashed after execution.
+Production source 0494e7a, runtime, jobs and all Exp2 files remain unchanged. No new workload or monitor.
+
+**Tried:** Prepare download directories and resolve their boundaries concurrently on Windows.
+**Result:** Two groups stopped at the path guard; two completed successfully. No active output was overwritten.
+**Why:** A preparation-time resolution check failed; the exact Windows cause is unconfirmed.
+**Instead:** Prepare directories sequentially, revalidate resolved paths, verify the 308 staged files, and download only the remaining 361.
+
 ## 03-11-2026 — GPU acceptance and complete live Exp2 coverage
 
 | Run | Configuration | Observed outcome |

@@ -191,11 +191,11 @@ References (tfm-library pin cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a):
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b.
-Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
-Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
-Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
-Latest training record in that snapshot: not recorded.
+Local notebook-code fingerprint: cf25443c2cc992947a9b8340f15f38cd3edd26befea0b79767f7f4b73867daa4.
+Downloaded archive: exp01-verified-file-manifest-20261103.zip (file manifest only; output files synchronized separately by SFTP); local download time 2026-11-03T10:21:36.849324+00:00.
+Archive SHA-256: a21cf7e5baed42e8bc057b93bd6260dd37ed1f3c3f158b59a0c1bd6c9912f8b2
+Recorded executable fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b
+Latest training record in that snapshot: All 54 Experiment 1 runs complete at 12,500 updates; all 158 current-protocol benchmark slots verified on VSC.
 Main comparison: 12/12 downloaded completions; 0 partial traces; 0 without local output.
 Component tests: 15/15 downloaded completions; 0 partial traces; 0 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
@@ -203,11 +203,11 @@ Final credit/OOD benchmarking is a separate completion gate; monitoring is not i
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b.
-Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
-Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
-Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
-Latest training record in that snapshot: not recorded.
+Local notebook-code fingerprint: cf25443c2cc992947a9b8340f15f38cd3edd26befea0b79767f7f4b73867daa4.
+Downloaded archive: exp01-verified-file-manifest-20261103.zip (file manifest only; output files synchronized separately by SFTP); local download time 2026-11-03T10:21:36.849324+00:00.
+Archive SHA-256: a21cf7e5baed42e8bc057b93bd6260dd37ed1f3c3f158b59a0c1bd6c9912f8b2
+Recorded executable fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b
+Latest training record in that snapshot: All 54 Experiment 1 runs complete at 12,500 updates; all 158 current-protocol benchmark slots verified on VSC.
 Main comparison: 12/12 downloaded completions; 0 partial traces; 0 without local output.
 Component tests: 15/15 downloaded completions; 0 partial traces; 0 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
@@ -253,11 +253,11 @@ Different synthetic-task losses do not rank downstream prediction quality.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b.
-Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
-Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
-Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
-Latest training record in that snapshot: not recorded.
+Local notebook-code fingerprint: cf25443c2cc992947a9b8340f15f38cd3edd26befea0b79767f7f4b73867daa4.
+Downloaded archive: exp01-verified-file-manifest-20261103.zip (file manifest only; output files synchronized separately by SFTP); local download time 2026-11-03T10:21:36.849324+00:00.
+Archive SHA-256: a21cf7e5baed42e8bc057b93bd6260dd37ed1f3c3f158b59a0c1bd6c9912f8b2
+Recorded executable fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b
+Latest training record in that snapshot: All 54 Experiment 1 runs complete at 12,500 updates; all 158 current-protocol benchmark slots verified on VSC.
 Main comparison: 12/12 downloaded completions; 0 partial traces; 0 without local output.
 Component tests: 15/15 downloaded completions; 0 partial traces; 0 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
@@ -265,11 +265,11 @@ Final credit/OOD benchmarking is a separate completion gate; monitoring is not i
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b.
-Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
-Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
-Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
-Latest training record in that snapshot: not recorded.
+Local notebook-code fingerprint: cf25443c2cc992947a9b8340f15f38cd3edd26befea0b79767f7f4b73867daa4.
+Downloaded archive: exp01-verified-file-manifest-20261103.zip (file manifest only; output files synchronized separately by SFTP); local download time 2026-11-03T10:21:36.849324+00:00.
+Archive SHA-256: a21cf7e5baed42e8bc057b93bd6260dd37ed1f3c3f158b59a0c1bd6c9912f8b2
+Recorded executable fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b
+Latest training record in that snapshot: All 54 Experiment 1 runs complete at 12,500 updates; all 158 current-protocol benchmark slots verified on VSC.
 Main comparison: 12/12 downloaded completions; 0 partial traces; 0 without local output.
 Component tests: 15/15 downloaded completions; 0 partial traces; 0 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.

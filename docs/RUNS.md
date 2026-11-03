@@ -169,6 +169,54 @@ The one thing to do differently.
 
 ## Runs
 
+### 03-11-2026 — complete Exp0/Exp1 download and analysis snapshot
+
+No new cluster computation was submitted. The PROJECT-image provenance planner on frozen
+0494e7a accepts **54/54 Exp1 training runs and 158/158 benchmark slots**: 60 main checkpoint
+slots plus four shared references per task, and 15 component slots per task. This includes
+the 25% extension, all five folds and the native credit/OOD artifact gates.
+
+The merged DATA/PROJECT scientific output trees `experiment_0/`, `experiment_1/` and
+`reference/` are mirrored locally, including checkpoints, predictions, metrics, logs and
+receipts: **3,332 files / 41,306,487,936 bytes**, with exact file-set and SHA256 agreement.
+Breakdown: Exp0 642 files; Exp1 2,594; shared references 96. All Exp1 files were already
+identical; 669 changed/missing Exp0/reference files (6,747,279,935 bytes) were downloaded
+through native Windows SFTP. A bounded path guard stopped two initial transfer groups;
+the 308 completed staged files were verified before resuming only the remaining 361.
+All directories were then prepared/resolved sequentially; no guard was bypassed.
+
+Preserved 547 superseded local Exp0 files and 52 replaced versions under
+`.runtime-build/exp01-sync-20261103/local-before-sync/`; the active scientific tree contains
+the current remote files only. Old hardlinked copies were never overwritten in place.
+The full verification ledger and pre-sync inventory are beside that backup. Previously
+rejected cleanup paths remain untouched. Input datasets and Exp2 output were outside the transfer.
+
+Remote snapshot capture: 11:06 CET; its files remained unchanged at 11:20 CET. Inventory SHA256
+`cbd5bff093daa60360feed95d6d39c08c74fceca8099c1939b8414cf314f31e3`.
+Downloaded metadata archive `exp01-verified-file-manifest-20261103.zip`: 170,096 bytes,
+SHA256 `a21cf7e5baed42e8bc057b93bd6260dd37ed1f3c3f158b59a0c1bd6c9912f8b2`.
+It contains the file manifest; the payloads were separately synchronized by SFTP. The notebook
+snapshot metadata now records this complete mirror and preserves the per-run historical provenance.
+Copied Exp0 reports show CPU 62516762 PASS (14 stages) and GPU 11763662 PASS (117 stages).
+Local reporting code is newer than the frozen scientific revision; no VSC pull or runtime change occurred.
+
+All seven General/Exp1 notebooks executed locally, producing 53 PDFs plus captions and final printed
+summaries. Their code cells are unchanged. Every figure was rendered and visually reviewed; all 53
+match the preceding reviewed images pixel-for-pixel. The 47 loader/runner tests and 91 generated-output,
+readability and visualization tests pass. The unchanged local source previously passed the full suite
+(2,259 tests, 38 VSC-only skips); those CUDA cases passed in native GPU Exp0. Post-execution file-set
+and SHA256 verification is recorded in `.runtime-build/exp01-sync-20261103/post-notebook-verified.json`.
+
+Descriptively, 25%/50% mixtures remain close to the matched 0% control on credit; 100% is worse,
+especially on OOD. At 100%, mean designated-holdout changes are PD ROC-AUC -0.0153 (eight datasets)
+and LGD R² -0.0707 (three datasets); native OOD changes are -0.1221/-0.2498 across 25 datasets per task.
+These small credit panels and their nominal dataset intervals do not establish a broadly superior mixture.
+No learning rate, prior choice, experiment configuration or accepted job was changed from these results.
+
+Task-owned temporary transfer helpers and the 53 rendered images/nine contact sheets were archived
+locally with every member hash verified before retirement; the empty incoming staging tree was removed.
+Evidence remains under `.runtime-build/exp01-sync-20261103/`; the pre-sync recovery copies are retained.
+
 ### 03-11-2026 — full GPU PASS and live campaign audit
 
 **Production revision:** frozen `0494e7a14bc320176de3a8665051630461f3c316`;
