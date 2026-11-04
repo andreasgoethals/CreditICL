@@ -52,17 +52,12 @@ that cache can only be rebuilt from a login node.
 id — before the run finishes. A job killed at the walltime never comes back to write its own
 entry, and the submission details are exactly what is lost.
 
-**3. When it finishes, Andreas downloads the output and uploads it back into a chat session** so
-it can be read and debugged. What to collect:
-
-```bash
-# on the login node — small enough to pull down whole
-tar czf "crediticl_$(date +%Y%m%d).tar.gz" -C "$VSC_DATA/CreditICL" "output CreditICL"
-```
-
-Also collect the benchmark CSVs and receipts from project storage, retaining their paths relative
-to `output CreditICL/`; the small tier alone cannot verify benchmark results. Keep checkpoint binaries
-on VSC. The historical paths below describe older runs; current paths are in `docs/VSC.md`.
+**3. Inspect VSC directly and collect only analysis evidence.** With working access, the agent
+reads logs, receipts and scheduler state itself. Filter the merged DATA/PROJECT inventory through
+`src.utils.result_manifest` before verified SFTP collection; retain paths relative to
+`output CreditICL/`. Collect benchmark CSVs and receipts as well as the small-tier logs.
+Keep model weights, optimizer states, caches and unfiltered archives on VSC. See `docs/VSC.md`;
+older entries below record historical collection procedures, not current instructions.
 
 **4. Fill in the entry.** Results, bugs, interpretation. Add a row to `AGENTS_MEMORY.md`, and a
 **Dead ends** entry there for anything that cost more than a couple of minutes.
@@ -168,6 +163,44 @@ The one thing to do differently.
 ---
 
 ## Runs
+
+### 04-11-2026 — 17:28 CET training/storage audit; local model cleanup
+
+No jobs submitted, cancelled or changed. VSC production remains frozen at `0494e7a` with
+the accepted PROJECT r3 runtime. Exp0 CPU 62516762 and GPU 11763662 retain PASS reports
+(14 and 117 stages). Exp1 retains 54 completed runs, 150 checkpoint/component receipts and
+eight shared-reference receipts. This audit did not recompute those benchmark results.
+
+Exp2: **47/64 complete at 1,500 updates** (PD16/32, LGD31/32), **17 running**, zero pending.
+All 64 expected identities are present, and every completed run has checkpoints at
+125/250/500/1000/1500. Remaining PD jobs: `11763811_[0-2]`, `11763815_3`, `11763820_4`,
+`11763822_5`, `11763825_6`, `11763832_7`, `11763881_16`, `11763885_17`, `11763887_18`,
+`11763890_19`, `11763895_20`, `11763897_21`, `11763899_22`, `11763901_23`.
+Remaining LGD: `11763798_23`. Last recorded steps are PD700–1400 and LGD1400;
+12-hour checkpoint/requeue cycles remain expected. The recipe/grid is unchanged.
+
+Scanned 758 active-tree Exp1/2 logs (770,229,240 bytes): no matched crash, CUDA OOM, quota
+or checkpoint-write failure, no nonfinite metric losses, no error-bearing fallback logs.
+Historical scheduler failures/cancellations remain evidence of the earlier repaired campaign,
+not new failures. Only the two accepted Exp0 attempt directories remain. No checkpoint file
+is in the DATA output tree. This is a status/log audit, not a guarantee against unobserved bugs.
+
+CreditICL PROJECT: 213.0 GiB including 197.8 GiB output and 12.1 GiB runtime/rebuild assets;
+project-owned shared scratch ~21 KiB. Allocation usage 250.6G/1T, 8,132/150,000 files;
+DATA 44357M/76800M. Available credit balance 31,811,358. No remote cleanup was needed or
+performed; successful models and documented legacy environment recovery exceptions remain.
+
+Locally removed 361 model files, 82.15 GiB; all 2,755 retained analysis files passed SHA256
+verification. The temporary PowerShell helper's JSON-array and DirectoryInfo issues were
+reproduced in PS5.1, fixed and tested before execution. Its executable code is retired.
+Automatic review blocked deleting empty directories/helper files; harmless placeholders remain.
+Evidence: `.runtime-build/local-cleanup-verified-20261104.json` and
+`.runtime-build/audit-20261104/current-{status,health}.sh.result.json`.
+
+Next: finish/verify training, safely update and validate the revised source after consumers exit,
+then authorize/quote the outstanding Exp2 benchmarks (320 trained-checkpoint slots; eight shared
+references may be reused after provenance checks). Exp3's 48 new runs/16 reused baselines remain
+implemented locally and unsubmitted. Collect analysis only for subsequent notebook updates.
 
 ### 03-11-2026 — complete Exp0/Exp1 download and analysis snapshot
 

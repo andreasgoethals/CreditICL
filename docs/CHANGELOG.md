@@ -2,6 +2,7 @@
 
 ## 04-11-2026
 
+- Remove 82.15 GiB of local model copies; retire the PS5-incompatible cleanup helper and refresh the verified VSC status.
 - Restrict local collection to analysis files; fix storage-probe safety, obsolete fallback advice and stale documentation.
 - Revise Exp3 to 48 new runs and 16 reused Exp2 baselines; add rate-separated analysis, notebook figures and 24 mandatory GPU recipe round trips while preserving Exp1/2 identities.
 

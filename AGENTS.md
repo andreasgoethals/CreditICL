@@ -75,6 +75,9 @@ authorization; access alone does not authorize new workloads, installations or m
   SSH channel in TEMPLATE.md. Check actual stdout/stderr and remote status; empty output with
   exit 0 is not success. Keep host-key verification enabled. Diagnose a failed channel before
   reading results or attempting mutations; network failures do not prove certificate expiry.
+- Execute available diagnostics and authorized maintenance yourself; do not ask Andreas to
+  run commands merely to relay their output. Manual MFA and genuinely unavailable access are
+  exceptions. Test any PowerShell 5.1 instructions in that actual interpreter, not only PowerShell 7.
 - The actual checkout and `.git` live on DATA. Freeze code, submodules and runtime versions
   used by active/queued jobs. Large persistent assets and versioned immutable dependency SIF
   images belong on allocated PROJECT storage; temporary working files belong on scratch.
