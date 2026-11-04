@@ -64,7 +64,7 @@ def diagnostic_config(track: str, *, rows: int | None = None,
     matches = [c for c in expand_with_seeds(load(f"config/Exp{experiment}_{track.upper()}.yaml", allow_placeholders=True))
                if c["arm"] == "tabicl" and c["seed"] == 0
                and float(c["prior"]["credit_fraction"]) == .5 and c.get("lr_index", 0) == 0
-               and (adaptation == "full" or c.get("method") == adaptation)]
+               and (adaptation == "full" or c.get("method") == f"{adaptation}_high")]
     if len(matches) != 1:
         raise ValueError("Expected exactly one seed-zero mixed TabICL recipe")
     cfg = copy.deepcopy(matches[0])

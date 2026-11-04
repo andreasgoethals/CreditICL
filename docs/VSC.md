@@ -470,7 +470,7 @@ Completed Exp1 training on B200, batch 64 and micro-batch 4, with explicit proje
 | **Completed Exp1 extension: 3 more arms/track** | 25% credit, three seeds, indices 9–11; all six completed on 28-10, making 54 completed training runs. Their recorded training totals about 40.7 GPU-h; quarter-mixture benchmarks remain pending in the 29-10 snapshot. |
 | Superseded 96-run Exp2, 10k updates | Production TabICL timing projects 210–225 GPU-h/arm; combined with the provisional TabPFN subtotal, **12,189–12,909 GPU-h / 373–395M training credits**, excluding benchmarking. Replaced by the fixed-rate budget below. |
 | Fixed-rate Exp2 | 64 runs × 1,500 updates: approximately **37.3–39.5M training credits**, linearly extrapolated from earlier throughput; excludes validation and benchmarking. |
-| Fixed-recipe Exp3 | 32 new runs × 1,500 updates + 8 reused baselines: **18.6–19.8M full-update-equivalent credits** for planning only; adapter throughput is unmeasured. |
+| Fixed-recipe Exp3 | 48 new runs × 1,500 updates + 16 reused baselines; training cost remains unmeasured for these six recipes. Do not extrapolate adapter speed from full-update or scratch runs. |
 | Current Exp3 | Retention-method runtime remains unmeasured; do not extrapolate scratch throughput. The old 200k scratch Exp3 is abandoned. |
 | TabICLv2's own full pretraining | 24.5 GPU-days per model (the paper's figure) |
 
@@ -498,10 +498,11 @@ and 1.9298 hours PD / 0.1388 hours LGD for released TabPFN. The 45 Exp1 TabICL c
 evaluations per track had medians of 2.5337 hours PD / 0.1268 hours LGD. These timers include
 preprocessing and calibration; they are not Slurm elapsed time or billed GPU-hours. At comparable inference
 speed, all five Exp2 checkpoints imply approximately 367–378 timed hours (11.22–11.58M
-credits); Exp3 adds 183–189 hours (5.61–5.79M), conditional on adapter inference speed.
-Together with training, the planning total is roughly 73–77M credits, excluding validation,
-retries and remaining Exp1 benchmarks. The live available balance was 95,812,429 credits. This reserve
-motivates the 1,500-update design; the estimate is not a spending guarantee.
+credits). The retired 32-run Exp3 added 183–189 hours (5.61–5.79M); the revised 48-run grid
+scales to 275–284 hours (8.42–8.69M), conditional on adapter inference speed and excluding
+any missing reused baseline evaluations. New method-specific training timings are required:
+the historical 73–77M combined estimate does not budget the revised grid. The 29-10 available
+balance was 95,812,429 credits; obtain current balance and quotes before any new campaign.
 
 The 29-10 quote uses an actual jobscript (this VSC `sam-quote` rejects `--wrap` alone):
 
@@ -560,8 +561,8 @@ and five folds. It is a capacity and correctness gate, not the publication bench
 The revised TabICLv2 recipes add **34 mandatory long-context GPU stages**: seven row/feature capacity
 corners for both tracks and both priors (28), followed by a complete, sampled 64-task update per
 track (2), and a 60k-row stage for both DiagScale and LoRA on each track (4).
-Another **16 native method round trips** cover training, forced stop/resume, frozen weights and
-checkpoint prediction for four methods, two tasks and both backbones. The long-context stages
+Another **24 native recipe round trips** cover training, forced stop/resume, frozen weights and
+checkpoint prediction for six recipes (both adapter rates), two tasks and both backbones. The long-context stages
 use released weights, activation recomputation, float32 efficient SDPA, four
 loader workers at most and one prefetched batch per worker. No mathematical-attention fallback
 or implicit FA3 float16 conversion is allowed. Each long-context stage requires a finite, nonzero
@@ -741,9 +742,18 @@ python -m src.utils.run_experiment 3 --single-cluster --submit
 # Repeat after training for benchmarks.
 ```
 
-The former 200k-update scratch Exp3 is abandoned. Current Exp3 has 32 new runs and 8 reused Exp2 baselines, all at 1,500 updates.
+The former 200k-update scratch Exp3 is abandoned. Current Exp3 has 48 new runs and 16 reused Exp2 baselines, all at 1,500 updates.
 Both CPT rates and all adapter settings are fixed before benchmarking; no pilot selects them.
 The 125/250/500/1,000/1,500 checkpoints describe adaptation trajectories, with 1,500 as primary endpoint. Never delete Exp1 or Exp2 baseline checkpoints while
 these comparisons are active. Check project capacity before launching: retained checkpoints,
 rolling resume files and full-table benchmark journals all consume project storage. The 24-hour
 Exp0 allocation is a limit, not a prediction of total campaign duration.
+
+## Revised Exp3 deployment gate (04-11-2026)
+
+Implemented locally; do not submit yet or pull into an active Exp2 checkout. After Exp2
+consumers finish, deploy through Git and run fresh CPU/GPU Exp0 on the revised source. The
+GPU plan includes all 24 recipe/task/backbone stop-resume-inference routes plus 34 capacity
+probes; the adapter capacity cases use the higher rate at 60,000 rows. Prior Exp0 PASS is
+historical evidence, not acceptance of this revision. Requote/check quotas before any Exp3
+authorization. No Exp2 baseline retraining or benchmark resubmission is implied.

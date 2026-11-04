@@ -138,7 +138,7 @@ on synthetic tasks. Its private original pretraining recipe is not claimed repro
 |---|---:|---:|---|
 | Exp1 | 12,500 | 54 | Existing cadence preserved |
 | Exp2 main | 1,500 | 64 | 125, 250, 500, 1k, 1.5k |
-| Exp3 main | 1,500 | 32 new + 8 reused Exp2 | Same five milestones as Exp2 |
+| Exp3 main | 1,500 | 48 new + 16 reused Exp2 | Same five milestones as Exp2 |
 
 The 29-10 fixed-rate revision cancels the learning-rate and adapter pilots. The 1,500-update
 horizon is a compute-budget choice preserving four mixtures, two rates and two paired seeds;
@@ -149,10 +149,10 @@ consume 96k/24k tasks for TabICL/TabPFN respectively. The full cosine schedule e
 rather than stopping an older longer schedule early. Report the fixed endpoint and all retained
 trajectories, never the best checkpoint on the assessment data.
 
-There are 320 permanent Exp2 snapshots and 160 new Exp3 snapshots. At the observed/provisional
+There are 320 permanent Exp2 snapshots and 240 new Exp3 snapshots. At the observed/provisional
 training rates, Exp2 extrapolates to 37.3–39.5M credits, excluding benchmark/validation/Exp3.
 Full evaluation of every saved checkpoint on all eligible rows/features and five folds creates
-56,800 Exp2 dataset-fold-model evaluations and 28,400 for the new Exp3 arms before reference
+56,800 Exp2 dataset-fold-model evaluations and 42,600 for the new Exp3 arms before reference
 models and threshold-calibration refits. Benchmarking must be budgeted separately; training
 cost alone does not establish affordability. See the source evidence and cost assumptions in
 [EXPERIMENTAL_DESIGN.md](EXPERIMENTAL_DESIGN.md) §3.2.
@@ -277,31 +277,28 @@ All five receive full-table credit/native-OOD five-fold evaluation; final-step s
 `schedule_total_steps` and the primary endpoint are all 1,500 for the production recipe.
 Intermediate scores are trajectories, not selected winners.
 
-**Exp3 has 16 new runs per track:** 2 backbones × 4 methods × 2 seeds, or 32 overall.
-Its mixture is fixed at 50% and its full-model reference rate is always `lr_index=0`.
-Eight matching full-CPT-with-decay Exp2 runs are reused; the better-performing rate is never
-chosen retrospectively. There are no `Exp3_*_pilots.yaml` jobs in the current design.
+**Exp3 has 24 new runs per task:** two backbones × six recipes × two seeds, or 48 overall.
+It fixes the mixture at 50% and reuses eight Exp2 baselines per task (both rates, both seeds,
+both backbones), without copying or retraining their weights. Its separate design revision is
+`retention-six-recipes-1500-v3`; Exp2 keeps `fixed-rates-1500-two-seeds-v2`.
 
-| Method | Optimizer and fixed peak LR | Decay / anchor |
+| Recipe ID | Optimizer and peak LR | Decay / anchor |
 |---|---|---|
-| `no_decay` | Native Muon 2e-5 for TabICL; AdamW 1e-5 for TabPFN | Decay 0 |
-| `l2sp` | Same full-model optimizer/rate | Decay 0; alpha .003 |
-| `diagscale` | AdamW .03 | .01 on query-scale deltas only |
-| `lora` | AdamW 1e-4 | .01 on rank-16 Q/V factors only; alpha 16 |
+| `no_decay` | Native Muon 2e-5 (TabICL); AdamW 1e-5 (TabPFN) | Decay 0 |
+| `l2sp` | Same native primary rate | Decay 0; L2-SP .003 |
+| `diagscale_low` / `diagscale_high` | AdamW 1e-4 / 1e-3 | .01 on query-scale deltas only |
+| `lora_low` / `lora_high` | AdamW 3e-6 / 1e-5 | Decay 0; rank 16, alpha 16, dropout 0 |
 
-Adapter warm-up is 10% (150 updates), clipping 1, dropout 0, with the same 1,500-update cosine
-endpoint and four saved milestones. Native weights are frozen for both adapters; initial
-predictions are unchanged. L2-SP is supported by both trainers and always uses the released
-checkpoint as its fixed anchor, including after resume. LoRA exports merged native inference
-weights plus separate resumable factors. DiagScale injection precedes cache creation.
+Adapter warm-up is 10% (150 updates), clipping 1, cosine decay to 1e-7, and five saved
+milestones: 125/250/500/1000/1500. Geometry, precision, seeds and objectives remain those
+of Exp2 within each backbone. Native weights are frozen for adapters; initial predictions
+are unchanged. L2-SP uses the released checkpoint as its anchor, including after resume.
+LoRA exports native merged weights plus resumable factors. DiagScale is injected before caches.
 
-[Real-TabPFN](../tfm-library/papers/text/2025/07_Garg_et_al._Real_TabPFN_Improving_Tabular_Foundation_Models_via_Continued_Pre_training_With_Real_World_Data.txt)
-supports the alpha .003 anchor; Ning et al. supports .03 for DiagScale in a different, single-table
-setting. Q/V-only LoRA at 1e-4 is a fixed engineering recipe, not a reproduced optimum from
-Ning's all-linear LoRA menu. Ordinary decay shrinks current weights; L2-SP penalizes displacement
-from released weights. Compare L2-SP against no-decay to isolate anchoring, and no-decay against
-reused Exp2 to isolate ordinary decay. These are fixed-recipe comparisons with no benchmark-driven
-hyperparameter search. Keeping most weights frozen is not a guarantee of lower GPU time.
+The primary anchor contrast is L2-SP versus no-decay; the decay contrast is no-decay versus
+primary-rate Exp2. Adapter outcomes are compared against both full rates separately; no
+best-rate/checkpoint selection occurs. See [the design rationale](EXPERIMENTAL_DESIGN.md#33-experiment-3-constrained-adaptation-at-a-fixed-50-mixture)
+for literature, CreditPFN archive evidence and historical benchmark-exposure limits.
 
 ## 9. A note on the LGD R² band
 

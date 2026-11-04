@@ -70,14 +70,14 @@ Full rationale in
 
 | # | question | how | arms/track |
 |---|---|---|---|
-| **0** | **Does the revised pipeline run correctly?** | CPU + GPU Slurm jobs: portable tests, CUDA/save/resume checks, full-table benchmarks, 34 long-context probes and 16 retention-method round trips | 3 base training routes |
+| **0** | **Does the revised pipeline run correctly?** | CPU + GPU Slurm jobs: portable tests, CUDA/save/resume checks, full-table benchmarks, 34 long-context probes and 24 retention-recipe round trips | 3 base training routes |
 | **1** | **Does the prior help at matched compute?** | four mixtures × three seeds, plus five component removals × three seeds; 12,500 steps | 27 |
 | **2** | **Does continued pretraining transfer?** | two released backbones × four mixtures × two fixed rates × two seeds, 1,500 updates | 32 |
-| **3** | **Which constraints preserve generality?** | fixed 50% mixture; no decay, L2-SP, DiagScale, Q/V LoRA; two seeds | 16 new + 4 reused |
+| **3** | **Which constraints preserve generality?** | fixed 50% mixture; no decay, L2-SP, DiagScale, Q/V LoRA; two seeds | 24 new + 8 reused |
 
 Counts include seeds and both prediction tasks: **Exp1 = (4 mixtures + 5 component removals) × 3 seeds × 2 tasks = 54 runs**;
 **Exp2 = 2 backbones × 4 mixtures × 2 fixed rates × 2 paired seeds × 2 tasks = 64 runs**.
-**Exp3 = 32 new runs + 8 reused Exp2 baselines**, at the fixed 50% mixture and predeclared primary CPT rate. Both experiments stop at 1,500 updates and retain 125/250/500/1,000/1,500 checkpoints. This is a budget-limited adaptation study, not a claim of convergence.
+**Exp3 = 48 new runs + 16 reused Exp2 baselines**, at the fixed 50% mixture; both full-CPT rates are reused. Both experiments stop at 1,500 updates and retain 125/250/500/1,000/1,500 checkpoints. This is a budget-limited adaptation study, not a claim of convergence.
 The component removals are compared with the main 50% mixture; they are not additional mixture levels.
 The 25% Exp1 extension was approved on 26-10-2026 after the initial 48-run campaign. It appends
 indices 9–11 per task, preserving existing run names and benchmark tags. Completed runs stay valid;
@@ -173,11 +173,11 @@ git submodule update --init --recursive
 
 **2. Create the venv.** Requires **Python 3.11 or 3.12** (VSC ships both, giving local↔cluster
 parity). On this machine bare `python` is 3.14 — out of range — so name the interpreter explicitly.
-The env is called `CreditICL` (not `.venv`) so it is distinguishable from sibling projects:
+The env is called `.CreditICL` so it matches the committed editor configuration:
 
 ```powershell
-py -3.12 -m venv CreditICL
-.\CreditICL\Scripts\Activate.ps1
+py -3.12 -m venv .CreditICL
+.\.CreditICL\Scripts\Activate.ps1
 ```
 
 > Replacing an existing venv? Close every terminal/editor holding it first — Windows leaves a
@@ -204,11 +204,13 @@ if (Test-Path (Join-Path $creditIclBashBin "bash.exe")) { $env:Path = "$creditIc
 ```
 
 ```powershell
+$env:PYTHONUTF8 = '1'
+$env:PYTHONIOENCODING = 'utf-8'
 python -c "import torch, numpy, sklearn, pandas; print(torch.__version__)"
 python -m pytest -q
 ```
 
-`.vscode/settings.json` is committed and points VS Code at `.\CreditICL\Scripts\python.exe` (auto-
+`.vscode/settings.json` is committed and points VS Code at `.\.CreditICL\Scripts\python.exe` (auto-
 activated in new terminals; `pytest` rooted at `tests/`). One "Developer: Reload Window" may be
 needed after first creating the venv.
 
@@ -249,7 +251,9 @@ is only for an explicitly authorized repair while consumers are idle. Use `fetch
 VSC dependency audit already passed; do not routinely upgrade that environment. The guarded
 pull and Exp0-only cleanup sequence is in [VSC](docs/VSC.md).
 
-After Exp1's extension and benchmarks, continue without changing the validated code:
+Exp2 is already submitted; do not duplicate it. The following are lifecycle commands for a
+validated deployment. **The revised Exp3 is not yet VSC-validated or authorized for submission:**
+finish Exp2 first, deploy safely and complete fresh Exp0 before considering its command.
 
 ```bash
 python -m src.utils.run_experiment 2 --single-cluster --submit
@@ -259,8 +263,8 @@ python -m src.utils.run_experiment 3 --single-cluster --submit
 ```
 
 Both Exp2 rates are reported separately: TabICLv2 `2e-5`/`1e-5`, TabPFN-3 `1e-5`/`1e-6`.
-There is no learning-rate pilot or best-on-test selection. Exp3 reuses the 50% runs at the
-predeclared primary rates (`2e-5`/`1e-5`), with fixed adaptation settings. All four saved
+There is no learning-rate pilot or best-on-test selection. Exp3 reuses the 50% runs at
+both predeclared full-CPT rates, with six fixed adaptation recipes. All five saved
 checkpoints are benchmarked on credit and native OOD data. Historical exposure to the credit
 benchmark remains disclosed. See [the registered design](docs/EXPERIMENTAL_DESIGN.md).
 These commands are for the reviewed, validated deployment; no new campaign is launched during

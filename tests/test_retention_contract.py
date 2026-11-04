@@ -51,7 +51,7 @@ def test_diagnostic_stop_keeps_the_registered_schedule_horizon():
     from src.train.optim import build_scheduler
     from src.experiments.design import MAIN_STEPS
     from src.utils.config import expand_with_seeds, load
-    main = next(r for r in expand_with_seeds(load("config/Exp3_PD.yaml")) if r["method"] == "lora")
+    main = next(r for r in expand_with_seeds(load("config/Exp3_PD.yaml")) if r["method"] == "lora_high")
     diagnostic = copy.deepcopy(main)
     diagnostic["train"]["max_steps"] = 5
     opt_a = torch.optim.AdamW([torch.nn.Parameter(torch.zeros(1))], lr=main["train"]["lr"])
@@ -63,11 +63,11 @@ def test_diagnostic_stop_keeps_the_registered_schedule_horizon():
         opt_a.step(); opt_b.step(); a.step(); b.step()
 
 
-def test_gpu_gate_has_all_sixteen_method_routes():
+def test_gpu_gate_has_all_twenty_four_recipe_routes():
     from src.validation.campaign import plan
     stages = [s for s in plan("gpu") if s.name.startswith("adaptation-")]
     expected = {f"adaptation-{t}-{b}-{m}" for t in ("pd", "lgd")
-                for b in ("tabicl", "tabpfn3") for m in ("no_decay", "l2sp", "diagscale", "lora")}
+                for b in ("tabicl", "tabpfn3") for m in ("no_decay", "l2sp", "diagscale_low", "diagscale_high", "lora_low", "lora_high")}
     assert {s.name for s in stages} == expected
     assert all(s.report and s.max_seconds == 1800 for s in stages)
 

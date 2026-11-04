@@ -191,7 +191,7 @@ References (tfm-library pin cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a):
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: cf25443c2cc992947a9b8340f15f38cd3edd26befea0b79767f7f4b73867daa4.
+Local notebook-code fingerprint: f718269b23f932b2389ab9987786e0d2227a1da3b82d01ff8240288cca4f6815.
 Downloaded archive: exp01-verified-file-manifest-20261103.zip (file manifest only; output files synchronized separately by SFTP); local download time 2026-11-03T10:21:36.849324+00:00.
 Archive SHA-256: a21cf7e5baed42e8bc057b93bd6260dd37ed1f3c3f158b59a0c1bd6c9912f8b2
 Recorded executable fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b
@@ -203,7 +203,7 @@ Final credit/OOD benchmarking is a separate completion gate; monitoring is not i
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: cf25443c2cc992947a9b8340f15f38cd3edd26befea0b79767f7f4b73867daa4.
+Local notebook-code fingerprint: f718269b23f932b2389ab9987786e0d2227a1da3b82d01ff8240288cca4f6815.
 Downloaded archive: exp01-verified-file-manifest-20261103.zip (file manifest only; output files synchronized separately by SFTP); local download time 2026-11-03T10:21:36.849324+00:00.
 Archive SHA-256: a21cf7e5baed42e8bc057b93bd6260dd37ed1f3c3f158b59a0c1bd6c9912f8b2
 Recorded executable fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b
@@ -253,7 +253,7 @@ Different synthetic-task losses do not rank downstream prediction quality.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: cf25443c2cc992947a9b8340f15f38cd3edd26befea0b79767f7f4b73867daa4.
+Local notebook-code fingerprint: f718269b23f932b2389ab9987786e0d2227a1da3b82d01ff8240288cca4f6815.
 Downloaded archive: exp01-verified-file-manifest-20261103.zip (file manifest only; output files synchronized separately by SFTP); local download time 2026-11-03T10:21:36.849324+00:00.
 Archive SHA-256: a21cf7e5baed42e8bc057b93bd6260dd37ed1f3c3f158b59a0c1bd6c9912f8b2
 Recorded executable fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b
@@ -265,7 +265,7 @@ Final credit/OOD benchmarking is a separate completion gate; monitoring is not i
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: cf25443c2cc992947a9b8340f15f38cd3edd26befea0b79767f7f4b73867daa4.
+Local notebook-code fingerprint: f718269b23f932b2389ab9987786e0d2227a1da3b82d01ff8240288cca4f6815.
 Downloaded archive: exp01-verified-file-manifest-20261103.zip (file manifest only; output files synchronized separately by SFTP); local download time 2026-11-03T10:21:36.849324+00:00.
 Archive SHA-256: a21cf7e5baed42e8bc057b93bd6260dd37ed1f3c3f158b59a0c1bd6c9912f8b2
 Recorded executable fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b
@@ -486,11 +486,11 @@ Dataset bootstrap intervals are descriptive; training seeds/folds are not extra 
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b.
-Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
-Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
-Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
-Latest training record in that snapshot: not recorded.
+Local notebook-code fingerprint: f718269b23f932b2389ab9987786e0d2227a1da3b82d01ff8240288cca4f6815.
+Downloaded archive: exp01-verified-file-manifest-20261103.zip (file manifest only; output files synchronized separately by SFTP); local download time 2026-11-03T10:21:36.849324+00:00.
+Archive SHA-256: a21cf7e5baed42e8bc057b93bd6260dd37ed1f3c3f158b59a0c1bd6c9912f8b2
+Recorded executable fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b
+Latest training record in that snapshot: All 54 Experiment 1 runs complete at 12,500 updates; all 158 current-protocol benchmark slots verified on VSC.
 Main comparison: 0/32 downloaded completions; 0 partial traces; 32 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
@@ -504,11 +504,11 @@ No local monitoring curves yet.
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b.
-Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
-Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
-Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
-Latest training record in that snapshot: not recorded.
+Local notebook-code fingerprint: f718269b23f932b2389ab9987786e0d2227a1da3b82d01ff8240288cca4f6815.
+Downloaded archive: exp01-verified-file-manifest-20261103.zip (file manifest only; output files synchronized separately by SFTP); local download time 2026-11-03T10:21:36.849324+00:00.
+Archive SHA-256: a21cf7e5baed42e8bc057b93bd6260dd37ed1f3c3f158b59a0c1bd6c9912f8b2
+Recorded executable fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b
+Latest training record in that snapshot: All 54 Experiment 1 runs complete at 12,500 updates; all 158 current-protocol benchmark slots verified on VSC.
 Main comparison: 0/32 downloaded completions; 0 partial traces; 32 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
@@ -538,11 +538,11 @@ Different synthetic-task losses do not rank downstream prediction quality.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b.
-Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
-Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
-Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
-Latest training record in that snapshot: not recorded.
+Local notebook-code fingerprint: f718269b23f932b2389ab9987786e0d2227a1da3b82d01ff8240288cca4f6815.
+Downloaded archive: exp01-verified-file-manifest-20261103.zip (file manifest only; output files synchronized separately by SFTP); local download time 2026-11-03T10:21:36.849324+00:00.
+Archive SHA-256: a21cf7e5baed42e8bc057b93bd6260dd37ed1f3c3f158b59a0c1bd6c9912f8b2
+Recorded executable fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b
+Latest training record in that snapshot: All 54 Experiment 1 runs complete at 12,500 updates; all 158 current-protocol benchmark slots verified on VSC.
 Main comparison: 0/32 downloaded completions; 0 partial traces; 32 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
@@ -556,11 +556,11 @@ No local monitoring curves yet.
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b.
-Downloaded archive: crediticl_exp1_notebook_snapshot_20261030.zip; local download time 2026-10-30T08:59:39.275328+01:00.
-Archive SHA-256: ddd0184170fd454ec4d20d60e7a1aa0bd2abde3567fff0c42ad6a457ffb09a3a
-Recorded executable fingerprint: f6a16dd01ec25dc101c697616f480d01c48bbbf25be054b3d60ee776ab1c4728
-Latest training record in that snapshot: not recorded.
+Local notebook-code fingerprint: f718269b23f932b2389ab9987786e0d2227a1da3b82d01ff8240288cca4f6815.
+Downloaded archive: exp01-verified-file-manifest-20261103.zip (file manifest only; output files synchronized separately by SFTP); local download time 2026-11-03T10:21:36.849324+00:00.
+Archive SHA-256: a21cf7e5baed42e8bc057b93bd6260dd37ed1f3c3f158b59a0c1bd6c9912f8b2
+Recorded executable fingerprint: 571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b
+Latest training record in that snapshot: All 54 Experiment 1 runs complete at 12,500 updates; all 158 current-protocol benchmark slots verified on VSC.
 Main comparison: 0/32 downloaded completions; 0 partial traces; 32 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
@@ -690,32 +690,44 @@ Historical benchmark exposure remains disclosed; no rate, mixture or checkpoint 
 ## 3.1_retention
 
 ```
-Backbone                    Method Peak LR  Weight decay  L2-SP alpha  Updates
-TabICLv2 Full CPT + decay (reused)   2e-05          0.01        0.000     1500
-TabICLv2        Full CPT, no decay   2e-05          0.00        0.000     1500
-TabICLv2              L2-SP anchor   2e-05          0.00        0.003     1500
-TabICLv2                 DiagScale    0.03          0.01        0.000     1500
-TabICLv2                  Q/V LoRA  0.0001          0.01        0.000     1500
-TabPFN-3 Full CPT + decay (reused)   1e-05          0.01        0.000     1500
-TabPFN-3        Full CPT, no decay   1e-05          0.00        0.000     1500
-TabPFN-3              L2-SP anchor   1e-05          0.00        0.003     1500
-TabPFN-3                 DiagScale    0.03          0.01        0.000     1500
-TabPFN-3                  Q/V LoRA  0.0001          0.01        0.000     1500
+Backbone                Method Peak LR  Weight decay  L2-SP alpha  Updates
+TabICLv2 Full CPT · primary LR   2e-05          0.01        0.000     1500
+TabICLv2   Full CPT · lower LR   1e-05          0.01        0.000     1500
+TabICLv2   Full CPT · no decay   2e-05          0.00        0.000     1500
+TabICLv2   L2-SP · alpha 0.003   2e-05          0.00        0.003     1500
+TabICLv2   DiagScale · LR 1e-4  0.0001          0.01        0.000     1500
+TabICLv2   DiagScale · LR 1e-3   0.001          0.01        0.000     1500
+TabICLv2    Q/V LoRA · LR 3e-6   3e-06          0.00        0.000     1500
+TabICLv2    Q/V LoRA · LR 1e-5   1e-05          0.00        0.000     1500
+TabPFN-3 Full CPT · primary LR   1e-05          0.01        0.000     1500
+TabPFN-3   Full CPT · lower LR   1e-06          0.01        0.000     1500
+TabPFN-3   Full CPT · no decay   1e-05          0.00        0.000     1500
+TabPFN-3   L2-SP · alpha 0.003   1e-05          0.00        0.003     1500
+TabPFN-3   DiagScale · LR 1e-4  0.0001          0.01        0.000     1500
+TabPFN-3   DiagScale · LR 1e-3   0.001          0.01        0.000     1500
+TabPFN-3    Q/V LoRA · LR 3e-6   3e-06          0.00        0.000     1500
+TabPFN-3    Q/V LoRA · LR 1e-5   1e-05          0.00        0.000     1500
 Settings are fixed for both tasks; no benchmark scores or selection receipts choose them.
 A · REGISTERED DESIGN
-Fixed 50% mixture; 32 new 1,500-update runs plus 8 reused Exp2 controls.
+Fixed 50% mixture; 48 new 1,500-update runs plus 16 reused Exp2 controls.
 B · FIXED ADAPTATION RECIPES
-Backbone                    Method Peak LR  Weight decay  L2-SP alpha  Updates
-TabICLv2 Full CPT + decay (reused)   2e-05          0.01        0.000     1500
-TabICLv2        Full CPT, no decay   2e-05          0.00        0.000     1500
-TabICLv2              L2-SP anchor   2e-05          0.00        0.003     1500
-TabICLv2                 DiagScale    0.03          0.01        0.000     1500
-TabICLv2                  Q/V LoRA  0.0001          0.01        0.000     1500
-TabPFN-3 Full CPT + decay (reused)   1e-05          0.01        0.000     1500
-TabPFN-3        Full CPT, no decay   1e-05          0.00        0.000     1500
-TabPFN-3              L2-SP anchor   1e-05          0.00        0.003     1500
-TabPFN-3                 DiagScale    0.03          0.01        0.000     1500
-TabPFN-3                  Q/V LoRA  0.0001          0.01        0.000     1500
+Backbone                Method Peak LR  Weight decay  L2-SP alpha  Updates
+TabICLv2 Full CPT · primary LR   2e-05          0.01        0.000     1500
+TabICLv2   Full CPT · lower LR   1e-05          0.01        0.000     1500
+TabICLv2   Full CPT · no decay   2e-05          0.00        0.000     1500
+TabICLv2   L2-SP · alpha 0.003   2e-05          0.00        0.003     1500
+TabICLv2   DiagScale · LR 1e-4  0.0001          0.01        0.000     1500
+TabICLv2   DiagScale · LR 1e-3   0.001          0.01        0.000     1500
+TabICLv2    Q/V LoRA · LR 3e-6   3e-06          0.00        0.000     1500
+TabICLv2    Q/V LoRA · LR 1e-5   1e-05          0.00        0.000     1500
+TabPFN-3 Full CPT · primary LR   1e-05          0.01        0.000     1500
+TabPFN-3   Full CPT · lower LR   1e-06          0.01        0.000     1500
+TabPFN-3   Full CPT · no decay   1e-05          0.00        0.000     1500
+TabPFN-3   L2-SP · alpha 0.003   1e-05          0.00        0.003     1500
+TabPFN-3   DiagScale · LR 1e-4  0.0001          0.01        0.000     1500
+TabPFN-3   DiagScale · LR 1e-3   0.001          0.01        0.000     1500
+TabPFN-3    Q/V LoRA · LR 3e-6   3e-06          0.00        0.000     1500
+TabPFN-3    Q/V LoRA · LR 1e-5   1e-05          0.00        0.000     1500
 No benchmark-driven learning-rate or adapter selection.
 C · CREDIT AND OOD RETENTION
 Paired final contrasts use the same training seeds and five-fold assignments.

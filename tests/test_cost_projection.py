@@ -74,5 +74,5 @@ def test_retention_does_not_reuse_from_scratch_timing(capsys):
     runs = expand_with_seeds(load("config/Exp3_PD.yaml", allow_placeholders=True))
     _print_training_costs(3, "", "pd", runs, _summaries())
     text = capsys.readouterr().out
-    assert "16 new runs; GPU-hours unknown" in text
+    assert "24 new runs; GPU-hours unknown" in text
     assert "about" not in text

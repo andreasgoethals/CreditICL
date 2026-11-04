@@ -245,6 +245,14 @@ METHOD_COLORS = {"full_wd": ORIGINAL, "no_decay": CREDIT, "l2sp": REFERENCE,
 METHOD_MARKERS = {"full_wd": "o", "no_decay": "s", "l2sp": "^", "diagscale": "D", "lora": "v"}
 METHOD_LINES = {"full_wd": "--", "no_decay": "-", "l2sp": "-.", "diagscale": ":", "lora": "-"}
 
+# Same family colour, distinct markers/lines for each prespecified rate.
+METHOD_COLORS.update(full_wd_lower=ORIGINAL, diagscale_low=QUERY, diagscale_high=QUERY,
+                     lora_low=EXTERNAL, lora_high=EXTERNAL)
+METHOD_MARKERS.update(full_wd_lower="x", diagscale_low="D", diagscale_high="P",
+                      lora_low="v", lora_high="^")
+METHOD_LINES.update(full_wd_lower=":", diagscale_low="-", diagscale_high="--",
+                    lora_low="-", lora_high="--")
+
 #: Named colormaps, both colour-blind-safe and monotone in lightness so they survive a greyscale
 #: photocopy — `CMAP_SEQ` for one-directional intensity (a correlation magnitude, a density),
 #: `CMAP_DIV` for a signed quantity around a meaningful zero (an effect, a difference from control).

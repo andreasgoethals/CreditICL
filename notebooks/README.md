@@ -32,7 +32,7 @@ credit/OOD frontier is not populated from short-context training monitors.
 
 Experiment 2 retains four mixtures and both peak rates per backbone, with separate plots
 for each backbone/rate and full-table checkpoint trajectories. Experiment 3 fixes the 50%
-mixture and predeclared full-model/adapter settings, and reuses the primary-rate Exp2 baseline.
+mixture and predeclared full-model/adapter settings, and reuses both fixed-rate Exp2 baselines.
 Both experiments use two training seeds and retain 125/250/500/1,000/1,500 updates; paired-retention and checkpoint panels stay
 empty until the required evidence exists. The designated holdout has historical project
 exposure; it is **not untouched confirmation**. No plot or notebook chooses a setting.
@@ -66,3 +66,8 @@ The prior notebooks generate fresh seeded diagnostics rather than silently using
 old cached pools. These CPU draws are the slowest part of a local rerun. The
 figures document their sample sizes and diagnostic row subsamples; those plotting
 subsamples do not cap the production benchmark.
+
+For the committed Windows figures, use `CREDITICL_DRAW_WORKERS=1` (PowerShell:
+`$env:CREDITICL_DRAW_WORKERS='1'`). Worker count changes the diagnostic random streams;
+seed alone does not reproduce these illustrations across different worker counts.
+This setting does not change the production training loader or benchmark.

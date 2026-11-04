@@ -72,6 +72,14 @@ REVIEWED_TRANSITIONS["src/eval/selection.py"] = (
 )
 
 
+# 04-11 Exp3 revision: only the retired selection CLI's printed baseline wording
+# changed. No evaluation behavior changes; all other request fields still match.
+_before, _after = REVIEWED_TRANSITIONS["src/eval/selection.py"]
+REVIEWED_TRANSITIONS["src/eval/selection.py"] = (
+    _before | _after, _after | frozenset(['bd8cfd94304d9f5de8ea4e29b5ade2fca1026748e5cacff2904ada2899ea1661', 'd56f05ae18547a5841c3c5ffe57dd5af1d07bee9a0b1d85805ad7787e34541cd']),
+)
+
+
 # Workspace description only; the prediction implementation is identical.
 REVIEWED_TRANSITIONS["src/eval/tabicl_memory.py"] = (
     frozenset(['2dd1ac97ebbc849424cbc1ce6f742eba6918b6bfef557c4dda1098bc00867d35', '9ef0f00013debd76bb53f8df221ed11a6425e8b034a02e576b3bb3c5cced614e']), frozenset(['094f50b18d0ecb949ab45e2f4161fb33ea1355357956b38a137275b68b594cbb', 'b43848335996c286d0357c8397f7433f52255674d587586c7df8f538eb2d4aca']),

@@ -106,10 +106,11 @@ def plan(phase: str = "gpu") -> list[Stage]:
         stages.append(Stage("notebooks", (py, "-m", "src.utils.run_notebooks", "--workers", "2"), cpu=True))
         return stages
     from src.validation.long_context import CAPACITY_CORNERS
+    from src.experiments.design import RETENTION_RECIPES
 
     for track in paths.TASKS:
         for backbone in ("tabicl", "tabpfn3"):
-            for method in ("no_decay", "l2sp", "diagscale", "lora"):
+            for method in RETENTION_RECIPES:
                 name = f"adaptation-{track}-{backbone}-{method}"
                 folder = report / name
                 stages.append(Stage(name, (py, "-m", "src.validation.adaptation", "--track", track,

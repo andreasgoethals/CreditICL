@@ -42,7 +42,7 @@ The three research questions form a sequence rather than three searches for a wi
    how does the credit prior package change PD/LGD performance, and which removals change its effect?
 2. **RQ2 — transfer and mixture:** when continuing released models, how do credit/generic mixture
    and two predeclared learning rates affect credit performance and native OOD retention?
-3. **RQ3 — adaptation constraints:** at a fixed 50% mixture and predeclared reference rate, how do
+3. **RQ3 — adaptation constraints:** at a fixed 50% mixture and predeclared rates, how do
    fixed regularization and parameter-efficient recipes change the adaptation–retention trade-off?
 
 Experiment 0 validates implementation; it is not a fourth research experiment. Training trajectories,
@@ -115,7 +115,7 @@ unchanged, including the appended 25% mixture. This change does not require retr
 | 0 | Do the current code, inputs, native model routes and hardware paths pass validation? | Diagnostic CPU job, then resumable GPU campaign; no research arms |
 | 1 | Does the credit prior package help a scratch TabICL at a matched budget? | 54 = (4 mixtures + 5 component removals) × 3 seeds × 2 tasks |
 | 2 | How do mixture and fixed learning rate affect transfer and OOD retention? | 64 = 2 backbones × 4 mixtures × 2 rates × 2 seeds × 2 tasks; 1,500 updates each |
-| 3 | Which fixed update constraints trade credit adaptation against OOD retention? | 32 new = 2 backbones × 4 methods × 2 seeds × 2 tasks; 1,500 updates each; 8 reused Exp2 baselines |
+| 3 | Which fixed update constraints trade credit adaptation against OOD retention? | 48 new = 2 backbones × 6 recipes × 2 seeds × 2 tasks; 1,500 updates each; 16 reused Exp2 baselines |
 
 ### 3.1 Experiment 1: preserved evidence
 
@@ -202,7 +202,7 @@ Exp3 so the main comparison does not add both a prior intervention and a checkpo
 
 A 29-10 local Torch 2.13.0+cpu probe with FP32 parameters, zero gradients and foreach AdamW
 changed no entries at LR 1e-6 / decay .01, but changed nonzero entries at LR 1e-5. This is not CUDA
-Torch 2.11 evidence. Exp3 uses the predetermined primary rate, not the lower-rate winner.
+Torch 2.11 evidence. Exp3 reuses both predetermined full-model rates, with no winner selection.
 Validate effective decay on the actual runtime; numerically identical treatments should be
 reported as such, not amplified after inspecting benchmark outcomes.
 
@@ -224,7 +224,7 @@ throughput. It is not a billing quote or a guarantee of affordability.
 
 Every retained Exp2 snapshot on all credit and OOD datasets implies **56,800 dataset-fold-model
 evaluations**: 32 PD runs × 5 steps × 39 datasets × 5 folds, plus 32 LGD runs × 5 × 32 × 5.
-References and PD threshold-calibration refits add work. Exp3's 32 new runs add 28,400 such
+References and PD threshold-calibration refits add work. Exp3's 48 new runs add 42,600 such
 evaluations. Full-table benchmarking can dominate total cost; price it from actual runtime evidence
 before launching the entire campaign. Keeping few trainable parameters does not itself make
 DiagScale/LoRA inference or fitting cheap. Preserve the full-row/full-feature/five-fold protocol
@@ -232,31 +232,46 @@ rather than silently reducing coverage to fit a budget.
 
 A subsequent read-only VSC audit on 29-10 supplies a conditional inference anchor: existing
 released-model and Exp1 fold timers project **11.22–11.58M benchmarking credits for Exp2**
-and **5.61–5.79M for Exp3** at comparable speed. Including the training estimates gives roughly
-73–77M credits, before validation, retries and remaining Exp1 benchmarking, versus 95.81M available
-at inspection. These are stored-work timers rather than billing records; adapter inference
-and adapted-model runtime remain unmeasured. See [VSC.md](VSC.md) and the
+and **5.61–5.79M for the retired 32-run Exp3** at comparable speed. The revised 48-run Exp3
+scales that benchmark-only estimate to **8.42–8.69M credits**, excluding any missing reused
+Exp2 baseline evaluations. Its training cost needs new method-specific measurements; the old
+73–77M combined estimate is not the revised campaign budget. These are stored-work timers
+rather than billing records; adapter inference and adapted-model runtime remain unmeasured.
+Recheck current balance and quotes before submission. See [VSC.md](VSC.md) and the
 29-10 read-only audit in [RUNS.md](RUNS.md) for observed values.
 
 ### 3.3 Experiment 3: constrained adaptation at a fixed 50% mixture
 
-The experiment uses the same 1,500-update geometry and two paired seeds as Exp2.
-The mixture is fixed in advance at 50%. Full-model reference rates are **2e-5 for TabICLv2 and
-1e-5 for TabPFN-3**, `lr_index=0`, regardless of which Exp2 rate scores better. Reuse those
-8 main full-CPT-with-decay runs. There are 32 new runs and no pilot or candidate selection.
+The revised grid uses the same 1,500-update geometry and seeds 0/1 as Exp2, at a fixed
+50% mixture. Reuse **both** full-CPT-with-decay rates (TabICLv2 2e-5/1e-5;
+TabPFN-3 1e-5/1e-6): **16 references**, unchanged in their Exp2 locations.
+Six new recipes × two backbones × two tasks × two seeds give **48 new runs**.
+The version `retention-six-recipes-1500-v3` separates them from the retired four-recipe grid.
 
-| Additional method | Trainable parameters | Fixed settings |
+| New recipe | Trainable parameters | Optimizer / peak LR / regularization |
 |---|---|---|
-| No decay | Whole model | Predetermined full-model optimizer/LR; weight decay 0 |
-| L2-SP | Whole model | Same optimizer/LR; weight decay 0; alpha .003 |
-| DiagScale | Query-scaling deltas only | AdamW; LR .03; adapter decay .01 |
-| Q/V LoRA | Rank-16 Q/V factors only | Alpha 16, no dropout; AdamW; LR 1e-4; adapter decay .01 |
+| No decay | Whole model | Native Muon 2e-5 / AdamW 1e-5; decay 0 |
+| L2-SP | Whole model | Same primary native rate; decay 0; alpha .003 |
+| DiagScale low / high | Query-scale deltas | AdamW 1e-4 / 1e-3; delta decay .01 |
+| Q/V LoRA low / high | Rank-16 Q/V factors | AdamW 3e-6 / 1e-5; alpha 16; no dropout or decay |
 
-These are four **fixed recipes**, not an exhaustive search for the best method. L2-SP .003 is
-anchored in Real-TabPFN and DiagScale .03 in Ning et al.; transfer to this multi-table task is a
-hypothesis. Q/V LoRA at rank/alpha 16 and LR 1e-4 is a declared engineering choice informed by
-low-rank adaptation, not a rate proven best for these backbones. Ning's LoRA menu uses every
-linear layer, so it does not establish equivalence to this Q/V-only implementation.
+The two adapter rates are reported separately, never selected. This is a comparison of
+complete recipes, not equal hyperparameter-search budgets or an isolated parameter-count
+experiment. Each backbone retains Exp2's batch size, precision, table geometry and prior.
+All recipes start from the same released weights, not an adapted Exp2 checkpoint.
+
+**Evidence behind the revision (04-11-2026).** At TFM pin
+`8f14e5945ca6b068ed0c76218e769d3e672d0d13`, Real-TabPFN's alpha .003 is an external
+anchor; Ning et al.'s DiagScale .03 was evaluated for single-table adaptation with validation
+and does not establish a synthetic-CPT optimum. See the papers under `tfm-library/papers/text/`
+and the dump `tfm-library/repositories/Test-Time Compute for Tabular Foundation Models.txt`,
+symbol `inject_diagscale`. The sibling CreditPFN archive is not a runtime dependency. The reviewed evidence is under
+`../../3. CreditPFN/CreditPFN/archive/study-2026-11/output` (DiagScale/LoRA experiments).
+Its larger adapter rates generally degraded mean performance more than smaller rates.
+It differs in objectives, table sizes, precision and real-table training; the new rates are
+conservative research choices, not demonstrated optima here. Overlapping credit datasets
+mean historical benchmark exposure must remain disclosed. No untouched-test claim is made.
+The specific Q/V-only LoRA rates/rank are not Ning's all-linear LoRA recipe.
 
 L2-SP adds alpha/2 times the squared displacement from the **released** parameters. The anchor
 is reconstructed from the released checkpoint before resume; it never moves to resumed
@@ -271,7 +286,7 @@ zero residual, preserves packed TabICL K weights exactly, and adapts native TabP
 Adapter checkpoints retain resumable factors; LoRA also exports merged native weights for normal
 inference. DiagScale is installed before inference caches are built. Adapter optimizers use 10%
 warm-up (150 updates), clipping 1 and the same 1,500-update cosine endpoint. Adapter-only decay
-does not decay the frozen backbone. All four milestones are benchmarked.
+does not decay the frozen backbone. All five milestones are benchmarked. LoRA has no decay; DiagScale decay acts on deltas around identity.
 
 Source anchors: `repositories/Test-Time Compute for Tabular Foundation Models.txt`,
 `inject_diagscale`, and the associated Ning et al. paper; Real-TabPFN's L2-SP continuation;
@@ -291,7 +306,7 @@ The CPU job covers the portable suite, all dataset loads/splits, configurations,
 fixed-rate and baseline identity, rejection of retired pilot selection, checkpoint retention,
 receipts, output paths and notebook contracts.
 The GPU campaign covers native scratch/full-CPT routes, optimizer stop/resume, model equivalence,
-16 released-weight method/task/backbone round trips, 34 long-context stages (including 60k-row
+24 released-weight recipe/task/backbone round trips, including both adapter rates, 34 long-context stages (including 60k-row
 LoRA and DiagScale), wide-feature inference and representative full-table five-fold benchmarks.
 Passing this gate verifies those paths on that allocation; it cannot prove every future stochastic
 batch or the entire production benchmark will succeed, nor establish a treatment's efficacy.
@@ -373,7 +388,7 @@ Five-fold CV estimates each fixed model's performance; selecting a mixture using
 assessment scores and then reporting only its winning score would still induce selection bias.
 Exp2 therefore retains every predeclared rate and mixture and the final checkpoint, with paired effects
 against the matching continued-pretraining control and released model reported separately.
-Exp3 reuses only the predeclared primary-rate 50% baseline, not the best-performing Exp2 arm.
+Exp3 reuses both predeclared 50% baselines, never the best-performing Exp2 arm.
 OOD retention is an outcome to report, not an extra rule for re-ranking those choices. Existing
 holdout exposure remains disclosed; this separation cannot make past inspection disappear.
 These distinctions follow [Cawley & Talbot (2010)](https://www.jmlr.org/papers/v11/cawley10a.html)
@@ -509,7 +524,7 @@ are preserved. This closes known exclusions; it does not certify every anonymise
 3. **ZOIB/mixture LGD head** — held in reserve behind decoding + support constraints
    ([§2.4](#2-verified-premises)); revisit only if those are insufficient.
 4. **Retention settings** — resolved 29-10-2026: fixed 50% mixture, both full-model rates
-   reported in Exp2, fixed method recipes and primary-rate baseline in Exp3; no pilots.
+   reported in Exp2, six fixed recipes and both rate baselines in Exp3; no pilots.
    The long scratch run remains dropped.
 5. **Outcome information in the evaluation data (audit of 29-09-2026; decision revised 12-10-2026).**
    The following historical audit numbers describe that cache/split, not the corrected benchmark. A column

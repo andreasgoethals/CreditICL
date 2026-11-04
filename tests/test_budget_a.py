@@ -3,7 +3,7 @@ import copy
 
 import pytest
 
-from src.experiments.design import apply_design, DESIGN_REVISION, MAIN_STEPS, MILESTONES, RATES
+from src.experiments.design import apply_design, DESIGN_REVISION, RETENTION_REVISION, MAIN_STEPS, MILESTONES, RATES
 from src.utils.config import expand_with_seeds, load, run_name
 
 
@@ -60,7 +60,7 @@ def test_new_revisions_isolate_even_the_early_checkpoint_run_names():
             historical = dict(run)
             historical.pop("design_revision")
             assert run_name(historical) != run_name(run)
-            assert DESIGN_REVISION in run_name(run)
+            assert (DESIGN_REVISION if experiment == 2 else RETENTION_REVISION) in run_name(run)
     for run in expand_with_seeds(load("config/Exp1_PD.yaml")):
         assert "design_revision" not in run and DESIGN_REVISION not in run_name(run)
 

@@ -30,11 +30,11 @@ def test_checkpoint_curves_show_fixed_rate_and_shared_released_reference(monkeyp
     monkeypatch.setattr(c.results, "released_score", lambda *a: .67)
     fig = c.checkpoint_curves("pd", "tabicl", experiment=experiment)
     fig.canvas.draw()
-    assert len(fig.axes) == (4 if experiment == 2 else 2)
+    assert len(fig.axes) == (4 if experiment == 2 else 6)
     for ax in fig.axes:
         assert ax.get_xscale() == "log"
         assert len(ax.get_xticks(minor=True)) == 0
-        assert len(ax.lines) == (5 if experiment == 2 else 6)
+        assert len(ax.lines) == 5
         assert all(list(line.get_xdata()) == list(MILESTONES) for line in ax.lines[:-1])
     assert "Released weights (step 0)" in [t.get_text() for t in fig.legends[0].texts]
     plt.close(fig)
@@ -47,11 +47,11 @@ def test_retention_effects_require_all_methods_and_pair_reused_control(monkeypat
     monkeypatch.setattr(c.results, "benchmark_frames", lambda *a, **k: frame)
     fig = c.retention_effects("pd", "tabicl")
     fig.canvas.draw()
-    assert len(fig.axes) == 2
+    assert len(fig.axes) == 4
     assert any(float(collection.get_offsets()[0, 0]) == pytest.approx(.025) for collection in fig.axes[0].collections)
     plt.close(fig)
 
-    monkeypatch.setattr(c.results, "benchmark_frames", lambda *a, **k: frame[frame.treatment.ne("lora")])
+    monkeypatch.setattr(c.results, "benchmark_frames", lambda *a, **k: frame[frame.treatment.ne("lora_low")])
     fig = c.retention_effects("pd", "tabicl")
     assert not fig.axes[0].has_data()
     plt.close(fig)
@@ -64,6 +64,14 @@ def test_historical_training_traces_do_not_create_empty_current_panels(monkeypat
     assert len(fig.axes) == 1 and not fig.axes[0].has_data()
     assert any("current fixed-rate design" in t.get_text() for t in fig.axes[0].texts)
     plt.close(fig)
+
+
+@pytest.mark.parametrize("missing", ["credit", "ood", None])
+def test_retention_publication_waits_for_both_domains(monkeypatch, missing):
+    frame = curve_cells(3).query("checkpoint_step == 1500")
+    monkeypatch.setattr(c.results, "benchmark_frames", lambda *a, domain, **k:
+                        frame[frame.treatment.ne("lora_high")] if domain == missing else frame)
+    assert c.retention_ready("pd", "tabicl") is (missing is None)
 
 
 def test_another_backbones_results_do_not_populate_an_empty_curve(monkeypatch):
@@ -102,7 +110,7 @@ def test_native_regression_crps_is_not_averaged_across_incompatible_units(monkey
     fig = c.checkpoint_curves("lgd", "tabicl", experiment=experiment, metric="crps")
     try:
         assert requested == ["credit"]
-        assert len(fig.axes) == (2 if experiment == 2 else 1)
+        assert len(fig.axes) == (2 if experiment == 2 else 3)
         assert "different target units" in c.trajectory_caption("lgd", "crps", experiment=experiment)
     finally:
         plt.close(fig)
@@ -127,7 +135,7 @@ def test_retention_lines_and_legend_repeat_method_identity_with_shapes(monkeypat
     fig = c.checkpoint_curves("pd", "tabicl", experiment=3)
     try:
         for ax in fig.axes:
-            assert len({line.get_marker() for line in ax.lines}) == len(c.METHODS)
+            assert len({line.get_marker() for line in ax.lines}) == 4
             assert len({line.get_linestyle() for line in ax.lines}) > 1
     finally:
         plt.close(fig)
@@ -179,9 +187,9 @@ def test_rate_panels_use_the_same_vertical_scale_within_each_domain(monkeypatch)
         plt.close(fig)
 
 
-def test_recipe_table_includes_each_reused_primary_rate_decay_baseline():
+def test_recipe_table_includes_both_reused_rate_decay_baselines():
     frame = c.retention_recipe()
-    assert frame.groupby("Backbone").size().tolist() == [5, 5]
+    assert frame.groupby("Backbone").size().tolist() == [8, 8]
     rows = frame[frame.Method.eq(c.METHODS["full_wd"])].set_index("Backbone")
     for backbone, label in c.BACKBONES.items():
         assert float(rows.loc[label, "Peak LR"]) == c.RATES[backbone][0]

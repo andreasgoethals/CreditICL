@@ -77,10 +77,10 @@ def test_corners_fix_shape_without_replacing_the_synthetic_mechanisms(track, sou
 
 
 @pytest.mark.parametrize("track", ["pd", "lgd"])
-@pytest.mark.parametrize("method,peak_lr", [("lora", 1e-4), ("diagscale", .03)])
+@pytest.mark.parametrize("method,peak_lr", [("lora", 1e-5), ("diagscale", 1e-3)])
 def test_adapter_capacity_probe_uses_the_actual_retention_recipe(track, method, peak_lr):
     production = next(c for c in expand_with_seeds(load(f"config/Exp3_{track.upper()}.yaml", allow_placeholders=True))
-                      if c["arm"] == "tabicl" and c["seed"] == 0 and c["method"] == method)
+                      if c["arm"] == "tabicl" and c["seed"] == 0 and c["method"] == f"{method}_high")
     probe = lc.diagnostic_config(track, rows=60000, source="credit", adaptation=method)
     expected_train = dict(production["train"], batch_size=1, num_workers=0, warmup_proportion=0.)
     assert probe["train"] == expected_train

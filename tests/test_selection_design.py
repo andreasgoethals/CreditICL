@@ -103,7 +103,7 @@ def test_cli_filters_historical_and_newer_unrecognised_protocols(tmp_path, monke
     assert "credit_fraction=0.5;" in text
     assert "No credit mixture beats the control" in text
     assert "must not re-rank" in text and "Exp2 uses all four" in text
-    assert "both predeclared learning rates" in text and "primary-rate baseline" in text
+    assert "both predeclared learning rates" in text and "both fixed-rate baselines" in text
     assert "pilot-selected" not in text
 
 

@@ -10,7 +10,7 @@ import argparse
 from pathlib import Path
 
 RETIRED = ("Pilot selection is retired. Experiment 2 evaluates both predeclared learning rates; "
-           "Experiment 3 uses fixed methods and the primary-rate baseline. "
+           "Experiment 3 uses fixed methods and both fixed-rate baselines. "
            "Existing pilot evidence is preserved and is not used to choose settings.")
 
 

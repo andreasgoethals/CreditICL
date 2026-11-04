@@ -325,7 +325,7 @@ def test_exp1_defines_many_priors_and_exp3_exactly_one():
 
         exp3 = [(k, v) for k, v in sweep_axes(_load(f"config/Exp3_{track}.yaml")) if k != "seeds"]
         assert dict(exp3) == {"arm": ["tabicl", "tabpfn3"],
-                              "method": ["no_decay", "l2sp", "diagscale", "lora"]}
+                              "method": ["no_decay", "l2sp", "diagscale_low", "diagscale_high", "lora_low", "lora_high"]}
         assert _load(f"config/Exp3_{track}.yaml")["prior"]["credit_fraction"] == .5
 
 

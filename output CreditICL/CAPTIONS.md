@@ -268,4 +268,4 @@ _No figures produced._
 
 **01_registered_retention_design** — `registered_retention_design`
 
-Registered retention comparison at a fixed 50% credit mixture: four additional methods across two backbones, two prediction tasks and two paired seeds give 32 runs. Eight primary-rate full-CPT-with-decay baselines are reused from Experiment 2. All settings are fixed before benchmarking; five checkpoints end at the primary 1,500-update endpoint.
+Registered retention comparison at a fixed 50% credit mixture: six additional recipes across two backbones, two prediction tasks and two paired seeds give 48 runs. Sixteen fixed-rate full-CPT-with-decay baselines are reused from Experiment 2. Both baseline rates and all six recipes are reported; five checkpoints end at the primary 1,500-update endpoint.

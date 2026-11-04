@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from src.eval.protocol import PROTOCOL, N_FOLDS, checkpoint_steps
-from src.experiments.design import SEEDS
+from src.experiments.design import SEEDS, RETENTION_RECIPES, retention_baseline
 from src.utils import paths
 from src.utils.config import expand_with_seeds, load, run_name
 
@@ -91,8 +91,9 @@ def benchmark_frames(track: str, experiment: int, *, domain="credit", final_only
     if experiment == 3:
         baselines = expand_with_seeds(load(paths.config_path(f"Exp2_{track.upper()}"), allow_placeholders=True))
         for run in baselines:
-            if run["prior"]["credit_fraction"] == .5 and run["lr_index"] == 0:
-                selections.append((2, run, run["_grid"]["array_index"], "full_wd"))
+            if retention_baseline(run):
+                treatment = "full_wd" if run["lr_index"] == 0 else "full_wd_lower"
+                selections.append((2, run, run["_grid"]["array_index"], treatment))
     if domain == "credit":
         datasets = cfg["eval"]["dev_datasets"] + cfg["eval"]["holdout_datasets"]
     elif domain == "ood":
@@ -139,16 +140,25 @@ def complete_scores(frame, metric, *, experiment):
     return pd.DataFrame(rows)
 
 
-def paired_retention(frame, metric):
-    """Four methods versus the reused, seed-matched 50% full-CPT baseline."""
+def retention_pairs(baseline="full_wd"):
+    """Primary L2-SP contrast isolates anchoring; sensitivity uses the lower full LR."""
+    if baseline not in {"full_wd", "full_wd_lower"}:
+        raise ValueError("Unknown fixed retention baseline")
+    return {f"exp3_{m}": f"exp3_{'no_decay' if m == 'l2sp' and baseline == 'full_wd' else baseline}"
+            for m in RETENTION_RECIPES}
+
+
+def paired_retention(frame, metric, *, baseline="full_wd"):
+    """Six separately reported recipes; never pool rates, backbones or checkpoints."""
     from src.eval.comparisons import paired_prior_effects
     if frame.empty:
         return pd.DataFrame()
+    if frame.architecture.nunique() != 1 or frame.checkpoint_step.nunique() != 1:
+        raise ValueError("Retention contrasts require one backbone and one checkpoint")
     counts = frame.groupby("treatment").training_seed.agg(lambda s: set(s))
-    methods = {"full_wd", "no_decay", "l2sp", "diagscale", "lora"}
+    methods = {"full_wd", "full_wd_lower", *RETENTION_RECIPES}
     if set(counts.index) != methods or any(s != set(SEEDS) for s in counts):
         return pd.DataFrame()
     copy = frame.copy()
     copy["info_run_name"] = [f"exp3_{m}__s{s}" for m, s in zip(copy.treatment, copy.training_seed)]
-    pairs = {f"exp3_{m}": "exp3_full_wd" for m in methods - {"full_wd"}}
-    return paired_prior_effects(copy, metric, pairs=pairs)
+    return paired_prior_effects(copy, metric, pairs=retention_pairs(baseline))

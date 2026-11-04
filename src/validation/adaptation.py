@@ -17,13 +17,12 @@ import torch
 
 def diagnostic_config(track: str, backbone: str, method: str) -> dict:
     from src.utils.config import expand_with_seeds, load
-    from src.experiments.design import apply_design
+    from src.experiments.design import RETENTION_RECIPES
 
-    cfg = copy.deepcopy(next(r for r in expand_with_seeds(load(f"config/Exp2_{track.upper()}.yaml", allow_placeholders=True))
-                             if r["arm"] == backbone and r["seed"] == 0
-                             and r["lr_index"] == 0 and r["prior"]["credit_fraction"] == .5))
-    cfg.update(design="retention", method=method)
-    apply_design(cfg)
+    if method not in RETENTION_RECIPES:
+        raise ValueError(f"Unknown retention recipe: {method}")
+    cfg = copy.deepcopy(next(r for r in expand_with_seeds(load(f"config/Exp3_{track.upper()}.yaml"))
+                             if r["arm"] == backbone and r["seed"] == 0 and r["method"] == method))
     cfg["experiment"] = "exp0_adaptation"
     cfg["_run_name"] = f"exp0_adaptation_{track}_{backbone}_{method}"
     cfg["prior"].update(n_rows_range=[96, 96], n_features_range=[3, 5], max_features=8,
@@ -97,16 +96,19 @@ def run_probe(track: str, backbone: str, method: str, directory: Path, device="c
         raise ValueError("Native checkpoint prediction failed")
     return dict(track=track, backbone=backbone, method=method, steps=2,
                 trainable_parameters=trainable, updated_tensors=changed,
+                design_revision=cfg["design_revision"], peak_lr=cfg["train"]["lr"],
+                weight_decay=cfg["train"]["weight_decay"], l2sp_alpha=cfg["train"]["l2sp_alpha"],
                 frozen_unchanged=True, checkpoint_prediction_finite=True,
                 scope="small-table training/resume/prediction; capacity is validated separately")
 
 
 def main(argv=None):
     from src.validation.checks import Report, PASS, FAIL, write
+    from src.experiments.design import RETENTION_RECIPES
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--track", required=True, choices=("pd", "lgd"))
     parser.add_argument("--backbone", required=True, choices=("tabicl", "tabpfn3"))
-    parser.add_argument("--method", required=True, choices=("no_decay", "l2sp", "diagscale", "lora"))
+    parser.add_argument("--method", required=True, choices=tuple(RETENTION_RECIPES))
     parser.add_argument("--out", required=True, type=Path)
     args = parser.parse_args(argv)
     report = Report()

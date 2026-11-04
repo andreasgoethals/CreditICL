@@ -1,5 +1,61 @@
 # Agents' memory — runs and dead ends
 
+## 04-11-2026 — revised Exp3, local implementation only
+
+Exp3 revision `retention-six-recipes-1500-v3`: six recipes × two backbones × two tasks ×
+seeds 0/1 = 48 new runs; reuse both 50%-mixture Exp2 rates (16 baselines). DiagScale
+rates 1e-4/1e-3, delta decay .01; Q/V LoRA rates 3e-6/1e-5, rank/alpha16, decay0;
+no-decay and L2-SP .003 keep native primary full-update rates. All retain 1,500 updates
+and five milestones. Exp0 has 24 mandatory recipe round trips plus the existing 34 capacity
+stages; fresh cluster CPU/GPU validation is deferred until Exp2 consumers finish.
+No VSC checkout, job, output, environment or schedule changed in this task.
+Exp1/2 expanded run IDs, array indices and effective-config digests are locked in
+`tests/test_exp3_revision.py`; training implementation remains `5300c294e4078273fa635f18b82714ebfdb17169046f25035e356aa2392a8e75`.
+Analysis isolates L2-SP versus no-decay, keeps both full baselines and adapter rates separate,
+and refuses old-revision CSV identities. Complete recipes differ in rates/optimizer/parameter
+count; two seeds and historical CreditPFN benchmark exposure limit confirmatory claims.
+The final review covered configuration identity/reuse, native optimizer/adapter/anchor paths,
+stop/resume, fold-local preprocessing/thresholds, paired-dataset statistics, publication gates
+and budget documentation. No training/prior/evaluation protocol redesign was made. Exp3 final
+figures require both credit and OOD completion; baseline-only evidence cannot populate its
+trajectory figures. The old 32-run cost estimate is explicitly superseded.
+After the edits, all 3,332 downloaded Exp0/Exp1/reference files (41,306,487,936 bytes)
+still match the verified 03-11 manifest by SHA256; proof `.runtime-build/exp3-preserved-exp01.json`.
+All 12 notebooks reran successfully and exported 56 PDFs. Final rendered comparison found
+55 pixel-identical figures and one revised Exp3 design, visually checked; timestamp-only PDF
+changes were removed after verifying identical remaining bytes. Future curve/effect/CRPS layouts
+were visually checked with synthetic fixtures outside the research output tree, not published
+as results. Captions and the final ordered text summaries were regenerated.
+Final local acceptance: 2,313 pytest passes, 38 VSC-only skips, zero failures in 33m02s;
+164 post-render artifact/regression checks passed separately. Changed Python files pass Ruff's
+F checks and the patch passes `git diff --check`; existing dependency/test warnings remain.
+Logs: `.runtime-build/exp3-acceptance-tests.log`, `exp3-final-artifacts.log`,
+`exp3-notebooks-final.log` and `exp3-final-render.log`. This is local acceptance, not VSC acceptance.
+
+**Tried:** Rerun prior illustrations with the default parallel draw pool.
+**Result:** Eleven diagnostic figures changed despite the same seed; trained-model results did not.
+**Why:** This plotting sampler's documented random stream also depends on worker count.
+**Instead:** Repeat the committed figure recipe with `CREDITICL_DRAW_WORKERS=1`; document it in
+the notebook index, without changing production generation or training.
+
+**Tried:** Full local pytest with only the parent interpreter's `-X utf8` flag.
+**Result:** A subprocess output failed UTF-8 decoding; the attempt was stopped and superseded.
+**Why:** Child Python processes still emitted the Windows default encoding.
+**Instead:** Use inherited `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8` for the complete run.
+
+**Tried:** Preserve old receipts after changing the retired selection command's explanation.
+**Result:** Exact source-hash compatibility tests failed closed.
+**Why:** The message-only wording change was not in the reviewed transition table.
+**Instead:** Verify the exact two-phrase diff and register its LF/CRLF hashes; mutation tests
+continue rejecting changed inputs, weights, recipes, scoring and unreviewed source.
+
+**Tried:** The complete local suite without Git Bash's directory in the test process PATH.
+**Result:** Both actual Slurm-shell error-propagation checks failed; a separate figure assertion
+also still expected the retired 32-run grid. The superseded local test process was stopped.
+**Why:** Git's command directory exposed Git but not Bash; the figure assertion was stale.
+**Instead:** Use the already installed Git `bin` directory in this process only, update the grid
+assertion and rerun the complete suite with inherited UTF-8 and bounded CPU threads.
+
 ## 03-11-2026 — complete local Exp0/Exp1 file mirror
 
 VSC's provenance planner again accepts all 54 Exp1 training runs and 158 benchmark slots

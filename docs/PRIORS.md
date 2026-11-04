@@ -249,7 +249,7 @@ L2-SP, freeze strategy) are in [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md).
 | **Exp0** | Exp1's prior, `credit_fraction` 0 / 0.5 / 1 and the Exp2 paths — a debug suite, no result | scratch and released | 600 |
 | **Exp1** | `credit_fraction` 0 / 0.25 / 0.5 / 1 of the literature-grounded credit prior × 3 seeds = 12 main arms per track; 25% added after the original campaign | scratch | 12,500 |
 | **Exp2** | two backbones × four mixtures (0 / 0.25 / 0.5 / 1) × two fixed learning rates × two paired seeds = 32 arms per track | released TabICLv2 and TabPFN-3 | 1,500 |
-| **Exp3** | fixed 50% mixture; no decay, L2-SP, DiagScale and Q/V LoRA, at the primary CPT rate × two backbones × two seeds = 16 new arms per track; reuse four Exp2 decay baselines | released TabICLv2 and TabPFN-3 | 1,500 |
+| **Exp3** | fixed 50% mixture; no decay, L2-SP, DiagScale and Q/V LoRA, six recipes × two backbones × two seeds = 24 new arms per track; reuse eight Exp2 decay baselines | released TabICLv2 and TabPFN-3 | 1,500 |
 
 **Exp2 is continued pre-training with a published precedent** — TabPFN-Wide (Kolberg et al. 2026)
 extends TabPFN-v2 through continued pretraining on a customised synthetic prior. It is a precedent,

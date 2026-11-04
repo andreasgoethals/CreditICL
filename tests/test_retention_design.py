@@ -4,7 +4,7 @@ import copy
 import pytest
 
 from src.utils.config import expand_with_seeds, load
-from src.experiments.design import MAIN_STEPS, MILESTONES, RATES, FIXED_RETENTION
+from src.experiments.design import MAIN_STEPS, MILESTONES, RATES, RETENTION_RECIPES
 
 
 @pytest.mark.parametrize("task", ["pd", "lgd"])
@@ -23,22 +23,22 @@ def test_exp2_crosses_each_recipe_without_changing_geometry(task):
 
 
 @pytest.mark.parametrize("task", ["PD", "LGD"])
-def test_exp3_is_fixed_with_exactly_four_reusable_baselines_per_task(task, isolated_output):
+def test_exp3_is_fixed_with_exactly_eight_reusable_baselines_per_task(task, isolated_output):
     main = expand_with_seeds(load(f"config/Exp3_{task}.yaml"))
     exp2 = expand_with_seeds(load(f"config/Exp2_{task}.yaml"))
-    baselines = [r for r in exp2 if r["lr_index"] == 0 and r["prior"]["credit_fraction"] == .5]
-    assert len(main) == 16 and len(baselines) == 4
+    baselines = [r for r in exp2 if r["prior"]["credit_fraction"] == .5]
+    assert len(main) == 24 and len(baselines) == 8
     assert all(not r["design_unresolved"] for r in main)
     for r in main:
-        baseline = next(b for b in baselines if (b["architecture"], b["seed"]) == (r["architecture"], r["seed"]))
+        baseline = next(b for b in baselines if b["lr_index"] == 0 and (b["architecture"], b["seed"]) == (r["architecture"], r["seed"]))
         assert r["init"]["strategy"] == "full" and r["prior"]["credit_fraction"] == .5
         assert r["lr_index"] == 0 and r["prior"] == baseline["prior"]
         for key in ("max_steps", "batch_size", "micro_batch_size", "amp", "schedule_total_steps"):
             assert r["train"][key] == baseline["train"][key]
         assert r["train"]["schedule_total_steps"] == MAIN_STEPS
-        if r["method"] in {"lora", "diagscale"}:
-            assert r["train"]["optimizer"] == "adamw" and r["train"]["weight_decay"] == .01
-            assert r["train"]["lr"] == FIXED_RETENTION[f"{r['method']}_lr"]
+        if r["train"]["adaptation"] in {"lora", "diagscale"}:
+            assert r["train"]["optimizer"] == "adamw" and r["train"]["weight_decay"] == RETENTION_RECIPES[r["method"]][2]
+            assert r["train"]["lr"] == RETENTION_RECIPES[r["method"]][1]
         else:
             assert r["train"]["weight_decay"] == 0
             assert r["train"]["lr"] == baseline["train"]["lr"]

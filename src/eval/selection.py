@@ -153,7 +153,7 @@ def main(argv=None) -> int:
           "Seed spread describes stability, not a significance test. OOD retention is reported "
           "descriptively and must not re-rank this development-only choice. Exp2 uses all four "
           "mixtures at both predeclared learning rates per backbone/task. Exp3 fixes 50%, "
-          "the primary-rate baseline and all method settings before observing scores. "
+          "both fixed-rate baselines and all method settings before observing scores. "
           "This ranking changes neither experiment. No config was changed and no job was submitted.")
     return 0
 
