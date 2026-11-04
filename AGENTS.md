@@ -39,6 +39,14 @@ by thousands. Record the pin (`git submodule status`) next to any result that de
 `data/` holds datasets under varying licences; `checkpoints/` holds multi-hundred-MB weights. Both
 are gitignored. Do not `git add -f` them, and do not paste raw rows into commits, issues or docs.
 
+**Model weights stay on VSC.** Local analysis downloads contain scores, predictions, logs,
+run summaries/configs, receipts and figure metadata only. A request for "all output" does not
+authorize downloading trained/released weights, optimizer states, prior pools or runtime images,
+including copies hidden inside archives or transfer/backup folders. Use
+`python -m src.utils.result_manifest` to filter inventories before SFTP, and verify the retained
+analysis subset against its hashes. Never restore excluded weights to make a full-tree mirror.
+Download weights only if Andreas explicitly requests those model files for local use.
+
 ## 3. Verify before you assert
 
 This project's value is careful measurement. If a claim cannot be confirmed from the library, the

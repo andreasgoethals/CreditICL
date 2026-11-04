@@ -1,5 +1,9 @@
 # The notebook story
 
+Local inputs are results, logs and metadata. Model checkpoints and optimizer states remain on
+VSC; these notebooks do not need them. Use the analysis-only inventory filter described in the
+repository README instead of downloading whole output trees or model-containing archives.
+
 Twelve thin notebooks in four numbered chapters follow the paper's questions.
 All computation lives in `src/visualize/`; each notebook displays and saves its
 own A4 vector PDFs, records descriptive captions, and ends with a printed summary

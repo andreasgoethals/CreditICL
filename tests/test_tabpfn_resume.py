@@ -92,8 +92,8 @@ def assert_real_checkpoint_resume(directory, task, device, *, force_full_precisi
         # not just the trainer's outer context, before gradients can recover.
         for parameter in trainer.model.parameters():
             if parameter.requires_grad:
-                parameter.register_hook(lambda grad: torch.full_like(grad, float('nan'))
-                                        if trainer.est.use_autocast_ else grad)
+                parameter.register_hook(lambda grad, estimator=trainer.est: torch.full_like(grad, float('nan'))
+                                        if estimator.use_autocast_ else grad)
     try:
         stopped = trainer.train()
         assert not stopped["completed"] and stopped["steps"] == 1

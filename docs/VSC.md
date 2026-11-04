@@ -299,10 +299,15 @@ should remain on PROJECT. Keep them there, disclose this protection limit, and c
 an additional backup is not a prerequisite for the current campaign or an instruction to transfer data.
 No environment/data migration or retirement occurred in this review; active jobs stay frozen.
 
-**Checkpoint copy, 01-11-2026:** Andreas subsequently requested the complete Exp0/Exp1 output
-download. All 3,206 files, including Exp1 checkpoints, were independently checksum verified
-locally; the ignored transfer and output manifests record coverage. Keep working checkpoints
-on PROJECT. This is a verified local copy, not a claim that PROJECT itself is backed up.
+**Local collection policy, 04-11-2026:** model weights and optimizer state stay on VSC.
+The earlier whole-output copies unnecessarily included checkpoints; do not repeat that workflow.
+"All output" means the analysis subset: results, predictions, logs, summaries/configs, receipts
+and figure metadata. Exclude checkpoints, pools, runtime images, locks and unfiltered archives,
+including temporary duplicate downloads. A local notebook does not require model inference.
+Use `python -m src.utils.result_manifest inventory.json --out analysis.json` on the remote
+file inventory, transfer only its `members`, and verify their original hashes. A full-tree
+equality check is inappropriate for this intentionally filtered copy. Do not infer independent
+checkpoint-backup coverage from local analysis files. Cleanup status is in AGENTS_MEMORY.
 
 | tier | path | holds | backup | quota |
 |---|---|---|---|---|
@@ -327,7 +332,8 @@ do not protect project checkpoints. Keep independent backups of irreplaceable re
 `$VSC_DATA` — its log and a run's progress/telemetry CSVs, kilobytes to a few MB each; the benchmark
 CSVs moved to staging with the checkpoints. Two reasons: `$VSC_DATA` is shared by every project, and
 Mindwell jobs keep frequent small writes off Lustre (the rule below), while a benchmark writes its CSV
-once, at the end. Downloading both halves (§10) gives every log, run record and benchmark score; the
+once, at the end. Downloading the filtered analysis subset from both tiers (§10) gives logs,
+run records and benchmark scores; the
 figures are drawn locally. `paths.resolve_writable()` probes staging with a real write at job start and
 fails before training if project storage is unwritable; it never redirects checkpoint output.
 On Mindwell, `working_storage.py` now uses **`$VSC_SCRATCH_NODE/CreditICL/jobs/<jobid>`**
@@ -643,9 +649,9 @@ python -m src.validation.verify
 Only a current PASS authorizes new production submissions. Preserve already completed Exp1 runs;
 they do not need retraining because Exp2's recipe changed. The verifier estimates short-route
 training hours only; long-context TabICL Exp2 cost stays unknown until representative throughput
-is measured, and queue delay is never predicted. Download the small tier plus the
-benchmark/report files from project storage, retaining the attempt directory structure. Checkpoint
-binaries can remain on VSC; the local verifier reports that omission and VSC preflight verifies them
+is measured, and queue delay is never predicted. Filter the inventory from both tiers using
+`src.utils.result_manifest`, retaining the attempt directory structure. Checkpoint
+binaries stay on VSC; the local verifier reports that expected omission and VSC preflight verifies them
 in place. Run `python -m src.validation.verify --root "/path/to/parent"`, where that parent contains
 the downloaded `output CreditICL/` directory.
 

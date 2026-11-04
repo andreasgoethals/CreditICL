@@ -61,7 +61,7 @@ def headline_step(track: str, exp: str = "exp1") -> int | None:
     """The checkpoint an experiment REPORTS: its config's `eval.headline_step`, or None for the
     final one (no such key, a `FILL_FROM_*` placeholder not filled yet, or the last step).
 
-    No config sets one today (both Exp2 recipes fix 10,000 steps); every saved checkpoint is
+    No active config selects an earlier headline step; every saved checkpoint is
     scored, so a reported earlier one would be a choice of file, not a new run.
     """
     cfg = _raw_config(track, exp)

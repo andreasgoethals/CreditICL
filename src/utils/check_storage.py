@@ -8,14 +8,13 @@ WHY. On 14-08-2026 every arm of two debug arrays printed
     WARNING: cannot write to /lustre1/project/stg_00211/CreditICL/checkpoints/<run>
              ([Errno 13] Permission denied). Falling back to $VSC_DATA.
 
-and carried on. The fallback is deliberate — a finished run on the wrong disk beats a crash at
-step 12,000 — but `$VSC_DATA` has a 75 GiB quota and Exp1 is 96 arms, so the fallback that
-saves one debug run is what fills the disk during the real one. Notably `data/processed/` and
+and carried on. That historical fallback has been removed: large-asset writes now fail closed
+instead of filling DATA. Notably `data/processed/` and
 `output/results/` on the SAME staging root wrote fine, which is the signal: the project
 directory is fine and one subdirectory is not.
 
-This checks each directory the way the job does — by actually creating a file — and prints the
-exact command to fix whatever is broken. Permissions are not something to guess at from a
+This checks each directory the way the job does — by actually creating a file — and reports
+write failures. Permissions are not something to guess at from a
 laptop, so it reports owner, group and mode for every level rather than inferring.
 """
 
@@ -25,6 +24,7 @@ import argparse
 import os
 import stat
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -57,10 +57,11 @@ def _can_write(path: Path) -> tuple[bool, str]:
     """Actually write a file. `os.access` lies on Lustre and on group-mapped mounts."""
     if not path.is_dir():
         return False, "not a directory"
-    probe = path / f".crediticl_write_probe_{os.getpid()}"
     try:
-        probe.write_text("probe", encoding="utf-8")
-        probe.unlink()
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8",
+                                         prefix=".crediticl_write_probe_", dir=path) as probe:
+            probe.write("probe")
+            probe.flush()
         return True, "writable"
     except OSError as exc:
         return False, f"{type(exc).__name__}: {exc.strerror or exc}"
@@ -71,7 +72,7 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--fix", action="store_true",
-                    help="create missing directories and try `chmod u+rwx,g+rwxs` on ours")
+                    help="try chmod on existing directories owned by the current user")
     args = ap.parse_args()
 
     from src.utils.paths import (
@@ -99,10 +100,9 @@ def main() -> int:
         ("released weights", Path(pretrained_dir())),
         ("processed data", Path(processed_dir())),
         ("out-of-domain cache", Path(ood_cache_dir())),
-        # The root itself, not a made-up pool name: `--fix` would create that name and leave a
-        # stray directory on project storage.
+        # Check the root itself rather than inventing a pool name.
         ("prior cache", Path(prior_cache_root())),
-        ("small output tree (logs, runs, benchmark, figures)", Path(outputs_dir())),
+        ("small output tree (logs, runs, figures)", Path(outputs_dir())),
     ]
 
     broken: list[Path] = []
@@ -137,6 +137,9 @@ def main() -> int:
         if not ok:
             broken.append(path)
             if args.fix:
+                if not hasattr(os, "getuid") or path.stat().st_uid != os.getuid():
+                    print("  No permission change: ownership is not verified for this user.")
+                    continue
                 try:
                     # setgid so anything created here keeps the project group, which is what
                     # lets a second person in the group write to it later.
@@ -150,32 +153,17 @@ def main() -> int:
 
     print("\n" + "=" * 78)
     if not broken:
-        print("  Everything this project writes to is writable. Submit away.")
+        print("  Storage probes passed. Quota and Experiment 0 checks are still required before submission.")
         return 0
 
     print(f"  {len(broken)} directory/ies cannot be written:")
     for p in broken:
         print(f"    {p}")
     print()
-    print("  WHAT TO DO, in order:")
-    print()
-    print("  1. If you own it, take it back:")
-    for p in broken:
-        print(f"       chmod u+rwx,g+rwxs {p}")
-    print()
-    print("  2. If it exists but someone else owns it, it cannot be repaired by you.")
-    print("     Move it aside and make your own (nothing is deleted):")
-    for p in broken:
-        print(f"       mv {p} {p}.foreign && mkdir -p {p}")
-    print()
-    print("  3. If the PARENT is the one refusing, that is the level to fix — the walk")
-    print("     above shows owner and mode for every level, so read upward from the leaf.")
-    print()
-    print("  4. New files should inherit the project group. Put this in ~/.bashrc:")
-    print("       umask 002")
-    print()
-    print("  Then re-run this script. Do not submit a 96-arm sweep until it is clean:")
-    print("  the fallback to $VSC_DATA works, and $VSC_DATA is 75 GiB.")
+    print("  Check the failing directory and its parents' ownership, permissions and quota.")
+    print("  Ask the allocation owner or VSC support about directories you do not own.")
+    print("  Do not move shared directories or redirect large assets to DATA.")
+    print("  Re-run this check after repair. Training has no fallback to DATA.")
     return 1
 
 

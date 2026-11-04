@@ -1,14 +1,15 @@
 # output CreditICL — everything CreditICL produces
 
 One tree, the same layout everywhere. Locally it is this one folder. On the cluster it exists
-twice, with the same layout, and you download both halves into this folder:
+twice, with the same layout. Download only the analysis subset from both tiers into this folder:
 
 - `$VSC_DATA/CreditICL/output CreditICL/` — the **small** half: what a job appends to while it runs
   (its log, a run's progress and telemetry). `$VSC_DATA` has 75 GiB for every project together, so
   nothing else goes there.
 - `/lustre1/project/stg_00211/CreditICL/output CreditICL/` — the **big** half: benchmark results,
-  checkpoints, prior pools. Download it WITHOUT `*/checkpoints/` and `prior_cache/`
-  (`docs/VSC.md` §10 has the commands).
+  checkpoints, prior pools. Weights and pools stay on VSC. Filter the inventory with
+  `python -m src.utils.result_manifest inventory.json --out analysis.json` before transfer;
+  do not download whole output archives or restore checkpoints to make a full local mirror.
 
 The layout is defined in one place, `src/utils/paths.py`; nothing else builds an output path.
 

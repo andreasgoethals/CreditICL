@@ -1,5 +1,40 @@
 # Agents' memory — runs and dead ends
 
+## 04-11-2026 — local collection correction and repository review
+
+Andreas explicitly requires model weights to remain on VSC. "All output" now means analysis
+records only, never a full tree containing checkpoints or opaque archives. AGENTS, README,
+VSC and the notebook index record this; `src.utils.result_manifest` filters inventories before
+SFTP and preserves source hashes. It excludes checkpoints, runtime/pool data, archives and locks.
+The 03-11 inventory yields 2,755 analysis files (851.9 MiB), all reverified against original SHA256;
+proof `.runtime-build/analysis-subset-verified-20261104.json`. Full-mirror records below are historical.
+
+Local model inventory: 361 files, 88,208,987,309 bytes (82.15 GiB), including duplicate transfer
+copies and four released models. Automatic approval review rejected the bulk deletion with
+"blocked by policy" and no further reason. It was not retried through another tool.
+Removal is pending manual execution of `.runtime-build/remove-local-checkpoints-20261104.ps1`;
+its exact-file plan checks boundaries, links, size and modification time, preserves analysis
+records and never contacts VSC. Completion writes a separate ledger and updates local snapshot
+scope. Do not claim deletion until that ledger and file absence are verified.
+
+Review fixes: storage probes now use unique temporary files; `--fix` requires verified ownership.
+Removed obsolete DATA-fallback/foreign-directory-move guidance and "submit away" advice.
+Corrected benchmark storage documentation, an obsolete 10k-update comment and the README's
+unsupported "only competitive public model" claim. Bound the resume-test hook's estimator
+explicitly so it does not refer to a subsequently deleted trainer variable. Evaluation changes
+are docstring-only, with an exact reviewed receipt transition; training and experiment grids
+remain unchanged. No VSC operation or new scheduled task.
+The primary O'Prior text at TFM pin `8f14e5945ca6b068ed0c76218e769d3e672d0d13`
+also contradicted README's blanket imbalance claim: it supports variable balance and bounded
+regression transforms, although reported benchmarks are classification. The introduction now
+distinguishes supported mechanisms from evaluated credit/LGD transfer without changing this study.
+Local acceptance: 2,331 pytest passes, 38 VSC-only skips, zero failures in 30m22s
+(`.runtime-build/local-collection-full-tests.log`). The final 20 collection/storage/receipt
+checks pass separately, including two additional control-character path cases added after full
+collection. Changed Python modules pass Ruff F checks; document links and `git diff --check`
+pass. No notebook source or visualization code changed, so no notebook rerun was needed.
+Training implementation remains `5300c294e4078273fa635f18b82714ebfdb17169046f25035e356aa2392a8e75`.
+
 ## 04-11-2026 — revised Exp3, local implementation only
 
 Exp3 revision `retention-six-recipes-1500-v3`: six recipes × two backbones × two tasks ×

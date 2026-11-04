@@ -3,14 +3,14 @@
 **Can domain knowledge be deliberately encoded into a tabular foundation model's synthetic
 pretraining prior, and does it transfer to downstream performance on the matching domain?**
 
-The vehicle is **TabICLv2** — the only competitive tabular foundation model (TFM) whose prior
+The vehicle is **TabICLv2** — a tabular foundation model (TFM) whose prior
 generator *and* pretraining code are public. The testbed is **credit risk**, in two halves that
 stress different parts of the prior:
 
 | | task | what makes it hard for a TFM |
 |---|---|---|
 | **PD** | Probability of Default | **imbalanced** binary classification, high-cardinality categoricals, threshold-like business rules, low signal-to-noise |
-| **LGD** | Loss Given Default | regression on a **bounded [0,1]** target with mass at the boundaries; sparse interior |
+| **LGD** | Loss Given Default | **bounded [0,1]** targets with heterogeneous shapes and endpoint mass |
 
 PhD project, KU Leuven (Andreas Goethals). Literature grounding lives in the pinned
 [`tfm-library/`](tfm-library/) submodule (**read-only** — see [AGENTS.md](AGENTS.md)).
@@ -43,13 +43,18 @@ drives transfer**. So "prior design matters, and here is how to measure it clean
 
 What remains open is the word **domain**:
 
-1. **Domain-targeting is unmeasured.** O'Prior optimises *average* behaviour across 52 general
-   tasks; whether encoding a *specific* domain's structure transfers to that domain is untouched —
-   and their own probing singles out **Credit-g** as a dataset where the signal was too weak to tell
+1. **Controlled credit-risk targeting.** O'Prior measures *average* behaviour across 52 general
+   tasks; those comparisons do not isolate the effect of a credit-targeted prior package.
+   Their probing singles out **Credit-g** as a dataset where the signal was too weak to tell
    the priors apart. That probe does not establish that O'Prior fails on credit tasks; it also reports strong Home Credit results.
-2. **Regression is outside their study** — all their experiments are classification, so bounded
-   targets with boundary mass (the LGD case) are genuinely open.
-3. **Prior-side class imbalance is unexplored**, and in O'Prior actively filtered out.
+2. **LGD transfer is not evaluated there.** Their reported benchmarks are classification;
+   the generator supports regression, including bounded target transformations.
+3. **Credit-targeted class exposure is the question.** O'Prior already produces variable class
+   balance and rejects collapsed or severely imbalanced support. Our study measures the effects
+   of the complete credit-targeted package, not the first prior capable of imbalance.
+
+These distinctions follow the [revised O'Prior text](tfm-library/papers/text/2026/10_Bouadi_et_al._Shaping_the_Prior_How_Synthetic_Task_Distributions_Determine_Tabular_Foundation_Model_Quality.txt),
+at TFM pin `8f14e5945ca6b068ed0c76218e769d3e672d0d13`.
 
 Two premises in this project's *original* framing were weakened after reading the source, and the
 honest versions are load-bearing (see [EXPERIMENTAL_DESIGN §1](docs/EXPERIMENTAL_DESIGN.md)): TabICL's
@@ -93,6 +98,12 @@ and five folds. The constant-context repair passed full CPU/GPU Experiment 0 on 
 runs and 158 benchmark slots). Exp2 has 16 completed runs, 19 running and 29 queued at
 the 03-11 morning audit; all 64 configurations are submitted. Keep their checkout frozen.
 Live campaign progress, failures and measured costs are recorded in [RUNS.md](docs/RUNS.md).
+
+Local notebooks use analysis records, not model weights. Keep trained/released checkpoints and
+optimizer state on VSC; do not download whole output archives or checkpoint folders. Filter a
+remote file inventory with `python -m src.utils.result_manifest inventory.json --out analysis.json`
+before transferring its listed files. The plan retains analysis hashes and excludes weights,
+archives, caches and locks; it does not download or delete anything.
 
 `credit_fraction` is the master switch: the share of each batch drawn from our credit-targeted path,
 the rest from the unmodified TabICL prior. `0.0` is the control every arm is measured against.
@@ -222,9 +233,9 @@ needed after first creating the venv.
 python scripts/evaluate.py --task lgd --models linear,catboost
 ```
 
-> TabPFN-3 reads a **local** checkpoint (put weights in `checkpoints/` or point
-> `CREDITICL_TABPFN_DIR` at them) — letting the package fetch its own triggers a token flow that
-> fails on a compute node. Without the file validation fails before production starts.
+> TabPFN-3 reads weights already installed on **VSC PROJECT** (`CreditICL/checkpoints/`,
+> or an explicit `CREDITICL_TABPFN_DIR`). Compute nodes cannot complete an interactive download;
+> validation rejects missing weights before production starts. Do not copy these models to the laptop.
 
 **On VSC** — validate the current code in a CPU job, then a GPU job:
 

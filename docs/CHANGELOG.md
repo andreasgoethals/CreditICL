@@ -2,6 +2,7 @@
 
 ## 04-11-2026
 
+- Restrict local collection to analysis files; fix storage-probe safety, obsolete fallback advice and stale documentation.
 - Revise Exp3 to 48 new runs and 16 reused Exp2 baselines; add rate-separated analysis, notebook figures and 24 mandatory GPU recipe round trips while preserving Exp1/2 identities.
 
 Changes to the **repository** — one chapter per date, `DD-MM-YYYY`, newest first. Terse: what

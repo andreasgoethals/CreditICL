@@ -48,6 +48,15 @@ REVIEWED_TRANSITIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     ),
 }
 
+# Only headline_step's stale 10,000-update docstring changed. Verified exact
+# one-line replacement; preserve all earlier reviewed receipt transitions.
+_before, _after = REVIEWED_TRANSITIONS['src/eval/results.py']
+REVIEWED_TRANSITIONS['src/eval/results.py'] = (
+    _before | _after,
+    _after | frozenset(['119269160fa306757f1be012e0382b19962fac7357dbb3e71d3443cd31db8210',
+                        '2e3d59ecc2278acffdbf11c7bf3befb105de263775540d1a1953a72a96dff506']),
+)
+
 # The 29-10 provenance fix hashes the same input bytes directly rather than
 # staging a copy only to hash it. It changes neither prediction nor scoring.
 _before, _after = REVIEWED_TRANSITIONS['src/eval/benchmark_status.py']

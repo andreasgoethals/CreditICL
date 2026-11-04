@@ -9,12 +9,12 @@ THE TWO TIERS, one layout (`src/utils/paths.py`):
 
     project staging ($CREDITICL_STAGING_ROOT / /lustre1/...)   BIG, no backup
         output CreditICL/experiment_<N>/checkpoints/   our trained weights
+        output CreditICL/<owner>/benchmark/            scores and receipts
         output CreditICL/prior_cache/                  generated prior pools (optional)
 
     personal data ($VSC_DATA)                                   SMALL, backed up
         output CreditICL/<owner>/logs/                 one file per job
         output CreditICL/experiment_<N>/runs/          each arm's config, summary, curves
-        output CreditICL/<owner>/benchmark/            scores and receipts
 
 NEVER TOUCHED, at any protection level: `data/raw` (irreplaceable — the datasets
 themselves), the out-of-domain cache, and the RELEASED weights in `pretrained_dir()` (a
