@@ -95,8 +95,8 @@ released weights are a separate reference. No continuation is guaranteed to avoi
 Both credit data and 25 native OOD datasets per task are benchmarked with all eligible rows/features
 and five folds. The constant-context repair passed full CPU/GPU Experiment 0 on 03-11-2026:
 14 CPU stages, 117 GPU stages, including all 38 CUDA tests. Exp1 is complete (54 training
-runs and 158 benchmark slots). At the 04-11 17:28 CET audit, Exp2 has 47 completed runs
-and 17 running, none pending; all 64 configurations are covered. Its benchmarks have not
+runs and 158 benchmark slots). At the 05-11 10:28 CET audit, Exp2 has 50 completed runs,
+12 running and two Priority-pending; all 64 configurations are covered. Its benchmarks have not
 started. Keep the running checkout frozen; the revised Exp3 still needs fresh VSC validation.
 Live campaign progress, failures and measured costs are recorded in [RUNS.md](docs/RUNS.md).
 

@@ -164,6 +164,36 @@ The one thing to do differently.
 
 ## Runs
 
+### 05-11-2026 — 10:28–10:31 CET progress and output audit
+
+No remote submissions or mutations. Production remains `0494e7a` and the accepted PROJECT r3 image;
+scientific settings are unchanged. Exp0 CPU/GPU reports retain PASS (14/117 stages). Exp1
+retains all 54 complete training runs and 158 paired benchmark receipts including shared references.
+
+Exp2: **50/64 complete** (LGD 32/32, PD 18/32), **12 running + 2 Priority-pending**.
+All unfinished configurations are PD/TabICL. Running: `11763811_2`, `11763815_3`,
+`11763820_4`, `11763822_5`, `11763825_6`, `11763832_7`, `11763881_16`, `11763885_17`,
+`11763887_18`, `11763890_19`, `11763895_20`, `11763897_21`. Pending: `11763899_22`,
+`11763901_23`. Exact run-name/queue coverage accounts for all 64 without duplicates.
+Latest recorded unfinished progress is 1059–1400 of 1500 updates; summaries from previous
+checkpoint/requeue cycles can lag the current metrics. These resumptions are expected.
+
+All 250 required milestone files for completed runs are nonempty and have readable Torch ZIP
+directories with a data pickle. This is a structural check, not tensor loading or a full checksum
+scan of the retained weights. No models were downloaded. Scanned 786 Exp1/2 logs (771,128,693
+bytes): zero matched fatal exceptions, CUDA OOM, quota or checkpoint-write errors; no fallback
+errors. All 1,003 recorded metric losses are finite, and no malformed metric record was found.
+The 32 completed TabPFN runs report zero skipped tasks. Their handled AMP-overflow warnings
+correspond to 1,062 retries overall (maximum 104/run); the validated same-batch replay path
+recovered them. The evidence supports normal progress; downstream benchmarking is still pending.
+
+Quota: DATA 44488M/76800M; Lustre PROJECT 253.3G/1T, 8145/150000 files. Available balance
+76,052,575 credits. No cleanup or runtime/source cutover was performed. Exp2 benchmark receipts
+remain zero; its 320 checkpoint evaluations and subsequent analysis remain outstanding.
+Exp3 remains implemented locally and unsubmitted. Next: finish training, validate any source
+cutover after consumers exit, then quote/authorize Exp2 credit/OOD benchmarking.
+Evidence: `.runtime-build/audit-20261105/{status,logs}.json` (verified SSH stdout/stderr/status).
+
 ### 04-11-2026 — 17:28 CET training/storage audit; local model cleanup
 
 No jobs submitted, cancelled or changed. VSC production remains frozen at `0494e7a` with

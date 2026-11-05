@@ -1,5 +1,21 @@
 # Agents' memory — runs and dead ends
 
+## 05-11-2026 — 10:28–10:31 CET live campaign audit
+
+Exp2 is 50/64 complete (LGD 32/32, PD 18/32). Remaining 14 PD/TabICL configurations are
+12 RUNNING + 2 Priority-pending; exact queue/run-name coverage has no missing or duplicate task.
+Latest recorded updates span 1059–1400/1500. All 250 milestone files of completed runs are
+nonempty readable Torch ZIP archives; payload tensors were not loaded or copied. Scanned
+786 Exp1/2 logs (771,128,693 bytes) and 1,003 metric records: no matched fatal errors,
+nonfinite losses, malformed metric records or error-bearing fallback logs. TabPFN's 32 complete
+runs report zero skipped tasks and 1,062 recovered AMP retries overall (maximum 104/run);
+handled overflow/replay warnings exist and must not be described as warning-free logs.
+Exp0 reports remain PASS (14 CPU/117 GPU stages); Exp1 retains 54 complete runs and
+150 + 8 reference receipts. Exp2 has zero benchmark receipts; Exp3 remains unsubmitted.
+Lustre PROJECT 253.3G/1T, DATA 44488M/76800M; no quota issue. Deployed 0494e7a stays frozen.
+No Slurm job, remote file or environment changed; only compact audit metadata was collected.
+Evidence: `.runtime-build/audit-20261105/{status,logs}.json`. No temporary operator script created.
+
 ## 04-11-2026 — local weights removed; live VSC check
 
 Removed all 361 planned local model files (88,208,987,309 bytes, 82.15 GiB), including duplicate

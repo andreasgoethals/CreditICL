@@ -10,19 +10,19 @@ Check [upstream review flags](../vsc-library/UPSTREAM_CHANGES.md) and the
 
 How to submit, what it costs, and how a multi-day sweep survives a cluster that stops routinely.
 
-**Current campaign, 04-11-2026:** Exp1 is complete: 54 training runs and 158 benchmark
+**Current campaign, 05-11-2026:** Exp1 is complete: 54 training runs and 158 benchmark
 slots, including 25% mixtures. Repaired source 0494e7a passed CPU 62516762 (14 stages)
 and GPU 11763662 (117 stages, 38 CUDA cases), both exit 0:0. Login readiness and
-`src.validation.verify` also passed (123 items). At 17:28 CET Exp2 has 47 completed
-and 17 running, none pending: every one of the 64 configurations is covered. All five
+`src.validation.verify` also passed (123 items). At 10:28 CET Exp2 has 50 completed,
+12 running and two Priority-pending: every one of the 64 configurations is covered. All five
 milestone files exist for completed runs; the log/metric audit found no new failure.
 Preserve their DATA checkout at 0494e7a and accepted PROJECT image r3. A validation-only
 fix must be pulled/tested in a separate DATA checkout while these consumers remain.
 No scheduled monitor, Exp2 benchmark or Exp3 is submitted. Exact IDs and evidence are in
 [RUNS.md](RUNS.md).
-Current shared Lustre PROJECT usage is 250.6G/1T, again above the 250-GiB free-space reserve;
-check it afresh before additional campaigns. CreditICL uses 213.0 GiB there and only ~21 KiB
-on shared scratch. DATA uses 44357M/76800M across projects. Both legacy
+Current shared Lustre PROJECT usage is 253.3G/1T, above the 250-GiB free-space reserve;
+check it afresh before additional campaigns. The 04-11 scoped CreditICL measurement was
+213.0 GiB on PROJECT and ~21 KiB on shared scratch. DATA now uses 44488M/76800M across projects. Both legacy
 DATA environments remain explicit recovery exceptions: cross-login consumer clearance
 is incomplete and the separate Conda environment lacks distinct recovery coverage.
 Distilled from `vsc-library/VSC Repository.txt` (pin `289ed81df5d101512f91ae1ea3b0083a2de08a96`, checked 20-10-2026) plus what we learned

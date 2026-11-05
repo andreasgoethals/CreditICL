@@ -1,5 +1,9 @@
 # Changelog
 
+## 05-11-2026
+
+- Record verified Exp2 progress (50/64 complete), checkpoint/log checks and recovered AMP warnings.
+
 ## 04-11-2026
 
 - Remove 82.15 GiB of local model copies; retire the PS5-incompatible cleanup helper and refresh the verified VSC status.
