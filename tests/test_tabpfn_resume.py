@@ -15,6 +15,7 @@ import torch
 
 from src.train.tabpfn_trainer import TabPFNTrainer
 from src.utils.config import expand_with_seeds, load
+from src.utils.paths import on_vsc
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -148,6 +149,7 @@ def assert_real_checkpoint_resume(directory, task, device, *, force_full_precisi
         restored.close()
 
 
+@pytest.mark.skipif(not on_vsc(), reason="Released weights remain on VSC")
 @pytest.mark.parametrize("task", ["pd", "lgd"])
 def test_real_checkpoint_resume_on_cpu(tmp_path, task):
     assert_real_checkpoint_resume(tmp_path, task, "cpu")

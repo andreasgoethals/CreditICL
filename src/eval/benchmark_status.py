@@ -202,7 +202,7 @@ def request(exp: int, track: str, index: int, seeds: tuple[int, ...] = (0,), n_f
             reference_models: str = REFERENCE_MODELS, variant: str | None = None
             ) -> tuple[str, dict, dict[str, Path]]:
     from src.data.discovery import list_datasets
-    from src.eval.ood import N_PER_TASK, list_ood_datasets, manifest_path, ood_root
+    from src.eval.ood import N_PER_TASK, list_ood_datasets, manifest_path
 
     cfg = load(config_path(exp, track, variant))
     runs = expand_with_seeds(cfg)
@@ -226,7 +226,9 @@ def request(exp: int, track: str, index: int, seeds: tuple[int, ...] = (0,), n_f
         ROOT / "src/data/pipeline.py", ROOT / "src/data/dataset_preprocessing.py",
         ROOT / "pyproject.toml",
     ]
-    if cfg.get("design") in {"retention", "retention_pilot"}:
+    # Shared references never install adapters; keep their receipts identical
+    # across experiments. Trained Exp3 checkpoints retain this dependency.
+    if slot.kind == "arm" and cfg.get("design") in {"retention", "retention_pilot"}:
         sources.append(ROOT / "src/models/adapters.py")
     code = {p.relative_to(ROOT).as_posix(): digest(p) for p in sorted(sources)}
     data = {"protocol": PROTOCOL, "track": track, "kind": kind, "models": models,

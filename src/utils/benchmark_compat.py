@@ -67,6 +67,16 @@ REVIEWED_TRANSITIONS['src/eval/benchmark_status.py'] = (
 )
 
 
+# Shared-reference dependency repair: only trained Exp3 checkpoints depend on
+# adapters.py. Exp1/2 predictions, requests and scoring are otherwise identical.
+_before, _after = REVIEWED_TRANSITIONS['src/eval/benchmark_status.py']
+REVIEWED_TRANSITIONS['src/eval/benchmark_status.py'] = (
+    _before | _after,
+    _after | frozenset({'9c6bdba2320bbb470bf738c3f485c2f7e6b2f3bdc02af5724e0bd4a960c0560e',
+                        'b03e62a9af587761164780c3dea33bbe7b95a6b6879dfeb6a6aef4ce807d5acd'}),
+)
+
+
 # Budget A changes only the selection CLI explanation; Exp1 predictions are unchanged.
 _before, _after = REVIEWED_TRANSITIONS["src/eval/selection.py"]
 REVIEWED_TRANSITIONS["src/eval/selection.py"] = (

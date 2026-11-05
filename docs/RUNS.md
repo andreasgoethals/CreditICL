@@ -164,6 +164,40 @@ The one thing to do differently.
 
 ## Runs
 
+### 05-11-2026 — Exp3 validation coverage audit; no new Slurm workload
+
+Local review pins: TFM `8f14e5945ca6b068ed0c76218e769d3e672d0d13`;
+VSC Library `914ef4e57e1f153080e2686d03179c223db38c9a` (both unchanged).
+
+Direct read-only SSH rechecked deployed `0494e7a`: CPU attempt
+`cpu_20261101T215620Z_j62516762_0d50fc3b` and GPU attempt
+`gpu_20261102T074311Z_j11763662_5dc41327` remain PASS at source fingerprint
+`571c1f6cb2bc968a8bc572fc6fd2b8f202f3bca6024db0a28aadb3268fd36d3b`.
+Their stage counts are 14/117; the GPU report contains 16 successful adaptation routes using
+the earlier no-decay/L2-SP/DiagScale/LoRA recipes. Current Exp3 requires 24 routes for six
+recipes across two tasks/two backbones, within 14 CPU/125 GPU stages and 34 capacity probes.
+It has not yet passed that revised VSC gate.
+
+Local review reproduced an unnecessary rerun: adapter provenance was attached to all Exp3
+requests, so the eight adapter-free references could not reuse identical Exp2 receipts. The
+fix limits that extra source dependency to trained arms. Nine regressions cover all eight
+reference request pairs, adapter changes and scientific-input mutations. Exp1/2 training
+identities and implementation remain unchanged; no VSC checkout, job or environment changed.
+No model weights were transferred. Evidence:
+`.runtime-build/exp3-review-20261105-vsc-validation.json` and local review/test logs.
+The review also found 14 local tests assuming released weights were downloaded. They now skip
+only off VSC; all remain enabled for cluster CPU validation and the mandatory GPU counterparts
+remain unchanged. A collection-only simulation verified this without executing a cluster workload.
+Full local pytest: 2,322 passed, 58 resource/VSC skips, zero failures in 30m52s; 499 warnings
+from upstream deprecations and deliberate test fixtures. Source fingerprint:
+`732101a15ec20602ac49341aa7c8684467265375baa83379f73f732b93e8e184`.
+
+Recommended sequence: after active Exp2 training consumers finish, deploy/validate the final
+reviewed source once, then benchmark Exp2 and run authorized Exp3 without changing that source.
+The benchmark's output artifacts alone do not require a second Exp0. A later source/runtime/
+package/input change requires matching validation again; an older benchmark checkout can instead
+be allowed to finish before the single Exp3 source cutover. No workload is submitted by this review.
+
 ### 05-11-2026 — 10:28–10:31 CET progress and output audit
 
 No remote submissions or mutations. Production remains `0494e7a` and the accepted PROJECT r3 image;

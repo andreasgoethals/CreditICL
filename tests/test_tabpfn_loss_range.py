@@ -7,6 +7,7 @@ import pytest
 import torch
 
 from src.train.tabpfn_trainer import REGRESSION_LOSS_WEIGHTS, regression_loss
+from src.utils.paths import on_vsc
 
 
 class TailTransform:
@@ -121,6 +122,7 @@ def assert_production_batch_685_loss(device):
     assert batch.y_query.device.type == 'cpu'
 
 
+@pytest.mark.skipif(not on_vsc(), reason="Released weights remain on VSC")
 def test_production_batch_685_native_preprocessing_and_loss():
     assert_production_batch_685_loss('cpu')
 
@@ -155,6 +157,7 @@ def assert_production_batch_685_update(directory, device):
 
 
 @pytest.mark.slow
+@pytest.mark.skipif(not on_vsc(), reason="Released weights remain on VSC")
 def test_production_batch_685_updates_released_weights(tmp_path):
     from src.prior.rng import one_thread
     with one_thread():

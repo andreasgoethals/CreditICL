@@ -294,6 +294,8 @@ milestones: 125/250/500/1000/1500. Geometry, precision, seeds and objectives rem
 of Exp2 within each backbone. Native weights are frozen for adapters; initial predictions
 are unchanged. L2-SP uses the released checkpoint as its anchor, including after resume.
 LoRA exports native merged weights plus resumable factors. DiagScale is injected before caches.
+The shared released-model/CatBoost/linear references keep identical requests across Exp2/Exp3;
+their valid receipts are reused. Adapter source hashes remain required for trained Exp3 arms.
 
 The primary anchor contrast is L2-SP versus no-decay; the decay contrast is no-decay versus
 primary-rate Exp2. Adapter outcomes are compared against both full rates separately; no

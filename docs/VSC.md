@@ -757,11 +757,21 @@ these comparisons are active. Check project capacity before launching: retained 
 rolling resume files and full-table benchmark journals all consume project storage. The 24-hour
 Exp0 allocation is a limit, not a prediction of total campaign duration.
 
-## Revised Exp3 deployment gate (04-11-2026)
+## Revised Exp3 deployment gate (05-11-2026)
 
 Implemented locally; do not submit yet or pull into an active Exp2 checkout. After Exp2
-consumers finish, deploy through Git and run fresh CPU/GPU Exp0 on the revised source. The
-GPU plan includes all 24 recipe/task/backbone stop-resume-inference routes plus 34 capacity
+training consumers finish, the efficient sequence is: deploy the final reviewed revision through
+Git, pass fresh CPU/GPU Exp0, benchmark Exp2, then start authorized Exp3 on that same frozen
+revision. Benchmark output does not invalidate validation. No second Exp0 is required after
+benchmarking if source, packages, runtime and inputs still match the accepted receipts. If Exp2
+benchmarking uses the older checkout instead, wait for those consumers to finish before the
+source cutover and fresh Exp0 for Exp3.
+
+The current gate has 14 CPU stages and 125 GPU stages, including all 24
+recipe/task/backbone stop-resume-inference routes plus 34 capacity
 probes; the adapter capacity cases use the higher rate at 60,000 rows. Prior Exp0 PASS is
-historical evidence, not acceptance of this revision. Requote/check quotas before any Exp3
-authorization. No Exp2 baseline retraining or benchmark resubmission is implied.
+historical evidence, not acceptance of this revision: the deployed 0494e7a GPU report covers
+117 stages and 16 adaptation routes with the older recipes. Requote/check quotas before any
+Exp3 authorization. No Exp2 baseline retraining or benchmark resubmission is implied. The eight
+shared reference receipts can be reused after their normal input/package/result checks;
+adapter-code provenance is required for trained Exp3 arms, not adapter-free references.

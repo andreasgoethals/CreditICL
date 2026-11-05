@@ -164,3 +164,79 @@ def test_message_only_receipt_transition_keeps_exp2_and_rejects_scientific_chang
             assert not compatible_requests(old, mutated)
         new["config"]["train"]["lr"] *= 2
         assert not compatible_requests(old, new)
+
+
+@pytest.mark.parametrize("track", ["pd", "lgd"])
+@pytest.mark.parametrize("reference", ["tabiclv2", "tabpfn3", "catboost", "linear"])
+def test_exp3_shared_reference_request_matches_exp2_without_adapter_dependency(
+        track, reference, tmp_path, monkeypatch, isolated_output):
+    from types import SimpleNamespace
+    from src.data import discovery
+    from src.eval import benchmark_status as status, baselines, ood
+    from src.utils import paths
+
+    cfg = load(f"config/Exp2_{track.upper()}.yaml")
+    names = cfg["eval"]["dev_datasets"] + cfg["eval"]["holdout_datasets"]
+    (tmp_path / "meta.json").write_text(json.dumps(dict(n_rows=100)))
+    for filename in ("data.parquet", "weights.fixture", "ood.fixture", "manifest.json"):
+        (tmp_path / filename).write_bytes(b"fixture bytes")
+    entries = [SimpleNamespace(name=f"ood-{i}", slug=f"ood-{i}", n_rows=100)
+               for i in range(25)]
+    monkeypatch.setattr(discovery, "list_datasets", lambda *a: names)
+    monkeypatch.setattr(paths, "find_processed_dir", lambda *a: tmp_path)
+    monkeypatch.setattr(paths, "find_pretrained", lambda *a: tmp_path / "weights.fixture")
+    monkeypatch.setattr(baselines, "find_local_tabpfn_checkpoint", lambda *a: tmp_path / "weights.fixture")
+    monkeypatch.setattr(ood, "list_ood_datasets", lambda *a: entries)
+    monkeypatch.setattr(ood, "manifest_path", lambda: tmp_path / "manifest.json")
+    monkeypatch.setattr(ood, "cache_path", lambda *a: tmp_path / "ood.fixture")
+    monkeypatch.setattr(status, "package_fingerprint", lambda: "same installed packages")
+    offset = status.REFERENCE_MODELS.split(",").index(reference)
+    tag2, request2, files2 = status.request(2, track, status.n_slots(2, track) - 4 + offset)
+    tag3, request3, files3 = status.request(3, track, status.n_slots(3, track) - 4 + offset)
+    assert tag3 == tag2 and files3 == files2
+    assert request3 == request2
+    assert "src/models/adapters.py" not in request3["code"]
+
+    # A real Exp3 arm still requires the adapter code digest. Supply the same
+    # complete metadata contract as the production request; no models are loaded.
+    from src.utils.preflight import training_fingerprint
+    run = expand_with_seeds(load(f"config/Exp3_{track.upper()}.yaml"))[0]
+    name = run_name(run)
+    saved_config = paths.run_config_path(name)
+    saved_config.parent.mkdir(parents=True, exist_ok=True)
+    saved_config.write_text(json.dumps(run))
+    paths.run_summary_path(name).write_text(json.dumps(dict(
+        training_fingerprint=training_fingerprint(), completed=True, steps=1500,
+        datasets_seen=1500 * run["train"]["batch_size"])))
+    checkpoint = paths.run_checkpoints_dir(name) / "step-1500.ckpt"
+    checkpoint.parent.mkdir(parents=True, exist_ok=True)
+    checkpoint.write_bytes(b"checkpoint fixture")
+    _, arm_request, _ = status.request(3, track, 0)
+    assert "src/models/adapters.py" in arm_request["code"]
+    original_digest = status.digest
+    monkeypatch.setattr(status, "digest", lambda p: "changed adapter implementation"
+                        if p.as_posix().endswith("src/models/adapters.py") else original_digest(p))
+    _, unchanged_reference, _ = status.request(3, track, status.n_slots(3, track) - 4 + offset)
+    _, changed_arm, _ = status.request(3, track, 0)
+    from src.utils.benchmark_compat import compatible_requests
+    assert unchanged_reference == request3
+    assert not compatible_requests(arm_request, changed_arm)
+
+
+def test_reference_dependency_repair_preserves_exp2_receipts_but_not_scientific_mutations():
+    import copy
+    from pathlib import Path
+    from src.utils.benchmark_compat import compatible_requests
+    before = dict(code={"src/eval/benchmark_status.py":
+                       "bb4f97a3230f52a3985ff1dc8296d53945f028d7ffd9ef7d0737c56e14fa876a"},
+                  checkpoint_sha256="same weights", credit_inputs="same data",
+                  environment_fingerprint="same packages", config={"train": {"lr": 2e-5}},
+                  protocol=9, n_folds=5)
+    after = copy.deepcopy(before)
+    after["code"]["src/eval/benchmark_status.py"] = hashlib.sha256(
+        Path("src/eval/benchmark_status.py").read_bytes()).hexdigest()
+    assert compatible_requests(before, after)
+    for key in ("checkpoint_sha256", "credit_inputs", "environment_fingerprint", "protocol", "n_folds", "config"):
+        changed = copy.deepcopy(after)
+        changed[key] = "changed"
+        assert not compatible_requests(before, changed)

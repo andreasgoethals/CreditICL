@@ -2,6 +2,7 @@
 
 ## 05-11-2026
 
+- Fix Exp3 reference-receipt reuse, preserve mandatory VSC weight tests while skipping laptop-only resource gaps, and clarify the fresh Exp0 gate.
 - Record verified Exp2 progress (50/64 complete), checkpoint/log checks and recovered AMP warnings.
 
 ## 04-11-2026

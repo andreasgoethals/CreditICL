@@ -2,6 +2,8 @@
 import numpy as np
 import pytest
 
+from src.utils.paths import on_vsc
+
 
 def assert_multiclass_wrapper(model_name, classes, *, checkpoint=None):
     from src.eval.baselines import build
@@ -23,7 +25,11 @@ def assert_multiclass_wrapper(model_name, classes, *, checkpoint=None):
     assert report.n_train_used == n and report.n_features == 5
 
 
-@pytest.mark.parametrize("model_name", ["linear", "catboost", "tabiclv2", "tabpfn3"])
+# Keep these cases in the VSC CPU suite as well as the mandatory GPU suite;
+# laptop validation must not require downloading the released models.
+@pytest.mark.parametrize("model_name", ["linear", "catboost",
+    pytest.param("tabiclv2", marks=pytest.mark.skipif(not on_vsc(), reason="Released weights remain on VSC")),
+    pytest.param("tabpfn3", marks=pytest.mark.skipif(not on_vsc(), reason="Released weights remain on VSC"))])
 @pytest.mark.parametrize("classes", [3, 11])
 def test_native_multiclass_real_wrappers(model_name, classes):
     assert_multiclass_wrapper(model_name, classes)

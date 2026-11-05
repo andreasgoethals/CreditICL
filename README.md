@@ -98,6 +98,8 @@ and five folds. The constant-context repair passed full CPU/GPU Experiment 0 on 
 runs and 158 benchmark slots). At the 05-11 10:28 CET audit, Exp2 has 50 completed runs,
 12 running and two Priority-pending; all 64 configurations are covered. Its benchmarks have not
 started. Keep the running checkout frozen; the revised Exp3 still needs fresh VSC validation.
+Validate the final revision once before Exp2 benchmarking and keep it frozen for Exp3; unchanged
+benchmark output does not require repeating Experiment 0 afterwards. See the [deployment gate](docs/VSC.md#revised-exp3-deployment-gate-05-11-2026).
 Live campaign progress, failures and measured costs are recorded in [RUNS.md](docs/RUNS.md).
 
 Local notebooks use analysis records, not model weights. Keep trained/released checkpoints and

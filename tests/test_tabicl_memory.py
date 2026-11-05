@@ -10,6 +10,7 @@ from tabicl._model.inference import DiskTensor, InferenceManager, OffloadMode
 from tabicl._model.inference_config import InferenceConfig
 
 from src.eval.tabicl_memory import BoundedInferenceManager, install, prediction_storage
+from src.utils.paths import on_vsc
 
 
 def manager(folder=None):
@@ -206,16 +207,19 @@ def assert_released_memory_equivalence(task, *, device="cpu", force_disk=False, 
                                        err_msg=f"{diagnostic}, output={output}")
 
 
+@pytest.mark.skipif(not on_vsc(), reason="Released weights remain on VSC")
 @pytest.mark.parametrize("task", ["pd", "lgd"])
 def test_full_ensemble_predictions_match_upstream(task):
     assert_released_memory_equivalence(task)
 
 
+@pytest.mark.skipif(not on_vsc(), reason="Released weights remain on VSC")
 @pytest.mark.parametrize("task", ["pd", "lgd"])
 def test_streaming_full_ensemble_predictions_match_upstream(task):
     assert_released_memory_equivalence(task, force_stream=True)
 
 
+@pytest.mark.skipif(not on_vsc(), reason="Released weights remain on VSC")
 @pytest.mark.parametrize("classes", [3, 11])
 def test_streaming_multiclass_matches_upstream(classes):
     assert_released_memory_equivalence("pd", force_stream=True, classes=classes)

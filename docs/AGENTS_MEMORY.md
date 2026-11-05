@@ -1,5 +1,39 @@
 # Agents' memory — runs and dead ends
 
+## 05-11-2026 — Exp3 implementation and validation-gate review
+
+Found/reproduced a reference-reuse bug: `benchmark_status.request` attached adapter-code
+provenance to every Exp3 slot, including adapter-free shared references. Identical Exp2 reference
+receipts then failed comparison and would trigger eight unnecessary benchmarks. Restrict that
+dependency to trained arms; add eight real request-construction regressions and an exact reviewed
+source-hash transition. Mutations to adapter code, data, packages, checkpoint or protocol still
+fail closed. No training/model/prior/grid change; the training implementation remains
+`5300c294e4078273fa635f18b82714ebfdb17169046f25035e356aa2392a8e75`.
+
+Direct read-only SSH confirmed deployed 0494e7a retains CPU/GPU PASS, source 571c1f6c,
+14/117 stages and 16 old adaptation routes. The revised manifest has 14 CPU/125 GPU stages,
+24 revised recipe round trips and 34 capacity probes. It needs fresh CPU/GPU acceptance.
+One source cutover/validation before Exp2 benchmarking can also authorize the same unchanged
+source for subsequently authorized Exp3; benchmark artifacts alone do not invalidate a receipt.
+No remote checkout, jobs, environment or models changed. No weights downloaded or monitor created.
+Evidence: `.runtime-build/exp3-review-20261105-vsc-validation.json` and local test logs.
+
+Final local acceptance: **2,322 passed, 58 skipped, zero failures**, 30m52s. Skips are 38 GPU
+cases and 20 released-weight integrations (14 newly guarded, six already conditional).
+All 14 newly guarded cases remain enabled in simulated VSC CPU collection. The 499 warnings
+are upstream deprecations and deliberate scalar/scheduler/meta-device test fixtures, not a
+warning-free result. Affected-file Ruff F checks and edited-document links pass. Source:
+`732101a15ec20602ac49341aa7c8684467265375baa83379f73f732b93e8e184`.
+
+**Tried:** Full local pytest after the intentional removal of downloaded model weights.
+**Result:** Four multiclass wrapper cases failed on missing released files; the superseded
+run was stopped. Audit found the same resource assumption in ten later offload/resume/loss cases.
+**Why:** These real-weight integrations were still classified as unconditional laptop tests.
+**Instead:** All 14 skip only off VSC. Simulated VSC CPU collection verifies every case remains
+enabled under `-m not vsc`; the 38 mandatory GPU tests and their corresponding real-weight
+helpers are unchanged. Local focused checks pass with 14 expected resource skips. Earlier
+partial runs/logs are superseded by `exp3-review-20261105-acceptance-complete.log`.
+
 ## 05-11-2026 — 10:28–10:31 CET live campaign audit
 
 Exp2 is 50/64 complete (LGD 32/32, PD 18/32). Remaining 14 PD/TabICL configurations are
