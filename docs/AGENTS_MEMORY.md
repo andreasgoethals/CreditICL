@@ -1,5 +1,20 @@
 # Agents' memory — runs and dead ends
 
+## 06-11-2026 — All Exp2 benchmark slots admitted
+
+The current production receipt and all 256 earlier checkpoints passed the pre-submission checks.
+Mindwell accepted PD TabICL `11775176` (64 slots, 4h), PD TabPFN-3 `11775177` (64, 3h),
+and LGD `11775178` (128, 45m). Quote 16,646,400 credits; available 68,770,309 at admission.
+Receipt `manifests/submissions/20261106-exp2-earlier-benchmark.json` has no uncertain admission.
+At 10:35 CET the five arrays accounted for all 320 trained slots exactly once. Eighteen final
+PD slots were running, 46 finals and 256 earlier slots were pending. Revised CPU `62581713`
+remains PASS 14/14. Revised GPU `11774935` remains queued for Priority.
+
+**Tried:** Pass the quoted slot ranges through shell environment variables.
+**Result:** The initial preparation stopped before submission when the container omitted them.
+**Why:** The runtime starts with `--cleanenv` and forwards the `CREDITICL_` namespace.
+**Instead:** Use that namespace and compare the ranges against the frozen slot definitions.
+
 ## 06-11-2026 — Exp2 benchmark wall times reduced
 
 Updated the 46 pending tasks in place on Mindwell. `11774788_0–31` now have 45 minutes,

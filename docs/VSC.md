@@ -734,8 +734,9 @@ The active production checkout stays at **0494e7a**, with complete CPU 62516762/
 acceptance and PROJECT image r3. Later source changes are tested in an isolated DATA checkout;
 their targeted tests do not restamp the production Exp0 receipts or authorize a source cutover.
 Use receipt-backed, phase-specific admission for genuinely missing authorized work, after
-fresh quota/budget checks. There is no scheduled monitor. Exp2 benchmarking and Exp3 have
-not been submitted; check prerequisites and authorization before launching them. Historical
+fresh quota/budget checks. There is no scheduled monitor. On 6 November all 320 Exp2 benchmark
+slots were admitted. Check the [run record](RUNS.md#06-11-2026--remaining-256-exp2-benchmarks-admitted)
+before considering another submission. Exp3 requires fresh validation and authorization. Historical
 validation failures, retired controllers and their recovery evidence belong in `RUNS.md`.
 The earlier `scripts/slurm/deploy.slurm` sequential controller is not used for this campaign.
 Exp2 retains five checkpoint benchmarks per run. All rows/features/five folds remain.

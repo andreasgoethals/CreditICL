@@ -164,6 +164,30 @@ The one thing to do differently.
 
 ## Runs
 
+### 06-11-2026 — Remaining 256 Exp2 benchmarks admitted
+
+Verified the completed training summaries, checkpoint archive directories and slot-to-model
+mapping on `0494e7a`. The matching production Exp0 gate passed. All three scheduler dry runs
+passed. The verified submission ceiling was 500 and the expanded queue had 188 tasks before
+admission. The total quote was 16,646,400 credits with 68,770,309 available.
+
+| Mindwell job | Earlier-checkpoint slots | Limit | Quote |
+|---|---|---|---:|
+| `11775176` | PD TabICL, 64 | 4h | 7,833,600 |
+| `11775177` | PD TabPFN-3, 64 | 3h | 5,875,200 |
+| `11775178` | LGD, both backbones, 128 | 45m | 2,937,600 |
+
+The receipt at `output CreditICL/manifests/submissions/20261106-exp2-earlier-benchmark.json`
+records the exact indices and successful admissions. At 10:35 CET the five arrays covered all
+320 trained slots without duplicates. Eighteen final PD tasks were running, 46 finals and 256
+earlier tasks were pending, and no benchmark completion receipts had been published yet.
+The latest running finals were scoring AlgorithmWatch with no matched errors. The eight
+verified shared reference receipts remain available for comparison.
+
+Revised Exp0 CPU `62581713` completed 14/14. GPU `11774935` is queued for Priority and covers
+the revised 125-stage manifest. The GPU receipt will appear under the isolated validation
+checkout when the allocation starts. Keep both checkouts frozen through their consumers.
+
 ### 06-11-2026 — Shorter Exp2 benchmark allocations
 
 On Mindwell at 09:57 CET verified shorter limits for all 46 queued final slots, using in-place
