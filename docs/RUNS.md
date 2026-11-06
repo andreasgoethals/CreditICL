@@ -164,6 +164,45 @@ The one thing to do differently.
 
 ## Runs
 
+### 06-11-2026 — Exp2 finals and revised Exp0 started concurrently
+
+All 64 Exp2 runs completed 1,500 updates, including the last 14 PD jobs with Slurm exits 0:0.
+Verified the 320 milestone archive directories and scanned 32 new or updated training logs.
+Fourteen had successful job footers, with no fatal matches in the scan.
+
+**Benchmark.** Mindwell arrays `11774787` (PD) and `11774788` (LGD) each score slots 0–31,
+the final checkpoint of every arm for that track, on `0494e7a`. The live Exp0 gate accepted
+all existing CPU/GPU artifacts. Full rows/features, five folds and native OOD remain in scope.
+The first-wave quote is 23,500,800 credits at the existing 12-hour limit, versus 117,504,000 for
+all 320 trained slots and 75,397,843 available at admission. The 256 earlier checkpoint slots
+will need further credit-checked waves. The eight shared reference receipts were retained.
+Submission receipts are under `output CreditICL/manifests/submissions/20261106-exp2-final-benchmark/`.
+
+**Validation.** CPU `62581713` on wICE interactive, 8 CPUs/48G/4h, quote 0, runs the revised
+`a3891f5` checkout at `$VSC_DATA/.crediticl-validation-20261106/CreditICL`. Its dedicated
+receipt namespace keeps the production Exp0 gate usable throughout benchmarking. The batch
+wrapper restores the isolated `VSC_DATA` after the VSC login profile, then checks the commit and
+executes the tracked script. Runtime remains the verified PROJECT r3 SIF. Candidate source
+`732101a15ec20602ac49341aa7c8684467265375baa83379f73f732b93e8e184`, TFM pin
+`8f14e5945ca6b068ed0c76218e769d3e672d0d13`, VSC pin `914ef4e57e1f153080e2686d03179c223db38c9a`.
+The CPU receipt lives in the candidate's `output CreditICL/experiment_0/report/` directory.
+
+CPU `62581713` completed 0:0 in 34m43s. All 14 stages passed, including 2,320 tests (two
+skips, 38 GPU deselections), all 14 released-weight integrations and 12/12 notebooks (38
+figures). Attempt `cpu_20261106T075801Z_j62581713_003f9931`.
+
+After the matching CPU gate passed, Mindwell accepted GPU `11774935`, one B200 with 24 CPUs,
+180G and a 24-hour limit. Quote 734,400 credits, with 68,741,463 available. The receipt
+`manifests/submissions/20261106-revised-exp0/gpu.json` under the candidate output root has
+no uncertain admission. Both revised validation phases use that checkout and runtime.
+
+At 09:36 CET 18 PD slots were running, 46 benchmark slots were pending, and the GPU
+validation allocation was pending for Priority. Full-context
+scoring advanced through its folds with no fatal log markers. The planner independently
+verified all eight shared reference receipts. Check results and current credit before the
+next benchmark wave. Keep both checkouts and validation artifact paths frozen until their
+consumers finish. Exp3 remains gated on revised GPU acceptance.
+
 ### 05-11-2026 — Exp3 validation coverage audit; no new Slurm workload
 
 Local review pins: TFM `8f14e5945ca6b068ed0c76218e769d3e672d0d13`;

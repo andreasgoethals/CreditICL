@@ -1,5 +1,37 @@
 # Agents' memory — runs and dead ends
 
+## 06-11-2026 — Parallel Exp2 benchmark and revised Exp0
+
+All 64 Exp2 training summaries reached 1,500 updates. The last 14 PD tasks exited 0:0.
+All 320 milestone archives have readable ZIP directories. The post-5-November log scan
+found no fatal matches in 32 training logs, including 14 successful job footers.
+
+| Job | Revision and configuration | First verified state |
+|---|---|---|
+| wICE `62581713` | `a3891f5`, revised CPU Exp0, 8 CPUs/48G/4h, quote 0 | PASS 14/14 in 34m43s, 2,320 tests and 12 notebooks passed |
+| Mindwell `11774787` | `0494e7a`, Exp2 PD final checkpoints, slots 0–31 | 18 running, 14 queued at 09:01 CET |
+| Mindwell `11774788` | `0494e7a`, Exp2 LGD final checkpoints, slots 0–31 | 32 queued at 09:01 CET |
+| Mindwell `11774935` | `a3891f5`, revised GPU Exp0, B200/24 CPUs/180G/24h, quote 734,400 | PENDING (Priority) at 09:36 CET after matching CPU gate passed |
+
+The production checkout passed its current artifact gate. The revised validation uses a separate
+DATA checkout at `$VSC_DATA/.crediticl-validation-20261106/CreditICL` and its own receipts, with
+the same immutable PROJECT image and cached inputs. A Slurm launch wrapper restores the isolated
+DATA namespace after the login profile resets `VSC_DATA`, checks the commit, and runs the tracked
+Exp0 script using its resource directives. Both branches were live concurrently on 6 November.
+The CPU JUnit report verified all 14 released-weight integrations passed on VSC. The suite
+reported two skips and 38 GPU deselections. CPU attempt `cpu_20261106T075801Z_j62581713_003f9931`.
+At 09:36 CET all 64 benchmark tasks and the GPU allocation were reconciled with admission
+receipts. Eighteen PD tasks were running and 46 tasks were pending. No fatal benchmark log
+matches or failed jobs were found; production benchmark receipts are still pending.
+
+**Tried:** Full Exp2 dry-run planning on the login node.
+**Result:** The first bounded SSH read timed out after 270 seconds. A streamed retry verified
+the live production Exp0 receipt and eventually confirmed all eight shared reference receipts.
+**Why:** `benchmark_status.check` builds the request and hashes each checkpoint before testing
+whether the receipt exists.
+**Instead:** Verified completed training and the 64 final slot identities and archives directly,
+checked receipt absence and queue ownership, and submitted via the usual receipt-backed manager.
+
 ## 05-11-2026 — Exp3 implementation and validation-gate review
 
 Found/reproduced a reference-reuse bug: `benchmark_status.request` attached adapter-code

@@ -1,5 +1,9 @@
 # Changelog
 
+## 06-11-2026
+
+- Record completed Exp2 training and the parallel benchmark and revised validation admissions.
+
 ## 05-11-2026
 
 - Fix Exp3 reference-receipt reuse, preserve mandatory VSC weight tests while skipping laptop-only resource gaps, and clarify the fresh Exp0 gate.

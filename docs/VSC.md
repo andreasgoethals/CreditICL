@@ -759,13 +759,15 @@ Exp0 allocation is a limit, not a prediction of total campaign duration.
 
 ## Revised Exp3 deployment gate (05-11-2026)
 
-Implemented locally; do not submit yet or pull into an active Exp2 checkout. After Exp2
-training consumers finish, the efficient sequence is: deploy the final reviewed revision through
-Git, pass fresh CPU/GPU Exp0, benchmark Exp2, then start authorized Exp3 on that same frozen
+Exp3 production requires the revised CPU/GPU Exp0 acceptance. After Exp2 training consumers
+finish, one option is to deploy the reviewed revision through Git, pass fresh CPU/GPU Exp0,
+benchmark Exp2, then start authorized Exp3 on that same frozen
 revision. Benchmark output does not invalidate validation. No second Exp0 is required after
-benchmarking if source, packages, runtime and inputs still match the accepted receipts. If Exp2
-benchmarking uses the older checkout instead, wait for those consumers to finish before the
-source cutover and fresh Exp0 for Exp3.
+benchmarking if source, packages, runtime and inputs still match the accepted receipts. Exp2
+benchmarking can also use its older, accepted checkout while the revised Exp0 runs in a separate
+DATA checkout with a separate receipt namespace. Preserve both checkout paths while their jobs or
+validation receipts depend on them. The [6 November run record](RUNS.md#06-11-2026--exp2-finals-and-revised-exp0-started-concurrently)
+records the live split, launch wrapper and benchmark wave sizes.
 
 The current gate has 14 CPU stages and 125 GPU stages, including all 24
 recipe/task/backbone stop-resume-inference routes plus 34 capacity
