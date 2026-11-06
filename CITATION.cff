@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: >-
+  If you use CreditICL, cite this software and record the exact Git commit used.
+  Cite the underlying models and methodological papers separately.
+type: software
+title: "CreditICL: Credit-targeted synthetic priors for tabular foundation models"
+authors:
+  - family-names: Goethals
+    given-names: Andreas
+    affiliation: KU Leuven
+    email: andreas.goethals@kuleuven.be
+repository-code: https://github.com/andreasgoethals/CreditICL
+url: https://github.com/andreasgoethals/CreditICL
+license: MIT
+abstract: >-
+  Research software for controlled synthetic-prior pretraining, continued
+  pretraining and constrained adaptation of tabular foundation models for
+  credit-risk benchmarks, with credit and out-of-domain evaluation. The MIT
+  licence covers original project code; third-party code, data and model weights
+  retain their own terms.
+keywords:
+  - tabular foundation models
+  - credit risk
+  - synthetic priors
+  - continued pretraining
+  - out-of-domain retention

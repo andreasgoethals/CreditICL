@@ -1,4 +1,4 @@
-# PRIORS — how TabICLv2 makes its synthetic data, and what we change
+# Synthetic priors: upstream generator and credit intervention
 
 This project's training stream contains **synthetic** tables from a generator called the
 **prior**. That generator defines the task distribution on which the model learns. This project
@@ -6,9 +6,11 @@ changes it toward credit-risk mechanisms. The account below distinguishes the up
 literature motivations and project design choices. Benchmark inspection helped motivate parts of
 the design; this is not a claim that every setting was established independently of these datasets.
 
-Original in-repo source audit (pin `de324efcca55be392feb0c01830b3b6ce364587f`; later checks record their own pins): paper `tfm-library/papers/2026/02_Qu_et_al._TabICLv2_*.pdf`; code
-`tfm-library/repositories/TabICL.txt`, including their own `scripts/train_v2_{clf,reg}_stage{1,2,3}.sh`.
-Code is cited **by symbol name**, never line number. The *values* these mechanisms take are in
+Source: [TabICLv2](../tfm-library/papers/text/2026/09_Qu_et_al._TabICLv2_A_better_faster_scalable_and_open_tabular_foundation_model.txt)
+and `tfm-library/repositories/TabICL.txt`, including the stage scripts. The original source audit
+used pin `de324efcca55be392feb0c01830b3b6ce364587f`; the current library pin is
+`8f14e5945ca6b068ed0c76218e769d3e672d0d13`. Historical observations retain their original pins.
+Code is cited **by symbol name**, never line number. Training settings are in
 [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md); why they exist is [EXPERIMENTAL_DESIGN.md](EXPERIMENTAL_DESIGN.md).
 
 ## Contents
@@ -19,16 +21,16 @@ Code is cited **by symbol name**, never line number. The *values* these mechanis
 4. [The classification target](#4-the-classification-target)
 5. [What we change](#5-what-we-change)
 6. [Per experiment](#6-per-experiment)
-7. [Open item](#7-open-item)
+7. [Limitations and future work](#7-limitations-and-future-work)
 
 ---
 
 ## 1. One prior, two heads
 
-Two released checkpoints, but **one** prior. Diffing their stage-1 commands, the whole difference is
-the head — the classifier discretises the last value into classes (`--max_classes 10`), the regressor
-keeps it continuous (`--regression_method quantile --num_quantiles 999`, `layernorm_nobias`). Every
-prior flag is identical. So a change to the prior affects both our tracks (PD, LGD) the same way.
+The released classifier and regressor share the graph-based generator. Their target paths differ:
+the classifier converts its latent target to classes (`--max_classes 10`), while the regressor
+uses a continuous target and a 999-quantile head. Shared feature-generation mechanisms therefore
+support both tasks, but a prior intervention need not have the same effect on PD and LGD.
 
 ## 2. What the generator does
 
@@ -50,16 +52,17 @@ coherently "smooth and narrow" and another "step-like and wide" rather than ever
 ## 3. The regression target
 
 The regression branch is two lines — `outlier_removing(threshold=4)` then `standard_scaling` — so
-their target has **mean 0, SD 1**, and `0`/`1` are not meaningful points on it. This matters for how
-we measure it: the naive `(y <= 0).mean()` means "below the mean" ≈ 0.5, which would make the
-unmodified prior *look* like it already puts half its mass at zero. The scale-free question is *"how
+their target has **mean 0, SD 1**, and `0`/`1` are not economic endpoints on it. This matters for how
+we measure it: `(y <= 0).mean()` counts values below the mean, not mass at the zero-loss boundary.
+That share is not necessarily 0.5 for a skewed distribution. The scale-free question is *"how
 much mass sits on the target's **own** extremes"* — `(y == y.min()).mean() + (y == y.max()).mean()`
 (see `src/utils/target_stats.py`), negligible for a continuous target, large for a real atom.
 
-The original prior *does* show atoms — ~35% of its datasets — but they are an artefact:
-`outlier_removing` sets every row beyond ±4 SD to exactly the same value, manufacturing a tie. So the
-honest claim is not "they have no atoms" but: **theirs has atoms by accident, at an arbitrary scale;
-ours has them by construction at 0 and 1, meaning full recovery and total loss.**
+Upstream targets can contain endpoint ties: clipping sets multiple extreme rows to the same
+value, and discrete mechanisms can create ties too. Their frequency depends on the sampled
+generator and validity/filtering rules; use the current diagnostic notebook for measured rates.
+Credit LGD targets instead place mass explicitly at economic endpoints before standardization.
+Standardization preserves these ties but changes their numerical locations.
 
 ## 4. The classification target
 
@@ -68,17 +71,17 @@ ours has them by construction at 0 and 1, meaning full recovery and total loss.*
 imbalance, but an exact frequency of rare binary tasks must be measured, not inferred from
 that older path. Our credit mechanism deliberately models a default rate and common shocks.
 
-> **Leave every `use_corrected_*` converter flag at its default.** `Converter._transform` carries a
-> known upstream bug (*"this is the wrong version, but it was used in the experiments"*); upstream
-> keeps it so the released checkpoints stay reproducible, and "fixing" it makes our arms incomparable
-> to the reference model.
+Preserve the upstream converter defaults on **control slots**. Credit slots deliberately enable
+the corrected category-size sampler, a documented part of the treatment. Do not silently change
+other converter semantics: upstream retains legacy behavior for reproducibility.
 
 ## 5. What we change
 
 Three rules govern every addition:
 
-1. **The control is exactly TabICLv2's prior.** `credit_fraction: 0.0` runs the original path with
-   none of our code on it — enforced by a test, including that `prior.base` never carries our values.
+1. **The control uses the native TabICL generator and filtering.** Credit mechanisms do not run
+   on control slots. Shared validity checks, shape planning and model-specific preprocessing still
+   apply; for example, TabPFN requires a usable context. These checks are tested explicitly.
 2. **A mechanism must come from credit risk, not curve-fitting.** The claim is that encoding *how
    losses arise* transfers — not that a parameter was tuned until a histogram matched.
 3. **Record provenance and prior exposure honestly.** Current ranges use cited literature and
@@ -91,22 +94,25 @@ Three rules govern every addition:
    Notebook comparisons describe the prior; they must not be used to retune it after the freeze.
 
 
-`credit_fraction` **mixes** rather than replaces: at 0.5, each task slot independently has 50% probability of using our prior. A model that
-only ever saw credit tables would be a credit model, not a foundation model — which is what the
-out-of-domain suites check.
+`credit_fraction` sets the probability that a task slot uses the credit path. At 0.5, half the
+slots are credit tasks in expectation, not necessarily in every batch. Paired seeds reuse the
+slot coins and geometry across mixtures. The OOD benchmark tests whether greater credit exposure
+changes general-domain performance; neither replay nor 100% credit exposure determines that outcome
+in advance.
 
 ### 5.1 PD — a rare, correlated binary event
 
 `mode: mechanism` is the **Merton/Vasicek one-factor model** (Vasicek 2002), the model behind the
 Basel IRB risk-weight formula: asset value = √ρ·Z + √(1−ρ)·ε, default when it falls below Φ⁻¹(PD).
-Defaults **cluster** through the systematic factor Z, shared by every borrower of a period — which an
-i.i.d. prior cannot express. ε is the table's own SCM latent (so the features stay predictive), of
+Defaults **cluster** through the systematic factor Z, shared by borrowers in a period. This makes
+cohort dependence explicit; it is not a claim that upstream graphs cannot represent dependence.
+ε is the table's own SCM latent (so features can remain predictive), of
 which `signal_share` is kept and the rest is risk no file records.
 
 | knob | value | source |
 |---|---|---|
 | `rho_range` | 0.03 – 0.24 | Basel IRB asset correlations, from other retail (3 %) to corporate (24 %) (BCBS 2005) |
-| `base_rate_range`, `base_rate_log` | 1 % – 50 %, log-uniform | lower end: the most imbalanced setting of Brown & Mues (2012), who study 30 % down to 1 % defaulters; upper end balanced, so the credit prior is never narrower than the control on class balance; log-uniform gives the imbalanced regime the literature stresses equal weight per factor of two |
+| `base_rate_range`, `base_rate_log` | 1 % – 50 %, log-uniform | motivated by the imbalanced settings of Brown & Mues (2012); the balanced upper bound and log-uniform sampling are project choices, not a guarantee of covering all upstream class frequencies |
 | `signal_share_range` | 0.05 – 0.95 | **wide**: discrimination varies across portfolios and no value transfers |
 | `cohort` | 1 – 40 periods, Z ~ N(0, 1) | the Vasicek model's standard-normal factor; 40 periods as in Li, Zhang & Zhao (2020) |
 | `macro_feature_prob` | 0.5 | macroeconomic variables are explanatory variables in credit models (economic-cycle dependency; Bellotti & Crook 2012, surveyed in Baesens et al. 2026) — half the tables record the period factor as a column |
@@ -116,7 +122,7 @@ which `signal_share` is kept and the rest is risk no file records.
 | label noise | **none** | asymmetric label noise (cures booked as non-default) was in the prior until 29-09-2026 with rates from nowhere; removed |
 
 The base-rate range is the **unconditional applicant** PD parameter. A finite cohort,
-macroeconomic shocks, acceptance selection and label noise can change its realised default rate.
+macroeconomic shocks and acceptance selection can change its realised default rate.
 Single-class tables are rejected and redrawn by the generator, not repaired by inventing defaults;
 this validity conditioning is part of the training distribution. Tied latent scores use randomized
 probability-integral transforms, preserving the normal marginal required by the Vasicek threshold.
@@ -140,7 +146,7 @@ portfolios that mix secured and unsecured loans (Baesens et al. 2026).
 
 Their one portfolio becomes a prior over portfolios — each table draws its own parameters:
 
-| knob | value | published value (Li, Zhang & Zhao) |
+| knob | value | recorded source anchor (Li, Zhang & Zhao; see §5.4) |
 |---|---|---|
 | `alpha0_mean_sd` | normal(−0.54, 1) | α₀ = −0.54 |
 | `beta0_mean_sd` | normal(−1.46, 1) | β₀ = −1.46 |
@@ -153,12 +159,11 @@ Their one portfolio becomes a prior over portfolios — each table draws its own
 | `macro_feature_prob` | 0.5 | the unemployment rate is one of their explanatory variables |
 | `component_overlap_range` | 0.3 – 1 | P(0), P(1) and μ have separate coefficient vectors in the ZOIB model (Ospina & Ferrari 2010); how far they share a driver is **wide** |
 
-The spreads (SD 1 on the logit scale, ranges several times the published effects) are ours and
-deliberate: the paper reports one portfolio, and a prior narrower than the spread of real portfolios
-would be a prior for that portfolio only. Predictive difficulty is not targeted; the literature's
-out-of-sample R² for real LGD — 0.04–0.15 linear, 0.10–0.25 beta regression, 0.20–0.43 tree
-ensembles (Loterman et al. 2012, as reported by Marin 2025) — is used only to check the generated
-tables are in the right regime.
+The spreads (SD 1 on the logit scale and ranges spanning the reported effects) are project choices
+that turn one portfolio model into a distribution of tasks. They are not fitted to these benchmark
+histograms. Predictive difficulty is measured, not calibrated to a target R². Earlier notes quoted
+unverified real-data R² bands; those are not literature-established targets and must not be used
+to justify the current ranges.
 
 `mode: mechanism` (collateral, workout, segment mixtures) and `mode: quantile` (dialled atoms and a
 Kumaraswamy interior) remain in the code for ablations; no experiment uses them.
@@ -192,51 +197,34 @@ with the same source, slot, table shape and context/query split; it never reduce
 update. This is a preprocessing validity condition, not a difficulty or downstream-score filter.
 The encoded TabICL/Exp1 stream is unchanged (`tests/test_context_validity.py`).
 
-### 5.4 Sources
+### 5.4 Sources and verification limits
 
-In the library (`tfm-library/`, cite by path): Baesens et al. (2026),
-`papers/2026/07_Baesens_et_al._Foundation_Models_for_Credit_Risk_Prediction_A_Game_Changer.pdf` — the
-survey the imbalance, reject-inference, economic-cycle and LGD-bimodality statements are taken from,
-with its own citations; Klein & Hoffart (2026),
-`papers/2026/01_Klein_and_Hoffart_Position_Foundation_Models_for_Tabular_Data_within_Systemic_Contexts_Need_Grounding.pdf`.
+The pinned library contains the sources used for the broad domain motivation:
 
-Read in full for this prior (not in the library — **to add**):
+- [Baesens et al. (2026), current October revision](../tfm-library/papers/2026/10_Baesens_et_al._Tabular_Foundation_Models_for_Credit_Risk_Prediction_A_Dedicated_Review_and_Empirical_Comparison.pdf):
+  credit imbalance, selection, economic cycles and LGD shape, with references to the underlying
+  credit literature. This is a survey, not a calibration of this generator.
+- [Klein & Hoffart (2026)](../tfm-library/papers/2026/01_Klein_and_Hoffart_Position_Foundation_Models_for_Tabular_Data_within_Systemic_Contexts_Need_Grounding.pdf):
+  motivation for domain structure. It is a position paper, not experimental evidence for the
+  cutoff frequencies or strengths used here.
 
-- Li, P., Zhang, X., Zhao, X. (2020). *Modeling Loss Given Default Regressions.* Working paper, Office of
-  the Comptroller of the Currency and FDIC; first version 31-05-2017, this version 11-05-2020. Section
-  2.1 (the DGP, eqs. 1–6 and the parameter values quoted above).
-- Marin, J. (2025). *Loss Given Default Prediction Under Measurement-Induced Mixture Distributions: An
-  Information-Theoretic Approach.* Preprint, October 2025 — used only for its literature review
-  (Loterman et al. 2012's R² ranges; Altman et al. 2005 on downturn recoveries).
+The original prior review recorded a full reading of Li, Zhang & Zhao (2020),
+*Modeling Loss Given Default Regressions*, section 2.1. Its recorded ZOIB coefficients anchor
+the table above. That primary document is not in the current TFM snapshot, so this documentation
+revision does not independently reverify the transcription. Recover and check the primary
+version before presenting exact coefficients as a manuscript quotation.
 
-Cited through the sources above, or checked against the publisher's abstract only — **to add and
-verify in full** before the paper cites a number from them directly:
+Other source attributions remain indirect: BCBS (2005)/Vasicek (2002) for asset correlations;
+Brown & Mues (2012) for class imbalance; Banasik & Crook (2007) for selection; Bellotti & Crook
+(2012) for macroeconomic effects; and Ospina & Ferrari (2010), Li et al. (2016), Yashkir &
+Yashkir (2013) and the recovery literature cited by Li, Zhang & Zhao for LGD models and shapes.
+Verify their primary text and bibliographic metadata before citing exact numbers. The current
+library does not supply those primary credit-model papers.
 
-- Basel Committee on Banking Supervision (2005). *An Explanatory Note on the Basel II IRB Risk Weight
-  Functions.* BIS. (The asset-correlation range: QRRE 0.04 and the other-retail formula confirmed in a
-  search result; the corporate 0.12–0.24 and other-retail 0.03–0.16 bounds are the standard IRB
-  formulas and should be checked against the note.)
-- Vasicek, O. (2002). The distribution of loan portfolio value. *Risk* 15(12).
-- Brown, I., Mues, C. (2012). An experimental comparison of classification algorithms for imbalanced
-  credit scoring data sets. *Expert Systems with Applications* 39(3). (Imbalance from 70/30 to 99/1.)
-- Banasik, J., Crook, J. (2007). Reject inference, augmentation, and sample selection. *European
-  Journal of Operational Research* 183(3).
-- Bellotti, T., Crook, J. (2012). Loss given default models incorporating macroeconomic variables for
-  credit cards. *International Journal of Forecasting* 28(1).
-- Ospina, R., Ferrari, S. L. P. (2010). Inflated beta distributions. *Statistical Papers* 51.
-- Li, P., Qi, M., Zhang, X., Zhao, X. (2016). Further investigation of parametric loss given default
-  modeling. *Journal of Credit Risk* 12(4).
-- Yashkir, O., Yashkir, Y. (2013). Loss given default modeling: a comparative analysis. *Journal of
-  Risk Model Validation* 7(1).
-- Loterman, G., Brown, I., Martens, D., Mues, C., Baesens, B. (2012). Benchmarking regression
-  algorithms for loss given default modeling. *International Journal of Forecasting* 28(1).
-- Altman, E., Brady, B., Resti, A., Sironi, A. (2005). The link between default and recovery rates.
-  *Journal of Business* 78(6).
-- Asarnow, E., Edwards, D. (1995); Qi, M., Zhao, X. (2011); Altman, E., Kalotay, E. (2014) — as cited by
-  Li, Zhang & Zhao for the bimodal and trimodal shape.
-
-The journal details of the "to verify" list are from memory and search results, not from the papers;
-check each before it goes into the manuscript's bibliography.
+Earlier notes drew real-data R² ranges from a secondary preprint. Those ranges were not verified
+against the primary studies and are not used as calibration targets or success thresholds.
+The generator's broadening ranges, mixture shares and mechanism probabilities are declared
+project choices; qualitative literature motivation does not make them empirically estimated.
 
 ## 6. Per experiment
 
@@ -246,7 +234,7 @@ L2-SP, freeze strategy) are in [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md).
 
 | | prior | init | steps |
 |---|---|---|---|
-| **Exp0** | Exp1's prior, `credit_fraction` 0 / 0.5 / 1 and the Exp2 paths — a debug suite, no result | scratch and released | 600 |
+| **Exp0** | Prior, model, capacity and retention routes; diagnostics rather than research arms | scratch and released | stage-specific; six 600-step recovery routes plus bounded probes |
 | **Exp1** | `credit_fraction` 0 / 0.25 / 0.5 / 1 of the literature-grounded credit prior × 3 seeds = 12 main arms per track; 25% added after the original campaign | scratch | 12,500 |
 | **Exp2** | two backbones × four mixtures (0 / 0.25 / 0.5 / 1) × two fixed learning rates × two paired seeds = 32 arms per track | released TabICLv2 and TabPFN-3 | 1,500 |
 | **Exp3** | fixed 50% mixture; no decay, L2-SP, DiagScale and Q/V LoRA, six recipes × two backbones × two seeds = 24 new arms per track; reuse eight Exp2 decay baselines | released TabICLv2 and TabPFN-3 | 1,500 |
@@ -255,27 +243,26 @@ L2-SP, freeze strategy) are in [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md).
 extends TabPFN-v2 through continued pretraining on a customised synthetic prior. It is a precedent,
 not a validated optimal recipe for TabPFN-3; the registered model-specific choices and limitations
 are in CONFIG_REFERENCE.md. Exp2 sweeps `credit_fraction` all the way to 1.0
-because the model *already knows* the original prior, so how much of ours to add is the question, and
-Mitra (Zhang et al. 2025) finds mixtures beat single priors — expect an interior optimum, with 1.0
-included to measure the credit/general-domain trade-off. All mixtures and both fixed rates are
+to measure the effect of increasing credit exposure. Mixture results in other TFMs motivate this
+factor but do not establish an interior optimum here. All mixtures and both fixed rates are
 reported; Exp1 does not select an Exp2 winner. Exp3 replaces the abandoned scratch-scale study.
 
-**For scale:** TabICLv2's own budget is `500k + 40k + 10k` steps at batch 64 ≈ 35M datasets, ~24.5
-GPU-days per model; Exp1 is 2.3 % of that update budget. **Every result here is a statement about priors at a fixed,
-small budget, and must be written that way.**
+**For scale:** TabICLv2's reported budget is `500k + 40k + 10k` updates at batch 64 = 35.2M
+tables; Exp1 uses about 2.3% of that update count, at shorter fixed table lengths. This does
+not imply the same fraction of compute or information exposure. Interpret results at their
+tested budget, rather than as evidence of convergence.
 
-## 7. Open items
+## 7. Limitations and future work
 
-**LGD signal strength needs a design decision before the full campaign.** The existing notebook
-reports median synthetic ExtraTrees pseudo-R² near 0.05; reported real-data R² of 0.20–0.43
-(Loterman et al. 2012, via Marin 2025) is a different statistic on different data. The difference
-is not by itself a code failure or a justified calibration target. The earlier real-book median
-0.42 also included outcome information (`EXPERIMENTAL_DESIGN.md` §7 item 5). Review the synthetic
-diagnostics and primary literature, then freeze the range and any signal-strength ablation without
-tuning to the evaluation tables. If the generator changes, repeat the affected Exp0 validation.
+**Signal strength is a limitation to measure, not an unresolved launch setting.** The current
+prior ranges are frozen. Synthetic ExtraTrees pseudo-R² and real-data benchmark R² measure
+different tasks and procedures; their difference alone is not a bug or a calibration target.
+Any future signal-strength ablation needs a separately declared comparison and affected Exp0
+validation. Do not retune a running campaign from its assessment results.
 
-**Use the pinned upstream packages**: `python -m pip install -e '.[dev,eval]'`, then
-`python -m src.utils.preflight --dependencies-only`. The TabICL Git commit in `pyproject.toml`
+**Use the pinned upstream packages.** New local setup is described in README; VSC dependencies
+come from the accepted immutable image. `python -m src.utils.preflight --dependencies-only`
+checks the selected environment. The TabICL Git commit in `pyproject.toml`
 includes the graph prior missing from its same-version PyPI wheel. TabPFN-3 training uses
 `tabpfn==9.1.0`, including the upstream per-estimator regression-target loss correction.
 The package version does not change the explicitly selected TabPFN-3 model generation.

@@ -2,7 +2,7 @@
 
 Local inputs are results, logs and metadata. Model checkpoints and optimizer states remain on
 VSC; these notebooks do not need them. Use the analysis-only inventory filter described in the
-repository README instead of downloading whole output trees or model-containing archives.
+[output guide](<../output CreditICL/README.md>) instead of downloading whole output trees or model-containing archives.
 
 Twelve thin notebooks in four numbered chapters follow the paper's questions.
 All computation lives in `src/visualize/`; each notebook displays and saves its
@@ -27,16 +27,16 @@ ties have separate interpretations. Standardization preserves atoms.
 Coverage counts describe local files, not the current scheduler. A partial trace
 may be stopped; absent output may still be queued. Imported snapshot metadata,
 when available, appears beside compact coverage/health tables. The dated cluster record remains in
-`docs/RUNS.md`. No training curve is fabricated from that summary.
+[run record](../docs/RUNS.md). No training curve is fabricated from that summary.
 
 Final panels use complete current-protocol benchmark loaders: all eligible rows,
 all prediction-time-eligible features, and five common folds. Missing evidence
 produces one availability notice instead of a gallery of empty plots. The final
 credit/OOD frontier is not populated from short-context training monitors.
 
-Experiment 2 retains four mixtures and both peak rates per backbone, with separate plots
+Experiment 2 has 64 training runs: four mixtures and both peak rates per backbone, with separate plots
 for each backbone/rate and full-table checkpoint trajectories. Experiment 3 fixes the 50%
-mixture and predeclared full-model/adapter settings, and reuses both fixed-rate Exp2 baselines.
+mixture and six predeclared full-model/adapter recipes: 48 new runs and 16 reused fixed-rate Exp2 baselines.
 Both experiments use two training seeds and retain 125/250/500/1,000/1,500 updates; paired-retention and checkpoint panels stay
 empty until the required evidence exists. A trajectory requires at least two measured checkpoints
 within a fixed recipe; a completed final endpoint alone is not a curve. The designated holdout has historical project
@@ -63,7 +63,8 @@ per dataset rather than averaged across different target units; OOD trajectories
 | RQ3: which constraints retain generality? | Paired recipe effects and primary-metric trajectories when available | Resolved recipe table; no design-only PDF presented as results |
 | Did optimization behave as intended? | Synthetic loss and matched development gap (Exp1); backbone/rate-separated loss and monitors (Exp2) | Run coverage, cost and sampled gradient health; no repeated coverage maps |
 
-The current experiment definitions and `CreditICL Paper/0. Notes/main.tex` govern this narrative.
+The [current experiment definitions](../docs/EXPERIMENTAL_DESIGN.md) and the sibling
+`CreditICL Paper/0. Notes/main.tex` govern this narrative.
 The older ArXiV draft still describes superseded grids; its scratch-Exp3 proposal is not implemented
 by these notebooks. No benchmark-driven selection or experiment definition changed in this revision.
 

@@ -1,7 +1,11 @@
 # Changelog
 
+Repository changes, newest first. [RUNS.md](RUNS.md) preserves cluster evidence;
+[AGENTS_MEMORY.md](AGENTS_MEMORY.md) indexes runs and recurring failure modes.
+
 ## 06-11-2026
 
+- Reorganize current guides, correct stale experiment/runtime/licence descriptions, and add software citation metadata; preserve dated run history.
 - Focus notebooks on paired effects, heterogeneity and retention; replace redundant plots with exact tables and reject unsupported trajectories.
 - Reconcile all 320 Exp2 admissions and verified final results; retain the revised GPU gate before Exp3.
 - Record verified admission of all 256 remaining Exp2 benchmark slots.
@@ -18,14 +22,6 @@
 - Remove 82.15 GiB of local model copies; retire the PS5-incompatible cleanup helper and refresh the verified VSC status.
 - Restrict local collection to analysis files; fix storage-probe safety, obsolete fallback advice and stale documentation.
 - Revise Exp3 to 48 new runs and 16 reused Exp2 baselines; add rate-separated analysis, notebook figures and 24 mandatory GPU recipe round trips while preserving Exp1/2 identities.
-
-Changes to the **repository** — one chapter per date, `DD-MM-YYYY`, newest first. Terse: what
-changed, and why if the reason is not obvious; the detail belongs in the commit. Its two siblings
-hold different things: [`RUNS.md`](RUNS.md) is the full write-up of each *cluster run*, and
-[`AGENTS_MEMORY.md`](AGENTS_MEMORY.md) is the one-line run index plus the **dead ends**. This file is
-a flat dated list, so the dates below are its table of contents.
-
----
 
 ## 03-11-2026
 

@@ -1,312 +1,209 @@
-# Config reference — why each setting is what it is
+# Configuration reference
 
-The `config/Exp{1,2,3}_{PD,LGD}.yaml` files hold **values**, one note per knob; this file holds the
-**reasoning** — why that value, what evidence backs it, what upstream does, what breaks if you change
-it — under the same knob name. The split is deliberate: a config is read while deciding what to
-submit, so prose in it makes the settings unfindable. If you catch yourself writing a paragraph above
-a knob, it belongs here.
-
-Neighbours: [EXPERIMENTAL_DESIGN.md](EXPERIMENTAL_DESIGN.md) (what the experiments ask) ·
-[PRIORS.md](PRIORS.md) (how the prior is built) · [VSC.md](VSC.md) (the cluster). Original source-audit pin `de324efcca55be392feb0c01830b3b6ce364587f`; the 24-10-2026 Experiment 2 audit uses TFM pin `702d9ab0b66f6639ba8d443ff9c4a91231964465`. The 29-10-2026 fixed-rate design uses TFM pin `26156f36eb7676e8d9050547817346db548b0e85`.
+The YAML files hold values; this document explains how they resolve and why the registered
+recipes use them. [Experimental design](EXPERIMENTAL_DESIGN.md) owns the questions and evidence;
+[PRIORS](PRIORS.md) owns generator mechanisms; [VSC](VSC.md) owns execution and resource planning.
+Resolved configuration saved with a run is the authority for that run.
 
 ## Contents
 
-1. [How the sweep works](#1-how-the-sweep-works)
-2. [The prior's shape is not ours to choose](#2-the-priors-shape-is-not-ours-to-choose)
-3. [`max_features` — 100, and where it bites](#3-max_features)
-4. [Why one stage, not TabICLv2's three](#4-why-one-stage)
-5. [Training budget: `max_steps`, `micro_batch_size`, `amp`](#5-training-budget)
-6. [`optimizer` — Muon from scratch, AdamW to fine-tune](#6-optimizer)
-7. [The prior knobs](#7-the-prior-knobs)
-8. [Experiment 2 — the continued-pretraining knobs](#8-experiment-2-the-continued-pretraining-knobs)
-9. [A note on the LGD R² band](#9-a-note-on-the-lgd-r-band)
+1. [Sweep expansion and stable identities](#1-sweep-expansion-and-stable-identities)
+2. [Training recipes](#2-training-recipes)
+3. [Table geometry and feature limits](#3-table-geometry-and-feature-limits)
+4. [Prior controls and encoding](#4-prior-controls-and-encoding)
+5. [Budgets, checkpoints and interpretation](#5-budgets-checkpoints-and-interpretation)
 
----
+## 1. Sweep expansion and stable identities
 
-## 1. How the sweep works
+Inspect the resolved grid before submission:
 
-Any setting may be a single value or a list; a list means one run per value, and all lists are
-**crossed**. Names ending in `_range` are literal `[low, high]` intervals sampled *from*, never swept
-— to sweep one, nest it: `[[0.0, 0.1], [0.1, 0.3]]`; names ending in `_mean_sd` are literal
-`[mean, sd]` pairs of a normal distribution. Inspect the expansion with
-`python scripts/pretrain.py --config config/Exp1_PD.yaml --list`.
+~~~bash
+python scripts/pretrain.py --config config/Exp2_PD.yaml --list
+~~~
 
-**Backbone presets** use `sweep.arm` and an `arms:` block of dotted overrides, applied after the
-sweep (`apply_arm_preset`). An override must name a key the config body already has, so a typo
-raises instead of doing nothing. For Exp2, `sweep.arm: [tabicl, tabpfn3]` crosses
-`lr_index: [0, 1]`, mixtures and seeds. `src/experiments/design.py:apply_design` then maps the index
-to the corresponding backbone's fixed numerical rate. Exp3 fixes `lr_index: 0` and crosses methods.
+Scalar values specify one setting. Sweep lists are crossed; structural lists such as `_range`,
+`_mean_sd`, `seeds`, `keep_steps` and dataset inventories retain their documented meaning.
+`src/utils/config.py` defines the exceptions and expands `seeds` separately. Put a swept parameter
+only in `sweep`, not also in the config body. Backbone presets in `arms` apply dotted overrides;
+an unknown override fails rather than silently creating a new setting.
 
-**Exp1 sweeps `credit_fraction {0, .25, .5, 1}` × 3 seeds = 12 main arms**. The 25% extension
-was approved on 26-10-2026 after the initial nine-main-arm campaign; its three seeds are appended
-at indices 9–11 so old run names and benchmark tags remain unchanged. The five component
-removals still add 15 arms per task. The control is TabICLv2's prior and filter exactly;
-the current ranges use the credit-risk literature and broad modelling choices ([PRIORS.md](PRIORS.md) §5).
-Mechanism design was informed by the benchmark suite, including the designated holdout;
-it is not untouched external validation. The credit mechanisms are shared across Exp0-Exp3;
-table geometry is now backbone-specific in Exp2. At
-`credit_fraction: 0.0` the credit knobs have no effect, so such combinations collapse to one control
-per seed (`effective_fingerprint` in `src/utils/config.py`).
+For Exp2, arm selects `tabicl` or `tabpfn3` and `lr_index` selects the corresponding numerical rate.
+`src/experiments/design.py` owns `RATES`, `SEEDS`, `MAIN_STEPS`, `MILESTONES`, `FIXED_RETENTION` and
+the design revisions. `apply_design` resolves these without reading benchmark scores.
+Retired pilots, candidate fields and selection overrides are rejected.
 
-`array_append: [{prior.credit_fraction: 0.25}]` implements this extension as a stable partition
-after crossing seeds. Without it, the ordinary seed-outermost expansion would shift the old
-indices 3–8. This is launch metadata, removed from resolved recipes and not inherited through
-`prior_file`; it does not change task generation or optimization. Invalid/unmatched patterns fail.
-The receipt compatibility check permits only this reviewed change to grid counts, launcher array
-size and selection messages. All data, checkpoint, package, evaluation-setting and result-file
-hashes still have to match. Unknown code revisions remain invalid; this is not a force-reuse flag.
+Exp1 does not use that design resolver. Its appended 25% mixture uses
+`array_append: [{prior.credit_fraction: 0.25}]` so indices 0–8 and their existing run names remain
+unchanged; new indices 9–11 contain its three seeds. The metadata is removed from resolved
+recipes and is not inherited through prior_file. Five component removals add 15 runs per task.
+At 0% credit, unused credit knobs collapse to one effective control per seed.
 
-**One knob, one home:** a knob in `sweep:` must not also appear in the config body —
-`apply_sweep_block` writes over the body, so a body literal is dead text that reads like a setting.
-`test_a_swept_knob_has_exactly_one_home` checks all six files. **Open one group at a time:** with every
-lever moving you cannot attribute an effect to any of them.
+Compatibility permits only reviewed source/package/recipe combinations. A completed historical
+run being accepted for analysis does not grant arbitrary resume permission. Checkpoint, input,
+environment, protocol and result hashes remain required.
 
-## 2. The prior's shape is not ours to choose
+## 2. Training recipes
 
-`n_rows_range`, `n_rows_sampling`, `n_features_range`, `max_features`, `n_nodes_range` and
-`train_frac_range` specify the synthetic task distribution. Geometry is paired across mixtures
-within each backbone, while the credit package also changes targets, encoding and filtering.
-Exp1 retains the following stage-1 geometry from `scripts/train_v2_reg_stage1.sh`;
-Exp2/Exp3's TabPFN-3 arms also retain it as a declared adaptation:
+### Experiment 1: scratch control
 
-| knob | Exp1 / Exp2–3 TabPFN-3 | upstream stage 1 |
+Four mixtures (0, 25, 50 and 100%) plus five component removals at 50%, each with three `seeds`
+and two prediction tasks, give 54 runs. They use 12,500 updates and 64 tables/update at the
+frozen small-table geometry. The component controls remove one mechanism at a time; they are
+not additional mixture levels. Preserve these completed recipes when changing later experiments.
+
+The optimizer is upstream Muon with peak LR `8e-4`, weight decay `.01`, gradient-norm limit
+`10` and 1% warm-up (125 updates). One cosine cycle ends at `1e-7`. Parameters and computation
+use FP32 with AMP disabled. Microbatches contain four tables. Main runs keep every 2,500th
+update; component runs retain the 12,500-update endpoint.
+
+### Experiment 2: full continued pretraining
+
+Two backbones × four mixtures × two rates × two `seeds` give **64 runs**, with 1,500 updates each.
+No L2-SP or adapter is used. Both rates and all mixtures are reported separately.
+
+| Setting | TabICLv2 | TabPFN-3 |
 |---|---|---|
-| `n_rows_range` | `[1024, 1024]` | `--max_seq_len 1024`, no `--min_seq_len` |
-| `n_features_range` | `[1, 100]` | `--min_features 1 --max_features 100` |
-| `n_nodes_range` | `[2, 33]` | `--min_n_nodes 2 --max_n_nodes 32` |
-| `train_frac_range` | `[0.3, 0.9]` | `--min_train_size 0.3 --max_train_size 0.9` |
+| `lr_index` 0 / 1 | 2e-5 / 1e-5 | 1e-5 / 1e-6 |
+| Optimizer | Upstream all-parameter Muon | AdamW |
+| Weight decay | .01 | .01 |
+| Warm-up | .01 = 15 updates | .1 = 150 updates |
+| Tables/update | 64 | 16 |
+| Rows/table | 400–60,000, log-uniform | 1,024 |
+| Context fraction | .79–.81 | .30–.90 |
+| Precision | FP32 with explicit TF32/efficient-SDPA policy | FP32 weights, FP16 AMP and finite-gradient replay |
 
-**These arms have 1,024 rows exactly, not a range**; only the train/test split varies.
-Exp2/Exp3's TabICLv2 arms instead use **`[400, 60000]` with `n_rows_sampling: log_uniform`**,
-`train_frac_range: [0.79, 0.81]`, group/subgroup size 1 and micro-batch size 1. This matches
-`Prior.sample_seq_len` and the stage-3 scripts in `tfm-library/repositories/TabICL.txt`.
-Log-uniform means equal probability per multiplicative interval, with median about 4,899 rows;
-uniform sampling over the interval would be a materially different prior. The row/feature/split
-draws remain paired between 0%, 25%, 50% and 100% mixtures for each seed.
+Both use global unscaled gradient-norm clipping at 1 and one warm-up/cosine schedule ending
+at update 1,500, with LR floor 1e-7. Clipping limits the norm of the gradient passed to the
+optimizer; it does not freeze weights or anchor them to the released checkpoint.
 
-With `base.implementation: upstream`, the upstream generator
-owns graph depth and control categories. `n_nodes_range`, `base.max_cat_size` and the
-`category_frequency` fields are only configurable in the small `transcribed` test backend;
-they do not override the production upstream generator. Keep the documented upstream values
-when using that backend.
-`credit.max_cat_size` and `credit.use_corrected_cat_sizes` do configure the production credit path.
-The benchmark metric set and pinned OOD inventory are fixed in the evaluation modules, rather
-than configurable through unused `eval.metrics` / `eval.ood_suites` fields. `beta2` is passed to
-Muon for upstream API fidelity but only affects its AdamW branch; our all-Muon group does not use it.
-Two of these had drifted (`[512,1024]` rows, `[3,50]` features), both
-making training *cheaper* — which is why nothing complained: a wrong setting that costs money gets
-found; one that saves money does not. Stage-1 shape tests protect those experiments; the
-long-context tests separately verify Exp2's sampling law, per-row feature caps and paired streams.
+Muon follows the upstream parameter grouping and scaling, rather than torch.optim.Muon.
+Its beta2 setting is retained for upstream API fidelity but affects only an AdamW branch, not
+this all-Muon group. `TabPFNTrainer` accepts AdamW. Table losses are accumulated before the update;
+different task batches and geometries mean compute is not matched **between backbones**.
+Mixture comparisons within a backbone retain the same recipe.
 
-## 3. `max_features`
+The rates follow the native TabICLv2 stage-3 peak, public TabPFN fine-tuning/TabPFN-Wide
+precedents and Ning et al.'s single-table adaptation evidence. They are externally motivated
+choices, not proven optimal multi-table CPT rates. TabPFN-3's original pretraining recipe is
+not public; its 0% arm here is additional generic **TabICL-prior** exposure.
 
-**100, upstream's, a training-distribution setting only** (TabICLv2 §4.1: "up to 100 features
-throughout all stages"; every stage script passes `--max_features 100`). It caps the sampled width and
-stops noise/missingness columns pushing past it. It does **not** limit inference: `TabICL.__init__`
-takes no feature-count parameter — `col_embedder` is a permutation-equivariant induced-set transformer
-with learned inducing points and no per-feature weights, so a trained checkpoint accepts any width.
+### Experiment 3: constrained adaptation
 
-For Exp2's long-context TabICLv2 training, upstream `Prior.adjust_max_features` additionally
-limits width by row count: 100 through 10,240 rows, 80 through 20,000, 60 through 30,000,
-40 through 40,000, 30 through 50,000, and 20 through 60,000. The resulting per-table ceiling
-also reaches native generation and predictability filtering, where zero-padded width affects
-the seeded ExtraTrees filter. Credit mechanisms stay within the same planned feature budget.
+The mixture is fixed at 50%. Six recipes × two backbones × two tasks × two `seeds` give
+**48 new runs**. Sixteen existing Exp2 runs provide both full-CPT rates, without retraining
+or copying checkpoints. The revision is `retention-six-recipes-1500-v3`; Exp2 retains
+fixed-rates-1500-two-seeds-v2.
 
-Protocol 9 retains the uncapped benchmark from 13-10-2026: `protocol.MAX_FEATURES = None`.
-All prediction-time eligible columns and all training-fold rows reach every model. The wrappers
-do not rank or select columns; the near-constant filter is also off. TabPFN's checkpoint-defined
-per-estimator feature budget is enlarged to retain every input column, including preprocessing
-expansion; fit fails if upstream still selects a subset. The other upstream transformations remain.
-Exp0 tests real 2,986-column PD / 601-column LGD predictions and the widest selected full tables on the target GPU.
+| Recipe ID | Trainable weights / optimizer / peak rate | Regularization |
+|---|---|---|
+| `no_decay` | Full model; Muon 2e-5 for TabICL, AdamW 1e-5 for TabPFN | Decay 0 |
+| `l2sp` | Same full-model primary rate | Decay 0; L2-SP alpha .003 |
+| `diagscale_low` / `diagscale_high` | Query-scale deltas; AdamW 1e-4 / 1e-3 | .01 decay on deltas |
+| `lora_low` / `lora_high` | Q/V factors; AdamW 3e-6 / 1e-5 | Decay 0; rank 16, alpha 16, dropout 0 |
 
-**Keep 100.** It is the control variable (a wider training distribution is a second difference from
-TabICLv2); training wider and then reporting a win on a wide table would measure feature width, not the
-prior. Both width and context-length extrapolation can occur at evaluation time, with the same
-training geometry across mixtures of a backbone. Supporting wider input does not guarantee unchanged accuracy
-or that every table fits GPU memory; Exp0 checks execution on the selected largest/widest tables.
+Geometry, `seeds`, precision and data objectives remain those of Exp2 within each backbone.
+Adapters use 10% warm-up, clipping 1 and the same cosine endpoint. Original weights are frozen
+for adapters, and initialization preserves native predictions. DiagScale is injected before
+inference caches; LoRA exports merged native weights while retaining resumable factors.
+L2-SP anchors the **released** parameters, including after resume.
 
-## 4. Stage choice
+L2-SP versus `no_decay` tests the anchor addition. `no_decay` versus primary-rate Exp2 tests ordinary
+decay. Adapter results are compared separately with both full-CPT rates. These are complete
+recipe comparisons, not a best-rate search or an isolated parameter-count experiment.
+The [design rationale](EXPERIMENTAL_DESIGN.md#33-experiment-3-constrained-adaptation-at-a-fixed-50-mixture)
+records literature and CreditPFN archive evidence, plus their transfer limitations.
 
-Exp1 retains its fixed small-table scratch recipe. Exp2 continues released TabICLv2 with the
-upstream stage-3 table law, including short and long tables in one log-uniform distribution;
-it does not restart stages 1–2. TabPFN-3 uses the documented differentiable fine-tuning interface
-on synthetic tasks. Its private original pretraining recipe is not claimed reproduced.
+## 3. Table geometry and feature limits
 
-## 5. Budgets and checkpoint accounting
+Exp1 and Exp2/3's TabPFN `arms` use the following small-table law; the latter is a declared
+adaptation, not a claim about private TabPFN-3 pretraining defaults:
 
-| Experiment | Updates / run | Main runs total | Permanent checkpoints / run |
+| Parameter | Value |
+|---|---|
+| `n_rows_range` | [1024, 1024] |
+| `n_features_range` / `max_features` | [1, 100] / 100 |
+| `train_frac_range` | [.3, .9] |
+| `group_size` / `subgroup_size` | 4 / 4 |
+| `n_nodes_range` | [2, 33], exclusive upper bound in the transcribed backend |
+
+Exp2/3's TabICL `arms` use [400, 60000], `log_uniform` row sampling, [.79, .81] context, group and
+subgroup size 1, and one-table microbatches. This follows `Prior.sample_seq_len` and the stage-3
+scripts in tfm-library/repositories/TabICL.txt. The median row count is about 4,899; uniform
+sampling would be a different distribution. Row/feature/split draws are paired across mixtures.
+
+With `base.implementation: upstream`, the native generator owns graph depth and control category
+sampling. `n_nodes_range`, `base.max_cat_size` and `category_frequency` settings do not override that
+production generator; they configure the transcribed test backend. Credit `max_cat_size` and
+`use_corrected_cat_sizes` do configure the production credit path.
+
+The upstream long-context ceiling, from `Prior.adjust_max_features`, is:
+
+| Rows, up to | Maximum synthetic features |
+|---:|---:|
+| 10,240 | 100 |
+| 20,000 | 80 |
+| 30,000 | 60 |
+| 40,000 | 40 |
+| 50,000 | 30 |
+| 60,000 | 20 |
+
+The planned ceiling reaches native generation, filtering and credit augmentation. A macro
+column replaces a noise column rather than increasing the planned width.
+
+**These are training-distribution limits, not benchmark caps.** Protocol 9 retains all
+prediction-time-eligible features and all fitted rows. It does not perform feature ranking or
+near-constant removal. TabPFN's per-estimator budget includes its preprocessing expansion,
+and a runtime check rejects internal feature subsampling. Exp0 checks wide-input predictions
+and selected full-table capacity; that does not establish accuracy invariance at unseen widths.
+
+Exp2 continues TabICLv2's stage-3 table law rather than restarting stages 1–2. TabPFN uses its
+differentiable episode interface on fresh synthetic tasks. The models retain different prior
+exposure histories, so matching a continuation budget does not match total pretraining.
+
+## 4. Prior controls and encoding
+
+| Control | Meaning |
+|---|---|
+| `prior.credit_fraction` | Per-slot probability of credit generation; 0/.25/.5/1 in Exp1/2, .5 in Exp3 |
+| `prior.encoding` | `tabicl`: prediction-view preprocessing and context-scaled LGD; `raw`: native TabPFN preprocessing, NaNs retained and credit LGD initially in [0,1] |
+| `prior.grouping` | Shared shape within groups for small-table recipes; independent long-table geometry for TabICL CPT |
+| `prior.credit.target` | PD mechanism or LGD `zoib`; detailed equations/ranges in PRIORS |
+| `prior.filter` | `tabicl`, `off` or `banded`; production `apply_to: base` leaves credit learnability unfiltered |
+| `prior.pool.source` | `generate` for current campaigns; prior pools are not a prerequisite |
+
+Credit additions include controlled PD base rates/common shocks, LGD endpoint masses, category
+exposure, monotone marginal changes, covariate-dependent missingness and shifts. Their ranges,
+source quality and qualifications are documented once in [PRIORS.md](PRIORS.md#5-what-we-change).
+The control remains native TabICL generation/filtering with shared validity checks. A `raw`
+TabPFN task must retain a usable feature on its context; query variation cannot rescue a
+constant context. Invalid candidates are redrawn within the same bounded slot budget.
+
+A 0% arm measures additional generic training, not guaranteed retention. Replay is a proposed
+protection against forgetting, not proof of non-degradation. Credit PD is binary whereas the
+native control can have 2–10 classes, so package effects also change task-format exposure.
+
+## 5. Budgets, checkpoints and interpretation
+
+| Experiment | Updates/run | Runs | Permanent checkpoints/run |
 |---|---:|---:|---|
-| Exp1 | 12,500 | 54 | Existing cadence preserved |
-| Exp2 main | 1,500 | 64 | 125, 250, 500, 1k, 1.5k |
-| Exp3 main | 1,500 | 48 new + 16 reused Exp2 | Same five milestones as Exp2 |
+| Exp1 | 12,500 | 54 | Main-grid cadence 2,500; component study retains its configured endpoint |
+| Exp2 | 1,500 | 64 | 125, 250, 500, 1,000, 1,500 |
+| Exp3 | 1,500 | 48 new + 16 reused | Same five milestones |
 
-The 29-10 fixed-rate revision cancels the learning-rate and adapter pilots. The 1,500-update
-horizon is a compute-budget choice preserving four mixtures, two rates and two paired seeds;
-it is not an evidence-based optimum or a convergence guarantee. Upstream stage 3 used 10,000
-updates, TabPFN-Wide used 10,000 with much shorter tables, and Real-TabPFN used 20,000 with
-one real table/update. Those budgets cannot be compared by update count alone. Full runs here
-consume 96k/24k tasks for TabICL/TabPFN respectively. The full cosine schedule ends at 1,500,
-rather than stopping an older longer schedule early. Report the fixed endpoint and all retained
-trajectories, never the best checkpoint on the assessment data.
+`keep_steps` retains permanent checkpoints independently of rolling saves. `max_temp_checkpoints: 2`
+applies only to nonpermanent recovery saves. Final-step benchmark slots remain first, preserving
+existing identities. Full-row credit/native-OOD five-fold evaluation covers every retained milestone;
+intermediate results describe trajectories, not alternative selected winners.
 
-There are 320 permanent Exp2 snapshots and 240 new Exp3 snapshots. At the observed/provisional
-training rates, Exp2 extrapolates to 37.3–39.5M credits, excluding benchmark/validation/Exp3.
-Full evaluation of every saved checkpoint on all eligible rows/features and five folds creates
-56,800 Exp2 dataset-fold-model evaluations and 42,600 for the new Exp3 arms before reference
-models and threshold-calibration refits. Benchmarking must be budgeted separately; training
-cost alone does not establish affordability. See the source evidence and cost assumptions in
-[EXPERIMENTAL_DESIGN.md](EXPERIMENTAL_DESIGN.md) §3.2.
+Exp2 retains 320 snapshots and Exp3 adds 240. Exp2 requires 56,800 dataset/fold/model evaluations,
+and new Exp3 `arms` add 42,600, before references and PD calibration refits. Budget benchmarking
+separately using actual timings and quotes in [VSC.md](VSC.md#resources-and-costs).
 
-## 6. `optimizer`
+The 1,500-update horizon is a compute-budget choice, not an established optimum or convergence
+claim. Upstream stage 3, TabPFN-Wide and Real-TabPFN used different rows, tables/update and
+objectives; update counts alone do not compare exposure. Here a run sees 96,000 TabICL tasks
+or 24,000 TabPFN tasks. Two paired `seeds` show spread but do not precisely estimate variability.
 
-**Muon for full-parameter TabICL updates; AdamW for TabPFN-3 and the new adapters.**
-The optimizer is held fixed across mixture fractions within each backbone. Exp3's adapter
-methods have their own predeclared AdamW rates; this is part of the fixed-recipe comparison,
-not an optimum selected on this benchmark.
-
-- **Muon** is what TabICLv2 uses, built exactly as upstream builds it (`src/train/optim.py`: one group,
-  every parameter, Moonlight scaling; `train.lr` is the one rate — stage 1 `8e-4`, stage 3 `2e-5`). Its
-  Newton–Schulz orthogonalisation is a *fixed* ~18 ms per weight matrix per step, so it is 1.40×
-  overhead at batch 1 but **1.01× at batch 64** — free at the size we train.
-- **AdamW for TabPFN-3**: TabPFN-Wide's continued pretraining and TabPFN's own fine-tuner both use it,
-  and `TabPFNTrainer` accepts nothing else ([§8](#8-experiment-2-the-continued-pretraining-knobs)).
-
-Within an experiment every mix of a model trains with the same optimizer, so it is never the variable
-being measured.
-
-## 7. The prior knobs
-
-**`prior.credit_fraction`** — the main switch: the probability a synthetic dataset comes from our
-credit path rather than the unmodified TabICL prior. `0.0` is the control. Exp1 and Exp2 sweep
-`{0, .25, .5, 1}`; Exp3 fixes `0.5` and compares retention methods.
-Mixing rather than replacing retains native-prior exposure, a plausible defence against forgetting;
-it does not guarantee non-degradation. Tanna 2026 reports collapse under a different setting,
-per-dataset supervised adaptation, which motivates measuring retention rather than predicting the
-outcome of this synthetic continuation. The 0% arm measures additional generic TabICL-prior training against
-the released weights; it is not assumed to improve or match them by construction.
-
-**`prior.encoding`** — whose prediction path a credit table imitates: `tabicl` (TabICL's — gaps filled
-with the context mean, `prediction_view`, an LGD target standardised on the context) or `raw` (the
-table as recorded — gaps as NaN, the LGD target on [0, 1] — for TabPFN, whose own preprocessing does
-the rest). The TabPFN-3 arms set `raw`; `TabPFNTrainer` refuses anything else. The control tables are
-upstream's either way.
-
-**`prior.grouping`** — upstream's batch structure (`GraphPrior.get_batch`): Exp1 and Exp2/Exp3
-TabPFN-3 use groups/subgroups of 4 sharing row count, context/query split and feature count.
-Exp2/Exp3 TabICLv2 uses groups/subgroups of 1, so each long-context task has its own shape and split.
-The control draws 2–10 classes per table (`max_classes: 10`). `src/prior/stream.py` builds it;
-mixture arms within the same backbone and seed share shape draws and identical native tasks in
-unchanged native slots. Different backbone batch sizes do not produce an identical ordered stream.
-A credit table keeps its slot's width even when it records the period factor as a column (the column
-takes a noise column's place).
-
-**`prior.credit.target` — LGD** (`mode: zoib`, 29-09-2026): the zero-and-one inflated beta regression
-of Li, Zhang & Zhao (2020, §2.1), one portfolio per table. `alpha0_mean_sd` / `beta0_mean_sd` /
-`gamma0_mean_sd` the intercepts of logit P(0), logit P(1) and the interior mean, normal around the
-published −0.54 / −1.46 / 0; `phi_range` the beta precision (log-uniform, contains the published 5);
-`loading_*_range` the effect of the recovery driver on each part and `macro_*_range` that of the period
-factor (each range contains the published value; the signs are the published ones); `signal_share_range`
-how much of the driver the features record; `component_overlap_range` how far the three parts share one
-driver; `macro_feature_prob` how often the period factor is a column; `cohort` the number of periods.
-The table [PRIORS.md](PRIORS.md) §5.2 gives every published value beside its range.
-`target_scaling: standard` standardises the target on the context rows under the `tabicl` encoding, as
-`TabICLRegressor` does to a real one (affine: the atoms stay two atoms). `mode: quantile` (dialled atoms)
-and `mode: mechanism` (collateral, workout, segments) remain for ablations.
-
-**`prior.credit.target` — PD** (`mode: mechanism`): `mechanism.base_rate_range` + `base_rate_log` the
-default rate (log-uniform on [1 %, 50 %]; Brown & Mues 2012's most imbalanced setting to balanced),
-`mechanism.rho_range` the Vasicek asset correlation (the Basel IRB range, 0.03 to 0.24),
-`mechanism.signal_share_range` the share of risk the features explain (wide: [0.05, 0.95]),
-`mechanism.cohort` the periods sharing the standard-normal systematic factor, `macro_feature_prob` how
-often the factor is a column; `rules.n_rules_range` hard cut-offs per table (Klein & Hoffart 2026 — *a
-position paper with zero experiments, the most speculative component, flag it*); `selection` (the
-approved book only: `selection_drop_range`, `selection_sharpness_range`, drawn per table). No label
-noise since 29-09-2026: its rates had no source.
-
-**`prior.credit.marginals`** — long-tailed amounts and ratios: a monotone warp on a
-`col_fraction_range` share of the continuous columns, strength per column from `strength_range` (both
-wide). Monotone, so every split a tree could make — and the dependence on the target — is unchanged.
-
-**`prior.credit.missingness`** — gaps in a `missing_prob` share of tables, in a
-`missing_col_fraction_range` share of the columns, `missing_rate_range` missing each, their chance
-coupled to observed borrower covariates with a strength drawn from `missing_risk_coupling_range` (all wide: the
-literature says gaps are informative, not how often). Filled with the context mean under the `tabicl`
-encoding, left NaN under `raw`; `missing_indicators: true` is refused, since TabICL's prediction path
-adds no indicator.
-
-**`prior.filter`** — `tabicl` (as shipped), `off` (keep everything), `banded` (keep only difficulty in
-`quantile_band`). `apply_to: base` (every experiment) judges only TabICL's tables, as upstream does; the
-credit tables are used as specified, since re-selecting them by learnability would change the specified
-prior. `all` judges the credit tables too. Report the rejection rate per arm; it makes wall-clock
-incomparable across filter settings.
-
-## 8. Continued pretraining and retention
-
-The registered questions, source evidence and limits are in
-[EXPERIMENTAL_DESIGN.md](EXPERIMENTAL_DESIGN.md) §3. Resolved values are saved per run.
-`src/experiments/design.py` owns `RATES`, `MAIN_STEPS`, `MILESTONES`, `FIXED_RETENTION` and
-`DESIGN_REVISION`. `apply_design` resolves a predeclared recipe without reading scores or
-selection receipts. Retired pilot designs, candidate fields and supplied selection overrides
-are rejected. This module is not used by Exp1, whose existing resolved recipes remain unchanged.
-
-**Exp2 has 32 runs per track:** 2 backbones × 4 mixtures × 2 rates × 2 seeds, or 64 overall.
-Both rates are reported separately. Neither credit nor OOD results select a rate, mixture or
-checkpoint. Legacy development/holdout names remain for Exp1 compatibility and reporting;
-past benchmark exposure is disclosed, so these are not newly untouched datasets.
-
-| Backbone | `lr_index=0` | `lr_index=1` | Optimizer | Decay | Warm-up |
-|---|---:|---:|---|---:|---:|
-| TabICLv2 | 2e-5 | 1e-5 | Native all-parameter Muon | .01 | .01 = 15 updates |
-| TabPFN-3 | 1e-5 | 1e-6 | AdamW | .01 | .1 = 150 updates |
-
-TabICLv2 keeps 64 tables/update, 400–60,000 log-uniform rows and 79–81% context.
-TabPFN keeps 16 tables/update, 1,024 rows and 30–90% context. Both clip the global unscaled
-gradient norm to 1 and use one warm-up/cosine cycle with floor 1e-7. TabICL remains FP32 under
-the validated TF32/efficient-attention policy; TabPFN uses FP32 parameters with FP16 AMP and
-finite-gradient replay. These are backbone-specific recipes, not matched cross-backbone compute.
-
-The TabICL rates are anchored by its native stage-3 `2e-5` and the `1e-5` single-table result
-in [Ning et al., Appendix B](../tfm-library/papers/text/2026/10_Ning_et_al._Test_Time_Compute_for_Tabular_Foundation_Models_Mechanisms_Gains_and_Limits.txt).
-The TabPFN rates bracket the public fine-tuner/TabPFN-Wide `1e-5` and the same paper's TabPFN-3
-`1e-6` result. Neither source proves an optimal multi-table credit-CPT recipe. Native TabPFN-3
-pretraining settings remain undisclosed; the 0% control is generic TabICL-prior exposure.
-
-`train.keep_steps: [125, 250, 500, 1000, 1500]` adds permanent milestones independently of rolling saves.
-All five receive full-table credit/native-OOD five-fold evaluation; final-step slots remain first.
-`max_temp_checkpoints: 2` applies only to nonpermanent saves. `max_steps`,
-`schedule_total_steps` and the primary endpoint are all 1,500 for the production recipe.
-Intermediate scores are trajectories, not selected winners.
-
-**Exp3 has 24 new runs per task:** two backbones × six recipes × two seeds, or 48 overall.
-It fixes the mixture at 50% and reuses eight Exp2 baselines per task (both rates, both seeds,
-both backbones), without copying or retraining their weights. Its separate design revision is
-`retention-six-recipes-1500-v3`; Exp2 keeps `fixed-rates-1500-two-seeds-v2`.
-
-| Recipe ID | Optimizer and peak LR | Decay / anchor |
-|---|---|---|
-| `no_decay` | Native Muon 2e-5 (TabICL); AdamW 1e-5 (TabPFN) | Decay 0 |
-| `l2sp` | Same native primary rate | Decay 0; L2-SP .003 |
-| `diagscale_low` / `diagscale_high` | AdamW 1e-4 / 1e-3 | .01 on query-scale deltas only |
-| `lora_low` / `lora_high` | AdamW 3e-6 / 1e-5 | Decay 0; rank 16, alpha 16, dropout 0 |
-
-Adapter warm-up is 10% (150 updates), clipping 1, cosine decay to 1e-7, and five saved
-milestones: 125/250/500/1000/1500. Geometry, precision, seeds and objectives remain those
-of Exp2 within each backbone. Native weights are frozen for adapters; initial predictions
-are unchanged. L2-SP uses the released checkpoint as its anchor, including after resume.
-LoRA exports native merged weights plus resumable factors. DiagScale is injected before caches.
-The shared released-model/CatBoost/linear references keep identical requests across Exp2/Exp3;
-their valid receipts are reused. Adapter source hashes remain required for trained Exp3 arms.
-
-The primary anchor contrast is L2-SP versus no-decay; the decay contrast is no-decay versus
-primary-rate Exp2. Adapter outcomes are compared against both full rates separately; no
-best-rate/checkpoint selection occurs. See [the design rationale](EXPERIMENTAL_DESIGN.md#33-experiment-3-constrained-adaptation-at-a-fixed-50-mixture)
-for literature, CreditPFN archive evidence and historical benchmark-exposure limits.
-
-## 9. A note on the LGD R² band
-
-The docs quote "published LGD R² ≈ 0.04–0.15 linear, 0.10–0.25 beta, 0.20–0.43 tree ensembles."
-**That range came from this project's own brief, not a verified source** and must not be presented
-as a literature result. Earlier notes recorded CatBoost R² of 0.376 on Freddie, 0.501 on heloc and
-0.71–0.76 on `lgd_lendingclub`, before the subsequent feature/protocol corrections. Those historical
-numbers neither describe the current benchmark nor establish leakage from score magnitude alone.
-Use the current versioned benchmark artifacts for results and the dataset audit for feature claims.
+Early quoted real-data LGD R² bands were not verified source results. They neither calibrate
+the prior nor establish a success threshold. Use current protocol-bound artifacts for results
+and dataset-source evidence for feature/target claims.

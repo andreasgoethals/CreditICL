@@ -1,166 +1,78 @@
-# RUNS.md — every cluster run, written up
+# Run record
 
-One entry per run on the VSC. This is the project's laboratory notebook: what was submitted,
-what came back, what was wrong with it, and what we think it means.
+Dated evidence from VSC: submissions, resolved configurations, outcomes, failures and
+interpretation. Entries are newest first, with dates in `DD-MM-YYYY` format. Preserve failed
+attempts and superseded recipes as history; their commands and settings are not current advice.
 
-**Newest first. Dates `DD-MM-YYYY`.** Never delete an entry — a run that failed is evidence,
-and a run nobody wrote up will be repeated.
+For current operations use [VSC.md](VSC.md); for the registered comparisons use
+[EXPERIMENTAL_DESIGN.md](EXPERIMENTAL_DESIGN.md). [AGENTS_MEMORY.md](AGENTS_MEMORY.md) indexes
+runs and recurring failure modes; [CHANGELOG.md](CHANGELOG.md) records repository changes.
 
-Related, and deliberately separate:
+**Contents:** [Recording workflow](#recording-workflow) · [Evidence to retain](#evidence-to-retain)
+· [Entry template](#entry-template) · [Dated runs](#runs).
 
-| file | holds |
+## Recording workflow
+
+1. Read the relevant previous entries before submitting. Verify local tests, the accepted
+   source/runtime/input identities, live jobs, resource limits and authorization through the
+   VSC runbook. Passing local tests is not cluster acceptance.
+2. Submit with a durable admission receipt and immediately record the revision, configuration,
+   requested work IDs and accepted job IDs. Reconcile uncertain acknowledgment before retrying.
+3. Inspect scheduler accounting, logs and artifacts directly. Preserve successful checkpoints
+   and recovery state on PROJECT; a rerun is not a reason to clear them.
+4. Collect only filtered analysis files when needed locally, with verified sizes/hashes.
+   Weights, optimizer states, pools and runtime images stay on VSC.
+5. Complete the outcome and interpretation below. Add a compact record to agent memory and
+   **Tried / Result / Why / Instead** for any failure costing more than a few minutes.
+
+## Evidence to retain
+
+Paths below are relative to `output CreditICL/experiment_N/` on the tier selected by the path
+resolver. Shared references and submission receipts have their own directories; see the
+[output guide](<../output CreditICL/README.md>). Older entries retain their historical paths.
+
+| Evidence | Purpose and interpretation |
 |---|---|
-| **this file** | the full write-up of each run: config, numbers, bugs, interpretation |
-| [`AGENTS_MEMORY.md`](AGENTS_MEMORY.md) | the one-line index of runs, and the **dead ends** |
-| [`CHANGELOG.md`](CHANGELOG.md) | changes to the *repository*, not to what we know |
+| `runs/<run>/logs/` and experiment job logs | Resolved recipe, prior source, runtime/GPU/Slurm identity, progress, failures and final status |
+| `runs/<run>/logs/*.metrics.jsonl` | Machine-readable optimization trace; preserve loss, LR, step and finite-gradient/replay diagnostics |
+| `runs/<run>/progress.csv` | Small-context credit/OOD monitoring, not the full-table publication benchmark |
+| `runs/<run>/telemetry.csv` and `weights.csv` | Sampled utilization, memory, throughput, gradient health and parameter displacement; missing optional telemetry is not proof of inactivity |
+| Run configuration and finished summary | Exact arm, seed, updates, timings and completion identity |
+| Checkpoints and publication records | Permanent milestones and rolling recovery states on PROJECT |
+| Benchmark CSVs and receipts | Current protocol, dataset/model/seed/fold coverage, artifact hashes and row/feature accounting |
+| Exp0 reports and attempt logs | Individual stage acceptance bound to source, runtime, inputs and artifacts |
 
-**Contents:** [The workflow](#the-workflow) · [What gets logged](#what-gets-logged-and-why-each-thing-is-there)
-· [Entry template](#entry-template) · [Runs](#runs) (the dated write-ups, newest first).
-
----
-
-## The workflow
-
-**1. Before submitting.** Read this file and `AGENTS_MEMORY.md`. Then, locally:
-
-```powershell
-.CreditICL\Scripts\python.exe -m src.validation.smoke --task lgd --steps 3
-.CreditICL\Scripts\python.exe -m pytest -q
-```
-
-And **on the login node**, to verify permanent storage before requesting compute. Unwritable storage now fails closed:
-
-```bash
-python -m src.utils.check_storage
-```
-
-**1b. Preserve the previous run.** Current Exp0 attempts have separate directories. Keep completed
-checkpoints and their logs; a rerun does not require clearing them. Retained checkpoints/results
-and any large backup archives belong on PROJECT, not the small HOME allocation. Verify the
-allocation's backup policy and independent recovery copy before deleting irreplaceable evidence.
-Inspect before any deliberate cleanup:
-
-```bash
-python -m src.utils.clean_run            # LISTS what is there, deletes nothing
-```
-
-`clean_run` never touches `data/raw/`, released files in `checkpoints/`, or `tfm-library/`, and never
-`prior_cache/ood/` even under `--prior-cache` — compute nodes have no outbound internet, so
-that cache can only be rebuilt from a login node.
-
-**2. Submit**, and **immediately add a stub entry here** with the date, the config and the job
-id — before the run finishes. A job killed at the walltime never comes back to write its own
-entry, and the submission details are exactly what is lost.
-
-**3. Inspect VSC directly and collect only analysis evidence.** With working access, the agent
-reads logs, receipts and scheduler state itself. Filter the merged DATA/PROJECT inventory through
-`src.utils.result_manifest` before verified SFTP collection; retain paths relative to
-`output CreditICL/`. Collect benchmark CSVs and receipts as well as the small-tier logs.
-Keep model weights, optimizer states, caches and unfiltered archives on VSC. See `docs/VSC.md`;
-older entries below record historical collection procedures, not current instructions.
-
-**4. Fill in the entry.** Results, bugs, interpretation. Add a row to `AGENTS_MEMORY.md`, and a
-**Dead ends** entry there for anything that cost more than a couple of minutes.
-
----
-
-## What gets logged, and why each thing is there
-
-A cluster run cannot be watched. By the time anything is known, the job is over and only what
-it wrote down survives — so the rule is **log generously**. Four files per run:
-
-### `output/logs/<run>_<timestamp>.log` — the narrative
-
-| line | what it answers |
-|---|---|
-| `environment:` | the run's identity — task, seed, rank, world size |
-| `hardware:` | the **machine** — GPU model and capability, torch/CUDA/numpy versions, SLURM job and **array task id**. Two runs on different GPUs are not comparable, and this is the only record of which |
-| `grid levers:` | exactly which arm of the sweep this is |
-| `credit_fraction IN USE:` | printed separately, and loudly when overridden — the single most important number in the experiment |
-| `prior source:` | `GENERATE` or `POOL`. A silent switch here would change what the run measures |
-| `budget:` | steps × datasets/step, resolved, so a truncated run is obvious |
-| `step N/M [%] loss=… lr=… steps/s … eta … finishes ~<clock time>` | progress, with a wall-clock finish estimate |
-| `PROJECTED OVERRUN` | fires while there is still time to react, rather than the job being found dead at the 72 h wall |
-| `hw step N …` | GPU utilisation, peak memory, CPU % — see below |
-| `grads step N …` | gradient-to-weight ratio per architecture block |
-| `OOM in micro-batch` | a skipped micro-batch; >10 % raises |
-| `finished:` + `telemetry:` | the closing summary, including a **starvation warning** |
-
-### `output/manifests/<run>__progress.csv` — does it work yet?
-
-One row per `progress.every_datasets` synthetic datasets, scoring the **live model on real
-data** mid-training. This turns a run from one end-of-run number into a curve, which is what
-answers *"does the credit prior help early, late, or only at convergence?"* Columns cover the
-real credit datasets **and** the out-of-domain suites, so a prior that helps credit by
-destroying generality is visible immediately rather than at the end.
-
-### `output/manifests/<run>__telemetry.csv` — was the machine busy, and is the model learning?
-
-| group | columns | the question it settles |
-|---|---|---|
-| GPU | `gpu*_utilization_gpu`, `utilization_memory`, `memory_used/total`, `temperature`, `power_draw`, `clocks_sm` | **Was the GPU actually working?** A compute-bound run and a data-starved run look identical from outside — same wall-clock, same loss curve — and the fix is opposite (more GPUs vs more `num_workers`). Guessing costs another run |
-| torch memory | `mem_allocated_gb`, `mem_reserved_gb`, and the `max_` high-water marks | what to size a batch against. A large reserved-vs-allocated gap means fragmentation, which is how an OOM appears at step 40,000 after 39,999 identical steps |
-| host | `cpu_percent`, `ram_used_gb`, `ram_percent` | the prior is generated on the CPU; pinned CPU with an idle GPU is a `num_workers` problem |
-| throughput | `steps_per_s`, `datasets_per_s`, `elapsed_s` | comparable across runs and machines |
-| gradients | `grad_{col,row,icl,head,other}`, `grad_global` | is every stack receiving signal? |
-| weights | `weight_{...}` and **`gw_ratio_{...}`** | the ratio is the interpretable one — a gradient of 0.01 is tiny against weights of 0.1 and enormous against 1e-5. A block whose ratio sits orders of magnitude below the rest is effectively frozen, and the loss curve will never say so |
-
-Cadences are `logging.log_hardware_every` and `logging.log_grad_every`. They sit under
-`logging:` and not `train:` on purpose: **switching them off must not change a result.**
-Rank 0 samples only — eight ranks on one node would write eight identical rows.
-
-Everything here is best-effort: no `nvidia-smi`, no CUDA, no `psutil`, or an unwritable
-directory all degrade to a missing column. *A diagnostic that can kill a three-day run is worse
-than no diagnostic.*
-
-### `output/logs/<run>_<timestamp>.metrics.jsonl` — the machine-readable curve
-
-One JSON object per `log_every` steps. This is what gets plotted.
-
----
+An out-of-memory error, non-finite objective, skipped work or failed publication needs an
+explicit explanation; optional telemetry failure must not be confused with a training failure.
+A plausible score or Slurm exit code alone does not establish complete scientific output.
+Record both credit gains and OOD losses, including adverse or negligible results.
 
 ## Entry template
 
-Copy this. Every heading earns its place; `n/a` is a fine answer, a missing heading is not.
+Use the fields relevant to a training, benchmark or validation run; say `n/a` where appropriate.
 
-```markdown
-## DD-MM-YYYY — <config> — <one-line outcome>
+~~~markdown
+### DD-MM-YYYY — <campaign / allocation> — <outcome>
 
-**Submitted** DD-MM-YYYY HH:MM | **job** <id> (array <a>-<b>) | **cluster** wICE `<partition>`
-**Commit** <sha> | **tfm-library pin** <sha> | **GPUs** <n> x <model> | **walltime** <req> / <used>
+**Submitted:** <time and timezone> | **Jobs/work IDs:** <IDs>
+**Source / runtime / library pins:** <identities>
+**Allocation:** <cluster, partition, CPU/GPU/memory, requested and used walltime>
+**Admission / validation receipts:** <paths>
 
-### Configuration
-- **Config file** `config/ExpN_TRACK.yaml`, arm <index> of <total>
-- **The levers** — copy the `grid levers:` line from the log, verbatim
-- **Budget** <steps> steps x <batch> = <datasets> datasets
-- **Init** scratch | full from `<checkpoint>`
-- **Anything edited by hand since the last run** — the thing that always turns out to matter
+**Configuration:** <config, resolved arm/seed, initialization, optimizer, LR,
+steps, tables/update and geometry; link the complete saved config>
 
-### Results
-| metric | dev | holdout | control arm | delta |
-|---|---|---|---|---|
-| | | | | |
+**Outcome:** <terminal accounting, completed artifacts/cells, remaining work;
+credit and OOD metrics, throughput and measured resources where relevant>
 
-- **Progress curve** still climbing at the end? plateaued? where?
-- **Out-of-domain** did generality hold? (a credit gain paid for with OOD loss is not a result)
-- **Throughput** <steps/s>, mean GPU utilisation <%>, peak memory <GB>
-- **Files** `output/logs/<...>`, `output/manifests/<...>`
+**Bugs and anomalies:** <failure, impact, diagnosis and recovery; distinguish
+expected warnings from missing/invalid work>
 
-### Bugs and anomalies
-Anything wrong with the run, however small — a NaN, a skipped micro-batch, a metric that
-cannot be right. **A number that looks too good goes here, not in Results.**
+**Interpretation:** <what measurements show, hypotheses that explain them,
+and limits of the inference>
 
-### Interpretation
-What we think happened and why. Explicitly separate:
-- what the numbers **show**
-- what we **think** explains it
-- what would **test** that explanation
-
-### Next
-The one thing to do differently.
-```
-
----
+**Next:** <remaining gates or authorized work; do not imply a submission happened>
+~~~
 
 ## Runs
 

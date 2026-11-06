@@ -1,23 +1,24 @@
 # Experimental design
 
-What the three experiments ask, why the design can fail, and the premises it rests on. This
-describes what is **built** (the `config/Exp{1,2,3}_*.yaml` sweeps); the prior's mechanics are in
-[PRIORS.md](PRIORS.md), every knob's value in [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md), and what
-each run actually did in [RUNS.md](RUNS.md). Original source-audit pin `de324efcca55be392feb0c01830b3b6ce364587f`; the 24-10-2026 Experiment 2 audit uses TFM pin `702d9ab0b66f6639ba8d443ff9c4a91231964465`. The fixed-rate design review of 29-10-2026 uses TFM pin `26156f36eb7676e8d9050547817346db548b0e85`.
+This document defines the research questions, implemented comparisons and limits of inference.
+[PRIORS.md](PRIORS.md) explains the generator, [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) explains
+resolved settings, and [RUNS.md](RUNS.md) records outcomes. Current recipes are implemented in
+`config/Exp{1,2,3}_*.yaml` and `src/experiments/design.py`; this document does not select settings
+from their results. Source reviews retain their dated library pins below.
 
 ## Contents
 
-1. [The claim, and how it fails](#1-the-claim-and-how-it-fails)
-2. [Verified premises — and two corrections](#2-verified-premises)
+1. [Research questions](#1-research-questions)
+2. [Source-grounded premises](#2-source-grounded-premises)
 3. [The experiments](#3-the-experiments)
 4. [Matched compute, seeds, and the two phases](#4-matched-compute-seeds-and-the-two-phases)
 5. [Evaluation](#5-evaluation)
 6. [Risks](#6-risks)
-7. [Open decisions](#7-open-decisions)
+7. [Scope and future work](#7-scope-and-future-work)
 
 ---
 
-## 1. The claim, and how it fails
+## 1. Research questions
 
 > At fixed architecture and training budget, does the complete credit-targeted prior package
 > change performance on this credit benchmark suite, and what happens to native OOD performance?
@@ -26,14 +27,9 @@ This is a package comparison. It does not identify credit structure separately f
 encoding, filtering or difficulty. Selective transfer and double dissociation are stronger,
 future hypotheses that require additional controls, rather than claims established by this grid.
 
-**The claim is wrong if:**
-
-- the credit prior (`credit_fraction > 0`) does **not** beat the control (`credit_fraction = 0`) on
-  the matching track — the intervention does not transfer;
-- fine-tuning (Exp2) buys credit gains only by **eroding out-of-domain generality** — measured
-  directly, not assumed.
-
-Each is a publishable negative. The design is built to learn which is true, not so that credit wins.
+No improvement over the matched 0% control would be evidence against useful transfer at the
+tested budget. Credit gains accompanied by OOD losses would establish a specialization trade-off,
+not an unqualified improvement. Negative and negligible outcomes remain part of the analysis.
 Temporal deployment and crossed-task selectivity are not tested by the current five-fold protocol.
 
 The three research questions form a sequence rather than three searches for a winning score:
@@ -49,33 +45,39 @@ Experiment 0 validates implementation; it is not a fourth research experiment. T
 cost, parameter drift and OOD retention are diagnostics within RQ2/RQ3. More backbones or additional
 freezing methods are not necessary to answer these bounded questions.
 
-**One honest limitation.** A generic-realism control arm (O'Prior-style: realism *without* credit
+**Attribution limit.** A generic-realism control arm (O'Prior-style: realism *without* credit
 targeting) was designed but **not built** — see [§3](#3-the-experiments). Without it we cannot
 fully separate "credit-specific structure" from "any added realism". The proposed crossed
-mechanism ablation ([§5.2](#52-the-double-dissociation)) is also **not implemented** by the current
+mechanism ablation ([§5.2](#52-crossed-mechanism-attribution-future-work)) is also **not implemented** by the current
 four-mixture grid. Gains on PD and LGD alone do not establish a double dissociation or rule out
 generic realism, difficulty or architecture interactions.
 
-## 2. Verified premises
+## 2. Source-grounded premises
 
-Everything here was read from source, not assumed. **Two corrections matter — the original framing
-overstated two claims a code-reading reviewer would catch, and the honest versions are load-bearing.**
+The original audit used TFM pin `de324efcca55be392feb0c01830b3b6ce364587f`; the current library
+pin is `8f14e5945ca6b068ed0c76218e769d3e672d0d13`. Two distinctions constrain the novelty claim:
+standardization preserves shape, and upstream classification is not necessarily balanced.
 
-**2.1 The regression target *is* standard-scaled (verified).** `GraphSCM.__call__` clamps at ±4σ
-(`outlier_removing`) then `standard_scaling`; `TabICLRegressor` mirrors this at inference and
+### 2.1 Regression targets are standardized
+
+`GraphSCM.__call__` clamps at ±4σ (`outlier_removing`) then applies `standard_scaling`;
+`TabICLRegressor` mirrors this at inference and
 inverse-transforms the predicted quantiles. Prior and inference agree.
 
-**2.2 CORRECTION — bounded/bimodal targets are a *frequency* gap, not a structural absence.**
+### 2.2 Boundary mass concerns frequency and alignment
+
 Standard-scaling is affine, therefore shape-preserving: a U-shaped target with two atoms arrives as a
-U-shaped target with two atoms on a rescaled axis. Standardisation destroys the **[0,1] support**,
-not the bimodality — and atom-producing mechanisms already exist (`outlier_removing` clamps → point
+U-shaped target with two atoms on a rescaled axis. Standardisation moves the economic **[0,1]
+endpoints** to task-specific locations; it does not remove boundedness or bimodality.
+Atom-producing mechanisms already exist (`outlier_removing` clamps → point
 masses; piecewise-constant function families; `rand_kumaraswamy_act` maps to exactly [0,1] with
 p≈0.5). The defensible claim: nothing in the prior *targets* boundary mass in real LGD's range, and
 nothing aligns the output support with [0,1]. That is weaker than "absent" and, crucially,
 **measurable** — the `0.3` prior-visualisation notebook measures it.
 
-**2.3 CORRECTION — TabICL's prior is *not* necessarily balanced.** The active `GraphSCM`
-uses `CategoricalConverter`, not the older `SCMPrior`'s `MulticlassAssigner`. Its realised
+### 2.3 Upstream classification is not necessarily balanced
+
+The active `GraphSCM` uses `CategoricalConverter`, not the older `SCMPrior`'s `MulticlassAssigner`. Its realised
 class-count and minority-frequency distributions must be measured directly, not inferred from
 the older rank-binarisation path. Imbalance is uncontrolled rather than structurally absent;
 we reshape the task distribution. O'Prior instead filters collapsed or severely imbalanced support.
@@ -84,31 +86,37 @@ also describes bounded target transforms and independently ablatable finance-sty
 The novelty claim is therefore the controlled PD/LGD prior-package and adaptation study, not the
 first domain-informed prior or a claim that existing generators cannot represent credit traits.
 
-**2.4 The head can already represent atoms.** The regressor is a **999-quantile** pinball head, which
-represents a point mass exactly (an atom at 0 = quantile levels 0.001…mass all mapping to 0). So
-representability is *not* the bottleneck; the real head-side issues are point-prediction extraction
-from a bimodal predictive (median/mean land in the sparse interior) and the lack of a [0,1] support
-constraint (clipping is a free baseline, not a contribution). This is why a ZOIB/mixture head is held
-in reserve rather than built.
+### 2.4 The native quantile head can represent boundary ties
 
-**2.5 The predictability filter — characterised.** Three filters, verified in code and against the
-TabICLv2 paper: a **statistical** one (ExtraTrees OOB bootstrap test, reject if `pval ≥ 0.05`), a
+The TabICL regressor is a **999-quantile** pinball head: multiple quantile levels can map to
+the same endpoint. Its finite grid limits mass resolution, but representing boundary ties
+does not require a new head. Point predictions can obscure a multimodal
+predictive distribution, and native outputs need not satisfy a [0,1] support constraint.
+Report decoding and endpoint probabilities explicitly; clipping alone is not a contribution.
+This is why a ZOIB/mixture head remains future work.
+
+### 2.5 Filtering changes the accepted task distribution
+
+The TabICLv2 code and paper describe three filters: a **statistical** one
+(ExtraTrees OOB bootstrap test, reject if `pval ≥ 0.05`), a
 **triviality** one (reject too-easy), and a **structural** one (reject DAGs where x, y share no
 ancestors). Paper rate: "roughly 35% classification and 25% regression datasets are filtered". Two
 nuances shape Exp1: it is a *significance* test, not an R² floor (it removes *no-signal* DGPs more
-than *low-signal* ones), and the authors show filtering *improves* convergence — so the `banded`
-variant contradicts a published result *with evidence behind it*, and must beat that argument.
+than *low-signal* ones), and the authors report improved convergence with filtering.
+The optional `banded` filter would therefore be a distinct intervention requiring its own
+evidence; it is not the current control.
 
-**2.6 Our data does not match a single premise.** Measured from `data/raw/`: Freddie LGD is genuinely
+### 2.6 Credit benchmarks have heterogeneous targets
+
+The prior audit recorded from `data/raw/`: Freddie LGD is
 U-shaped (11.4% at 0, 8.1% at 1); LendingClub LGD is unimodal, left-skewed, peaks at 0.80–0.85; AXA
 has a substantial atom near zero (within the documented boundary tolerance). PD base rates span 6.7% (GMSC) to 40% (myhom). **Consequence:** the prior must be
 a *family* over boundary mass and base rate, not a single shape — else it overfits one dataset.
 
 ## 3. The experiments
 
-The 26-10-2026 implementation replaces the proposed long from-scratch Experiment 3 with
-retention ablations. Experiment 1's resolved recipes, task budgets and array identities remain
-unchanged, including the appended 25% mixture. This change does not require retraining Exp1.
+The current Experiment 3 studies retention; the earlier long scratch-training proposal is retired.
+Experiment 1's resolved recipes and identities remain unchanged, including the appended 25% mixture.
 
 | Experiment | Question | Production training runs |
 |---|---|---|
@@ -117,14 +125,13 @@ unchanged, including the appended 25% mixture. This change does not require retr
 | 2 | How do mixture and fixed learning rate affect transfer and OOD retention? | 64 = 2 backbones × 4 mixtures × 2 rates × 2 seeds × 2 tasks; 1,500 updates each |
 | 3 | Which fixed update constraints trade credit adaptation against OOD retention? | 48 new = 2 backbones × 6 recipes × 2 seeds × 2 tasks; 1,500 updates each; 16 reused Exp2 baselines |
 
-### 3.1 Experiment 1: preserved evidence
+### 3.1 Experiment 1: prior usefulness
 
 Four credit shares (0%, 25%, 50%, 100%) and five component removals at 50%, with three seeds
 per PD/LGD task, use 12,500 updates of 64 tables of 1,024 rows. The original campaign contained
 48 runs; six quarter-mixture runs were appended. Existing completed-run provenance is accepted
-only for explicitly reviewed source/package/recipe combinations. Original historical completion
-permission does not authorize arbitrary checkpoint resume. Unchanged Exp1 runs from `19a76cc`
-may resume across this patch under an additional exact-source and recipe check.
+only for explicitly reviewed source/package/recipe combinations. Acceptance of a historical
+completed run does not authorize arbitrary checkpoint resume under changed code.
 
 ### 3.2 Experiment 2: full continued pretraining
 
@@ -216,29 +223,17 @@ This provides less information about stochastic variation than three streams; re
 their spread, without interpreting two seeds as a precise variance estimate. [Bouthillier et al. (2021), Appendix C](https://proceedings.mlsys.org/paper_files/paper/2021/file/0184b0cd3cfb185989f858a1d9f5c1eb-Paper.pdf)
 motivates accounting for variance and paired comparisons, but does not prescribe three as a universal minimum.
 
-There are 320 permanent Exp2 snapshots, approximately 142 GB by linear scaling of the earlier
-checkpoint inventory, plus rolling saves, references and benchmark artifacts. The observed/provisional
-48×2,500 training extrapolation of 46.6–49.4M credits scales to **37.3–39.5M for 64×1,500** at the
-quoted 30,600 credits/hour. This excludes validation, benchmarking and Exp3, and assumes comparable
-throughput. It is not a billing quote or a guarantee of affordability.
-
 Every retained Exp2 snapshot on all credit and OOD datasets implies **56,800 dataset-fold-model
 evaluations**: 32 PD runs × 5 steps × 39 datasets × 5 folds, plus 32 LGD runs × 5 × 32 × 5.
 References and PD threshold-calibration refits add work. Exp3's 48 new runs add 42,600 such
-evaluations. Full-table benchmarking can dominate total cost; price it from actual runtime evidence
-before launching the entire campaign. Keeping few trainable parameters does not itself make
-DiagScale/LoRA inference or fitting cheap. Preserve the full-row/full-feature/five-fold protocol
-rather than silently reducing coverage to fit a budget.
+evaluations. There are 320 permanent Exp2 snapshots and 240 new Exp3 snapshots, plus rolling
+recovery states and shared references. Full-table benchmarking can dominate total cost;
+few trainable parameters do not by themselves make adapter inference cheap.
 
-A subsequent read-only VSC audit on 29-10 supplies a conditional inference anchor: existing
-released-model and Exp1 fold timers project **11.22–11.58M benchmarking credits for Exp2**
-and **5.61–5.79M for the retired 32-run Exp3** at comparable speed. The revised 48-run Exp3
-scales that benchmark-only estimate to **8.42–8.69M credits**, excluding any missing reused
-Exp2 baseline evaluations. Its training cost needs new method-specific measurements; the old
-73–77M combined estimate is not the revised campaign budget. These are stored-work timers
-rather than billing records; adapter inference and adapted-model runtime remain unmeasured.
-Recheck current balance and quotes before submission. See [VSC.md](VSC.md) and the
-29-10 read-only audit in [RUNS.md](RUNS.md) for observed values.
+Use measured task-specific timings and fresh allocation quotes from the [VSC runbook](VSC.md#resources-and-costs).
+Historical projections, including the retired 32-run Exp3 budget, remain in [RUNS.md](RUNS.md).
+They are not current billing records or launch budgets. Preserve full-row/full-feature/five-fold
+coverage rather than reducing it silently to fit a resource limit.
 
 ### 3.3 Experiment 3: constrained adaptation at a fixed 50% mixture
 
@@ -339,15 +334,13 @@ and initial weights within a backbone). Report mean ± spread; gaps smaller than
 indicate descriptive instability, not a significance test or an alternative selection rule.
 Neither Exp2 nor Exp3 ranks seeds, rates or method settings using benchmark scores.
 
-**Two phases, and the order is a fact about the data.** Phase 1 (`pretrain_{pd,lgd}.slurm`) trains one
+**Two phases.** Phase 1 (`pretrain_{pd,lgd}.slurm`) trains one
 checkpoint per saved step per arm; phase 2 (`benchmark.slurm`) scores every saved checkpoint — one array
 slot each, final checkpoints first — **plus a shared reference column** (released TabICLv2, TabPFN-3,
-CatBoost, linear), one slot per model after them (`benchmark_status.slot_for`). Phase 2 cannot start
-until phase 1 has written the checkpoints. The reference sits **inside the same array** so it is
-scored by the same code, the same folds and the same protocol as our arms — every comparison
-this project got wrong, it got wrong by scoring the two sides through different paths. Evaluation is
-*not* inside the training job for the same reason: an arm would otherwise be benchmarked by whatever
-the code looked like the hour it finished.
+CatBoost, linear), one slot per model after them (`benchmark_status.slot_for`). Benchmarking
+requires completed checkpoints and matching protocol/source/input/environment receipts.
+Reference slots use the same evaluation path; compatible published references can be reused.
+Separate training and benchmarking jobs keep the full evaluation budget distinct from monitoring.
 
 ## 5. Evaluation
 
@@ -358,7 +351,9 @@ The September results across these datasets have already been inspected. The des
 is therefore not an untouched confirmatory set for subsequent design changes. Freeze this revised
 protocol, report that history, and obtain an independent source/time cohort for confirmatory claims.
 
-**5.1 What is compared, and on what.** Every checkpoint against the shared reference, on the real
+### 5.1 Comparison population and protocol
+
+Every checkpoint is compared with matched controls and shared references on the real
 credit datasets and the out-of-domain suites. The split is fixed:
 
 | track | development (prior choice + iteration) | designated holdout (previously inspected) |
@@ -367,7 +362,8 @@ credit datasets and the out-of-domain suites. The split is fixed:
 | **LGD** (7) | lgd_lendingclub, base_model, base_modelisation, heloc | loss2, axa, lgd_freddie |
 
 `hackerearth` and `base_modelisation` moved to development on 30-09-2026: the first holds 5,696 of
-`lendingclub`'s 9,578 loans, the second shares defaults with `base_model` (audit, §7 item 5), and a pair
+`lendingclub`'s 9,578 loans, the second shares defaults with `base_model` (the dated audit is in
+[RUNS.md](RUNS.md)), and a pair
 split across the line would let a choice made on development be tested on the same loans.
 
 The native `hackerearth.loan_status` label is retained. The 14-10-2026 review of the
@@ -457,7 +453,7 @@ the decoding rule stated. The earlier quoted LGD R² ranges were not verified li
 they do not set a success threshold. Compare paired changes against matched controls under the
 current protocol, rather than declaring success from an absolute score on one dataset.
 
-**5.2 The double dissociation — proposed, not yet implemented.**
+### 5.2 Crossed-mechanism attribution: future work
 
 | mechanism enabled | predicted effect on **LGD** | predicted effect on **PD** |
 |---|---|---|
@@ -471,20 +467,27 @@ Add controlled target-only, feature-only and generic-realism comparisons before 
 gains specifically to individual credit mechanisms; measure difficulty as well. Until then, a
 positive result supports only the full prior package under the tested budget and architecture.
 
-**5.3 Out-of-domain retention is a first-class axis, not an appendix.** After training on a
+### 5.3 Out-of-domain retention
+
+After training on a
 credit-targeted prior, score general/out-of-domain benchmarks to measure whether in-domain gains were
 bought at out-of-domain cost. Report dataset-paired score changes; a specialization trade-off
 is a hypothesis to test, not a conclusion borrowed from time-series adaptation. **If domain-targeting costs general performance, that is
-the finding** — Exp2's `2.1`/`2.2` notebooks plot the credit-vs-out-of-domain curve directly.
+the finding**. Exp2's `2.3`/`2.4` results notebooks compare full-table credit and OOD effects;
+`2.1`/`2.2` show optimization and small-context monitoring separately.
 
-**5.4 Temporal splits.** Distribution-shift work motivates testing time and borrower/source groups,
+### 5.4 Temporal and grouped splits
+
+Distribution-shift work motivates testing time and borrower/source groups,
 rather than generalising an i.i.d. result to deployment. Grouped five-fold splits are implemented
 for HELOC loans, base_model obligors, base_modelisation clients and bank_status borrowers.
 Temporal splits remain unimplemented; requesting temporal splitting raises an error. Feasibility depends on identifying
-observation dates, label maturity and repeated borrowers in each source — see [§7](#7-open-decisions).
+observation dates, label maturity and repeated borrowers in each source — see [§7](#7-scope-and-future-work).
 The presence of a date column alone does not establish an observation-time and mature-label protocol.
 
-**5.5 Dataset semantics and the scope of the comparison.** Retain the existing benchmark inventory;
+### 5.5 Dataset semantics and feature eligibility
+
+Retain the existing benchmark inventory;
 unusual correlations or high predictability alone are not grounds for dropping a dataset. The
 source-defined `hackerearth` label has a repayment-oriented interpretation on matched Lending Club
 loans and incomplete maturity information; do not call its positive label a verified default event
@@ -505,62 +508,41 @@ are preserved. This closes known exclusions; it does not certify every anonymise
 
 | risk | why it is real | mitigation |
 |---|---|---|
-| our training loop is subtly wrong | it is ours; a bug invalidates all arms equally and invisibly | reproduce the control in the expected range; unit-test the pinball loss; verify a fixed seed reproduces exactly (all in `tests/`) |
+| training or inference implementation error | a defect can invalidate one or every arm | current-source Exp0 tests native objectives, preprocessing, optimizer/precision, checkpoint round trips, resume and full-table inference; inspect logs and artifacts too |
 | no generic-realism or crossed-mechanism arms | can't separate credit mechanisms from generic realism/difficulty | implement controlled ablations before making mechanism-specific claims; current mixture grid is insufficient |
 | prior×architecture interaction | TabICLv2 ablations show divergence on the old prior | log all loss curves; report divergence as an outcome |
-| nano→frontier gap | untested at scale (O'Prior's own caveat) | state as a limitation; scope any frontier confirmation separately |
-| credit is not distinctive | if the default prior already covers credit's regime the premise is weak | the `0.2`/`0.3` notebooks measure this before credits are spent |
+| scratch-to-released-model gap | architecture, earlier training and cumulative exposure differ | report Exp1 and Exp2 as separate comparisons, not a causal comparison of training scale |
+| credit is not distinctive | upstream mechanisms can already cover parts of the credit regime | `0.2`/`0.3` characterize exposure and difficulty; efficacy still requires the benchmark |
 | meta-overfitting | 21 datasets, many iterations, historical holdout results already inspected | both fixed rates and all recipes reported; no new pilot/test selection; independent source/time cohort needed for confirmatory credit claims |
-| i.i.d.-only result | Purucker 2026 | temporal splits where the data allows ([§7](#7-open-decisions)) |
-| outcome information in the features | the 29-09-2026 audit found outcome-construction and workout fields ([§7](#7-open-decisions) item 5) | known fields excluded under protocol 5; dictionaries needed for remaining fields. Giving every model leaked inputs does not remove the bias |
+| no temporal deployment estimate | random/grouped CV does not test future cohorts | explicitly limit claims; add temporal protocols only after source-date and maturity review ([§7](#7-scope-and-future-work)) |
+| outcome information in the features | historical audits found outcome-construction and workout fields | protocol 9 excludes known fields and aliases; remaining timing needs dictionaries. Equal access to leaked inputs would not remove bias |
 | the same loans in dev and holdout | 5,696 of `lendingclub`'s 9,578 loans are in `hackerearth`; `base_modelisation` shares defaults with `base_model` | fixed 30-09-2026: both pairs are on the development side ([§5](#5-evaluation)) |
 
-## 7. Open decisions
+## 7. Scope and future work
 
-1. **Temporal-split protocol** — which datasets carry a usable date/group column; needs a per-dataset
-   audit before the protocol is fixed ([§5.4](#54-temporal-splits)).
-2. **The generic-realism and mechanism ablations** — construct explicit controls at matched budgets
-   after source review; the existing two-track mixture comparison is not a substitute.
-3. **ZOIB/mixture LGD head** — held in reserve behind decoding + support constraints
-   ([§2.4](#2-verified-premises)); revisit only if those are insufficient.
-4. **Retention settings** — resolved 29-10-2026: fixed 50% mixture, both full-model rates
-   reported in Exp2, six fixed recipes and both rate baselines in Exp3; no pilots.
-   The long scratch run remains dropped.
-5. **Outcome information in the evaluation data (audit of 29-09-2026; decision revised 12-10-2026).**
-   The following historical audit numbers describe that cache/split, not the corrected benchmark. A column
-   scan (ExtraTrees out-of-bag R² with and without the suspects, processed data) found:
-   - `base_modelisation` (LGD holdout): `numerateur / denominateur` reproduces `lgd_defaut` to 0.001
-     on 57 % of rows — the target is in the features. Also `DT_DECHEANCE_TERME` (acceleration date),
-     `C_flag_crc_clos_f`, `annee_in_dft`. R² 0.48 → 0.39 without them.
-   - `loss2` (LGD holdout): `REO_Appraisal_Amount`, `UPB_At_Resolution`, `_Mirecovery`,
-     `_Miclaimbal`, `Unpaid_Interest` — values recorded at or after resolution. R² 0.63 → 0.43.
-   - `base_model` (LGD dev): `flag_clos`, `duree_defaut`, `DFLT_duree` (and its binned copies),
-     `DFLT_RationalEndDefault`, `DFLT_RecoveryApproach`, `FCLT_UnpaidInterest`. R² 0.48 → 0.45.
-   - `lgd_lendingclub` (LGD dev): `months_since_origination` alone gives R² 0.58, everything else
-     0.04 — the target appears to be the loss on the original amount, which the loan's age almost
-     fixes. Known at default, so not a leak by timing, but the task is mostly amortisation; decide
-     from the target's definition whether to keep it, re-define it or move it out of dev.
-   - `hackerearth` (PD holdout): `recoveries`, `collection_recovery_fee`, `total_rec_int`,
-     `total_rec_late_fee`, `last_week_pay` describe the loan after origination (weak on their own,
-     univariate AUC ≤ 0.65, but not application data).
-   - Dev/holdout overlap: `lendingclub` (PD dev) and `hackerearth` (PD holdout) share 5,696 loans
-     (59.5 % of the dev set; exact on rate, DTI, revolving balance and utilisation, 99 % of those on
-     income too); `base_model` (LGD dev) and `base_modelisation` (LGD holdout) share at least 16 % of
-     the holdout's interior LGD values exactly, so likely the same defaults from two extracts.
-   The 30-09 decision to keep all fields was unsound: equal access to leakage does not make the
-   comparison valid. On 12-10 Andreas chose application-time PD/default-time LGD. Known post-outcome
-   fields and target components are now excluded, including categorical copies. Some workout
-   amounts are conservatively excluded without a verified default-time snapshot. Acceleration date
-   (`DT_DECHEANCE_TERME`) is now conservatively excluded: many source values postdate default.
-   Future `PY1_*` macro fields, workout flags and the client identifier are excluded too. The current `base_modelisation` cache reproduces the target from numerator/denominator
-   within 0.001 on 49.2% of 594 rows, not the historical 57%. Source dictionaries and LGD target
-   definitions remain necessary; weak univariate prediction does not certify absence of leakage.
-6. **Exp2's reported checkpoint** — resolved 30-09-2026: with no search there is no chosen checkpoint;
-   the final one (fixed at 1,500 steps after the 29-10 fixed-rate revision) is the result, the others a learning curve.
-   Neither 1,500 nor the original proposed 10,000 is established as optimal; the current horizon is
-   a disclosed compute-budget constraint, frozen across all mixtures and rates.
-   `eval.headline_step`, if a config sets it, is honoured by `results_plots.load_results`.
-7. **Full-row evaluation** — user decision 13-10-2026: no capped-context comparison. All eligible
-   rows participate in five-fold CV. Every prediction-time-eligible column is retained, including
-   inside TabPFN ensembles; there is no 100-feature benchmark cap. The 100-feature setting
-   describes synthetic training only. Source identifiers and known post-outcome fields remain excluded.
+The current grid, prediction-time exclusions and 1,500-update endpoint are fixed. They are
+not unresolved launch decisions. Both rates and all recipes remain visible; intermediate
+checkpoints describe trajectories. No mixture, rate or stopping point is selected on the
+assessment benchmark.
+
+Three extensions could strengthen inference but are outside this campaign:
+
+- **Temporal evaluation:** establish observation time, label maturity and repeat-borrower
+  structure before defining future-cohort splits. A date column alone is insufficient.
+- **Mechanism attribution:** add matched target-only, feature-only and generic-realism
+  controls, with measured difficulty and task-format exposure. Current component removals
+  do not identify every difference from the upstream prior.
+- **Alternative LGD heads:** consider explicit mixture or inflated-beta heads only after
+  evaluating native quantile/distributional predictions, decoding and support constraints.
+  Representable boundary ties alone do not establish calibrated boundary probabilities.
+
+Dataset semantics remain a separate evidence requirement. The 29-09 and 21-10 audits, with
+their original cache versions, counts and diagnostic scores, are preserved in [RUNS.md](RUNS.md).
+Known post-outcome fields, target construction inputs and categorical aliases are excluded
+under the current protocol; raw caches and benchmark membership are retained. Source
+dictionaries are still needed to establish remaining feature timing and economic target
+definitions. Weak univariate predictability does not certify absence of leakage.
+
+These extensions should be declared and validated separately. Neither a positive nor a
+negative result justifies retuning the current assessment comparison or relabelling historically
+inspected datasets as untouched confirmation.

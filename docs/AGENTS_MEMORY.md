@@ -1,5 +1,24 @@
 # Agents' memory — runs and dead ends
 
+Read the newest relevant records before acting. Entries preserve the state at their stated
+date; historical commands, source identities and grid sizes are not current launch instructions.
+Use [VSC.md](VSC.md) for operation and recovery, [RUNS.md](RUNS.md#runs) for full evidence,
+and [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) for current recipes. Preserve earlier failures.
+
+## 06-11-2026 — Documentation consolidation
+
+Reorganized README, design/config/prior guides, VSC operations, output/notebook guides and
+agent instructions. Added schema-valid software `CITATION.cff`; corrected third-party notices
+without changing the MIT grant. Dated run entries remain unchanged. Removed stale current
+claims about scratch Exp3, unverified R² targets and a candidate-only runtime; resource/status
+figures remain explicitly dated, not a new live VSC check.
+
+Local acceptance: 2,333 tests passed, 58 skipped in 20m30s; 118 local links/anchors, seven
+PowerShell 5.1 and 11 Bash examples checked. Expanded configurations match the documented
+54/64/48-new-plus-16-reused design. Template matches the canonical bytes. No scientific code,
+config, notebook cell, result, library pin or VSC checkout changed; notebook exports were not
+regenerated for prose-only edits.
+
 ## 06-11-2026 — Notebook evidence and figure review
 
 Collected 589 filtered analysis files at 14:32 UTC, including all 64 Exp2 final credit/OOD

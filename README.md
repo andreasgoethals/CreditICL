@@ -1,341 +1,157 @@
-# CreditICL — encoding domain knowledge into a tabular foundation model's pretraining prior
+# CreditICL
 
-**Can domain knowledge be deliberately encoded into a tabular foundation model's synthetic
-pretraining prior, and does it transfer to downstream performance on the matching domain?**
+**How does a credit-targeted synthetic prior affect tabular foundation models?**
+CreditICL studies this through controlled pretraining, continued pretraining and constrained
+adaptation. It uses TabICLv2 and TabPFN-3 on 14 binary credit benchmarks associated with
+probability of default (PD), seven bounded regression benchmarks associated with loss given
+default (LGD), and 25 out-of-domain (OOD) datasets per task.
 
-The vehicle is **TabICLv2** — a tabular foundation model (TFM) whose prior
-generator *and* pretraining code are public. The testbed is **credit risk**, in two halves that
-stress different parts of the prior:
+The intervention is a complete prior package: targets, feature exposure, encoding and filtering.
+The study measures its effect at fixed budgets; it does not isolate every credit mechanism or
+claim that existing priors cannot represent imbalance or endpoint mass. Dataset semantics,
+historical benchmark exposure and the absence of temporal validation limit deployment claims.
 
-| | task | what makes it hard for a TFM |
-|---|---|---|
-| **PD** | Probability of Default | **imbalanced** binary classification, high-cardinality categoricals, threshold-like business rules, low signal-to-noise |
-| **LGD** | Loss Given Default | **bounded [0,1]** targets with heterogeneous shapes and endpoint mass |
+Research software by Andreas Goethals, KU Leuven. See [the design](docs/EXPERIMENTAL_DESIGN.md)
+for hypotheses, evidence and limitations, and [CITATION.cff](CITATION.cff) to cite the software.
 
-PhD project, KU Leuven (Andreas Goethals). Literature grounding lives in the pinned
-[`tfm-library/`](tfm-library/) submodule (**read-only** — see [AGENTS.md](AGENTS.md)).
+## Start here
 
-## Contents
+| Purpose | Document |
+|---|---|
+| Research questions and comparisons | [Experimental design](docs/EXPERIMENTAL_DESIGN.md) |
+| Synthetic generator | [Prior construction](docs/PRIORS.md) |
+| Recipes and sweep expansion | [Configuration reference](docs/CONFIG_REFERENCE.md) |
+| Local development and saved analyses | [Local setup](#local-setup) · [Notebook guide](notebooks/README.md) |
+| VSC validation, submission and recovery | [VSC runbook](docs/VSC.md) |
+| Dated results, failures and changes | [Run record](docs/RUNS.md) · [Agent memory](docs/AGENTS_MEMORY.md) · [Changelog](docs/CHANGELOG.md) |
+| Generated files and collection | [Output guide](<output CreditICL/README.md>) |
 
-1. [What is open, and why (vs O'Prior)](#what-is-open-and-why)
-2. [The three experiments](#the-three-experiments)
-3. [The four code pipelines](#the-four-code-pipelines)
-4. [Repository layout](#repository-layout)
-5. [Setup (Windows, PowerShell 5.1)](#setup-windows-powershell-51)
-6. [Running it](#running-it)
-7. [Conventions](#conventions)
-8. [License](#license) · [Based on the repository template](#based-on-the-repository-template)
+## Experiments
 
-Deeper reading, each owning one topic: **[EXPERIMENTAL_DESIGN](docs/EXPERIMENTAL_DESIGN.md)** (the
-science), **[PRIORS](docs/PRIORS.md)** (how the prior is built), **[CONFIG_REFERENCE](docs/CONFIG_REFERENCE.md)**
-(why each knob is what it is), **[VSC](docs/VSC.md)** (running on the cluster).
+| Experiment | Question and design | Training runs across PD and LGD |
+|---|---|---:|
+| **0: validation** | CPU tests, data/configuration checks, CUDA correctness, full-table probes and recovery tests | Diagnostic jobs |
+| **1: prior usefulness** | Scratch TabICL; four mixtures and five component removals, three seeds, 12,500 updates | **54** |
+| **2: continued pretraining** | Two released backbones × four mixtures × two fixed learning rates × two seeds, 1,500 updates | **64** |
+| **3: adaptation constraints** | Fixed 50% mixture; six no-decay, L2-SP, DiagScale and Q/V LoRA recipes, two backbones and two seeds, 1,500 updates | **48 new + 16 reused Exp2 baselines** |
 
----
+Mixtures contain 0%, 25%, 50% or 100% credit tasks in expectation. The remainder uses the public
+TabICL prior, including for TabPFN-3: it does **not** reconstruct TabPFN's private prior. Released
+weights are a separate reference from the 0% continued-pretraining control.
 
-## What is open, and why
+Exp2/3 retain checkpoints at 125, 250, 500, 1,000 and 1,500 updates. All are benchmarked; the final
+checkpoint is the primary endpoint. Both fixed rates and all recipes are reported, without a
+learning-rate pilot or best-on-test selection. Comparisons retain all prediction-time-eligible
+features and fitted rows, with five common folds. PD threshold tuning uses an inner training split.
+Native OOD performance is reported alongside credit performance.
 
-The closest prior work is **O'Prior** (Bouadi et al. 2026, arXiv
-[2605.18971](https://arxiv.org/abs/2605.18971);
-[`tfm-library/papers/2026/05_Bouadi_et_al._Shaping_the_Prior_*.pdf`](tfm-library/papers/2026/)). It
-already does the **methodological core** — hold architecture, optimizer, compute and evaluation
-fixed, vary *only* the synthetic task distribution — and finds that **structural mechanism diversity
-drives transfer**. So "prior design matters, and here is how to measure it cleanly" is *taken*.
+**Campaign snapshot, 6 November 2026:** Exp1 training and benchmarking are complete. All 64 Exp2
+training runs are complete and all 320 checkpoint benchmarks are admitted. Revised Exp3 CPU
+validation has passed; GPU validation is running. Exp3 submission is authorized only after full
+validation and resource checks. [VSC](docs/VSC.md#current-deployment) and [RUNS](docs/RUNS.md#runs)
+carry dated job-level evidence; this is not a live queue view.
 
-What remains open is the word **domain**:
+## Local setup
 
-1. **Controlled credit-risk targeting.** O'Prior measures *average* behaviour across 52 general
-   tasks; those comparisons do not isolate the effect of a credit-targeted prior package.
-   Their probing singles out **Credit-g** as a dataset where the signal was too weak to tell
-   the priors apart. That probe does not establish that O'Prior fails on credit tasks; it also reports strong Home Credit results.
-2. **LGD transfer is not evaluated there.** Their reported benchmarks are classification;
-   the generator supports regression, including bounded target transformations.
-3. **Credit-targeted class exposure is the question.** O'Prior already produces variable class
-   balance and rejects collapsed or severely imbalanced support. Our study measures the effects
-   of the complete credit-targeted package, not the first prior capable of imbalance.
+Use **Python 3.12** for the established local/VSC pairing; supported versions are 3.11–3.12.
+Existing environments need no routine upgrade. For a new Windows checkout, run in PowerShell:
 
-These distinctions follow the [revised O'Prior text](tfm-library/papers/text/2026/10_Bouadi_et_al._Shaping_the_Prior_How_Synthetic_Task_Distributions_Determine_Tabular_Foundation_Model_Quality.txt),
-at TFM pin `8f14e5945ca6b068ed0c76218e769d3e672d0d13`.
-
-Two premises in this project's *original* framing were weakened after reading the source, and the
-honest versions are load-bearing (see [EXPERIMENTAL_DESIGN §1](docs/EXPERIMENTAL_DESIGN.md)): TabICL's
-target standardisation is *shape-preserving*, so bounded/bimodal targets are a question of
-**frequency and alignment, not absence**; and TabICL's prior is **not** class-balanced by default,
-so imbalance there is **uncontrolled, not missing**.
-
-> **Cite pre-emptively:** KnowsTFM (2606.30258) and the steel *Multitask-Informed Prior* (2603.22738)
-> sound like prior modification but are **fine-tuning** — name them to pre-empt the reviewer question.
-
-## The three experiments
-
-Each experiment has a task config, `config/Exp{1,2,3}_{PD,LGD}.yaml`, with a `sweep:` block
-listing the knobs it crosses. Exp3 inherits Exp2's prior and geometry through `prior_file`.
-Full rationale in
-[EXPERIMENTAL_DESIGN](docs/EXPERIMENTAL_DESIGN.md); every value in
-[CONFIG_REFERENCE](docs/CONFIG_REFERENCE.md).
-
-| # | question | how | arms/track |
-|---|---|---|---|
-| **0** | **Does the revised pipeline run correctly?** | CPU + GPU Slurm jobs: portable tests, CUDA/save/resume checks, full-table benchmarks, 34 long-context probes and 24 retention-recipe round trips | 3 base training routes |
-| **1** | **Does the prior help at matched compute?** | four mixtures × three seeds, plus five component removals × three seeds; 12,500 steps | 27 |
-| **2** | **Does continued pretraining transfer?** | two released backbones × four mixtures × two fixed rates × two seeds, 1,500 updates | 32 |
-| **3** | **Which constraints preserve generality?** | fixed 50% mixture; no decay, L2-SP, DiagScale, Q/V LoRA; two seeds | 24 new + 8 reused |
-
-Counts include seeds and both prediction tasks: **Exp1 = (4 mixtures + 5 component removals) × 3 seeds × 2 tasks = 54 runs**;
-**Exp2 = 2 backbones × 4 mixtures × 2 fixed rates × 2 paired seeds × 2 tasks = 64 runs**.
-**Exp3 = 48 new runs + 16 reused Exp2 baselines**, at the fixed 50% mixture; both full-CPT rates are reused. Both experiments stop at 1,500 updates and retain 125/250/500/1,000/1,500 checkpoints. This is a budget-limited adaptation study, not a claim of convergence.
-The component removals are compared with the main 50% mixture; they are not additional mixture levels.
-The 25% Exp1 extension was approved on 26-10-2026 after the initial 48-run campaign. It appends
-indices 9–11 per task, preserving existing run names and benchmark tags. Completed runs stay valid;
-the six additional runs and their benchmarks are complete. Figures sort mixtures numerically.
-
-Exp2's TabICLv2 arm uses the upstream final-stage table distribution: **400–60,000 rows,
-log-uniform, 79–81% context**, with the upstream row-dependent synthetic feature ceiling.
-TabPFN-3 keeps 1,024-row tasks. The 0%-credit continuation is the original-TabICL-prior control;
-released weights are a separate reference. No continuation is guaranteed to avoid forgetting.
-Both credit data and 25 native OOD datasets per task are benchmarked with all eligible rows/features
-and five folds. The constant-context repair passed full CPU/GPU Experiment 0 on 03-11-2026:
-14 CPU stages, 117 GPU stages, including all 38 CUDA tests. Exp1 is complete (54 training
-runs and 158 benchmark slots). At the 05-11 10:28 CET audit, Exp2 has 50 completed runs,
-12 running and two Priority-pending; all 64 configurations are covered. Its benchmarks have not
-started. Keep the running checkout frozen; the revised Exp3 still needs fresh VSC validation.
-Validate the final revision once before Exp2 benchmarking and keep it frozen for Exp3; unchanged
-benchmark output does not require repeating Experiment 0 afterwards. See the [deployment gate](docs/VSC.md#revised-exp3-deployment-gate-05-11-2026).
-Live campaign progress, failures and measured costs are recorded in [RUNS.md](docs/RUNS.md).
-
-Local notebooks use analysis records, not model weights. Keep trained/released checkpoints and
-optimizer state on VSC; do not download whole output archives or checkpoint folders. Filter a
-remote file inventory with `python -m src.utils.result_manifest inventory.json --out analysis.json`
-before transferring its listed files. The plan retains analysis hashes and excludes weights,
-archives, caches and locks; it does not download or delete anything.
-
-`credit_fraction` is the master switch: the share of each batch drawn from our credit-targeted path,
-the rest from the unmodified TabICL prior. `0.0` is the control every arm is measured against.
-
-Each experiment is **two phases**: phase 1 trains (permanent checkpoints along each arm), phase 2 benchmarks every
-checkpoint plus a shared reference column (released TabICLv2, TabPFN-3, CatBoost, linear) through the
-*same* code — the ordering is a fact about the data, not a convention.
-
-## The four code pipelines
-
-Each lives in `src/` and writes under `output CreditICL/`. Main experiment entry points live in `scripts/`; diagnostics and maintenance run as Python modules
-(one folder per experiment; small files on the backed-up tier, checkpoints on project storage under
-the same layout) — the code picks the tier automatically (`output CreditICL/README.md`).
-
-| # | pipeline | code | run it with | produces |
-|---|---|---|---|---|
-| 1 | data | `src/data/` | `python -m src.data.preprocess` | the processed-dataset cache |
-| 2 | prior | `src/prior/` | `python -m src.prior.generate` / `src.prior.measure` | the synthetic task stream + reports |
-| 3 | training | `src/train/` | `scripts/pretrain.py` | permanent and resumable checkpoints per arm |
-| 4 | eval | `src/eval/` | `scripts/evaluate.py` | scores on the 21 real datasets + out-of-domain suites |
-
-Pipeline 2 is the research contribution; pipeline 1 exists only to feed pipeline 4. A few facts worth
-knowing:
-
-- **Data cache:** one parquet file per dataset + a `meta.json` written *last* as the completeness
-  marker. Parquet (not `.npy`) so categorical indices survive — CatBoost and TabPFN need them.
-  Recipes originated in the sibling TabPFNCredit project. CreditICL's documented corrections
-  have dedicated regressions; unchanged columns are still compared with the sibling cache.
-- **Prior pools:** training can read datasets pre-generated once per variant
-  (`prior_cache/<task>__original`, `…__credit_v1`) so a GPU never waits on CPU generation and the two
-  sides differ only by design, not by draw. `--prior-source generate` builds live instead.
-- **Notebooks** — twelve, in four numbered chapters ([reading order](notebooks/README.md)):
-  benchmark/prior diagnostics; Experiment 1 training and matched-budget effects;
-  Experiment 2 adaptation within each backbone; and Experiment 3 retention methods with fixed settings.
-  Logic lives in `src/visualize/`. Every figure is a saved A4 vector PDF with a descriptive caption.
-  Final panels require complete current-protocol benchmark cells; monitoring and local file absence
-  are never presented as final efficacy or live queue state. Exp3 settings and both Exp2 rates are prescribed before benchmarking;
-  designated-holdout historical exposure is disclosed. Official notebook PDFs are committed.
-
-## Repository layout
-
-Follows the group's project template — **fill it in, do not restructure**; the layout and its rules
-are documented once, in [docs/TEMPLATE.md](docs/TEMPLATE.md).
-
-```
-CreditICL/
-├── config/            flat YAML, one per experiment: Exp{1,2,3}_{PD,LGD}.yaml
-├── data/              raw/pd (14) · raw/lgd (7) · processed cache          [gitignored]
-├── checkpoints/       released upstream weights                         [gitignored]
-├── docs/              the eight files below, each with inbound links
-│   ├── EXPERIMENTAL_DESIGN.md   what the three experiments ask, and how they can fail
-│   ├── PRIORS.md                how the credit prior is built
-│   ├── CONFIG_REFERENCE.md      why each config value is what it is
-│   ├── VSC.md                   the cluster: cost, limits, storage, surviving a long sweep
-│   ├── RUNS.md                  the full write-up of every cluster run
-│   ├── AGENTS_MEMORY.md         one line per run, four per dead end
-│   ├── CHANGELOG.md             one chapter per date
-│   └── TEMPLATE.md              the layout this project started from
-├── notebooks/         0. General · Experiments 1–3 — one story (see its README)
-├── output CreditICL/  everything generated: figures/ reference/ experiment_0..3/  [mostly gitignored]
-├── scripts/           four main experiment entry points · slurm/ holds the Slurm jobs
-├── src/               data/ prior/ train/ eval/ models/ visualize/ utils/
-└── tfm-library/       PINNED SUBMODULE — READ-ONLY (one exception)
-```
-
-`src/` holds reusable code; `scripts/` only wires config + data + method together. Runnables use a
-CSV/manifest tracker so a sweep resumes and parallelises — which maps directly onto SLURM arrays.
-
-## Setup (Windows, PowerShell 5.1)
-
-> PowerShell 5.1 has no `&&`. Each command is on its own line deliberately.
-
-**1. Clone with the submodule** (or initialise it in an existing checkout):
-
-```powershell
-git submodule update --init --recursive
-```
-
-**2. Create the venv.** Requires **Python 3.11 or 3.12** (VSC ships both, giving local↔cluster
-parity). On this machine bare `python` is 3.14 — out of range — so name the interpreter explicitly.
-The env is called `.CreditICL` so it matches the committed editor configuration:
-
-```powershell
+~~~powershell
+git clone --recurse-submodules https://github.com/andreasgoethals/CreditICL.git
+cd CreditICL
 py -3.12 -m venv .CreditICL
 .\.CreditICL\Scripts\Activate.ps1
-```
-
-> Replacing an existing venv? Close every terminal/editor holding it first — Windows leaves a
-> half-deleted skeleton otherwise, which then fails as `No pyvenv.cfg` or `No module named
-> 'torch.nn'`. If activation is blocked: `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`.
-
-**3. Install.** PyTorch first (CPU-only is fine locally — all GPU work is on VSC), then the project:
-
-```powershell
-python -m pip install --upgrade pip
 python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-python -m pip install -e ".[dev]"
-```
+python -m pip install -e ".[dev,eval]"
+~~~
 
-**4. Verify:**
+Run each step only after the preceding one succeeds. PowerShell 5.1 does not support `&&`.
+The CPU environment is for development and analysis; model inference and training run on VSC.
+Datasets are not distributed with the repository: a fresh clone is not a complete benchmark
+installation. Do not download weights merely to execute analysis notebooks.
 
-The Slurm shell checks require Bash. Git for Windows includes it; if `bash` is not on the
-terminal's PATH, expose the existing installation in this terminal before testing:
+The Slurm shell tests need Bash. If Git for Windows is installed but Bash is absent from PATH:
 
-```powershell
+~~~powershell
 $creditIclGitRoot = Split-Path (Split-Path (Get-Command git).Source -Parent) -Parent
 $creditIclBashBin = Join-Path $creditIclGitRoot "bin"
 if (Test-Path (Join-Path $creditIclBashBin "bash.exe")) { $env:Path = "$creditIclBashBin;$env:Path" }
-```
+~~~
 
-```powershell
+Then run the tests:
+
+~~~powershell
 $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
-python -c "import torch, numpy, sklearn, pandas; print(torch.__version__)"
 python -m pytest -q
-```
+~~~
 
-`.vscode/settings.json` is committed and points VS Code at `.\.CreditICL\Scripts\python.exe` (auto-
-activated in new terminals; `pytest` rooted at `tests/`). One "Developer: Reload Window" may be
-needed after first creating the venv.
+VS Code uses `.CreditICL/Scripts/python.exe`. Local tests do not replace VSC Experiment 0.
 
-## Running it
+## Analyse results
 
-**Locally** (CPU) — `evaluate.py` preprocesses anything missing, so a fresh clone needs no setup:
+Saved notebooks include figures and section-order printed summaries. To regenerate them from
+available analysis files:
 
-```powershell
-python scripts/evaluate.py --task lgd --models linear,catboost
-```
+~~~powershell
+$env:CREDITICL_DRAW_WORKERS = '1'
+python -m src.utils.run_notebooks
+~~~
 
-> TabPFN-3 reads weights already installed on **VSC PROJECT** (`CreditICL/checkpoints/`,
-> or an explicit `CREDITICL_TABPFN_DIR`). Compute nodes cannot complete an interactive download;
-> validation rejects missing weights before production starts. Do not copy these models to the laptop.
+Prior notebooks generate seeded CPU diagnostics; results notebooks read scores, logs, resolved
+configurations and receipts. Missing results are identified rather than fabricated. See the
+[notebook guide](notebooks/README.md) for the storyline and input requirements.
 
-**On VSC** — validate the current code in a CPU job, then a GPU job:
+**Weights stay on VSC.** Filter the remote inventory before collection:
 
-**While any CreditICL job is queued or running, keep its checkout and environment frozen.**
-Do not pull, update packages, reset output or use the setup commands below in that checkout
-until it finishes. Production revision 0494e7a has passed both validation phases;
-completed results retain their recorded provenance. A later source cutover needs
-matching acceptance before new production submissions.
+~~~powershell
+python -m src.utils.result_manifest inventory.json --out analysis.json
+~~~
 
-```bash
-source scripts/slurm/_activate_env.sh &&
-python -m src.utils.preflight &&
-sbatch --clusters=wice scripts/slurm/exp0_cpu.slurm
-# After the CPU job passes:
-python -m src.utils.preflight --require-exp0-cpu && sbatch --clusters=mindwell scripts/slurm/exp0.slurm
-# After the GPU job passes:
-python -m src.utils.preflight --require-exp0
-python -m src.utils.run_experiment 1 --submit
-```
+This creates a plan, not a download. Transfer only its listed analysis files and verify their
+hashes. Exclude checkpoints, optimizer states, prior pools, runtime images and unfiltered archives.
 
-New VSC dependencies must follow the PROJECT SIF migration plan in [VSC](docs/VSC.md).
-The existing DATA venv is a documented legacy deployment: `update_env.sh --legacy-maintenance`
-is only for an explicitly authorized repair while consumers are idle. Use `fetch_ood` only for a missing cache. This implementation adds no packages. The current
-VSC dependency audit already passed; do not routinely upgrade that environment. The guarded
-pull and Exp0-only cleanup sequence is in [VSC](docs/VSC.md).
+## Run on VSC
 
-Exp2 is already submitted; do not duplicate it. The following are lifecycle commands for a
-validated deployment. **The revised Exp3 is not yet VSC-validated or authorized for submission:**
-finish Exp2 first, deploy safely and complete fresh Exp0 before considering its command.
+Follow [the VSC runbook](docs/VSC.md): local edit/test → commit/push → safe DATA pull →
+CPU/GPU validation → authorized, receipt-backed submission. Freeze code, dependencies and inputs
+while active or queued jobs consume them. Validate changed code in a separate DATA checkout
+when necessary.
 
-```bash
-python -m src.utils.run_experiment 2 --single-cluster --submit
-# Repeat after training to submit only missing benchmarks.
-python -m src.utils.run_experiment 3 --single-cluster --submit
-# Repeat after training to submit only missing benchmarks.
-```
+Git and compact records live on DATA; persistent inputs, results and immutable runtime images
+live on PROJECT; temporary work uses native scratch. Do not relocate a populated environment,
+reset output or repeat a campaign merely to update documentation.
 
-Both Exp2 rates are reported separately: TabICLv2 `2e-5`/`1e-5`, TabPFN-3 `1e-5`/`1e-6`.
-There is no learning-rate pilot or best-on-test selection. Exp3 reuses the 50% runs at
-both predeclared full-CPT rates, with six fixed adaptation recipes. All five saved
-checkpoints are benchmarked on credit and native OOD data. Historical exposure to the credit
-benchmark remains disclosed. See [the registered design](docs/EXPERIMENTAL_DESIGN.md).
-These commands are for the reviewed, validated deployment; no new campaign is launched during
-access/storage migration planning.
+## Repository layout
 
-The Experiment 1 planner includes its main grid and component ablations. Repeat each experiment's
-planner after training to submit only missing benchmarks, or after an interruption to resume incomplete runs.
-The older pool-building launchers refuse submission. Experiment 0 uses selected full-row,
-full-feature tables and wide-input model probes (2,986 PD / 601 LGD columns); the complete five-fold credit/OOD benchmark runs
-in Experiments 1–3. Every eligible column is retained; the synthetic training width is not an
-inference limit. The GPU validation job requires the updated CPU job's PASS receipt first.
+| Path | Role |
+|---|---|
+| `config/Exp*.yaml` | Experiment recipes and sweeps |
+| `scripts/` and `scripts/slurm/` | Direct experiment entry points and cluster launchers |
+| `src/data/`, `src/prior/`, `src/train/`, `src/eval/` | Data, generation, training and evaluation |
+| `src/experiments/`, `src/validation/`, `src/utils/` | Fixed designs, validation and maintenance |
+| `src/visualize/`, `notebooks/` | Shared plotting logic and thin reports |
+| `output CreditICL/` | Generated records and selected committed notebook exports |
+| `data/`, `checkpoints/` | Licensed inputs and model assets, outside Git |
+| `tfm-library/`, `vsc-library/` | Pinned, read-only literature and infrastructure references |
 
-Freeze code, configuration, dependencies and inputs from the CPU submission through GPU
-completion. The GPU script resumes a matching verified campaign, or starts fresh when the code/CPU receipt has changed; it saves every
-finished benchmark fold immediately and reuses completed stages. `DEFERRED` (exit 64) means the
-allocation ended: resubmit `scripts/slurm/exp0.slurm` without pulling, resetting or rerunning CPU.
-`FAILED` requires inspecting the reported error. A two-hour limit per benchmark cell stops an
-unacceptably slow probe early; it never reduces rows, columns, folds or ensemble members. Large
-TabICL inputs use upstream column-attention caches and bounded row blocks to avoid materializing
-the full rows × features × embedding array. Exp0 checks prediction equivalence on CUDA before
-running the full-table capacity probes. The 24-hour allocation is a limit, not a completion estimate.
+The flat config names, numbered notebook chapters and `figures/<notebook>` exports are deliberate
+retained deviations from the template's experiment-first layout. Their established paths preserve
+results and run identities. Inspect pins with `git submodule status`; cite repository dumps by
+symbol name rather than unstable line numbers.
 
-The local venv is for development and analysis only; **do not copy it to VSC**. The cluster's own
-environment, GPU/partition choice, credit costs, storage rule and the checkpoint/resume mechanism are
-all in **[docs/VSC.md](docs/VSC.md)**.
+## Citation and licences
 
-## Conventions
+Use [CITATION.cff](CITATION.cff) for the software and record the exact commit, resolved recipe,
+runtime and reference-library pins used in an analysis. No paper DOI or release date is asserted.
+Cite the relevant TabICLv2, TabPFN-3 and methodological sources separately.
 
-- **Library pin.** Literature claims are written against a recorded `tfm-library` commit (currently
-  **`702d9ab`**, continued-pretraining audit 24-10-2026); record the pin whenever a result depends on it (`git submodule status`).
-- **Cite code dumps by symbol name, never line number** — the dumps are refreshed and lines drift.
-- **Distinguish evaluated from supported.** A mechanism existing in a paper's code is not that paper
-  having measured it; several of this project's premises turned on exactly this.
-- **`output CreditICL/` is generated.** `python -m src.utils.clean_run --reset-output --clean`
-  clears generated output on both tiers, including trained checkpoints, while preserving inputs,
-  released weights and the directory README. Use only for an intentional fresh campaign.
-- **Never write project content into `tfm-library/`** (the one permitted file is
-  `tfm-library/PROJECT_SPECIFIC.md`).
-
-## License
-
-MIT — see [LICENSE](LICENSE). This covers *our code only*; datasets under `data/` carry their own,
-more restrictive terms.
-
-Released model weights retain their upstream licences. In particular, TabPFN-3 uses the
-[TabPFN-3 Non-Commercial License](https://huggingface.co/Prior-Labs/tabpfn_3/blob/main/LICENSE),
-which also applies to derivatives, including our continued-pretraining checkpoints.
-
----
+Original project code is MIT licensed; [LICENSE](LICENSE) distinguishes third-party code,
+datasets and model weights. Their upstream terms continue to apply. TabPFN-3 weights and adapted
+derivatives use the [upstream TabPFN-3 licence](https://huggingface.co/Prior-Labs/tabpfn_3/blob/main/LICENSE).
 
 ## Based on the repository template
 
-This repository was created from
-[**andreasgoethals/0.-Template**](https://github.com/andreasgoethals/0.-Template).
-[`docs/TEMPLATE.md`](docs/TEMPLATE.md) is that template: it explains every folder and file here, and
-it is a **starting point, not a contract** — deviating where the work needs it is fine as long as you
-say so. Generic rule changes belong at the source above.
-
-*Keep this chapter, at the bottom, in every project that starts from the template. Everything above
-it is that project's own.*
+Created from [andreasgoethals/0.-Template](https://github.com/andreasgoethals/0.-Template).
+[docs/TEMPLATE.md](docs/TEMPLATE.md) is the shared starting policy; project-specific choices and
+deviations are documented here and in the VSC runbook. Generic changes belong upstream.
