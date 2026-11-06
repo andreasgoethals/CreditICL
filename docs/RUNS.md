@@ -164,6 +164,24 @@ The one thing to do differently.
 
 ## Runs
 
+### 06-11-2026 — Shorter Exp2 benchmark allocations
+
+On Mindwell at 09:57 CET verified shorter limits for all 46 queued final slots, using in-place
+`scontrol` updates on the existing tasks. LGD `11774788_0–31` uses 45 minutes, PD TabICL
+`11774787_18–23` four hours, and PD TabPFN-3 `11774787_24–31` three hours. The 18 running
+PD tasks were outside the update scope. Exp0 uses its separate validation allocation.
+
+Comparable historical benchmark scoring took 135–170 minutes for PD TabICL (75 logs),
+118 minutes for the PD TabPFN-3 reference, and about 6–10 minutes for LGD TFMs. The widest PD
+dataset, AlgorithmWatch, took up to 25 minutes per fold. Current PD tasks had started their
+last credit dataset after about 51 minutes. Full rows, features, folds and OOD remain in scope.
+
+Mindwell has `sched/backfill`. The LGD forecast moved from Sunday evening to Saturday, while
+individual PD estimates spanned Friday evening through Saturday morning at readback. Use the
+measured bounds as `--time` overrides for later submissions. VSC quoted 7,833,600 for 64 PD
+TabICL, 5,875,200 for 64 PD TabPFN-3 and 2,937,600 for 128 LGD slots, 16,646,400 credits total.
+Use current receipts and credits to plan admission of those earlier checkpoints.
+
 ### 06-11-2026 — Exp2 finals and revised Exp0 started concurrently
 
 All 64 Exp2 runs completed 1,500 updates, including the last 14 PD jobs with Slurm exits 0:0.

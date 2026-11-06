@@ -2,6 +2,7 @@
 
 ## 06-11-2026
 
+- Record measured wall-time limits for queued Exp2 benchmarks and the revised credit quote.
 - Record completed Exp2 training and the parallel benchmark and revised validation admissions.
 
 ## 05-11-2026

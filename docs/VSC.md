@@ -739,6 +739,9 @@ not been submitted; check prerequisites and authorization before launching them.
 validation failures, retired controllers and their recovery evidence belong in `RUNS.md`.
 The earlier `scripts/slurm/deploy.slurm` sequential controller is not used for this campaign.
 Exp2 retains five checkpoint benchmarks per run. All rows/features/five folds remain.
+For later Exp2 benchmark waves, pass `--time` overrides of 45 minutes for LGD, three hours for
+PD TabPFN-3 and four hours for PD TabICL. These bounds use [measured VSC timings](RUNS.md#06-11-2026--shorter-exp2-benchmark-allocations).
+Group the planned slots by backbone where limits differ, preserve array indices and quote each group.
 For Exp2/Exp3, keep `--single-cluster`: these commands use the Mindwell B200 allocation validated
 by Exp0. The planner's optional historical LGD split across wICE A100s is not validated by a B200
 capacity result and is not the launch recipe here.

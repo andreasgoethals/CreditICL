@@ -1,5 +1,21 @@
 # Agents' memory — runs and dead ends
 
+## 06-11-2026 — Exp2 benchmark wall times reduced
+
+Updated the 46 pending tasks in place on Mindwell. `11774788_0–31` now have 45 minutes,
+`11774787_18–23` have four hours, and `11774787_24–31` have three hours. Read back all 46
+limits at 09:57 CET. Basis: 75 comparable PD TabICL scores took 135–170 minutes, the PD
+TabPFN-3 reference took 118 minutes, and LGD TFM scores took 6–10 minutes. The 18 live PD
+tasks were at their last credit dataset after roughly 51 minutes. The exact remaining 256
+slots quote 16,646,400 credits with these resource overrides. Preserve frozen code and use
+the same overrides for the next wave after checking completed receipts and live credits.
+
+**Tried:** Verify the in-place update by matching `squeue` time strings.
+**Result:** Successful updates displayed `45:00` and `3:00:00`, failing padded string checks.
+**Why:** Slurm shortens the displayed time format. `%a` is the account, not the array index.
+**Instead:** Derive the index from the expanded job ID, compare limits in seconds, and read
+back actual state before attempting another mutation.
+
 ## 06-11-2026 — Parallel Exp2 benchmark and revised Exp0
 
 All 64 Exp2 training summaries reached 1,500 updates. The last 14 PD tasks exited 0:0.
