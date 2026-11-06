@@ -36,7 +36,7 @@ def _cells(name, score, datasets=("a", "b", "c"), seeds=(0, 1, 2)):
     return [dict(dataset=dataset, model="crediticl" if trained else name,
                  info_run_name=f"{name}__s{seed}" if trained else "", seed=0, fold=fold,
                  status="ok", protocol=PROTOCOL, roc_auc=score+.005*index+.001*seed,
-                 log_loss=1-score, r2=score, crps=1-score,
+                 log_loss=1-score, brier=(1-score)/2, r2=score, crps=1-score,
                  boundary_mass_abs_err=(1-score)/2, n_classes=2 if index == 0 else 4,
                  true_mass_at_0=.1+index*.1, true_mass_at_1=.05+index*.05,
                  pred_mass_at_0=.1+index*.1+.01*seed,
@@ -64,6 +64,60 @@ def test_seed_marks_do_not_treat_folds_as_training_seeds(final_tables):
     with pytest.raises(ValueError, match="same paired datasets"):
         paper.seed_differences(broken, "exp1_pd__prior-credit_fraction=0p5",
                                "exp1_pd__prior-credit_fraction=0", "roc_auc")
+
+
+def test_exact_score_tables_preserve_dataset_weighting_and_seed_range(monkeypatch, final_tables):
+    monkeypatch.setattr(paper, "final_credit", lambda *a: final_tables)
+    table = paper.score_table("pd")
+    assert table.Configuration.tolist() == ["released TabICLv2", "0 % credit", "50 % credit", "100 % credit"]
+    value = table.loc[table.Configuration.eq("50 % credit"), "ROC-AUC"].iloc[0]
+    assert value == "0.7560 [0.7550, 0.7570]"
+    assert table.Datasets.eq(3).all()
+    assert table["Training seeds"].tolist() == [0, 3, 3, 3]
+
+
+@pytest.mark.parametrize("failure", ["duplicate", "partial", "infinite"])
+def test_exact_scores_never_silently_average_bad_cells(monkeypatch, final_tables, failure):
+    table = final_tables.copy()
+    if failure == "duplicate":
+        table = pd.concat([table, table.iloc[:1]])
+    else:
+        table.loc[table.index[0], "roc_auc"] = np.nan if failure == "partial" else np.inf
+    monkeypatch.setattr(paper, "final_credit", lambda *a: table)
+    with pytest.raises(ValueError, match="duplicate|non-finite"):
+        paper.score_table("pd")
+
+
+def test_exact_tables_retain_unavailable_distribution_scores(monkeypatch, final_tables):
+    point = pd.DataFrame(_cells("linear", .5))
+    point["crps"] = np.nan
+    table = pd.concat([final_tables, point])
+    monkeypatch.setattr(paper, "final_credit", lambda *a: table)
+    assert "unavailable" in paper.score_table("lgd")["CRPS"].tolist()
+    table.loc[table.model.eq("tabiclv2"), "crps"] = np.nan
+    with pytest.raises(ValueError, match="Missing expected crps"):
+        paper.score_table("lgd")
+
+
+def test_effect_colours_use_the_shared_mixture_mapping(monkeypatch, final_tables):
+    from matplotlib.colors import to_rgba
+
+    from src.visualize import style
+    monkeypatch.setattr(paper, "final_credit", lambda *a: final_tables)
+    fig = paper.paired_scores("pd")
+    assert fig.axes[0].collections[0].get_facecolor()[0] == pytest.approx(to_rgba(style.credit_fraction_colour(.5)))
+    assert fig.axes[0].collections[4].get_facecolor()[0] == pytest.approx(to_rgba(style.credit_fraction_colour(1)))
+    assert fig.axes[0].yaxis_inverted()
+
+
+def test_binary_table_counts_tasks_not_rows_and_rejects_multiclass():
+    a = SimpleNamespace(y=torch.tensor([0, 0, 0, 1]))
+    b = SimpleNamespace(y=torch.tensor([0, 1]))
+    table = exposure.binary_exposure_table({"original": [a, b]})
+    assert table.iloc[0]["Tables"] == 2
+    assert table.iloc[0]["Minority share median"] == .375
+    with pytest.raises(ValueError, match="two classes"):
+        exposure.binary_exposure_table({"credit": [SimpleNamespace(y=torch.tensor([0, 1, 2]))]})
 
 
 def test_missing_final_cells_do_not_turn_monitoring_into_efficacy(monkeypatch):
@@ -216,6 +270,19 @@ def test_local_coverage_distinguishes_partial_absent_complete(tmp_path, monkeypa
     assert actual.state.value_counts().to_dict() == {"absent": 10, "completed": 1, "partial": 1}
     assert len(campaign.coverage("pd", components=True)) == 15
     assert "not a live scheduler" in campaign.provenance("pd")
+
+
+def test_snapshot_provenance_does_not_date_new_exp2_results_with_old_exp1_archive(tmp_path, monkeypatch):
+    from src.utils import paths
+    monkeypatch.setattr(paths, "outputs_dir", lambda: tmp_path)
+    folder = tmp_path / "manifests"
+    folder.mkdir()
+    old = {"downloaded_at": "old"}
+    new = {"captured_at": "new", "members": [{"path": "scores.csv"}]}
+    (folder / "notebook_snapshot.json").write_text(json.dumps(old))
+    (folder / "analysis_exp2_20261106.json").write_text(json.dumps(new))
+    assert campaign.snapshot_metadata("exp1") == old
+    assert campaign.snapshot_metadata("exp2") == new
 
 
 def test_retention_design_does_not_present_hypothetical_outcomes():

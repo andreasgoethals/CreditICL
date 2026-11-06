@@ -83,12 +83,15 @@ def _write_telemetry(arm):
 
 
 def test_new_training_views_build_on_synthetic_manifests(isolated_output):
-    control = EXP1_ARM.replace("credit_fraction=1", "credit_fraction=0")
-    for arm in (EXP1_ARM, control):
+    from src.utils.config import expand_with_seeds, load
+    current = next(r["_run_name"] for r in expand_with_seeds(load("config/Exp1_PD.yaml"))
+                   if r["prior"]["credit_fraction"] == 1 and r["seed"] == 2)
+    control = current.replace("credit_fraction=1", "credit_fraction=0")
+    for arm in (current, control):
         _write_progress(arm)
         _write_telemetry(arm)
     assert _drew(tp.credit_vs_control_over_training("pd", "exp1"))
-    assert _drew(tp.metric_by_lever("pd", "filter", "exp1"))
+    assert _drew(tp.metric_by_lever("pd", "credit_fraction", "exp1"))
     assert _drew(tp.per_dataset_curves("pd", 1, "exp1"))
     assert tp.per_dataset_pages("pd", "exp1") >= 1
     assert _drew(tp.weight_gradient_ratios("pd", "exp1"))
@@ -98,8 +101,11 @@ def test_new_training_views_build_on_synthetic_manifests(isolated_output):
 def test_story_figures_build_on_synthetic_manifests(isolated_output):
     """The Part A/B figures added for the story: the sweep map, the monitoring map, the cost of each
     arm, the lever-within-fraction view and the seed spread."""
-    control = EXP1_ARM.replace("credit_fraction=1", "credit_fraction=0")
-    for arm in (EXP1_ARM, control, EXP1_ARM.replace("__s2", "__s1")):
+    from src.utils.config import expand_with_seeds, load
+    current = next(r["_run_name"] for r in expand_with_seeds(load("config/Exp1_PD.yaml"))
+                   if r["prior"]["credit_fraction"] == 1 and r["seed"] == 2)
+    control = current.replace("credit_fraction=1", "credit_fraction=0")
+    for arm in (current, control, current.replace("__s2", "__s1")):
         _write_progress(arm)
         _write_telemetry(arm)
     for fn in (tp.sweep_map, tp.monitoring_coverage, tp.throughput, tp.seed_spread, tp.real_vs_ood):

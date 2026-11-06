@@ -10,21 +10,26 @@ Check [upstream review flags](../vsc-library/UPSTREAM_CHANGES.md) and the
 
 How to submit, what it costs, and how a multi-day sweep survives a cluster that stops routinely.
 
-**Current campaign, 05-11-2026:** Exp1 is complete: 54 training runs and 158 benchmark
-slots, including 25% mixtures. Repaired source 0494e7a passed CPU 62516762 (14 stages)
-and GPU 11763662 (117 stages, 38 CUDA cases), both exit 0:0. Login readiness and
-`src.validation.verify` also passed (123 items). At 10:28 CET Exp2 has 50 completed,
-12 running and two Priority-pending: every one of the 64 configurations is covered. All five
-milestone files exist for completed runs; the log/metric audit found no new failure.
-Preserve their DATA checkout at 0494e7a and accepted PROJECT image r3. A validation-only
-fix must be pulled/tested in a separate DATA checkout while these consumers remain.
-No scheduled monitor, Exp2 benchmark or Exp3 is submitted. Exact IDs and evidence are in
-[RUNS.md](RUNS.md).
-Current shared Lustre PROJECT usage is 253.3G/1T, above the 250-GiB free-space reserve;
-check it afresh before additional campaigns. The 04-11 scoped CreditICL measurement was
-213.0 GiB on PROJECT and ~21 KiB on shared scratch. DATA now uses 44488M/76800M across projects. Both legacy
-DATA environments remain explicit recovery exceptions: cross-login consumer clearance
-is incomplete and the separate Conda environment lacks distinct recovery coverage.
+**Current campaign, 06-11-2026 (16:42 CET):** Exp1 is complete (54 training runs and
+158 benchmark slots). All 64 Exp2 runs reached 1,500 updates; all 320 trained-checkpoint
+benchmark slots have been admitted. Seventy-five had verified credit/OOD artifacts at this
+check, including all 64 final checkpoints; 19 were running and 226 queued. No failed
+task appeared in these five arrays.
+The five benchmark arrays use frozen production source `0494e7a` and the accepted PROJECT
+r3 runtime. Do not pull reporting changes into that active checkout.
+
+Revised Exp3 validation is isolated in the DATA checkout
+`$VSC_DATA/.crediticl-validation-20261106/CreditICL` at `a3891f5`.
+CPU `62581713` passed all 14 stages; GPU `11774935` is running (57 completed stages PASS,
+full 125-stage acceptance pending). Exp3 training is now authorized only
+once full validation, provenance, storage and credit checks pass. None is submitted yet.
+No scheduled monitor exists. Exact admissions and evidence are in [RUNS.md](RUNS.md).
+
+Shared Lustre PROJECT usage was 256.2G/1T (8,905/150,000 files); DATA was
+45,527M/76,800M (387k/10M files), above the reviewed free-space reserves. Available credit
+was 70,032,823. Recheck these shared limits before additional submissions. Both legacy DATA
+environments remain recovery exceptions: cross-login consumer clearance is incomplete,
+and the separate Conda environment lacks distinct recovery coverage.
 Distilled from `vsc-library/VSC Repository.txt` (pin `289ed81df5d101512f91ae1ea3b0083a2de08a96`, checked 20-10-2026) plus what we learned
 running on it; where the docs are silent this file says so. **Verify charge rates and partitions
 against the live docs before a large run.** The recovery procedure after *any* interruption is one

@@ -224,19 +224,19 @@ def test_the_uninformative_figures_were_removed(gone):
 
 def test_the_pd_notebook_does_not_draw_a_target_histogram():
     """A PD target histogram is a bar at 0 and a bar at 1 — the default rate, drawn as a
-    picture. The base-rate figure says it properly, and clustering says the part that matters."""
+    picture. The quantile table describes binary exposure compactly, while the
+    accepted-stream figure retains native class exposure."""
     from src.utils.run_notebooks import notebook_path
 
     nb = json.loads(notebook_path("0.2_prior_visualisation_pd").read_text(encoding="utf-8"))
     code = "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
     assert "plot_target_shapes_by_variant" not in code
-    assert "plot_target_comparison" in code or "plot_base_rate_by_variant" in code
+    assert "exposure.binary_exposure_table" in code
     assert "exposure.class_exposure" in code, "Show the actual native accepted stream, not shuffled-row pseudo-cohorts"
 
 
 def test_both_notebooks_visualise_exp1_because_that_is_the_sweep():
-    """Exp3 runs one prior and Exp2 sweeps a mixture; the 32-prior sweep is Exp1, so that is
-    the config these figures describe. Exp2/Exp3 configs would also refuse to load."""
+    """Prior diagnostics describe the Exp1 generator, not a continuation recipe."""
     from src.utils.run_notebooks import notebook_path
 
     for track, stem in (("lgd", "0.3_prior_visualisation_lgd"), ("pd", "0.2_prior_visualisation_pd")):

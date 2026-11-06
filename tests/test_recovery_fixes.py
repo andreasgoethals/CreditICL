@@ -394,7 +394,7 @@ def test_the_learning_curve_draws_every_saved_checkpoint(tmp_path, monkeypatch):
 
 def test_training_curves_never_mix_two_sweeps(tmp_path, monkeypatch):
     """The redesigned Exp1's run names differ from the 45-arm sweep's, so both sets of manifests can
-    sit in one folder. The curves read the current grid once it has output, the old one until then."""
+    sit in one folder. An absent current grid must not fall back to historical results."""
     from src.utils import paths
     from src.utils.config import expand_with_seeds, load, run_name
     from src.visualize import training_plots as tp
@@ -406,7 +406,7 @@ def test_training_curves_never_mix_two_sweeps(tmp_path, monkeypatch):
 
     old = "exp1_pd__prior-credit_fraction=0p5__prior-filter-mode=banded__s0"
     write(old, pd.DataFrame({"step": [1, 2], "train_loss": [0.5, 0.4]}))
-    assert list(tp.load_progress("pd")) == [old]
+    assert not tp.load_progress("pd")
     new = run_name(expand_with_seeds(load("config/Exp1_PD.yaml"))[0])
     write(new, pd.DataFrame({"step": [0, 500], "train_loss": [0.7, 0.3]}))
     assert list(tp.load_progress("pd")) == [new]

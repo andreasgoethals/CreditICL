@@ -1,5 +1,35 @@
 # Agents' memory — runs and dead ends
 
+## 06-11-2026 — Notebook evidence and figure review
+
+Collected 589 filtered analysis files at 14:32 UTC, including all 64 Exp2 final credit/OOD
+receipts; every size/hash matched. No weights, datasets or environments transferred. Provenance:
+`manifests/analysis_exp2_20261106.json`. The temporary remote transfer ZIP was hash-verified and
+removed. Keep the fixed snapshot distinct from later live benchmark progress.
+
+Read the current research notes and rendered primary-paper figures; the ArXiV draft still has
+superseded grids. Reporting now emphasizes paired effects, dataset heterogeneity and both trained
+and released-model comparators. Design-only and redundant PDFs became tables/text. Obsolete-grid
+fallback is rejected; one final checkpoint cannot populate a trajectory. Large finite LGD loss
+tails remain visible on an explicitly labelled scale. Production/validation checkouts stay frozen.
+
+Final local acceptance: 2,333 tests passed, 58 skipped; all 12 notebooks executed in fresh kernels.
+All 48 final PDFs were individually reviewed; a final rerender was pixel-identical. Captions,
+inline figures and section-order summaries are saved. At 16:42 CET, Exp2 had 75 completed,
+19 running and 226 pending benchmark tasks; all 320 admissions are certain and unique. All
+75 saved receipts passed artifact/hash/cell checks. Revised GPU Exp0 had 57 stages PASS and
+was still running; Exp3 was not submitted before full acceptance.
+
+Automatic approval review blocked removing this task's temporary review images and transfer
+archive without a specific reason. They remain in ignored `.runtime-build/notebook-review-20261106/`;
+do not retry or bypass that rejection. No model weights were downloaded.
+
+**Tried:** Full local pytest with the default desktop PATH.
+**Result:** The first pass had 12 failures: one obsolete figure expectation and 11 missing-Bash cases.
+**Why:** The figure became a quantile table; Git Bash was installed but absent from PATH.
+**Instead:** Update the figure test and expose the existing Git `bin` only to the test process;
+the complete rerun passed without weakening the Slurm checks.
+
 ## 06-11-2026 — All Exp2 benchmark slots admitted
 
 The current production receipt and all 256 earlier checkpoints passed the pre-submission checks.

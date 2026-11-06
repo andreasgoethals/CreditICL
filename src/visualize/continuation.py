@@ -2,11 +2,19 @@
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
 
 from src.experiments import results
-from src.experiments.design import MAIN_STEPS, MILESTONES, RATES, SEEDS, RETENTION_RECIPES, retention_baseline
+from src.experiments.design import (
+    MAIN_STEPS,
+    MILESTONES,
+    RATES,
+    RETENTION_RECIPES,
+    SEEDS,
+    retention_baseline,
+)
 from src.utils import paths
 from src.utils.config import expand_with_seeds, load
 from src.visualize import campaign, style
@@ -69,6 +77,13 @@ def training_curves(track, backbone, *, metric="loss"):
     if not runs:
         return campaign.availability("No training traces match the current fixed-rate design.")
     datasets = training.comparable_datasets(runs, metric)[0] if metric != "loss" else []
+    log_loss_axis = False
+    if metric == "loss":
+        values = np.concatenate([f.train_loss.to_numpy() for f in runs.values()])
+        if not np.isfinite(values).all():
+            raise ValueError("Non-finite recorded loss cannot be silently removed from the training figure")
+        magnitudes = np.abs(values[values != 0])
+        log_loss_axis = bool(len(magnitudes) and magnitudes.max() / magnitudes.min() > 1e4)
     style.apply()
     fig, axes = plt.subplots(1, 2, sharey=True, figsize=style.figsize(style.WIDTH_FULL, .6))
     for lr_index, ax in enumerate(axes):
@@ -93,7 +108,22 @@ def training_curves(track, backbone, *, metric="loss"):
                 ax.plot(common.index, common.mean(axis=1), color=color, linewidth=style.EFFECT_LINE,
                         linestyle=style.credit_fraction_line(fraction))
         ax.set(xlabel="Optimizer updates", title=f"Fixed peak LR {RATES[backbone][lr_index]:g}")
-    axes[0].set_ylabel("Synthetic query loss" if metric == "loss" else f"Development {style.metric_label(metric)}")
+        if log_loss_axis:
+            ax.set_yscale("symlog", linthresh=1)
+    if log_loss_axis and magnitudes.max() > 1e12:
+        # The default symlog locator crowds -1/0/+1 into the same pixels when
+        # finite tail losses span hundreds of decades. Keep zero and use a
+        # sparse set of decades; retain every observation on the shared scale.
+        exponent = int(np.ceil(np.log10(magnitudes.max())))
+        spacing = max(1, int(np.ceil(exponent / 6)))
+        powers = 10. ** np.arange(spacing, exponent + 1, spacing)
+        ticks = (list(-powers[::-1]) if values.min() < 0 else []) + [0.]
+        ticks += list(powers) if values.max() > 0 else []
+        axes[0].set_yticks(ticks)
+        if values.min() >= 0:
+            axes[0].set_ylim(bottom=0)
+    axes[0].set_ylabel(("Synthetic query loss" + ("\n(symlog; linear within ±1)" if log_loss_axis else ""))
+                      if metric == "loss" else f"Development {style.metric_label(metric)}")
     fig.suptitle(BACKBONES[backbone] + (" · optimization" if metric == "loss" else " · small-context monitoring"))
     style.legend_below(fig, [Line2D([], [], color=style.credit_fraction_colour(f),
                              linestyle=style.credit_fraction_line(f), label=style.prior_mix_label(f))
@@ -167,6 +197,29 @@ def checkpoint_curves(track, backbone, *, experiment=2, metric=None):
     return fig
 
 
+def trajectory_ready(track, backbone, *, experiment=2, metric=None):
+    """A measured trajectory needs at least two checkpoints in a fixed group.
+
+    One complete final endpoint is useful, but it cannot describe change with
+    training time. Exp3's reused baselines alone are not retention-method results.
+    """
+    metric = metric or ("roc_auc" if track == "pd" else "r2")
+    for domain in ("credit", "ood"):
+        if track == "lgd" and domain == "ood" and metric == "crps":
+            continue
+        frame = results.complete_scores(results.benchmark_frames(track, experiment, domain=domain),
+                                        metric, experiment=experiment)
+        if frame.empty:
+            continue
+        frame = frame[frame.architecture.eq(backbone)]
+        if experiment == 3:
+            frame = frame[frame.treatment.isin(RETENTION_RECIPES)]
+        groups = ["lr_index", "mixture"] if experiment == 2 else ["treatment"]
+        if not frame.empty and frame.groupby(groups).checkpoint_step.nunique().ge(2).any():
+            return True
+    return False
+
+
 def retention_ready(track, backbone, *, metric=None):
     """A final retention panel needs both domains, not just a finished credit suite."""
     metric = metric or ("roc_auc" if track == "pd" else "r2")
@@ -217,6 +270,8 @@ def retention_effects(track, backbone, *, metric=None):
         if panel < 2:
             labels[1] = "L2-SP vs no decay"
         ax.set_yticks(range(len(methods)), labels)
+    axes[0, 0].invert_yaxis()
+    axes[1, 0].invert_yaxis()
     fig.suptitle(f"{BACKBONES[backbone]} · retention methods at {MAIN_STEPS:,} updates")
     style.legend_below(fig, [Line2D([], [], color=style.MUTED, linestyle="none",
         marker=style.SEED_MARKERS[s], label=f"paired seed {s}") for s in SEEDS], ncol=len(SEEDS))
@@ -244,17 +299,14 @@ def results_summary(track):
     """Exp2's final cell follows its A/B/C/D/E section order exactly."""
     from src.visualize import paper_plots as paper
 
-    lines = ["A · DEVELOPMENT COMPARISON",
+    lines = ["A · COMPLETE SCORES AND COMPARISON CONTRACT",
              "All four mixtures and both fixed rates are reported; development scores select no settings.",
              campaign.continuation_recipe(track).to_string(index=False),
              f"Complete final credit table available: {paper.final_ready(track, 'exp2')}.",
              "\nB · CREDIT EFFECTS"]
-    dev = paper.final_credit(track, "exp2", "development")
-    if dev is not None and not dev.empty:
-        from src.eval.comparisons import identities
-        metric = "roc_auc" if track == "pd" else "r2"
-        means = dev.assign(run=identities(dev)).groupby(["run", "dataset"])[metric].mean().groupby("run").mean()
-        lines.insert(-1, "Development dataset means per training run:\n" + means.to_string())
+    absolute = paper.score_table(track, "exp2")
+    if not absolute.empty:
+        lines.insert(-1, "Final credit scores (equal dataset weights):\n" + absolute.to_string(index=False))
     credit = paper.final_credit(track, "exp2")
     metrics = ("roc_auc", "log_loss", "brier") if track == "pd" else ("r2",)
     for reference in (False, True):

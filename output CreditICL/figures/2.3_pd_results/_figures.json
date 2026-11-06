@@ -1,0 +1,38 @@
+[
+  {
+    "index": 1,
+    "stem": "01_credit_control_tabicl",
+    "name": "credit_control_tabicl",
+    "caption": "Final credit-benchmark differences from 0% continuation at the same backbone and peak learning rate, after 1,500 updates. Large points average paired dataset effects over five folds and two training seeds; intervals resample datasets (nominal 95%) and small markers show seed means. Positive ROC-AUC or R\u00b2 and negative log-loss or CRPS differences favor the credit mixture."
+  },
+  {
+    "index": 2,
+    "stem": "02_dataset_effects_tabicl",
+    "name": "dataset_effects_tabicl",
+    "caption": "Final credit performance difference from the matched 0% continuation for every credit dataset, mixture and fixed peak rate of one backbone. Cells average five folds and two training seeds; the diverging color scale is symmetric about zero and positive ROC-AUC or R\u00b2 differences favor the credit mixture."
+  },
+  {
+    "index": 3,
+    "stem": "03_credit_control_tabpfn3",
+    "name": "credit_control_tabpfn3",
+    "caption": "Final credit-benchmark differences from 0% continuation at the same backbone and peak learning rate, after 1,500 updates. Large points average paired dataset effects over five folds and two training seeds; intervals resample datasets (nominal 95%) and small markers show seed means. Positive ROC-AUC or R\u00b2 and negative log-loss or CRPS differences favor the credit mixture."
+  },
+  {
+    "index": 4,
+    "stem": "04_dataset_effects_tabpfn3",
+    "name": "dataset_effects_tabpfn3",
+    "caption": "Final credit performance difference from the matched 0% continuation for every credit dataset, mixture and fixed peak rate of one backbone. Cells average five folds and two training seeds; the diverging color scale is symmetric about zero and positive ROC-AUC or R\u00b2 differences favor the credit mixture."
+  },
+  {
+    "index": 5,
+    "stem": "05_credit_ood_control",
+    "name": "credit_ood_control",
+    "caption": "Credit versus native-OOD performance differences from equally trained 0% continuation at the same backbone and fixed peak rate. Colors identify mixtures and marker shapes identify rates; small points show seed means. Horizontal and vertical bars independently resample the two dataset domains (nominal 95% intervals), after averaging five folds and two training seeds. Higher ROC-AUC or R\u00b2 is better on both axes."
+  },
+  {
+    "index": 6,
+    "stem": "06_credit_ood_released",
+    "name": "credit_ood_released",
+    "caption": "Credit versus native-OOD performance differences from matching released weights after 1,500 continuation updates, including the 0% generic controls. Colors identify mixtures and shapes distinguish the two fixed rates within each backbone. Bars are separate nominal 95% paired-dataset bootstrap intervals and small points show seed means. Negative ROC-AUC or R\u00b2 indicates degradation from the released model."
+  }
+]

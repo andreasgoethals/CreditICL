@@ -20,8 +20,11 @@ COMPONENTS = {
 }
 
 
-def snapshot_metadata() -> dict:
-    file = paths.outputs_dir() / "manifests" / "notebook_snapshot.json"
+def snapshot_metadata(exp="exp1") -> dict:
+    root = paths.outputs_dir() / "manifests"
+    # Newer experiment-specific imports must not inherit an older archive date.
+    imports = sorted(root.glob(f"analysis_{exp}_*.json"))
+    file = imports[-1] if imports else root / "notebook_snapshot.json"
     return json.loads(file.read_text(encoding="utf-8")) if file.is_file() else {}
 
 
@@ -66,11 +69,15 @@ def provenance(track: str, exp: str = "exp1") -> str:
 
     main = coverage(track, exp)
     extra = coverage(track, exp, components=True) if exp == "exp1" else pd.DataFrame()
-    meta = snapshot_metadata()
+    meta = snapshot_metadata(exp)
     lines = ["LOCAL EVIDENCE — not a live scheduler query",
              f"Experiment {exp.removeprefix('exp')}, {track.upper()}; current benchmark protocol {PROTOCOL}.",
              f"Local notebook-code fingerprint: {source_fingerprint()}."]
-    if meta:
+    if "captured_at" in meta:
+        lines += [f"Analysis-only remote snapshot: {meta['captured_at']}.",
+                  f"Production checkout: {meta.get('production_commit', 'not recorded')}.",
+                  f"Verified compact files: {len(meta.get('members', []))}; no model weights downloaded."]
+    elif meta:
         lines += [f"Downloaded archive: {meta.get('archive_name')}; local download time {meta.get('downloaded_at')}.",
                   f"Archive SHA-256: {meta.get('sha256')}",
                   f"Recorded executable fingerprint: {meta.get('source_fingerprint')}",
@@ -85,6 +92,29 @@ def provenance(track: str, exp: str = "exp1") -> str:
     lines += ["Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.",
               "Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute."]
     return "\n".join(lines)
+
+
+def health_table(track, exp="exp1", *, components=False):
+    """Recorded health and cost per run; no success inferred from low loss alone."""
+    import numpy as np
+
+    rows = []
+    for run in coverage(track, exp, components=components).itertuples():
+        root = paths.runs_dir(int(exp.removeprefix("exp"))) / run.run
+        saved = json.loads((root / "summary.json").read_text(encoding="utf-8")) if (root / "summary.json").is_file() else {}
+        row = {"Configuration": run.label, "Seed": run.seed, "State": run.state,
+               "Updates": run.steps, "Training hours": round(saved.get("train_seconds_total", saved.get("elapsed_s", 0)) / 3600, 2)}
+        telemetry = root / "telemetry.csv"
+        if telemetry.is_file():
+            frame = pd.read_csv(telemetry)
+            for column, label in (("train_loss", "Last recorded loss"), ("grad_global", "Peak recorded grad norm")):
+                if column in frame:
+                    values = pd.to_numeric(frame[column], errors="coerce").dropna()
+                    row[label] = float(values.iloc[-1] if column == "train_loss" else values.max()) if len(values) else float("nan")
+                    row[label + " infinities"] = int(np.isinf(values).sum())
+            row["Telemetry rows"] = len(frame)
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 
 def component_coverage(track: str):

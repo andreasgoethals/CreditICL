@@ -22,250 +22,216 @@ Frequency of source label 1 per binary credit benchmark, sorted, with rates writ
 
 LGD target histograms for seven processed benchmark tables, ordered by row count, with 40 bins on the loss scale [0,1] and dataset-specific vertical scales; titles report the share within 1e-4 of 0 or 1.
 
-**03_boundary_mass_ranking** — `boundary_mass_ranking`
-
-Share of rows within 1e-4 of loss 0 and loss 1 per LGD benchmark, stacked and ordered by their total, with the total written beside each bar.
-
-**04_shapes** — `shapes`
+**03_shapes** — `shapes`
 
 Rows against features for 21 processed source tables on logarithmic axes, with one named point per table; dotted lines mark Experiment 1's synthetic training geometry of 1,024 rows and at most 100 features, not benchmark limits. Experiment 2's TabICLv2 continuation uses larger synthetic tables.
 
-**05_table_inventory** — `table_inventory`
+**04_table_inventory** — `table_inventory`
 
 Processed source-table inventory with one aligned row per dataset: categorical columns as a share of all source columns on the left, and missing feature entries as a share of all source feature entries on the right. Percentages are written beside the marks; axes have separate percentage ranges. PD (circles) and LGD (squares) label the prediction tasks. The inventory precedes prediction-time feature exclusions and fold-fitted encoding; a zero reflects the available processed table, not necessarily complete original records.
 
 ## 0.2_prior_visualisation_pd
 
-**01_binary_minority_exposure** — `binary_minority_exposure`
-
-Minority-class frequencies in 500 fresh unfiltered binary tasks per generator as step histograms; the separate strip marks the minority share min(p,1-p) of each real binary benchmark.
-
-**02_accepted_class_exposure** — `accepted_class_exposure`
+**01_accepted_class_exposure** — `accepted_class_exposure`
 
 Observed class-count shares among 48 accepted tasks per mixture and cumulative binary minority-share distributions from the same accepted stream, seed 1729; legends give total and binary task counts.
 
-**03_candidate_acceptance_difficulty** — `candidate_acceptance_difficulty`
+**02_candidate_acceptance_difficulty** — `candidate_acceptance_difficulty`
 
 Accepted/all candidate counts per source and mixture on the left, and cumulative ExtraTrees out-of-bag pseudo-R² for valid candidates versus accepted tables on the right, pooled across the mixtures in the same production-route diagnostic draw; legends give valid-candidate and accepted counts.
 
-**04_accepted_feature_exposure** — `accepted_feature_exposure`
+**03_accepted_feature_exposure** — `accepted_feature_exposure`
 
 Cumulative distributions of non-padding feature count and the share of features with at most 20 distinct values among 48 accepted tasks per mixture; the latter is a type proxy rather than a categorical schema.
 
-**05_correlated_defaults** — `correlated_defaults`
+**04_correlated_defaults** — `correlated_defaults`
 
 Realised positive-label rates in 80 controlled tasks at a fixed 15% applicant target rate, with independent and correlated risk; selection, threshold rules, label noise, shifts and scorecard binning are disabled; 400 rows per task and the configured cohort recipe are used, and the second panel varies asset correlation.
 
-**06_shift_kinds** — `shift_kinds`
+**05_shift_kinds** — `shift_kinds`
 
 Context against query summaries per synthetic task for cohort, covariate, prior-probability and selection shifts, 60 tasks with and 60 without each shift; the dashed line marks equality. Covariate means use the whole-table mean and standard deviation, so their opposite signs follow from centering; their distance from equality records the separation. Open gray squares mark shift-off tasks and blue circles mark shift-on tasks.
 
-**07_covariate_missingness** — `covariate_missingness`
+**06_covariate_missingness** — `covariate_missingness`
 
 Missing-entry rates in six equally sized groups ordered from the lowest to highest value of one synthetic feature, repeated across six columns in 4,000 rows. Gray squares use a constant missingness probability; blue circles use feature-dependent probabilities. Both target 20% missing entries overall (dotted line); one fixed random draw creates sampling variation. No outcome labels enter the mask.
 
-**08_unfiltered_difficulty** — `unfiltered_difficulty`
+**07_unfiltered_difficulty** — `unfiltered_difficulty`
 
 ExtraTrees out-of-bag pseudo-R² for 120 unfiltered tasks per generator and real PD benchmarks averaged over three 1,024-row subsamples; marker fill records the hypothetical generic statistical-filter decision.
 
 ## 0.3_prior_visualisation_lgd
 
-**01_target_shapes** — `target_shapes`
-
-Target histograms for three unfiltered tasks per generator, 25 bins per panel; generic targets use their own scales and raw credit losses use [0,1], with share of rows on the vertical axes.
-
-**02_raw_credit_loss_masses** — `raw_credit_loss_masses`
+**01_raw_credit_loss_masses** — `raw_credit_loss_masses`
 
 Raw loss mass at 0 against mass at 1 for 500 unfiltered credit tasks, with one star per real LGD benchmark and percentage axes; both endpoints use tolerance 1e-4, and generic-scale targets are excluded.
 
-**03_standardised_endpoint_ties** — `standardised_endpoint_ties`
+**02_standardised_endpoint_ties** — `standardised_endpoint_ties`
 
 Share of rows tied at each table minimum and maximum in 500 tasks per generator, shown in separate panels with identical axes. Each point is one table after the same context-fitted target standardization, with ties defined within 1e-4 standardized units; these extrema are not economic loss zero and one.
 
-**04_zoib_response** — `zoib_response`
+**03_zoib_response** — `zoib_response`
 
 ZOIB endpoint probabilities and interior loss mean against a shared controlled recovery driver, for macro values -1, 0 and +1; one parameter draw uses seed 0 from the production sampler, with the three component drivers held equal.
 
-**05_unfiltered_difficulty** — `unfiltered_difficulty`
+**04_unfiltered_difficulty** — `unfiltered_difficulty`
 
 ExtraTrees out-of-bag pseudo-R² for 120 unfiltered tasks per generator and real LGD benchmarks averaged over three 1,024-row subsamples, with medians and hypothetical statistical-filter decisions.
-
-**06_raw_credit_real_distance** — `raw_credit_real_distance`
-
-Marginal histogram distance from pooled raw credit-prior targets to each real LGD target distribution on common [0,1] bins, as sorted bars; this panel contains no generic-prior efficacy comparison.
 
 # 1. Experiment 1
 
 ## 1.1_pd_training
 
-**01_main_run_coverage** — `main_run_coverage`
+**01_training_loss** — `training_loss`
 
-Main-comparison configurations against training seeds, one cell per configured run, with completion supported by the saved summary, partial-trace percentages relative to the configured update budget and explicit absence of local records.
+Synthetic query loss against optimizer updates for the four Experiment 1 mixtures. Thin traces smooth each seed with a centered five-record moving mean; thick curves show the median across finished seeds on a shared log-spaced interpolation grid within their common observed range. Different synthetic losses do not rank credit prediction quality.
 
-**02_component_run_coverage** — `component_run_coverage`
+**02_development_control_gap** — `development_control_gap`
 
-Five conditional component removals against three training seeds at a fixed 50% credit mixture, one cell per configured run, labelled completed, partial trace, or no local output.
-
-**03_training_loss** — `training_loss`
-
-Training loss against update for each main run, smoothed over five logged batches, with mixture medians from completed runs; dotted traces are incomplete local runs.
-
-**04_training_cost** — `training_cost`
-
-Median recorded optimizer updates per second for each main training run on the left, and the implied hours for 12,500 updates on the right; color and shape identify mixtures, and black bars mark mixture medians.
-
-**05_gradient_health** — `gradient_health`
-
-Mean recorded gradient norms by architecture block on the left and gradient-to-weight norm ratios on the right, against training update on logarithmic vertical axes; curves average available main runs after interpolation to common updates, and line patterns identify blocks.
-
-**06_development_curves** — `development_curves`
-
-Development monitoring score against update for each downloaded main run, with mixture means at common supported updates and incomplete local traces shown separately.
-
-**07_development_control_gap** — `development_control_gap`
-
-Development monitoring-score differences between credit mixtures and their 0% controls, paired by training seed and exact recorded update. Lines show the mean paired difference and bands show ±1 sample standard deviation across paired seeds; all pairs must contribute at each plotted update. Zero marks equal monitoring performance. These descriptive development curves are not final cross-validation estimates.
-
-**08_development_seed_spread** — `development_seed_spread`
-
-Final recorded development monitoring scores per completed configuration and training seed, with within-configuration ranges and means; these values are separate from final full-table cross-validation.
-
-**09_monitoring_dataset_coverage** — `monitoring_dataset_coverage`
-
-Monitoring inventory with one cell per dataset and run, identifying common development cells used in means, other scored cells, entirely missing scores and unmonitored cells.
+Small-context development-score differences from the seed-matched 0% credit control against optimizer updates. Curves use the same common development datasets and recorded steps; zero marks equal performance. Lines show paired seed means and shading spans plus/minus one training-seed standard deviation, not a confidence interval.
 
 ## 1.2_lgd_training
 
-**01_main_run_coverage** — `main_run_coverage`
+**01_training_loss** — `training_loss`
 
-Main-comparison configurations against training seeds, one cell per configured run, with completion supported by the saved summary, partial-trace percentages relative to the configured update budget and explicit absence of local records.
+Synthetic query loss against optimizer updates for the four Experiment 1 mixtures. Thin traces smooth each seed with a centered five-record moving mean; thick curves show the median across finished seeds on a shared log-spaced interpolation grid within their common observed range. Different synthetic losses do not rank credit prediction quality.
 
-**02_component_run_coverage** — `component_run_coverage`
+**02_development_control_gap** — `development_control_gap`
 
-Five conditional component removals against three training seeds at a fixed 50% credit mixture, one cell per configured run, labelled completed, partial trace, or no local output.
-
-**03_training_loss** — `training_loss`
-
-Training loss against update for each main run, smoothed over five logged batches, with mixture medians from completed runs; dotted traces are incomplete local runs.
-
-**04_training_cost** — `training_cost`
-
-Median recorded optimizer updates per second for each main training run on the left, and the implied hours for 12,500 updates on the right; color and shape identify mixtures, and black bars mark mixture medians.
-
-**05_gradient_health** — `gradient_health`
-
-Mean recorded gradient norms by architecture block on the left and gradient-to-weight norm ratios on the right, against training update on logarithmic vertical axes; curves average available main runs after interpolation to common updates, and line patterns identify blocks.
-
-**06_development_curves** — `development_curves`
-
-Development monitoring score against update for each downloaded main run, with mixture means at common supported updates and incomplete local traces shown separately.
-
-**07_development_control_gap** — `development_control_gap`
-
-Development monitoring-score differences between credit mixtures and their 0% controls, paired by training seed and exact recorded update. Lines show the mean paired difference and bands show ±1 sample standard deviation across paired seeds; all pairs must contribute at each plotted update. Zero marks equal monitoring performance. These descriptive development curves are not final cross-validation estimates.
-
-**08_development_seed_spread** — `development_seed_spread`
-
-Final recorded development monitoring scores per completed configuration and training seed, with within-configuration ranges and means; these values are separate from final full-table cross-validation.
-
-**09_monitoring_dataset_coverage** — `monitoring_dataset_coverage`
-
-Monitoring inventory with one cell per dataset and run, identifying common development cells used in means, other scored cells, entirely missing scores and unmonitored cells.
+Small-context development-score differences from the seed-matched 0% credit control against optimizer updates. Curves use the same common development datasets and recorded steps; zero marks equal performance. Lines show paired seed means and shading spans plus/minus one training-seed standard deviation, not a confidence interval.
 
 ## 1.3_pd_results
 
-**01_development_selection** — `development_selection`
+**01_paired_credit_effect** — `paired_credit_effect`
 
-Complete current-protocol final development ROC-AUC or R² per configuration, with one point per training seed after fold and dataset averaging and a horizontal span for its seed range; released references remain separate.
+Final designated-holdout performance differences from the equally trained 0% credit control. Large points average paired dataset effects after five-fold and training-seed averaging; intervals are nominal 95% paired-dataset bootstrap intervals and small markers show seed means. Positive ROC-AUC or R² and negative log-loss or CRPS differences favor treatment.
 
-**02_paired_credit_effect** — `paired_credit_effect`
+**02_per_dataset_control_gap** — `per_dataset_control_gap`
 
-Final designated-holdout metric differences against each architecture’s equally trained 0% control, paired within dataset and training seed; large dots are means, lines nominal 95% dataset bootstrap intervals, and small marks individual training seeds.
+Final performance difference from the matched 0% control for every designated-holdout credit dataset and mixture, averaging five folds and three training seeds within each dataset. The diverging scale is centered on zero; positive ROC-AUC or R² differences favor the credit mixture.
 
-**03_per_dataset_control_gap** — `per_dataset_control_gap`
+**03_credit_generality_frontier** — `credit_generality_frontier`
 
-Mean final ROC-AUC or R² difference against the architecture-matched 0% control per designated-holdout dataset and mixture, averaging folds and training seeds within each dataset.
+Final mean credit performance difference against native-OOD performance difference for each credit mixture, relative to the equally trained 0% control. Horizontal and vertical bars are separate nominal 95% paired-dataset bootstrap intervals; small marks show paired training-seed effects. Higher ROC-AUC or R² is better on both axes; zero lines indicate no difference.
 
-**04_paired_native_ood** — `paired_native_ood`
+**04_conditional_component_effects** — `conditional_component_effects`
 
-Final native OOD metric differences against the equally trained 0% control, averaged within each dataset over five folds and training seeds, with nominal 95% paired-dataset intervals and seed marks.
-
-**05_credit_generality_frontier** — `credit_generality_frontier`
-
-Final credit metric difference on the horizontal axis against native OOD difference on the vertical axis for each mixture and backbone; zero lines mark the equally trained control, and domain-specific nominal 95% dataset intervals and paired seed marks are shown.
-
-**06_ood_binary_diagnostic** — `ood_binary_diagnostic`
-
-Final paired OOD ROC-AUC and log-loss differences against the equally trained 0% control, restricted to native binary classification tasks, with dataset counts, training-seed marks and descriptive paired-dataset bootstrap intervals.
-
-**07_ood_multiclass_diagnostic** — `ood_multiclass_diagnostic`
-
-Final paired OOD ROC-AUC and log-loss differences against the equally trained 0% control, restricted to native multiclass tasks without binarizing labels, with dataset counts, training-seed marks and descriptive paired-dataset bootstrap intervals.
-
-**08_conditional_component_effects** — `conditional_component_effects`
-
-Final designated-holdout metric differences for five component removals against the full seed-matched 50% prior package, with dataset-level nominal 95% bootstrap intervals and individual training-seed marks.
+Final designated-holdout metric differences for five component removals from the full 50% prior package, with matched training seeds and five folds. Large points show mean paired-dataset effects, bars show nominal 95% dataset-bootstrap intervals, and small markers show training-seed means. Negative ROC-AUC or R² and positive log-loss or CRPS differences indicate deterioration after removal.
 
 ## 1.4_lgd_results
 
-**01_development_selection** — `development_selection`
+**01_paired_credit_effect** — `paired_credit_effect`
 
-Complete current-protocol final development ROC-AUC or R² per configuration, with one point per training seed after fold and dataset averaging and a horizontal span for its seed range; released references remain separate.
+Final designated-holdout performance differences from the equally trained 0% credit control. Large points average paired dataset effects after five-fold and training-seed averaging; intervals are nominal 95% paired-dataset bootstrap intervals and small markers show seed means. Positive ROC-AUC or R² and negative log-loss or CRPS differences favor treatment.
 
-**02_paired_credit_effect** — `paired_credit_effect`
+**02_per_dataset_control_gap** — `per_dataset_control_gap`
 
-Final designated-holdout metric differences against each architecture’s equally trained 0% control, paired within dataset and training seed; large dots are means, lines nominal 95% dataset bootstrap intervals, and small marks individual training seeds.
+Final performance difference from the matched 0% control for every designated-holdout credit dataset and mixture, averaging five folds and three training seeds within each dataset. The diverging scale is centered on zero; positive ROC-AUC or R² differences favor the credit mixture.
 
-**03_per_dataset_control_gap** — `per_dataset_control_gap`
+**03_credit_generality_frontier** — `credit_generality_frontier`
 
-Mean final ROC-AUC or R² difference against the architecture-matched 0% control per designated-holdout dataset and mixture, averaging folds and training seeds within each dataset.
+Final mean credit performance difference against native-OOD performance difference for each credit mixture, relative to the equally trained 0% control. Horizontal and vertical bars are separate nominal 95% paired-dataset bootstrap intervals; small marks show paired training-seed effects. Higher ROC-AUC or R² is better on both axes; zero lines indicate no difference.
 
-**04_paired_native_ood** — `paired_native_ood`
+**04_conditional_component_effects** — `conditional_component_effects`
 
-Final native OOD R² differences against the equally trained 0% control, averaged within each dataset over five folds and training seeds, with nominal 95% paired-dataset intervals and seed marks.
+Final designated-holdout metric differences for five component removals from the full 50% prior package, with matched training seeds and five folds. Large points show mean paired-dataset effects, bars show nominal 95% dataset-bootstrap intervals, and small markers show training-seed means. Negative ROC-AUC or R² and positive log-loss or CRPS differences indicate deterioration after removal.
 
-**05_credit_generality_frontier** — `credit_generality_frontier`
+**05_observed_predicted_endpoint_mass** — `observed_predicted_endpoint_mass`
 
-Final credit metric difference on the horizontal axis against native OOD difference on the vertical axis for each mixture and backbone; zero lines mark the equally trained control, and domain-specific nominal 95% dataset intervals and paired seed marks are shown.
-
-**06_conditional_component_effects** — `conditional_component_effects`
-
-Final designated-holdout metric differences for five component removals against the full seed-matched 50% prior package, with dataset-level nominal 95% bootstrap intervals and individual training-seed marks.
-
-**07_lgd_distributional_scorecard** — `lgd_distributional_scorecard`
-
-Paired designated-holdout differences in R², approximate CRPS and absolute endpoint-mass error against equally trained 0% controls, using predictive distributions on a 99-level quantile grid and tolerance 1e-4; intervals resample datasets.
-
-**08_observed_predicted_endpoint_mass_tabicl** — `observed_predicted_endpoint_mass_tabicl`
-
-Observed portfolio mass against mean predicted mass at loss 0 and loss 1 for the TabICLv2 family, one point per dataset and training seed after five-fold averaging, with an identity line and named datasets; endpoints use tolerance 1e-4 and a 99-level predictive-quantile approximation.
+Portfolio-average predicted versus observed mass near full recovery (loss 0) and total loss (loss 1) for designated-holdout LGD datasets. Each mark is a dataset/training-seed mean over five folds; colors and shapes distinguish credit mixtures and released TabICLv2. The diagonal marks aggregate agreement. Endpoint tolerance is 1e-4; predictive masses use the 99-level quantile approximation. This is not conditional calibration.
 
 # 2. Experiment 2
 
 ## 2.1_pd_finetuning
 
-**01_registered_continuation_design** — `registered_continuation_design`
+**01_loss_tabicl** — `loss_tabicl`
 
-Registered continuation design: two released backbones, two prediction tasks, four credit-prior mixtures, two predetermined peak learning rates and two paired training seeds give 64 runs. Five checkpoint evaluations use all eligible rows and features with shared five-fold splits; 1,500 updates is the primary endpoint.
+Synthetic query loss against optimizer update, separated by backbone and peak learning rate; colors identify credit fractions, thin traces show seeds and thick curves average two seeds at common recorded steps. A symmetric-log loss axis, explicitly labeled where used, retains extreme finite losses; its central interval [-1,1] is linear.
+
+**02_loss_tabpfn3** — `loss_tabpfn3`
+
+Synthetic query loss against optimizer update, separated by backbone and peak learning rate; colors identify credit fractions, thin traces show seeds and thick curves average two seeds at common recorded steps. A symmetric-log loss axis, explicitly labeled where used, retains extreme finite losses; its central interval [-1,1] is linear.
+
+**03_development_monitoring_tabicl** — `development_monitoring_tabicl`
+
+Development monitoring score against update for one backbone, with separate panels for both predetermined peak rates and colors for the credit mixtures; small-context diagnostics are distinct from the full-table five-fold benchmark.
+
+**04_development_monitoring_tabpfn3** — `development_monitoring_tabpfn3`
+
+Development monitoring score against update for one backbone, with separate panels for both predetermined peak rates and colors for the credit mixtures; small-context diagnostics are distinct from the full-table five-fold benchmark.
 
 ## 2.2_lgd_finetuning
 
-**01_registered_continuation_design** — `registered_continuation_design`
+**01_loss_tabicl** — `loss_tabicl`
 
-Registered continuation design: two released backbones, two prediction tasks, four credit-prior mixtures, two predetermined peak learning rates and two paired training seeds give 64 runs. Five checkpoint evaluations use all eligible rows and features with shared five-fold splits; 1,500 updates is the primary endpoint.
+Synthetic query loss against optimizer update, separated by backbone and peak learning rate; colors identify credit fractions, thin traces show seeds and thick curves average two seeds at common recorded steps. A symmetric-log loss axis, explicitly labeled where used, retains extreme finite losses; its central interval [-1,1] is linear.
+
+**02_loss_tabpfn3** — `loss_tabpfn3`
+
+Synthetic query loss against optimizer update, separated by backbone and peak learning rate; colors identify credit fractions, thin traces show seeds and thick curves average two seeds at common recorded steps. A symmetric-log loss axis, explicitly labeled where used, retains extreme finite losses; its central interval [-1,1] is linear.
+
+**03_development_monitoring_tabicl** — `development_monitoring_tabicl`
+
+Development monitoring score against update for one backbone, with separate panels for both predetermined peak rates and colors for the credit mixtures; small-context diagnostics are distinct from the full-table five-fold benchmark.
+
+**04_development_monitoring_tabpfn3** — `development_monitoring_tabpfn3`
+
+Development monitoring score against update for one backbone, with separate panels for both predetermined peak rates and colors for the credit mixtures; small-context diagnostics are distinct from the full-table five-fold benchmark.
 
 ## 2.3_pd_results
 
-_No figures produced._
+**01_credit_control_tabicl** — `credit_control_tabicl`
+
+Final credit-benchmark differences from 0% continuation at the same backbone and peak learning rate, after 1,500 updates. Large points average paired dataset effects over five folds and two training seeds; intervals resample datasets (nominal 95%) and small markers show seed means. Positive ROC-AUC or R² and negative log-loss or CRPS differences favor the credit mixture.
+
+**02_dataset_effects_tabicl** — `dataset_effects_tabicl`
+
+Final credit performance difference from the matched 0% continuation for every credit dataset, mixture and fixed peak rate of one backbone. Cells average five folds and two training seeds; the diverging color scale is symmetric about zero and positive ROC-AUC or R² differences favor the credit mixture.
+
+**03_credit_control_tabpfn3** — `credit_control_tabpfn3`
+
+Final credit-benchmark differences from 0% continuation at the same backbone and peak learning rate, after 1,500 updates. Large points average paired dataset effects over five folds and two training seeds; intervals resample datasets (nominal 95%) and small markers show seed means. Positive ROC-AUC or R² and negative log-loss or CRPS differences favor the credit mixture.
+
+**04_dataset_effects_tabpfn3** — `dataset_effects_tabpfn3`
+
+Final credit performance difference from the matched 0% continuation for every credit dataset, mixture and fixed peak rate of one backbone. Cells average five folds and two training seeds; the diverging color scale is symmetric about zero and positive ROC-AUC or R² differences favor the credit mixture.
+
+**05_credit_ood_control** — `credit_ood_control`
+
+Credit versus native-OOD performance differences from equally trained 0% continuation at the same backbone and fixed peak rate. Colors identify mixtures and marker shapes identify rates; small points show seed means. Horizontal and vertical bars independently resample the two dataset domains (nominal 95% intervals), after averaging five folds and two training seeds. Higher ROC-AUC or R² is better on both axes.
+
+**06_credit_ood_released** — `credit_ood_released`
+
+Credit versus native-OOD performance differences from matching released weights after 1,500 continuation updates, including the 0% generic controls. Colors identify mixtures and shapes distinguish the two fixed rates within each backbone. Bars are separate nominal 95% paired-dataset bootstrap intervals and small points show seed means. Negative ROC-AUC or R² indicates degradation from the released model.
 
 ## 2.4_lgd_results
 
-_No figures produced._
+**01_credit_control_tabicl** — `credit_control_tabicl`
+
+Final credit-benchmark differences from 0% continuation at the same backbone and peak learning rate, after 1,500 updates. Large points average paired dataset effects over five folds and two training seeds; intervals resample datasets (nominal 95%) and small markers show seed means. Positive ROC-AUC or R² and negative log-loss or CRPS differences favor the credit mixture.
+
+**02_dataset_effects_tabicl** — `dataset_effects_tabicl`
+
+Final credit performance difference from the matched 0% continuation for every credit dataset, mixture and fixed peak rate of one backbone. Cells average five folds and two training seeds; the diverging color scale is symmetric about zero and positive ROC-AUC or R² differences favor the credit mixture.
+
+**03_credit_control_tabpfn3** — `credit_control_tabpfn3`
+
+Final credit-benchmark differences from 0% continuation at the same backbone and peak learning rate, after 1,500 updates. Large points average paired dataset effects over five folds and two training seeds; intervals resample datasets (nominal 95%) and small markers show seed means. Positive ROC-AUC or R² and negative log-loss or CRPS differences favor the credit mixture.
+
+**04_dataset_effects_tabpfn3** — `dataset_effects_tabpfn3`
+
+Final credit performance difference from the matched 0% continuation for every credit dataset, mixture and fixed peak rate of one backbone. Cells average five folds and two training seeds; the diverging color scale is symmetric about zero and positive ROC-AUC or R² differences favor the credit mixture.
+
+**05_credit_ood_control** — `credit_ood_control`
+
+Credit versus native-OOD performance differences from equally trained 0% continuation at the same backbone and fixed peak rate. Colors identify mixtures and marker shapes identify rates; small points show seed means. Horizontal and vertical bars independently resample the two dataset domains (nominal 95% intervals), after averaging five folds and two training seeds. Higher ROC-AUC or R² is better on both axes.
+
+**06_credit_ood_released** — `credit_ood_released`
+
+Credit versus native-OOD performance differences from matching released weights after 1,500 continuation updates, including the 0% generic controls. Colors identify mixtures and shapes distinguish the two fixed rates within each backbone. Bars are separate nominal 95% paired-dataset bootstrap intervals and small points show seed means. Negative ROC-AUC or R² indicates degradation from the released model.
 
 # 3. Experiment 3
 
 ## 3.1_retention
 
-**01_registered_retention_design** — `registered_retention_design`
-
-Registered retention comparison at a fixed 50% credit mixture: six additional recipes across two backbones, two prediction tasks and two paired seeds give 48 runs. Sixteen fixed-rate full-CPT-with-decay baselines are reused from Experiment 2. Both baseline rates and all six recipes are reported; five checkpoints end at the primary 1,500-update endpoint.
+_No figures produced._

@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
-from matplotlib.ticker import MaxNLocator
+from matplotlib.ticker import MaxNLocator, PercentFormatter
 
 from src.eval import analysis
 from src.eval.comparisons import (
@@ -19,6 +19,7 @@ from src.eval.comparisons import (
     paired_ablation_effects,
     paired_prior_effects,
     paired_reference_effects,
+    require_balanced_cells,
 )
 from src.eval.metrics import METRIC_DIRECTIONS
 from src.eval.protocol import PROTOCOL
@@ -139,6 +140,73 @@ def _table(frame, metric, track, *, ablations=False, reference=False):
     return (paired_reference_effects if reference else paired_prior_effects)(frame, metric)
 
 
+def _order(name):
+    """Scientific dose/rate order, independent of array IDs or observed scores."""
+    fraction = re.search(r"credit_fraction=([0-9p.]+)", name)
+    rate = re.search(r"lr_index=(\d+)", name)
+    return (int(name.startswith("exp")), int("tabpfn3" in name),
+            int(rate.group(1)) if rate else 0,
+            float(fraction.group(1).replace("p", ".")) if fraction else -1, name)
+
+
+def score_table(track, exp="exp1", *, domain="credit", role="holdout", subset="all"):
+    """Exact absolute scores without ranking or pooling architectures/rates.
+
+    Folds are averaged within each dataset and training seed, then datasets
+    equally, then seeds. Point-only references cannot supply CRPS or predictive
+    endpoint masses. Missing expected scores are errors, not smaller means.
+    """
+    frame = (final_credit(track, exp, role) if domain == "credit"
+             else analysis.load_ood_results(track, exp))
+    if frame is None or frame.empty:
+        return pd.DataFrame()
+    if domain == "ood":
+        frame = _subset(frame, subset)
+    require_balanced_cells(frame)
+    part = frame.assign(identity=identities(frame))
+    part["configuration"] = part.identity.str.replace(r"__s\d+$", "", regex=True)
+    metrics = (("roc_auc", "log_loss", "brier") if track == "pd" else
+               ("r2", "crps", "boundary_mass_abs_err") if domain == "credit" else ("r2",))
+    rows = []
+    for name in sorted(part.configuration.unique(), key=_order):
+        cells = part[part.configuration.eq(name)]
+        row = {"Configuration": label(name), "Datasets": cells.dataset.nunique(),
+               "Training seeds": cells.identity.nunique() if name.startswith("exp") else 0}
+        for metric in metrics:
+            values = cells.get(metric, pd.Series(dtype=float))
+            if values.empty or values.isna().all():
+                if name in {"linear", "catboost"} and metric in {"crps", "boundary_mass_abs_err"}:
+                    row[style.metric_label(metric)] = "unavailable"
+                    continue
+                raise ValueError(f"Missing expected {metric} for {name}")
+            if not np.isfinite(values).all():
+                raise ValueError(f"Partial/non-finite {metric} for {name}")
+            means = cells.groupby(["identity", "dataset"])[metric].mean().groupby("identity").mean()
+            row[style.metric_label(metric)] = f"{means.mean():.4f}" + (
+                f" [{means.min():.4f}, {means.max():.4f}]" if len(means) > 1 else "")
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def contrast_table(track, exp="exp1", *, domain="credit", subset="all", reference=False,
+                   metrics=None):
+    """Compact supporting effects with the same pairing as the main figures."""
+    frame = final_credit(track, exp) if domain == "credit" else analysis.load_ood_results(track, exp)
+    if frame is None or frame.empty:
+        return pd.DataFrame()
+    if domain == "ood":
+        frame = _subset(frame, subset)
+    metrics = metrics or (("roc_auc", "log_loss", "brier") if track == "pd" else
+                          ("r2", "crps", "boundary_mass_abs_err") if domain == "credit" else ("r2",))
+    rows = []
+    for metric in metrics:
+        for row in _table(frame, metric, track, reference=reference).itertuples():
+            rows.append({"Configuration": label(row.configuration), "Metric": style.metric_label(metric),
+                         "Mean difference": row.mean_difference, "95% dataset interval":
+                         f"[{row.ci_low:+.4f}, {row.ci_high:+.4f}]", "Datasets": row.datasets})
+    return pd.DataFrame(rows)
+
+
 def seed_differences(frame, configuration, control, metric):
     """One mean paired-dataset difference per training seed; folds averaged first."""
     part = frame.assign(_identity=identities(frame))
@@ -175,13 +243,15 @@ def paired_scores(track, exp="exp1", *, domain="credit", ablations=False,
     tables = [_table(frame, m, track, ablations=ablations, reference=reference) for m in metrics]
     if any(t.empty for t in tables):
         return campaign.availability("No complete matched treatment and comparator cells are available.")
+    order = sorted(tables[0].configuration, key=_order)
+    tables = [t.set_index("configuration").loc[order].reset_index() for t in tables]
     style.apply()
     fig, axes = plt.subplots(1, len(metrics), sharey=True,
                              figsize=style.row_figsize(len(tables[0]), per_row=.37, base=1.65), squeeze=False)
     seed_ids = set()
     for ax, metric, table in zip(axes[0], metrics, tables):
         for i, row in enumerate(table.itertuples()):
-            color = style.CREDIT
+            color = style.CREDIT if ablations else _mass_colour(row.configuration)
             if np.isfinite([row.ci_low, row.ci_high]).all():
                 ax.plot([row.ci_low, row.ci_high], [i, i], color=color, linewidth=style.EFFECT_LINE)
             ax.scatter([row.mean_difference], [i], color=color, s=style.EFFECT_POINT, zorder=4)
@@ -198,11 +268,12 @@ def paired_scores(track, exp="exp1", *, domain="credit", ablations=False,
         ax.xaxis.set_major_locator(MaxNLocator(nbins=3))
         ax.set_yticks(range(len(table)), [_compact_label(r.configuration, backbone) for r in table.itertuples()])
         ax.tick_params(axis="y", labelsize=style.PANEL_TEXT)
+    axes[0, 0].invert_yaxis()
     counts = [int(v) for v in tables[0].datasets.unique()]
     comparator = "full 50% package" if ablations else "released weights" if reference else "equally trained 0% control"
     fig.suptitle(("TabPFN-3 · " if backbone == "tabpfn3" else "TabICLv2 · " if backbone else "") + f"Versus {comparator} · n={','.join(map(str, counts))} datasets",
                  fontsize=style.PANEL_TEXT)
-    handles = [Line2D([], [], color=style.CREDIT, marker="o", label="mean / dataset interval")]
+    handles = [Line2D([], [], color=style.INK, marker="o", label="mean / dataset interval")]
     handles += [Line2D([], [], color=style.MUTED, linestyle="none", marker=style.SEED_MARKERS[s % 3],
                        label=f"seed {s}") for s in sorted(seed_ids)]
     style.legend_below(fig, handles, ncol=min(4, len(handles)))
@@ -239,7 +310,7 @@ def retention_frontier(track, exp="exp1", *, reference=False, subset="all"):
                           [max(0, row.ci_high_credit-row.mean_difference_credit)]],
                     yerr=[[max(0, row.mean_difference_ood-row.ci_low_ood)],
                           [max(0, row.ci_high_ood-row.mean_difference_ood)]],
-                        fmt=style.RATE_MARKERS[int(re.search(r"lr_index=(\d+)", row.configuration).group(1))] if "lr_index=" in row.configuration else "o",
+                        fmt=style.RATE_MARKERS[int(re.search(r"lr_index=(\d+)", row.configuration).group(1))] if "lr_index=" in row.configuration else style.credit_fraction_marker(fraction),
                         color=color, markersize=style.FRONTIER_MARKER,
                         label=_compact_label(row.configuration, group) if exp == "exp2" else style.prior_mix_label(fraction))
             xs = dict(seed_differences(credit, row.configuration, row.control, metric))
@@ -288,6 +359,7 @@ def dataset_effects(track, exp="exp1", *, backbone=None):
     metric = "roc_auc" if track == "pd" else "r2"
     frame = _backbone(frame, backbone)
     contrasts = _table(frame, metric, track)
+    contrasts = contrasts.set_index("configuration").loc[sorted(contrasts.configuration, key=_order)].reset_index()
     part = frame.assign(identity=identities(frame))
     part["configuration"] = part.identity.str.replace(r"__s\d+$", "", regex=True)
     scores = part.groupby(["configuration", "identity", "dataset"])[metric].mean()
@@ -302,7 +374,7 @@ def dataset_effects(track, exp="exp1", *, backbone=None):
     ax.set_xticks(range(len(contrasts)), [_compact_label(c, backbone).replace(" · ", "\n") for c in contrasts.configuration])
     ax.tick_params(axis="x", labelsize=style.PANEL_TEXT)
     for (i, j), value in np.ndenumerate(values):
-        ax.text(j, i, f"{value:+.3f}", ha="center", va="center", fontsize=style.PANEL_TEXT,
+        ax.text(j, i, f"{value:+.4f}" if exp == "exp2" else f"{value:+.3f}", ha="center", va="center", fontsize=style.PANEL_TEXT,
                 color=style.LIGHT_INK if abs(value) > .6*limit else style.INK)
     ax.grid(False)
     fig.colorbar(image, ax=ax, label=f"Δ {style.metric_label(metric)} vs matched 0% control")
@@ -325,6 +397,9 @@ def endpoint_mass(exp="exp1", *, backbone=None):
         return campaign.availability("No method with predictive endpoint masses has been benchmarked completely.")
     part["configuration"] = part.identity.str.replace(r"__s\d+$", "", regex=True)
     means = part.groupby(["configuration", "identity", "dataset"])[fields].mean().reset_index()
+    # Paired axes keep the same probability range, focused on observed values.
+    # This is a scatter diagnostic, not a bar whose length needs the full unit axis.
+    limit = min(1., max(.1, float(means[fields].to_numpy().max()) * 1.15))
     style.apply()
     fig, axes = plt.subplots(1, 2, figsize=style.figsize(style.WIDTH_FULL, .58), sharex=True, sharey=True)
     configurations = sorted(means.configuration.unique())
@@ -338,9 +413,11 @@ def endpoint_mass(exp="exp1", *, backbone=None):
                 ax.scatter(values[f"true_mass_at_{endpoint}"], values[f"pred_mass_at_{endpoint}"],
                            color=_mass_colour(name), marker=marker,
                            s=style.SEED_POINT, alpha=.75, label=label(name) if identity == rows.identity.iloc[0] else None)
-        ax.plot([0, 1], [0, 1], color=style.MUTED, linestyle=":")
-        ax.set(xlim=(-.03, 1.03), ylim=(-.03, 1.03), xlabel="Observed portfolio mass",
+        ax.plot([0, limit], [0, limit], color=style.MUTED, linestyle=":")
+        ax.set(xlim=(-.03*limit, limit), ylim=(-.03*limit, limit), xlabel="Observed portfolio mass",
                title="Full recovery (0)" if endpoint == 0 else "Total loss (1)")
+        ax.xaxis.set_major_formatter(PercentFormatter(1, decimals=0))
+        ax.yaxis.set_major_formatter(PercentFormatter(1, decimals=0))
         named = means.groupby("dataset")[[f"true_mass_at_{endpoint}", f"pred_mass_at_{endpoint}"]].mean()
         style.place_labels(ax, named.iloc[:, 0], named.iloc[:, 1],
                            [s.split(".", 1)[-1].removeprefix("lgd_") for s in named.index],

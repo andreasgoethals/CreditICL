@@ -1,49 +1,43 @@
 [
   {
     "index": 1,
-    "stem": "01_binary_minority_exposure",
-    "name": "binary_minority_exposure",
-    "caption": "Minority-class frequencies in 500 fresh unfiltered binary tasks per generator as step histograms; the separate strip marks the minority share min(p,1-p) of each real binary benchmark."
-  },
-  {
-    "index": 2,
-    "stem": "02_accepted_class_exposure",
+    "stem": "01_accepted_class_exposure",
     "name": "accepted_class_exposure",
     "caption": "Observed class-count shares among 48 accepted tasks per mixture and cumulative binary minority-share distributions from the same accepted stream, seed 1729; legends give total and binary task counts."
   },
   {
-    "index": 3,
-    "stem": "03_candidate_acceptance_difficulty",
+    "index": 2,
+    "stem": "02_candidate_acceptance_difficulty",
     "name": "candidate_acceptance_difficulty",
     "caption": "Accepted/all candidate counts per source and mixture on the left, and cumulative ExtraTrees out-of-bag pseudo-R\u00b2 for valid candidates versus accepted tables on the right, pooled across the mixtures in the same production-route diagnostic draw; legends give valid-candidate and accepted counts."
   },
   {
-    "index": 4,
-    "stem": "04_accepted_feature_exposure",
+    "index": 3,
+    "stem": "03_accepted_feature_exposure",
     "name": "accepted_feature_exposure",
     "caption": "Cumulative distributions of non-padding feature count and the share of features with at most 20 distinct values among 48 accepted tasks per mixture; the latter is a type proxy rather than a categorical schema."
   },
   {
-    "index": 5,
-    "stem": "05_correlated_defaults",
+    "index": 4,
+    "stem": "04_correlated_defaults",
     "name": "correlated_defaults",
     "caption": "Realised positive-label rates in 80 controlled tasks at a fixed 15% applicant target rate, with independent and correlated risk; selection, threshold rules, label noise, shifts and scorecard binning are disabled; 400 rows per task and the configured cohort recipe are used, and the second panel varies asset correlation."
   },
   {
-    "index": 6,
-    "stem": "06_shift_kinds",
+    "index": 5,
+    "stem": "05_shift_kinds",
     "name": "shift_kinds",
     "caption": "Context against query summaries per synthetic task for cohort, covariate, prior-probability and selection shifts, 60 tasks with and 60 without each shift; the dashed line marks equality. Covariate means use the whole-table mean and standard deviation, so their opposite signs follow from centering; their distance from equality records the separation. Open gray squares mark shift-off tasks and blue circles mark shift-on tasks."
   },
   {
-    "index": 7,
-    "stem": "07_covariate_missingness",
+    "index": 6,
+    "stem": "06_covariate_missingness",
     "name": "covariate_missingness",
     "caption": "Missing-entry rates in six equally sized groups ordered from the lowest to highest value of one synthetic feature, repeated across six columns in 4,000 rows. Gray squares use a constant missingness probability; blue circles use feature-dependent probabilities. Both target 20% missing entries overall (dotted line); one fixed random draw creates sampling variation. No outcome labels enter the mask."
   },
   {
-    "index": 8,
-    "stem": "08_unfiltered_difficulty",
+    "index": 7,
+    "stem": "07_unfiltered_difficulty",
     "name": "unfiltered_difficulty",
     "caption": "ExtraTrees out-of-bag pseudo-R\u00b2 for 120 unfiltered tasks per generator and real PD benchmarks averaged over three 1,024-row subsamples; marker fill records the hypothetical generic statistical-filter decision."
   }

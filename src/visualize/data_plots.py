@@ -123,10 +123,10 @@ def summary_table(datasets: dict[str, Any], task: str) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 
-def plot_lgd_targets(datasets: dict[str, Any], ncols: int = 3):
+def plot_lgd_targets(datasets: dict[str, Any], ncols: int = 4):
     """One target histogram per LGD dataset: the share of rows per bin, on labelled axes.
 
-    Three columns reserve room for readable names and an explicit second line
+    Four columns keep seven datasets compact with an explicit second line
     reporting mass within 1e-4 of 0/1. Each panel retains its own percentage scale.
     """
     style.apply()
@@ -152,7 +152,7 @@ def plot_lgd_targets(datasets: dict[str, Any], ncols: int = 3):
         for edge, frac in ((y.min(), st["frac_at_min"]), (y.max(), st["frac_at_max"])):
             if frac > 0.01:
                 ax.axvline(edge, color=style.WARN, lw=0.9, ls="--", alpha=0.85)
-        # Explicit line break; the three-column layout reserves its height.
+        # Explicit line break reserves space for the endpoint-mass annotation.
         mass = float(np.mean((np.abs(y) <= 1e-4) | (np.abs(y-1) <= 1e-4)))
         name = slug.split('.', 1)[-1].removeprefix("lgd_")
         ax.set_title(f"{name}\n{mass:.0%} near 0 or 1",

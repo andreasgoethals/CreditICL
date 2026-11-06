@@ -115,14 +115,18 @@ def _run(arm):
 
 
 def test_progress_is_loaded_per_experiment_not_across_them(isolated_output):
-    _progress(True).to_csv(_run("exp1_pd__a") / "progress.csv", index=False)
-    _progress(True).to_csv(_run("exp2_pd__b") / "progress.csv", index=False)
-    assert set(tp.load_progress("pd", "exp1")) == {"exp1_pd__a"}
-    assert set(tp.load_progress("pd", "exp2")) == {"exp2_pd__b"}
+    from src.utils.config import expand_with_seeds, load
+    names = [expand_with_seeds(load(f"config/Exp{e}_PD.yaml"))[0]["_run_name"] for e in (1, 2)]
+    for name in names:
+        _progress(True).to_csv(_run(name) / "progress.csv", index=False)
+    assert set(tp.load_progress("pd", "exp1")) == {names[0]}
+    assert set(tp.load_progress("pd", "exp2")) == {names[1]}
 
 
 def test_real_vs_ood_draws_both_curves_when_ood_is_logged(isolated_output):
-    _progress(True).to_csv(_run(ARM) / "progress.csv", index=False)
+    from src.utils.config import expand_with_seeds, load
+    current = expand_with_seeds(load("config/Exp2_PD.yaml"))[0]["_run_name"]
+    _progress(True).to_csv(_run(current) / "progress.csv", index=False)
     fig = tp.real_vs_ood("pd", "exp2")
     labels = [ln.get_label() for ln in fig.axes[0].get_lines()]
     assert any("real" in str(x) for x in labels), labels
@@ -130,7 +134,9 @@ def test_real_vs_ood_draws_both_curves_when_ood_is_logged(isolated_output):
 
 
 def test_real_vs_ood_degrades_to_the_credit_curve_without_ood(isolated_output):
-    _progress(False).to_csv(_run(ARM) / "progress.csv", index=False)
+    from src.utils.config import expand_with_seeds, load
+    current = expand_with_seeds(load("config/Exp2_PD.yaml"))[0]["_run_name"]
+    _progress(False).to_csv(_run(current) / "progress.csv", index=False)
     fig = tp.real_vs_ood("pd", "exp2")  # must not raise when no ood__ columns exist
     labels = [str(ln.get_label()) for ln in fig.axes[0].get_lines()]
     assert any("real" in x for x in labels)

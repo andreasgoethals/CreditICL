@@ -1,50 +1,32 @@
 [
   {
     "index": 1,
-    "stem": "01_development_selection",
-    "name": "development_selection",
-    "caption": "Complete current-protocol final development ROC-AUC or R\u00b2 per configuration, with one point per training seed after fold and dataset averaging and a horizontal span for its seed range; released references remain separate."
+    "stem": "01_paired_credit_effect",
+    "name": "paired_credit_effect",
+    "caption": "Final designated-holdout performance differences from the equally trained 0% credit control. Large points average paired dataset effects after five-fold and training-seed averaging; intervals are nominal 95% paired-dataset bootstrap intervals and small markers show seed means. Positive ROC-AUC or R\u00b2 and negative log-loss or CRPS differences favor treatment."
   },
   {
     "index": 2,
-    "stem": "02_paired_credit_effect",
-    "name": "paired_credit_effect",
-    "caption": "Final designated-holdout metric differences against each architecture\u2019s equally trained 0% control, paired within dataset and training seed; large dots are means, lines nominal 95% dataset bootstrap intervals, and small marks individual training seeds."
+    "stem": "02_per_dataset_control_gap",
+    "name": "per_dataset_control_gap",
+    "caption": "Final performance difference from the matched 0% control for every designated-holdout credit dataset and mixture, averaging five folds and three training seeds within each dataset. The diverging scale is centered on zero; positive ROC-AUC or R\u00b2 differences favor the credit mixture."
   },
   {
     "index": 3,
-    "stem": "03_per_dataset_control_gap",
-    "name": "per_dataset_control_gap",
-    "caption": "Mean final ROC-AUC or R\u00b2 difference against the architecture-matched 0% control per designated-holdout dataset and mixture, averaging folds and training seeds within each dataset."
+    "stem": "03_credit_generality_frontier",
+    "name": "credit_generality_frontier",
+    "caption": "Final mean credit performance difference against native-OOD performance difference for each credit mixture, relative to the equally trained 0% control. Horizontal and vertical bars are separate nominal 95% paired-dataset bootstrap intervals; small marks show paired training-seed effects. Higher ROC-AUC or R\u00b2 is better on both axes; zero lines indicate no difference."
   },
   {
     "index": 4,
-    "stem": "04_paired_native_ood",
-    "name": "paired_native_ood",
-    "caption": "Final native OOD R\u00b2 differences against the equally trained 0% control, averaged within each dataset over five folds and training seeds, with nominal 95% paired-dataset intervals and seed marks."
+    "stem": "04_conditional_component_effects",
+    "name": "conditional_component_effects",
+    "caption": "Final designated-holdout metric differences for five component removals from the full 50% prior package, with matched training seeds and five folds. Large points show mean paired-dataset effects, bars show nominal 95% dataset-bootstrap intervals, and small markers show training-seed means. Negative ROC-AUC or R\u00b2 and positive log-loss or CRPS differences indicate deterioration after removal."
   },
   {
     "index": 5,
-    "stem": "05_credit_generality_frontier",
-    "name": "credit_generality_frontier",
-    "caption": "Final credit metric difference on the horizontal axis against native OOD difference on the vertical axis for each mixture and backbone; zero lines mark the equally trained control, and domain-specific nominal 95% dataset intervals and paired seed marks are shown."
-  },
-  {
-    "index": 6,
-    "stem": "06_conditional_component_effects",
-    "name": "conditional_component_effects",
-    "caption": "Final designated-holdout metric differences for five component removals against the full seed-matched 50% prior package, with dataset-level nominal 95% bootstrap intervals and individual training-seed marks."
-  },
-  {
-    "index": 7,
-    "stem": "07_lgd_distributional_scorecard",
-    "name": "lgd_distributional_scorecard",
-    "caption": "Paired designated-holdout differences in R\u00b2, approximate CRPS and absolute endpoint-mass error against equally trained 0% controls, using predictive distributions on a 99-level quantile grid and tolerance 1e-4; intervals resample datasets."
-  },
-  {
-    "index": 8,
-    "stem": "08_observed_predicted_endpoint_mass_tabicl",
-    "name": "observed_predicted_endpoint_mass_tabicl",
-    "caption": "Observed portfolio mass against mean predicted mass at loss 0 and loss 1 for the TabICLv2 family, one point per dataset and training seed after five-fold averaging, with an identity line and named datasets; endpoints use tolerance 1e-4 and a 99-level predictive-quantile approximation."
+    "stem": "05_observed_predicted_endpoint_mass",
+    "name": "observed_predicted_endpoint_mass",
+    "caption": "Portfolio-average predicted versus observed mass near full recovery (loss 0) and total loss (loss 1) for designated-holdout LGD datasets. Each mark is a dataset/training-seed mean over five folds; colors and shapes distinguish credit mixtures and released TabICLv2. The diagonal marks aggregate agreement. Endpoint tolerance is 1e-4; predictive masses use the 99-level quantile approximation. This is not conditional calibration."
   }
 ]

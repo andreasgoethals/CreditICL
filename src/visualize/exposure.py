@@ -65,6 +65,26 @@ def illustrative_variants(config_path, *, n=500, seed=0):
     return loaded, "fresh live unfiltered diagnostic; binary PD / raw credit LGD"
 
 
+def binary_exposure_table(variants):
+    """One vote per synthetic table, never pooled rows or label orientation."""
+    rows = []
+    for source, tasks in variants.items():
+        minority = []
+        for task in tasks:
+            _, counts = np.unique(task.y.numpy(), return_counts=True)
+            if len(counts) != 2:
+                raise ValueError("Binary exposure requires exactly two classes per table")
+            minority.append(counts.min() / counts.sum())
+        if not minority:
+            raise ValueError("Binary exposure requires sampled tables")
+        q = np.quantile(minority, [.1, .5, .9])
+        rows.append({"Generator": "Generic (binary diagnostic)" if source == "original" else "Credit",
+                     "Tables": len(minority), "Minority share P10": q[0],
+                     "Minority share median": q[1], "Minority share P90": q[2],
+                     "Share of tables below 10% minority": np.mean(np.array(minority) < .1)})
+    return pd.DataFrame(rows).round(3)
+
+
 def accepted_stream(config, *, n=48, seed=1729, mixtures=None):
     """Candidate and accepted task observations for a small matched slot audit."""
     from src.prior.filters import predictability

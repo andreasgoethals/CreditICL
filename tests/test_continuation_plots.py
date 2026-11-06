@@ -66,6 +66,29 @@ def test_historical_training_traces_do_not_create_empty_current_panels(monkeypat
     plt.close(fig)
 
 
+def test_extreme_finite_loss_is_retained_on_an_explicit_log_axis(monkeypatch):
+    from src.utils.config import expand_with_seeds, load
+    cfg = expand_with_seeds(load("config/Exp2_LGD.yaml"))
+    runs = {r["_run_name"]: pd.DataFrame({"step": [100, 200, 300], "train_loss": [1., 1e139, 2.]})
+            for r in cfg if r["architecture"] == "tabpfn3"}
+    monkeypatch.setattr(c.training, "load_loss_logs", lambda *a: runs)
+    fig = c.training_curves("lgd", "tabpfn3")
+    try:
+        assert all(ax.get_yscale() == "symlog" for ax in fig.axes)
+        assert "symlog" in fig.axes[0].get_ylabel()
+        assert max(max(line.get_ydata()) for line in fig.axes[0].lines) == 1e139
+        fig.canvas.draw()
+        ticks = fig.axes[0].get_yticklabels()
+        boxes = [t.get_window_extent() for t in ticks if t.get_visible()]
+        assert all(a.y1 < b.y0 for a, b in zip(boxes, boxes[1:]))
+    finally:
+        plt.close(fig)
+    for invalid in (np.inf, np.nan):
+        next(iter(runs.values())).loc[1, "train_loss"] = invalid
+        with pytest.raises(ValueError, match="Non-finite recorded loss"):
+            c.training_curves("lgd", "tabpfn3")
+
+
 @pytest.mark.parametrize("missing", ["credit", "ood", None])
 def test_retention_publication_waits_for_both_domains(monkeypatch, missing):
     frame = curve_cells(3).query("checkpoint_step == 1500")
@@ -97,6 +120,28 @@ def test_missing_milestones_and_incomplete_seed_pairs_break_the_curve(monkeypatc
                 assert np.isfinite(line.get_ydata()[[0, 1, 4]]).all()
     finally:
         plt.close(fig)
+
+
+def test_one_endpoint_or_two_unmatched_groups_do_not_imply_a_trajectory(monkeypatch):
+    frame = curve_cells()
+    final = frame[frame.checkpoint_step.eq(MAIN_STEPS)]
+    monkeypatch.setattr(c.results, "benchmark_frames", lambda *a, **k: final)
+    assert not c.trajectory_ready("pd", "tabicl")
+    disjoint = frame[(frame.lr_index.eq(0) & frame.checkpoint_step.eq(125)) |
+                     (frame.lr_index.eq(1) & frame.checkpoint_step.eq(1500))]
+    monkeypatch.setattr(c.results, "benchmark_frames", lambda *a, **k: disjoint)
+    assert not c.trajectory_ready("pd", "tabicl")
+    monkeypatch.setattr(c.results, "benchmark_frames", lambda *a, **k: frame)
+    assert c.trajectory_ready("pd", "tabicl")
+
+
+def test_reused_full_cpt_results_are_not_retention_intervention_evidence(monkeypatch):
+    frame = curve_cells(3)
+    baselines = frame[frame.treatment.isin(["full_wd", "full_wd_lower"])]
+    monkeypatch.setattr(c.results, "benchmark_frames", lambda *a, **k: baselines)
+    assert not c.trajectory_ready("pd", "tabicl", experiment=3)
+    monkeypatch.setattr(c.results, "benchmark_frames", lambda *a, **k: frame)
+    assert c.trajectory_ready("pd", "tabicl", experiment=3)
 
 
 @pytest.mark.parametrize("experiment", [2, 3])

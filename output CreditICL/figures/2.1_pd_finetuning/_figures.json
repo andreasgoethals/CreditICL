@@ -1,8 +1,26 @@
 [
   {
     "index": 1,
-    "stem": "01_registered_continuation_design",
-    "name": "registered_continuation_design",
-    "caption": "Registered continuation design: two released backbones, two prediction tasks, four credit-prior mixtures, two predetermined peak learning rates and two paired training seeds give 64 runs. Five checkpoint evaluations use all eligible rows and features with shared five-fold splits; 1,500 updates is the primary endpoint."
+    "stem": "01_loss_tabicl",
+    "name": "loss_tabicl",
+    "caption": "Synthetic query loss against optimizer update, separated by backbone and peak learning rate; colors identify credit fractions, thin traces show seeds and thick curves average two seeds at common recorded steps. A symmetric-log loss axis, explicitly labeled where used, retains extreme finite losses; its central interval [-1,1] is linear."
+  },
+  {
+    "index": 2,
+    "stem": "02_loss_tabpfn3",
+    "name": "loss_tabpfn3",
+    "caption": "Synthetic query loss against optimizer update, separated by backbone and peak learning rate; colors identify credit fractions, thin traces show seeds and thick curves average two seeds at common recorded steps. A symmetric-log loss axis, explicitly labeled where used, retains extreme finite losses; its central interval [-1,1] is linear."
+  },
+  {
+    "index": 3,
+    "stem": "03_development_monitoring_tabicl",
+    "name": "development_monitoring_tabicl",
+    "caption": "Development monitoring score against update for one backbone, with separate panels for both predetermined peak rates and colors for the credit mixtures; small-context diagnostics are distinct from the full-table five-fold benchmark."
+  },
+  {
+    "index": 4,
+    "stem": "04_development_monitoring_tabpfn3",
+    "name": "development_monitoring_tabpfn3",
+    "caption": "Development monitoring score against update for one backbone, with separate panels for both predetermined peak rates and colors for the credit mixtures; small-context diagnostics are distinct from the full-table five-fold benchmark."
   }
 ]

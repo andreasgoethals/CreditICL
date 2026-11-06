@@ -164,6 +164,46 @@ The one thing to do differently.
 
 ## Runs
 
+### 06-11-2026 — Analysis collection and notebook review
+
+Read-only collection from production `0494e7a` at **14:32:11 UTC**: 589 compact analysis
+members, including 64 completed final-checkpoint credit/OOD receipt pairs and their 128 CSVs.
+All member sizes and SHA-256 hashes matched the filtered inventory. No model/optimizer weights,
+datasets, prior pools or runtime images were downloaded. The 4,097,080-byte transfer archive
+had SHA-256 `694c492278eaf62c92e8c3bcc86cb5e0d0cf784652e075f7abd51294d2022ef3`;
+its temporary DATA copy was verified and removed. Local provenance is
+`output CreditICL/manifests/analysis_exp2_20261106.json`.
+
+The notebook revision changes reporting only: exact scores accompany paired credit effects,
+dataset maps and separate credit/OOD comparisons against trained controls and released weights.
+This distinction matters particularly for TabPFN-3 LGD: improvement over a degraded continued
+control does not establish retention of released-model performance. Synthetic loss tails remain
+visible; descriptive dataset intervals do not turn historically exposed benchmarks into untouched
+confirmation. Early-checkpoint trajectories and new Exp3 effects remain unavailable in this snapshot.
+
+The established `figures/<notebook>` export layout is retained, as documented in the notebook
+README. Research context uses the current implementation and paper notes, not the superseded
+ArXiV grids. TFM pin `8f14e5945ca6b068ed0c76218e769d3e672d0d13`; VSC pin
+`914ef4e57e1f153080e2686d03179c223db38c9a`. No campaign source or scientific setting changed.
+
+Local acceptance: **2,333 passed, 58 skipped** in 18m06s (Git Bash on the test process PATH).
+All 12 notebooks executed with fresh kernels; all 48 final PDFs were individually inspected
+and the final rerender was pixel-identical. Inline figures, captions and printed summaries
+remain saved. The local cleanup of temporary QA images/archive was blocked by automatic
+approval review without a specific reason; that ignored QA workspace is retained.
+
+At **15:42 UTC**, scheduler accounting covered all 320 Exp2 slots: **75 completed, 19 running,
+226 pending**, no failed states. All 75 published receipts and 13,505 credit/OOD cells passed
+hash, protocol, uniqueness, coverage, status and finite-primary-score checks: 64 final, eight
+125-update and three 250-update checkpoints. Explicit admission receipts for both finals and
+the three early-checkpoint arrays have no in-flight acknowledgments or missing slots. Revised
+GPU `11774935` was running at 3h16m with 57 completed stages PASS; CPU remains PASS 14/14.
+All Exp0/Exp2 work is admitted. Exp3 is conditionally authorized but awaits full GPU acceptance;
+no Exp3 work or duplicate submission was launched. Production and validation checkouts stay frozen.
+The earlier full scan of 85 benchmark-driver logs (148,214,824 bytes) found no fatal matches;
+at 15:44 UTC a bounded tail scan of all 265 benchmark/evaluation logs also found none. A wider
+full evaluation-log scan hit its read timeout, so that latter check covers tails, not every byte.
+
 ### 06-11-2026 — Remaining 256 Exp2 benchmarks admitted
 
 Verified the completed training summaries, checkpoint archive directories and slot-to-model

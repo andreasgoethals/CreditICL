@@ -223,7 +223,7 @@ def test_captions_say_what_is_plotted():
     editorialises tells a reader nothing about the axes."""
     concrete = re.compile(
         r"histogram|distribution|against|per |axis|axes|bins|colour|matri|spectra|"
-        r"share|rate|number of|scale|key|score differences",
+        r"share|rate|number of|scale|key|\bmass\b|(?:score|metric|performance) differences|differences from",
         re.I,
     )
     for key, text in _all_captions().items():

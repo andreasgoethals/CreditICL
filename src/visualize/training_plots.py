@@ -20,8 +20,8 @@ naive version, and each is stated in the notebooks so a reader knows what a line
   three PD banded arms' logs only start at steps 3,251-4,001 (restarted under the new protocol). A
   mean taken where some arms are missing changes composition and jumps — the training-loss mean
   did. So a group's curve is drawn only over the steps all its arms share (`_complete`).
-* **Development datasets only, the same ones for every arm.** A prior is chosen on the development
-  split; the holdout datasets are what the benchmark finally reports. But curves from before the
+* **Development datasets only, the same ones for every arm.** Monitoring is descriptive and
+  selects no mixture in the current fixed design. Curves from before the
   development-only monitoring protocol (23-09-2026) scored "the smallest few" datasets whatever
   their role — for Exp1 that put holdout sets (PD `hmeq`, `thomas`; LGD `axa`, `loss2`,
   `base_modelisation`) into every old arm's mean. So a domain mean covers only the config's
@@ -105,20 +105,17 @@ def _run_files(track: str, kind: str, exp: str = "exp1") -> list[tuple[str, Any]
 
 
 def _one_grid(out: dict[str, Any], track: str, exp: str) -> dict[str, Any]:
-    """`out` restricted to ONE sweep: the current config's arms as soon as any of them has output,
-    otherwise every arm found (an older grid — the 45-arm Exp1 before the 28-09-2026 redesign).
-    Run names differ between grids, so nothing is overwritten when a new sweep's files land beside
-    an old one's, and without this every curve would average the two."""
-    try:
-        from src.utils.config import expand_with_seeds, load, run_name
+    """Only current registered arms, including when none has local records.
 
-        cfg = load(paths.REPO_ROOT / f"config/Exp{int(exp.removeprefix('exp'))}_{track.upper()}.yaml",
-                   allow_placeholders=True)
-        current = {run_name(r) for r in expand_with_seeds(cfg)}
-    except Exception:  # noqa: BLE001 — without a config, keep what is there
-        return out
-    kept = {k: v for k, v in out.items() if k in current}
-    return kept or out
+    Historical files must never silently populate a new design's empty notebook.
+    A missing/unreadable configuration is an error, not permission to pool files.
+    """
+    from src.utils.config import expand_with_seeds, load, run_name
+
+    cfg = load(paths.REPO_ROOT / f"config/Exp{int(exp.removeprefix('exp'))}_{track.upper()}.yaml",
+               allow_placeholders=True)
+    current = {run_name(r) for r in expand_with_seeds(cfg)}
+    return {k: v for k, v in out.items() if k in current}
 
 
 def load_progress(track: str, exp: str = "exp1") -> dict[str, pd.DataFrame]:
@@ -316,9 +313,8 @@ def dataset_roles(track: str, exp: str = "exp1") -> dict[str, str]:
     """`{dataset: "development" | "holdout"}` from the experiment's config, numeric prefixes
     stripped (`0008.german` -> `german`); `{}` when the config cannot be read.
 
-    The roles are the experiment's selection protocol: a prior is chosen on development data only,
-    and the holdout datasets are what the benchmark finally reports on. A figure that averages a
-    holdout dataset into "which prior is best" is selecting on the test set.
+    These roles restrict diagnostic monitoring to the declared development subset.
+    The current design reports every registered mixture and performs no selection.
     """
     try:
         from src.utils.config import load
