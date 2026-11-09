@@ -76,6 +76,30 @@ and limits of the inference>
 
 ## Runs
 
+### 09-11-2026 — Selective stop and CPT mechanism study
+
+At 14:17 CET, cancelled pending LGD array `11780839` tasks `6-11,18-23`: the twelve
+TabPFN-3 retention treatments. Verified owner, job name, pending state and matching
+`Exp3_LGD.yaml`/`design.py` hashes before cancellation. The other twelve LGD tasks are
+TabICLv2; all 24 PD tasks are unaffected. The stop receipt is retained beside the original
+admission receipt in the frozen Exp3 DATA checkout. No completed checkpoint/result was removed.
+
+Reason: native TabPFN regression target transforms and unbounded mean-MSE can produce
+enormous finite losses on generic synthetic tasks. Existing global gradient clipping and
+FP32 replay prevent numerical failure but do not bound a task's influence on gradient
+direction. This does not establish that every observed deterioration has that cause:
+the 100% credit arm also deteriorates without the largest transformed-target outliers.
+TabICLv2 quantile loss and PD cross-entropy do not share this regression objective.
+
+The isolated `src.validation.cpt_probe` compares native CRPS+MSE, CRPS alone, CRPS+MAE,
+and CRPS+Huber (fixed delta 1 in transformed units), using the actual production tail
+case and ordinary synthetic tables. Short paired training probes retain released weights,
+production table counts/features/splits, and the first 32 updates of the 1,500-step schedule.
+TabICLv2 diagnostic rows are fixed at 1,024, so they cannot establish the best rate for
+the full long-context workload. Rates 1e-5, 2e-5, 5e-5 and 1e-4 test sensitivity rather
+than selecting a benchmark winner. Evaluation uses separate synthetic tasks only.
+Production recipes, outputs and the registered grids are unchanged.
+
 ### 09-11-2026 — Exp3 training admitted
 
 Mindwell accepted PD array `11780823` and LGD array `11780839`, indices 0–23 each.

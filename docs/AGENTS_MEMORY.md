@@ -5,6 +5,19 @@ date; historical commands, source identities and grid sizes are not current laun
 Use [VSC.md](VSC.md) for operation and recovery, [RUNS.md](RUNS.md#runs) for full evidence,
 and [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) for current recipes. Preserve earlier failures.
 
+## 09-11-2026 — CPT mechanism investigation
+
+User authorized synthetic diagnostic studies and a selective Exp3 stop. Verified grid hashes
+match the deployed frozen source. Cancelled only pending TabPFN-3 LGD tasks
+`11780839_6-11,18-23` at 14:17 CET, before any training; remaining 36 Exp3 tasks and all
+Exp1/2 evidence are preserved. Stop receipt is in the isolated DATA checkout's submissions
+folder, `20261109-exp3-tabpfn-lgd-stop.json`. Native `squeue` subsequently retained only the
+12 TabICL LGD tasks. Do not blindly resume the original all-training receipt.
+
+Added isolated synthetic objective/LR probes; these do not select a rate on credit datasets
+or replace campaign evidence. Native-loss equivalence and robustness tests passed locally.
+VSC probes require a separate DATA checkout; never pull into either active campaign checkout.
+
 ## 09-11-2026 — Exp2 results synced and Exp3 training admitted
 
 The publication revision uses aliases for seven restricted datasets. The local private recipe
