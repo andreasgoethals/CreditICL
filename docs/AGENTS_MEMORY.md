@@ -18,6 +18,16 @@ Added isolated synthetic objective/LR probes; these do not select a rate on cred
 or replace campaign evidence. Native-loss equivalence and robustness tests passed locally.
 VSC probes require a separate DATA checkout; never pull into either active campaign checkout.
 
+Local full suite: 2,364 passed, 58 VSC/weight-only skips (26m23s). First diagnostic
+revision `c47fae8` is frozen in `$VSC_DATA/.crediticl-diagnostics-20261109/CreditICL`.
+Initial B200 probes `11781915-18` were cancelled while still pending after the scheduler
+estimated a four-day wait. Replacements `11781978-81` use Mindwell interactive RTX 5000 Ada,
+8 CPUs/default 16 GB, verified site admission limit four and one concurrent GPU per user.
+Quote: zero credits. These are mechanism tests, not B200 production acceptance or timings.
+`11781978` completed in 70s: nine tables/four objectives, all finite. The actual production
+tail gave native loss 8.88e47 and gradient norm 1.315e24; CRPS+Huber norm was 1.114.
+Trajectory probes and a full-update stress intervention remain separate from benchmark evidence.
+
 ## 09-11-2026 — Exp2 results synced and Exp3 training admitted
 
 The publication revision uses aliases for seven restricted datasets. The local private recipe

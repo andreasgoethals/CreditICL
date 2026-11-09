@@ -100,6 +100,40 @@ the full long-context workload. Rates 1e-5, 2e-5, 5e-5 and 1e-4 test sensitivity
 than selecting a benchmark winner. Evaluation uses separate synthetic tasks only.
 Production recipes, outputs and the registered grids are unchanged.
 
+**Local validation:** 2,364 passed, 58 skips requiring VSC/model weights, zero failures,
+in 26m23s. No released/trained weights were downloaded. The isolated diagnostic module
+and tests passed scoped Ruff. No paper folder was read or modified.
+
+**GPU admissions:** diagnostic revision `c47fae81284d8c897713efcb5fac1fe041cdb88b` in
+`$VSC_DATA/.crediticl-diagnostics-20261109/CreditICL`, PROJECT r3 image, TFM pin
+`8f14e5945ca6b068ed0c76218e769d3e672d0d13`. B200 jobs `11781915-18` were cancelled
+before starting at 14:38 CET because estimated starts were 13–14 November. Their original
+receipts and `20261109-probes-queue-change.json` preserve the queue decision. Replacement
+receipt `20261109-probes-interactive.json` admits tail `11781978` (30m), TabICL PD
+`11781979` (2h), TabICL LGD `11781980` (2h), and TabPFN LGD `11781981` (2h).
+Each requests one RTX 5000 Ada GPU, eight CPUs and default 16,000 MiB on Mindwell interactive.
+The native quote was zero credits; the verified site limits allow four submitted jobs and
+one concurrent GPU per user. These smaller-GPU measurements are not B200 capacity/throughput
+acceptance. Reports are under PROJECT `experiment_0/diagnostics/cpt-20261109/`;
+launcher logs and receipts are in the isolated DATA checkout.
+
+**Tail result:** `11781978` completed 0:0 in 70s, nine tables × four FP32 forward/backward
+objectives. At the real seed-0 generic batch 685, slot 15, raw target magnitude 7.664 became
+9.338 after context standardization and 2.297e25 after the native fitted target transform.
+All values remained finite. The native CRPS+MSE gradient norm was 1.315e24; CRPS alone
+0.780, CRPS+MAE 3.029, CRPS+Huber 1.114. Corresponding losses were 8.881e47, 0.229,
+3.867e22 and 3.867e22. A huge scalar loss need not imply a huge gradient: MAE/Huber retain
+bounded residual derivatives. Huber delta 1 also changes small-error weighting relative
+to unit MSE, so it is an alternative objective, not an isolated tail-only intervention.
+This confirms an optimization hazard; it does not establish benchmark recovery or explain
+all pure-credit deterioration. Native global clipping bounds the aggregate gradient norm,
+not each task's contribution to its direction.
+
+**Additional intervention:** one complete update on generic batch 685, with fresh AdamW
+state and fixed peak LR 1e-5, tests AMP retry/global clipping and synthetic held-out losses.
+It deliberately omits warm-up for that single stress update and is not a replay of the
+production optimizer state. No checkpoint or real-benchmark tuning is involved.
+
 ### 09-11-2026 — Exp3 training admitted
 
 Mindwell accepted PD array `11780823` and LGD array `11780839`, indices 0–23 each.

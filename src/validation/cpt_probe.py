@@ -277,9 +277,54 @@ def run_trajectory(directory, report, save, backbone, task, steps):
         torch.cuda.empty_cache()
 
 
+def run_stress_update(directory, report, save):
+    """One real outlier-containing batch at peak LR, with fresh optimizer state.
+
+    This is a controlled intervention, not replay of production optimizer state.
+    It checks the complete AMP/retry/clipping/update path and held-out synthetic
+    losses. No claim about long-run retention follows from a single update.
+    """
+    from functools import partial
+
+    from src.prior.dataset import PriorBatchDataset
+    from src.prior.generator import TaskGenerator
+    from src.prior.rng import PriorRNG
+    from src.train.tabpfn_trainer import TabPFNTaskPreparer, TabPFNTrainer
+
+    report["variants"] = []
+    report["intervention"] = "production generic batch 685, fresh AdamW, one update at 1e-5; no warm-up"
+    for objective in OBJECTIVES:
+        cfg = probe_config("tabpfn3", "lgd", 1e-5, steps=1)
+        cfg["train"]["warmup_proportion"] = 0.
+        cfg["prior"]["credit_fraction"] = 0.
+        trainer = TabPFNTrainer(cfg, directory / objective, device="cuda")
+        trainer.maybe_resume()
+        preparer = TabPFNTaskPreparer("lgd", trainer.weights_path, 2, 0)
+        result = dict(objective=objective, lr=trainer.optimizer.param_groups[0]["lr"])
+        report["variants"].append(result)
+        try:
+            validation = _validation_batches(cfg, "tabpfn3", preparer)
+            result["before"] = _measure(trainer, validation, "tabpfn3")
+            dataset = PriorBatchDataset(cfg["prior"], "lgd", 16, seed=0)
+            generator = TaskGenerator(cfg["prior"], "lgd", PriorRNG(0), stream_seed=0)
+            prepared = preparer(dataset.batch(generator, 685), 685)
+            save()
+            with patch("src.train.tabpfn_trainer.regression_loss",
+                       partial(regression_objective, objective=objective)):
+                result["update"] = trainer.train_step(prepared)
+            result["after"] = _measure(trainer, validation, "tabpfn3")
+            save()
+            print(json.dumps(result), flush=True)
+        finally:
+            trainer.close()
+        del trainer, preparer, prepared, validation
+        gc.collect()
+        torch.cuda.empty_cache()
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("tail", "trajectory"), required=True)
+    parser.add_argument("--mode", choices=("tail", "trajectory", "stress"), required=True)
     parser.add_argument("--backbone", choices=("tabicl", "tabpfn3"), default="tabpfn3")
     parser.add_argument("--task", choices=("pd", "lgd"), default="lgd")
     parser.add_argument("--steps", type=int, default=32)
@@ -287,7 +332,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if not 1 <= args.steps <= 128:
         parser.error("Diagnostic budget must be between 1 and 128 updates")
-    if (args.mode == "tail" or args.backbone == "tabpfn3") and args.task != "lgd":
+    if args.mode in {"tail", "stress"} and args.backbone != "tabpfn3":
+        parser.error("Target-tail interventions require the TabPFN regression backbone")
+    if (args.mode in {"tail", "stress"} or args.backbone == "tabpfn3") and args.task != "lgd":
         parser.error("TabPFN objective probes require regression")
     if os.environ.get("PYTHONHASHSEED") != "0" or not os.environ.get("SLURM_JOB_ID"):
         raise RuntimeError("Run in Slurm with PYTHONHASHSEED=0; released weights stay on VSC")
@@ -304,7 +351,7 @@ def main(argv=None):
                   runtime_sha256=os.environ.get("CREDITICL_RUNTIME_SHA256"),
                   job=os.environ["SLURM_JOB_ID"], torch=torch.__version__, gpu=torch.cuda.get_device_name(),
                   scope="synthetic mechanism diagnostic, not benchmark evidence or hyperparameter selection",
-                  rows=1024, updates=args.steps if args.mode == "trajectory" else 0,
+                  rows=1024, updates=args.steps if args.mode == "trajectory" else int(args.mode == "stress"),
                   unchanged_production_recipes=True)
     def save():
         _write(args.out, report)
@@ -314,6 +361,8 @@ def main(argv=None):
         with tempfile.TemporaryDirectory(prefix="crediticl-cpt-probe-") as directory:
             if args.mode == "tail":
                 run_tail(Path(directory), report, save)
+            elif args.mode == "stress":
+                run_stress_update(Path(directory), report, save)
             else:
                 run_trajectory(Path(directory), report, save, args.backbone, args.task, args.steps)
         report["status"] = "PASS"

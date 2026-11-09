@@ -27,7 +27,7 @@ dated jobs, failures, quotes and migrations belong in [RUNS.md](RUNS.md).
 | Exp2 benchmark | All 320 slots completed and verified, covering 56,800 credit/OOD cells |
 | Revised CPU Exp0 | wICE 62581713: all 14 stages PASS |
 | Revised GPU Exp0 | Mindwell 11774935: 125/125 stages PASS, live preflight accepted |
-| Exp3 training | All 48 tasks admitted on Mindwell, PD 11780823 and LGD 11780839 |
+| Exp3 training | 48 admitted initially; 12 pending TabPFN LGD tasks stopped on 9 November; other 36 preserved |
 
 Production runs use frozen DATA checkout `$VSC_DATA/CreditICL` at **0494e7a**. Its CPU
 62516762/GPU 11763662 acceptance remains evidence for that revision. Revised validation uses
@@ -46,6 +46,11 @@ is `20261109-exp3-all-training.json` in that checkout's `output CreditICL/manife
 The first training allocations quoted 17,625,600 credits. At admission, the available balance
 was 57,946,762, with about 761 GiB free on PROJECT and 30 GiB on DATA.
 Recheck quotas and balance before the later benchmark phase.
+
+The 9 November investigation cancelled only `11780839_6-11,18-23`, before training,
+pending regression-objective diagnostics. Preserve the stop receipt alongside the original
+admission; do not automatically refill those cancelled IDs. Synthetic probes run in separate
+DATA checkouts and output namespaces; see the newest [run record](RUNS.md#runs).
 
 <a id="revised-exp3-deployment-gate-05-11-2026"></a>
 ### Exp3 deployment gate

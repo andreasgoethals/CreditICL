@@ -70,3 +70,13 @@ def test_huber_does_not_zero_out_large_error_gradient_like_loss_clamping():
 def test_invalid_objective_fails_before_forward():
     with pytest.raises(ValueError):
         bar_objective(None, None, None, "clip_whatever")
+
+
+@pytest.mark.parametrize("mode", ["tail", "stress"])
+@pytest.mark.parametrize("backbone,task", [("tabicl", "lgd"), ("tabpfn3", "pd")])
+def test_tail_intervention_rejects_mislabeled_model_or_task_before_loading_weights(mode, backbone, task):
+    from src.validation.cpt_probe import main
+
+    with pytest.raises(SystemExit) as error:
+        main(["--mode", mode, "--backbone", backbone, "--task", task, "--out", "unused.json"])
+    assert error.value.code == 2
