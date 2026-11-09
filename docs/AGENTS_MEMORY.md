@@ -37,6 +37,30 @@ Do not describe robustness as demonstrated benchmark recovery. The first TabICL 
 completed 0:0 in 1h07m16s; all four rates were finite, with more credit adaptation and generic
 loss at higher rates. Other paired probes remain distinct from production evidence.
 
+FP32 stress control accepted as wICE `62624819` from isolated checkout `c8be115`,
+receipt `20261109-stress-fp32-wice.json`, 30m/zero-credit quote. **Tried** Activation
+without overriding the DATA root. **Result** The first receipt used the production cwd;
+pending diagnostic `62624811` was cancelled before starting (0 seconds). **Why** The
+container launcher selects `$VSC_DATA/CreditICL`. **Instead** Set the isolated DATA root
+before activation and assert container cwd, `REPO_ROOT` and commit before admission.
+The cancelled receipt is preserved; no scientific source or production job was changed.
+At 16:57 CET, `62624819` was also cancelled while pending (resource start estimate 17:32),
+and replaced by Mindwell interactive `11783522`. Matched AMP stress control `11783523`
+uses the same RTX allocation/source, avoiding a precision-versus-GPU confound. Both quotes
+were zero; reports have distinct names and receipts, with no checkpoints. Keep the earlier
+A100 result as cross-hardware evidence, not a matched precision comparison.
+Both TabICL trajectories passed (PD 1h07m16s; LGD 51m52s); higher rates traded more credit
+adaptation for generic loss on short synthetic tasks. TabPFN `11781981` passed in 26m37s:
+all four objectives/32 updates finite, no FP32 replays, no objective dominated credit and
+generic held-outs. Its 32 steps remain within the 150-step warm-up, not peak-rate validation.
+FP32/AMP RTX controls `11783522/23` passed in 2m08s/3m39s. Native replay and always-FP32
+held-out results matched closely; robust alternatives were worse after the stress update
+under both precisions. Do not call Huber or FP32 a demonstrated accuracy repair. All seven
+diagnostic jobs completed 0:0; 23 compact analysis files/209,830 bytes were hash-verified
+locally, no model transfers. At 17:14 CET, Exp3 had nine completed, fourteen running and
+thirteen pending preserved tasks; twelve TabPFN LGD tasks remain stopped. All 46 existing
+Exp3 logs were read with no fatal markers. Production source remains frozen and unchanged.
+
 ## 09-11-2026 — Exp2 results synced and Exp3 training admitted
 
 The publication revision uses aliases for seven restricted datasets. The local private recipe

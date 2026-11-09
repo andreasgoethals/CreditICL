@@ -150,6 +150,18 @@ The first stress comparison also mixes native FP32 replay with alternative FP16 
 An explicit `--full-precision` stress control removes that confound without changing the
 production configuration. Its local checks passed 56 tests with two VSC-weight skips;
 diagnostic Ruff passed. The metric module retains one pre-existing import-format finding.
+The FP32 control was admitted as wICE interactive `62624819` at 16:40 CET, on
+`c8be115d96e3d4bb4e45978919087f64d0b1191e`, with the same 30m/MIG allocation and zero-credit
+quote. A preceding admission `62624811` selected the production working directory because
+activation was given the original DATA root. Its receipt exposed the mismatch; it was
+cancelled while pending, with zero runtime. The corrected admission asserts isolated
+container cwd, repository root and commit. Both receipts remain for audit; no production
+checkout or running job was changed. This is an operator deployment error, not a model result.
+The corrected wICE job remained pending with a 17:32 resource estimate. It was cancelled
+before starting and replaced at 16:57 CET by Mindwell interactive `11783522` (FP32) and
+`11783523` (matched AMP control), both on `c8be115`, with distinct reports/receipts, eight
+CPUs, default 16,000 MiB and a 30m zero-credit quote each. Running both on RTX 5000 Ada
+separates the precision intervention from the earlier stress test's A100 hardware.
 
 **Interpretation checks:** the native TabPFN term called CRPS is bin-width-weighted ranked
 probability error, with out-of-range targets mapped to the edge bin; it is not an exact
@@ -186,6 +198,83 @@ As a reviewer sensitivity check, averaging each known overlapping dataset pair i
 left the sign of every final 100%-minus-0% contrast unchanged across two models, two tasks and
 two rates. For TabICL LGD, dataset-equal differences -0.00130/-0.00066 became
 family-equal -0.00174/-0.00100. This is a descriptive dependence check, not a new significance claim.
+
+**TabICL LR interventions:** PD `11781979` completed 0:0 in 1h07m16s and LGD `11781980`
+in 51m52s. Each compared four rates from identical released weights on the same 32 training
+updates, with eight held-out generic and eight held-out credit synthetic tables. Every update
+was finite. PD uses cross-entropy and LGD the native quantile loss; lower is better here.
+
+| Peak LR | PD generic loss | PD credit loss | LGD generic loss | LGD credit loss |
+|---|---:|---:|---:|---:|
+| Before training | 0.468203 | 0.247156 | 0.100424 | 0.241681 |
+| 1e-5 | 0.469151 | 0.245862 | 0.100469 | 0.241606 |
+| 2e-5 | 0.469175 | 0.245409 | 0.100722 | 0.241348 |
+| 5e-5 | 0.470196 | 0.244844 | 0.101116 | 0.240854 |
+| 1e-4 | 0.470557 | 0.244899 | 0.101835 | 0.240714 |
+
+Higher rates produced more adaptation and generic loss, with no further PD credit gain
+from 5e-5 to 1e-4. These one-seed/short-table observations cannot select a rate for the
+long-context production workload or establish real-benchmark improvement.
+
+**TabPFN ordinary-task intervention:** `11781981` completed 0:0 in 26m37s. All four
+32-update paths consumed the same 16-table batches and had identical initial held-out
+losses. Native evaluation below uses CRPS+MSE for every training objective.
+
+| Training objective | Generic native loss | Credit native loss | Generic CRPS | Credit CRPS |
+|---|---:|---:|---:|---:|
+| Before training | 0.575322 | 1.488586 | 0.222788 | 0.517531 |
+| Native CRPS+MSE | 0.576405 | 1.472465 | 0.223179 | 0.512562 |
+| CRPS | 0.576673 | 1.471503 | 0.223189 | 0.512187 |
+| CRPS+MAE | 0.572119 | 1.490524 | 0.222309 | 0.517888 |
+| CRPS+Huber | 0.576180 | 1.477558 | 0.223303 | 0.513985 |
+
+No alternative dominates both populations. MAE improved generic loss while worsening credit
+loss; native and CRPS produced modest credit gains with small generic losses. All updates were
+finite. AMP backoffs were respectively 7/6/8/7, with no FP32 replay. These 32 steps are entirely
+inside TabPFN's 150-update warm-up; they do not test its peak-rate stability or select a
+production objective. The separate peak-rate stress update addresses a different question.
+
+The all-FP32 stress control `11783522` completed 0:0 in 2m08s on RTX 5000 Ada. It confirms
+that avoiding retries does not itself recover predictive performance: after the same outlier
+batch, generic held-out native loss was 0.57352 for native, versus 0.66601/0.66852/0.67464
+for CRPS/CRPS+MAE/CRPS+Huber. Corresponding credit losses were 1.48854 versus
+1.52621/1.52736/1.52640. None needed AMP backoff because AMP was disabled.
+Every variant started from the same weights/held-outs. This is still one update with fresh
+optimizer state, not the long-run effect of intervening at production step 685.
+
+The matched RTX AMP control `11783523` completed 0:0 in 3m39s. Native again needed
+16 backoffs/one FP32 replay, and its final generic/credit losses (0.57351942/1.48854266)
+matched the always-FP32 path (0.57351982/1.48854274) closely. All three alternative
+objectives avoided those retries but had worse held-out losses under either precision.
+Thus neither changing precision alone nor replacing MSE with these alternatives is a
+demonstrated accuracy fix. Production training losses, metrics and checkpoints remain intact.
+
+**Completed evidence:** seven diagnostic allocations, 396 complete training steps plus
+36 single-table forward/backward objective checks; all scheduler exits 0:0 and all reports
+PASS. These are bounded synthetic mechanism tests, not seven production/Exp0 acceptance runs.
+The sum of recorded allocation elapsed times is 2h39m39s; native interactive quotes were zero.
+Collected 23 analysis files (209,830 bytes) through `src.utils.result_manifest`, with every
+size/hash verified after SFTP. Local proof: `manifests/cpt-20261109/verified-collection.json`.
+No weights, optimizer state, pools or archives were transferred. Nine core trainer/generator
+modules match the frozen Exp2 executable AST; both Exp2 configs match outside the private-alias
+evaluation registry. This review changed diagnostic code/tests and explanations, not the
+production objective, grid or synthetic generator.
+
+**Campaign read at 17:14 CET:** Exp3 has nine completed PD tasks, fourteen running PD tasks,
+one pending PD task and twelve pending TabICL LGD tasks; the twelve TabPFN LGD tasks remain
+stopped. The frozen `a3891f5` science tree has no tracked changes. Read all 46 existing Exp3
+logs (1,486,539 bytes): no traceback, runtime error, non-finite exception, CUDA OOM or ERROR
+marker. The 76 AMP backoff messages are finite-update retries, not discarded tasks; completed
+TabPFN PD metrics reach 1,500 with no FP32 replay. This is current execution evidence, not
+proof of future convergence or benchmark quality. PROJECT usage was 292.7 GiB/1 TiB and
+11,675/150,000 files; DATA 47,272/76,800 MiB. Available account balance: 51,315,537 credits.
+
+**Next:** retain all completed Exp2 evidence and the 36 unaffected Exp3 runs. Do not treat a
+loss-function substitution or higher TabICL LR as an established repair. A longer, matched
+TabPFN LGD follow-up needs an explicit recipe and current Exp0 gates; if its objective changes,
+its retention treatments need matching new baselines. The existing lower-rate baseline must
+also be shown when judging whether a retention method helps. No new full Exp2 campaign or
+Exp3 benchmark was launched by this diagnostic investigation.
 
 ### 09-11-2026 — Exp3 training admitted
 
