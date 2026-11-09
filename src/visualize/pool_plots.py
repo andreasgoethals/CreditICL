@@ -528,8 +528,8 @@ def plot_spectrum_by_variant(loaded: dict[str, list[SyntheticTask]], n_curves: i
 #: the real data is not on this machine; `real_reference` prefers a live measurement so
 #: these can never quietly go stale.
 RECORDED_LGD_BOUNDARY = {
-    "heloc": (0.211, 0.519),
-    "axa": (0.208, 0.134),
+    "PropLGD1": (0.211, 0.519),
+    "PropLGD3": (0.208, 0.134),
     "freddie": (0.106, 0.089),
     "lendingclub": (0.015, 0.003),
 }

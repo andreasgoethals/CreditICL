@@ -252,6 +252,8 @@ def data_summary(
     These are the datasets the models are SCORED on, so the summary leads with what
     makes each task hard, then flags anything that would undermine a published number.
     """
+    from src.data.dataset_registry import display_name, is_proprietary
+
     lines: list[str] = []
     lines.append(_rule("EVALUATION DATASET SUMMARY"))
     total = sum(len(v) for v in datasets_by_task.values())
@@ -262,22 +264,22 @@ def data_summary(
         if not datasets:
             continue
         lines.append(f"\n--- {task.upper()} " + "-" * (74 - len(task)))
-        rows = [d.n_rows for d in datasets.values()]
-        feats = [d.n_features for d in datasets.values()]
-        lines.append(f"rows      {_fmt_range(rows)}")
-        lines.append(f"features  {_fmt_range(feats)}")
-        cat_share = [len(d.cat_indices) / max(1, d.n_features) for d in datasets.values()]
-        lines.append(f"categorical share  {_fmt_range(cat_share, pct=True)}")
-        miss = [float(np.isnan(d.X).mean()) for d in datasets.values()]
-        n_zero = sum(1 for m in miss if m == 0)
-        lines.append(f"missing cells      {_fmt_range(miss, pct=True)}"
-                     f"  —  {n_zero}/{len(miss)} have NONE left (pre-imputed upstream)")
+        public = [ds for slug, ds in datasets.items() if not is_proprietary(slug)]
+        if public:
+            lines.append(f"public rows      {_fmt_range([d.n_rows for d in public])}")
+            lines.append(f"public features  {_fmt_range([d.n_features for d in public])}")
+            cat_share = [len(d.cat_indices) / max(1, d.n_features) for d in public]
+            lines.append(f"public categorical share  {_fmt_range(cat_share, pct=True)}")
+            miss = [float(np.isnan(d.X).mean()) for d in public]
+            n_zero = sum(1 for m in miss if m == 0)
+            lines.append(f"public missing cells      {_fmt_range(miss, pct=True)}"
+                         f"  —  {n_zero}/{len(miss)} have NONE left (pre-imputed upstream)")
 
         if task == "lgd":
             per = {}
             for slug, d in datasets.items():
                 st = target_stats(np.asarray(d.y, dtype=float))
-                per[slug.split('.', 1)[-1]] = st["frac_at_min"] + st["frac_at_max"]
+                per[display_name(slug)] = st["frac_at_min"] + st["frac_at_max"]
             lines.append(f"\nboundary mass      {_fmt_range(list(per.values()), pct=True)}")
             for name, v in sorted(per.items(), key=lambda kv: -kv[1]):
                 lines.append(f"  {name:24} {v:6.1%}")
@@ -292,7 +294,7 @@ def data_summary(
                 "overfitting to it."
             )
         else:
-            per = {s.split('.', 1)[-1]: float(np.asarray(d.y).mean()) for s, d in datasets.items()}
+            per = {display_name(s): float(np.asarray(d.y).mean()) for s, d in datasets.items()}
             lines.append(f"\npositive-label rate {_fmt_range(list(per.values()), pct=True)}")
             for name, v in sorted(per.items(), key=lambda kv: kv[1]):
                 odds = (1 - v) / max(v, 1e-9)
@@ -306,6 +308,8 @@ def data_summary(
                 "class-frequency distribution in notebook 0.2 rather than assuming balance."
             )
 
+    if leakage is not None and len(leakage):
+        leakage = leakage[~leakage["dataset"].map(is_proprietary)]
     if leakage is not None and len(leakage):
         lines.append("\n--- LEAKAGE SCREEN " + "-" * 59)
         # Sorted over BOTH tasks before the top five are taken: the caller concatenates one frame
@@ -375,20 +379,22 @@ def data_summary(
 
 def data_story_summary(datasets, policy, exclusions, leakage):
     """Section-ordered source-table inventory, without a feature-timing certificate."""
+    from src.data.dataset_registry import display_name, is_proprietary
+
     lines = ["A · BENCHMARK TARGETS"]
     for task, books in datasets.items():
-        lines.append(f"{task.upper()}: {len(books)} datasets; "
-                     f"{sum(ds.n_rows for ds in books.values()):,} total rows.")
+        public_rows = sum(ds.n_rows for slug, ds in books.items() if not is_proprietary(slug))
+        lines.append(f"{task.upper()}: {len(books)} datasets, {public_rows:,} rows in public tables.")
         for slug, ds in books.items():
             y = np.asarray(ds.y)
             measure = (f"source positive-label rate {np.mean(y):.2%}" if task == "pd" else
                        f"mass at 0 {np.mean(np.abs(y) <= 1e-4):.2%}; "
                        f"mass at 1 {np.mean(np.abs(y-1) <= 1e-4):.2%}")
-            lines.append(f"  {slug}: {measure}.")
+            lines.append(f"  {display_name(slug)}: {measure}.")
     lines += ["\nB · TABLE SIZE AND OBSERVATION", policy.to_string(index=False),
-              "Counts precede fold-fitted encoding; full-table benchmarking imposes no row or feature cap.",
+              "Source dimensions and column diagnostics cover public tables. Full-table benchmarking uses all eligible rows and features.",
               "\nC · FEATURE POLICY AND DIAGNOSTIC SCREEN",
-              f"Named policy exclusions: {len(exclusions)} source columns across the benchmark.",
+              f"Named policy exclusions: {len(exclusions)} source columns in public tables.",
               "Application-time PD and default-onset LGD are the declared prediction times.",
               "Retained anonymised/ambiguous fields are not independently timing-certified.",
               "Dataset semantics are benchmark metadata; a correlation screen cannot certify deployment validity."]

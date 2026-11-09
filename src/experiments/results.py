@@ -11,6 +11,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from src.data.dataset_registry import canonical_slug
 from src.eval.protocol import PROTOCOL, N_FOLDS, checkpoint_steps
 from src.experiments.design import SEEDS, RETENTION_RECIPES, retention_baseline
 from src.utils import paths
@@ -50,6 +51,7 @@ def read_cells(path, datasets, *, identity, step=None):
         return None
     try:
         df = pd.read_csv(path)
+        df["dataset"] = df["dataset"].map(lambda key: canonical_slug(key) or key)
         keys = list(df[["dataset", "seed", "fold"]].itertuples(index=False, name=None))
         expected = {(d, 0, fold) for d in datasets for fold in range(N_FOLDS)}
         from src.eval.comparisons import identities

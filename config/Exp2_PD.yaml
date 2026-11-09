@@ -194,10 +194,10 @@ logging:
 # ----------------------------------------------------------------------------
 eval:
   data_dir: data/raw/pd # where the real datasets live
-  # hackerearth shares 5,696 loans with lendingclub, base_modelisation defaults with base_model
+  # hackerearth shares 5,696 loans with lendingclub, PropLGD5 defaults with PropLGD4
   # Legacy partitions retained for compatibility; neither selects a learning rate.
   dev_datasets: [0001.gmsc, 0004.lendingclub, 0006.hackerearth, 0002.taiwan_creditcard, 0008.german, 0005.myhom] # monitoring subset; prior design has historical benchmark exposure
-  holdout_datasets: [0003.vehicle_loan, 0007.cobranded, 0009.bank_status,
-                     0010.thomas, 0011.loan_default, 0012.home_credit, 0013.hmeq,
+  holdout_datasets: [0003.vehicle_loan, 0007.cobranded, PropPD1,
+                     0010.thomas, PropPD2, 0012.home_credit, 0013.hmeq,
                      0014.algorithmwatch] # previously inspected; no pristine holdout claim
   select_on: dev # legacy reporting field; the fixed CPT grid does not select on scores

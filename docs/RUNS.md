@@ -76,6 +76,76 @@ and limits of the inference>
 
 ## Runs
 
+### 09-11-2026 — Exp3 training admitted
+
+Mindwell accepted PD array `11780823` and LGD array `11780839`, indices 0–23 each.
+Every task requests one B200, 24 CPUs, 180G and a 12-hour allocation. The two arrays
+cover all 48 registered new training runs. The six recipes use the fixed 50% prior,
+two backbones and two paired seeds, with 1,500 updates and five permanent milestones.
+The 16 matching Exp2 baselines are already measured. This admission covers training.
+
+The frozen DATA checkout `$VSC_DATA/.crediticl-validation-20261106/CreditICL` is at
+`a3891f5cf1a4a6c7a4b917dad9906efbfc201e1b`. The launcher explicitly restores that
+DATA root and invokes its tracked Slurm script, with the same reviewed resource
+directives, signal and requeue behavior. The existing production runtime manifest
+selects the verified PROJECT r3 SIF. Both Slurm dry runs and the live `--require-exp0`
+preflight passed. The 117 focused local tests passed. Local reporting executed all
+12 notebooks, verified 52 PDFs and captions, and checked the four new trajectory plots.
+
+The quote was 17,625,600 credits for the first allocations, with 57,946,762 available
+at submission. PROJECT had 761.4 GiB and 138,455 files free. DATA had about 30 GiB free.
+The receipt `output CreditICL/manifests/submissions/20261109-exp3-all-training.json`
+under the revised checkout records both accepted arrays with no uncertain submission.
+Initial scheduler reconciliation found all 48 task IDs. Fifteen PD tasks were running
+and passed the allocation preflight and smoke test. Nine PD tasks awaited resources
+and all 24 LGD tasks awaited priority. The startup logs contained no matched errors.
+
+At 11:56 CET, a read-only check found 21 PD tasks running, three PD tasks pending and
+all 24 LGD tasks pending. The active checkout still resolved to `a3891f5`. The later
+publication revision applies the alias mapping to local reports and keeps the source-bound
+Slurm and benchmark records at their original revisions.
+
+### 09-11-2026 — Exp2 complete and verified; LGD retention outlier investigated
+
+Mindwell arrays `11774787`, `11774788`, `11775176`, `11775177`, and `11775178`
+completed all 320 trained checkpoint slots with exit `0:0`. All 320 receipts, 640 result
+CSVs and 56,800 protocol-9 credit and OOD cells matched their hashes and expected coverage.
+The revised Exp0 on `a3891f5` completed CPU 14/14 (wICE `62581713`) and GPU 125/125
+(Mindwell `11774935`, 18h14m17s). The live preflight revalidated the source, environment,
+inputs and artifact hashes using the PROJECT r3 image.
+
+**TabPFN-3 LGD, 100% credit, peak LR `1e-5`, seed 0.** On `video_transcoding`, mean
+five-fold R² was 0.998 for the released model and 0.994, 0.819, −8.149, 0.629 and 0.626
+at updates 125, 250, 500, 1,000 and 1,500. At update 500, the four worst folds had a
+positive mean prediction error of 0.223–0.230 on the training-fold-normalized target.
+Squared mean error explained 92–93% of their MSE, and rank correlation also fell.
+The checkpoint bytes matched the receipt, the target ranges and fold identities matched,
+and the reference's evaluation-code differences are covered by reviewed compatible
+transitions. The training loss at the 500-update log point was finite (1.555).
+The available evidence indicates a checkpoint-specific degradation; the mechanism
+behind the weight changes is unresolved. The second seed also deteriorated later on
+this table (mean R² −3.009 at the final checkpoint).
+
+At the final checkpoint, averaging folds and both seeds with equal weight per dataset:
+TabICLv2 PD with 100% credit gained 0.0025–0.0034 credit AUC over matched generic CPT,
+with mean OOD AUC nearly flat. Only four or five of the 14 credit tables improved,
+depending on the rate. Vehicle Loan supplied the largest gain at both rates.
+No TabPFN-3 PD recipe exceeded the released model's mean
+credit AUC. TabICLv2 LGD showed no mean credit improvement from increasing the credit
+share. The high-rate TabPFN-3 LGD 100% arm gained 0.332 credit R² against its degraded
+generic control and lost 0.048 against released weights. Its mean OOD R² fell by 0.525
+against release, or 0.456 with `video_transcoding` excluded as a sensitivity check.
+Each of the 25 OOD regression datasets lost R² and had higher RMSE and CRPS.
+Retain the original full-suite result as the primary comparison.
+
+Collected 7,714 allowlisted analysis files (1,934,336,202 bytes), across production DATA,
+PROJECT and the revised validation DATA checkout. Every member matched its SHA-256.
+Local provenance is `output CreditICL/manifests/analysis_all_20261109.json`, with
+experiment-specific manifests for notebook rendering. Revised validation and remote
+rendered reports are separately preserved. The transfer archives and 405 empty imported
+local lock files were removed after verification. Scoped VSC output contained no
+partial publications. Model weights and runtime images remain on PROJECT.
+
 ### 06-11-2026 — Analysis collection and notebook review
 
 Read-only collection from production `0494e7a` at **14:32:11 UTC**: 589 compact analysis
@@ -1802,7 +1872,7 @@ Keep the current source/packages and all ongoing jobs. After the training groups
 ### Results
 
 - **Validation** schema-3 receipt PASS, exact current 66-stage plan/order, every stage PASS; 28 CUDA tests passed with zero failures/errors/skips. Main log ends `END status=OK` at 22-10-2026 08:11:57 CEST. Supplied VSC preflight and verifier report all current prerequisites, 72 items and zero FAIL.
-- **Full-table benchmark probes** four PD tables (HackerEarth, bank status, loan default, AlgorithmWatch), three LGD tables (HELOC, loss2, base_modelisation), five classification OOD tables and three regression OOD tables. All three diagnostic checkpoints and four references complete credit/OOD evaluation. Credit logs show 245 successful model/dataset/fold cells, with all folds 0–4. Largest PD table retains 532,428 rows; widest retains 158,700 rows and 2,986 features. Context caps remain `None`.
+- **Full-table benchmark probes** four PD tables (HackerEarth, PropPD1, PropPD2, MicroFinance), three LGD tables (PropLGD1, PropLGD2, PropLGD5), five classification OOD tables and three regression OOD tables. All three diagnostic checkpoints and four references complete credit/OOD evaluation. Credit logs show 245 successful model/dataset/fold cells, with all folds 0–4. Largest PD table retains 532,428 rows; widest retains 158,700 rows and 2,986 features. Context caps remain `None`.
 - **Interpretation of metrics** this is selected-dataset pipeline validation, not a completed Exp1 or a prior-effect claim. Reported reference means on those PD probes are AUC 0.711900 (TabICL), 0.724528 (TabPFN), 0.738023 (CatBoost), 0.697063 (linear); the 600-step scratch diagnostic is 0.646180. These summaries are from logs; the underlying project-tier CSVs are not in the download.
 - **Progress curve** all six have points at steps 0/200/400/600; monitored metrics are finite. Only the deliberately uncomputed step-zero `train_loss` is NaN. This is not enough training to infer convergence or a scientific improvement.
 - **Out-of-domain** multiclass and regression probes complete; full OOD retention comparisons remain part of Experiments 1–3.
@@ -1902,9 +1972,7 @@ draws so changing macro target loadings cannot alter the later macro-feature coi
 now separates binary positive-label rates from multiclass rarest-class rates. Protocol is now 9;
 dataset membership and raw/cache tables stay unchanged.
 
-Raw evidence: loss2's `clip((EAD - Proceeds + ELAO)/EAD, 0, 1)` matches all 4,638 complete targets
-(maximum error ~5.6e-16). Base_modelisation's year alias matches 594/594, exposure alias 585/594,
-and both sampling weights exactly identify the already excluded workout flags. Matched 5,671
+Restricted-source checks verified outcome-construction and workout-field exclusions. Matched 5,671
 unambiguous seven-feature loan signatures between Lending Club and hackerearth: all labels opposite;
 all 14,705 hackerearth positive-recovery rows have source label zero. A standard amortisation fraction
 explains R² 0.735 on 5,556 complete Lending Club LGD rows. These limit domain/target interpretation;
@@ -1977,8 +2045,8 @@ submodule. The tested executable fingerprint remained unchanged.
   2,986-column streaming discrepancy is no longer present in its B200 test.
 - Reference TabICLv2, TabPFN-3, CatBoost and linear models completed credit/OOD
   capacity checks. Credit logs show 20 successful folds/model on four PD tables
-  (hackerearth, bank_status, loan_default, algorithmwatch) and 15/model on three
-  LGD tables (heloc, loss2, base_modelisation). The 2,986-feature PD route passed.
+  (hackerearth, PropPD1, PropPD2, algorithmwatch) and 15/model on three
+  LGD tables (PropLGD1, PropLGD2, PropLGD5). The 2,986-feature PD route passed.
 - Five long arms completed step 600 after resuming at 101. All four TabICL arms
   reached 38,400 tasks each; TabPFN PD reached 9,600 with three AMP retries.
 - TabPFN LGD resumed from 101, passed monitoring at 200 (lendingclub RMSE 0.1301,
@@ -2268,7 +2336,7 @@ All 22 CPU artifact hashes still match; the GPU-to-CPU receipt hash and input in
 also match. CPU passed 12/12 stages, 1,437 unit tests (three skipped). GPU has 12/66
 completed stages, including 17 CUDA checks, six smoke-training routes and both equivalence
 checks. Its interrupted benchmark still has 16/20 completed fold messages: five each for
-hackerearth, bank_status and loan_default, one for algorithmwatch. There are no new
+hackerearth, PropPD1 and PropPD2, one for algorithmwatch. There are no new
 tracebacks, failed model checks or nonfinite prediction reports in this download.
 
 ### Newly observed shutdown defect
@@ -2365,8 +2433,7 @@ limit 1 day, exit field 0:0; no MaxRSS was reported. Its final outcome is not ye
   LGD 3.11e-7 / 8.33e-6, within the configured tolerances.
 - Stage 13, `credit-pd-3`, is released TabICL on four PD tables, five folds, one seed,
   protocol 7, with no row/context/feature cap. Three tables completed all five folds:
-  hackerearth (532,428 rows / 30 eligible features), bank_status (100,000 / 15), and
-  loan_default (105,471 / 759). The previous job's 759-feature OOM did not recur.
+  hackerearth (532,428 rows / 30 eligible features), PropPD1, and PropPD2. The previous host-memory failure did not recur.
   Their logged AUC ranges are respectively 0.8445–0.8477, 0.6346–0.6488, 0.6897–0.7107.
 - Algorithmwatch has 158,700 rows / 2,986 features. It began at 15-10 11:35:20;
   fold 0 finished at 16-10 01:09:18 (**13h33m58s**), AUC 0.6548, F1 0.5702,
@@ -2475,11 +2542,10 @@ not an audit of final prediction arrays or a completed benchmark receipt.
   traceback. The ZIP alone did not identify the external killer. The later `sacct`
   and `.err` evidence confirms Slurm host-memory exhaustion, rather than a CUDA exception.
 - Five folds each finished with finite metrics on `0006.hackerearth`: 532,428 rows,
-  30 eligible features, AUC .8445/.8447/.8475/.8477/.8464; and `0009.bank_status`:
-  100,000 rows, 15 eligible features, AUC .6403/.6423/.6454/.6488/.6346.
+  30 eligible features, AUC .8445/.8447/.8475/.8477/.8464; and `PropPD1`:
+  AUC .6403/.6423/.6454/.6488/.6346.
   All training-fold rows were used. Removed columns were outcome/future-information exclusions.
-- The next table, `0011.loan_default`, has 105,471 rows / 759 features. Its first inner
-  PD fit used **67,500/67,500 rows x 759 features** (18.2s). Last logged activity was
+- The next table, `PropPD2`, completed its first inner PD fit (18.2s). Last logged activity was
   18:46:00, before prediction finished. `0014.algorithmwatch` (158,700 x 2,986) and
   all later capacity/training/benchmark stages were not reached.
 
@@ -2956,7 +3022,7 @@ Training-source provenance is not included in those hashes.
 | LGD (R2) | 1,029 | 3,675 | 0.519735 | 0.518260 |
 
 Every headline metric is present and finite. All 945 trained-checkpoint LGD rows report
-`pred_nonfinite_frac=0`, including all 135 rows on `0004.base_model`, the dataset affected by
+`pred_nonfinite_frac=0`, including all 135 rows on `PropLGD4`, the dataset affected by
 historical monitoring NaNs. Mixed-credit and control remain close; pure-credit LGD remains
 poor. Those old monitoring NaNs are not a reason to retrain or discard checkpoints.
 
@@ -2966,7 +3032,7 @@ poor. Those old monitoring NaNs are not a reason to retrain or discard checkpoin
   to 10,000, and CatBoost/linear the full pool. The outer `n_train_used` and requested
   `context_cap` columns alone do not describe the actual TabICL context; its inner cap is
   recorded separately. A fair cross-model comparison requires re-evaluation, not retraining.
-- AXA's 147 rows have no boundary MAE because the old tolerance counted its near-zero/one
+- PropLGD3's 147 rows have no boundary MAE because the old tolerance counted its near-zero/one
   targets as interior. Headline R2/RMSE remain finite; boundary diagnostics need recomputing
   with the current tolerance.
 - The specific calibration of priors against all evaluation datasets was introduced during
@@ -3011,7 +3077,7 @@ Archive timestamps are copy times: actual logs end on **24-09-2026 at 22:00:27 C
   `21d555a6a24e`; the exact uncommitted diff is not contained in this archive.
 - No traceback, error-level line, failed wrapper, or non-finite logged training loss found in
   the supplied logs. No NaN/Inf tokens in the benchmark wrappers. The old LGD progress files
-  still contain 605 non-finite base_model measurements in 30 arms; these are monitoring records,
+  still contain 605 non-finite PropLGD4 measurements in 30 arms; these are monitoring records,
   not the final benchmark. All benchmark wrappers warn that an old Python module did not load,
   then successfully run through the environment; recheck the environment after the VSC update.
 
@@ -3132,7 +3198,7 @@ Training monitor at the final step — **not the verdict**, and not comparable a
 | PD development ROC-AUC, `german` + `myhom` (the only dev sets all 45 arms monitored) | 0.672 | 0.669 | 0.646 |
 | PD out-of-domain ROC-AUC, 8 sets | 0.997 | 0.992 | 0.975 |
 | PD training loss (median over arms of each arm's last three logged losses, as notebook 1.1) | 0.295 | 0.199 | 0.066 |
-| LGD development R², `base_model` (finite in 3 / 6 / 6 of 9 / 18 / 18 arms) | −0.03 | 0.19 | 0.02 |
+| LGD development R², `PropLGD4` (finite in 3 / 6 / 6 of 9 / 18 / 18 arms) | −0.03 | 0.19 | 0.02 |
 | LGD out-of-domain R², 8 sets, all 45 arms (notebook 1.2 averages its 15 scored arms: control 0.58, credit 0.49) | 0.51 | 0.55 | 0.42 |
 | LGD training loss (as notebook 1.2) | 0.093 | 0.064 | 0.032 |
 
@@ -3151,7 +3217,7 @@ Training monitor at the final step — **not the verdict**, and not comparable a
 - **No new failures.** The four last arms ended `END status=OK`; nothing in their logs is an error.
 - **The monitors cannot rank priors.** PD: 36 arms use the legacy protocol (`german`, `myhom` plus
   the holdout sets `hmeq`, `thomas`), nine use protocol 2 (five dev sets). LGD: all 45 are legacy,
-  and `base_model` R² is non-finite in 30 of them (seeds 0 and 2, one non-finite prediction each),
+  and `PropLGD4` R² is non-finite in 30 of them (seeds 0 and 2, one non-finite prediction each),
   so the LGD row above rests on one seed per configuration.
 
 ### Interpretation
@@ -4044,7 +4110,7 @@ Two fixes produced it, both of them removals of OUR differences rather than chan
    drift. Only `name`, `_wrapper_kwargs` and `_fit` (metadata) are overridden; `_predict` is
    inherited.
 2. **A shared context cap at 1,024**, matched to `n_rows_range`. The wrapper does not cap
-   context, so it had been feeding 47,089 rows on `heloc` to a model trained on <=1,024 — 46x.
+   context, so it had been feeding the full PropLGD1 training split to a model trained on at most 1,024 rows.
    Applied to both columns from one setting, so it is part of the measurement.
 
 ### Bugs and anomalies
@@ -4075,11 +4141,11 @@ is `float16`'s largest finite value.
 
 | dataset | input absmax | before | after |
 |---|---|---|---|
-| `axa` | 1.98 | finite | finite |
-| `heloc` | 820 | finite | finite |
-| `loss2` | **2.4e6** | NaN | **finite** |
-| `base_modelisation` | **8.1e7** | NaN | **finite** |
-| `base_model` | **9.6e8** | NaN | **finite** |
+| `PropLGD3` | 1.98 | finite | finite |
+| `PropLGD1` | 820 | finite | finite |
+| `PropLGD2` | **2.4e6** | NaN | **finite** |
+| `PropLGD5` | **8.1e7** | NaN | **finite** |
+| `PropLGD4` | **9.6e8** | NaN | **finite** |
 
 We fed raw currency amounts into the network. Upstream's `PreprocessingPipeline.fit` begins
 with `CustomStandardScaler().fit_transform(X)`; we had median imputation and no scaling.
@@ -4162,7 +4228,7 @@ and AMP rows are what finally cornered it:
 ` — and `bash -n` accepted
   both. The run used micro_batch_size 4 on a 183 GB card. Now set per partition, with a test.
 - **Peak memory was 6.6 GB of 183 GB**, so there is a great deal left: micro 32 on `gpu_b200`.
-- **The NaN survives `max_features: 100`.** `base_modelisation` (256 features) still returns
+- **The NaN survives `max_features: 100`.** `PropLGD5` still returns
   all-NaN, so the training-range hypothesis is not sufficient on its own. Still needs a
   checkpoint.
 - Learning is healthy at batch 64: loss 0.331 -> 0.122 by step 1,400, gradients live in all
@@ -4256,8 +4322,8 @@ bnd_err=0.0204` on real LGD data. Registration, checkpoint resolution, architect
 reconstruction and the row cap all hold.
 
 ### Bugs and anomalies
-1. **The LGD model emits 100 % NaN predictions on 3 of 4 real datasets** (`base_modelisation`,
-   `base_model`, `loss2`) and on 5 out-of-domain regression datasets. `axa` — the only one
+1. **The LGD model emits 100 % NaN predictions on 3 of 4 real datasets** (`PropLGD5`,
+   `PropLGD4`, `PropLGD2`) and on 5 out-of-domain regression datasets. `PropLGD3` — the only one
    with **zero missing values** and only 2 features — works, and gives sensible numbers
    (r2 −0.004, coverage 0.71/0.89/0.93, spearman 0.47).
    **Not the data:** the imputed input contains no non-finite value. **Not the architecture:**

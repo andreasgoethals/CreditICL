@@ -5,6 +5,31 @@ date; historical commands, source identities and grid sizes are not current laun
 Use [VSC.md](VSC.md) for operation and recovery, [RUNS.md](RUNS.md#runs) for full evidence,
 and [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) for current recipes. Preserve earlier failures.
 
+## 09-11-2026 — Exp2 results synced and Exp3 training admitted
+
+The publication revision uses aliases for seven restricted datasets. The local private recipe
+resolved all seven original caches and matched the earlier preprocessing and feature-policy
+outputs. Current analysis readers resolve legacy results locally. Use the original checkout to
+resume running jobs. The 11:56 CET read verified 21 running PD tasks and 27 pending tasks across
+both arrays on `a3891f5`. A future deployment needs the protected recipe and fresh Exp0.
+
+**Tried** A partial notebook run overlapped a slower full run. **Result** The combined
+report lost ten summary blocks. **Why** Both runners consume the same stdout scratch files.
+**Instead** Run notebook batches sequentially in a shared output root and check every
+summary block before staging.
+
+All 320 Exp2 benchmark receipts and 56,800 cells verified. Revised Exp0 CPU `62581713`
+passed 14/14 and GPU `11774935` passed 125/125. The update-500 `video_transcoding` outlier
+has matching weight, data and fold provenance. Large positive prediction bias explains
+92–93% of MSE on the four worst folds. The higher-rate TabPFN-3 LGD loss extends across
+the OOD suite. See [RUNS.md](RUNS.md#runs) for the exact comparisons and limitations.
+
+Synced 7,714 verified analysis members, reran 12 notebooks and verified 52 figures. Removed
+both temporary transfer archives and 405 empty local locks. Full VSC preflight, two dry runs
+and 117 local tests passed. Mindwell accepted `11780823` (PD) and `11780839` (LGD), 24 tasks
+each, on frozen `a3891f5` with PROJECT r3. Receipt `20261109-exp3-all-training.json`
+is in the isolated DATA checkout. The Exp2 baseline results remain in the production namespace.
+
 ## 06-11-2026 — Documentation consolidation
 
 Reorganized README, design/config/prior guides, VSC operations, output/notebook guides and
@@ -1501,9 +1526,9 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 | 19-10-2026 | Exp0 GPU 11714993, Mindwell B200/r11g17, `b351325` | **FAILED exit 1; 16 CUDA tests PASS, 1 FAIL; 2m18s main-log interval** | PD 2,986-feature streaming predictions differed from stock by up to 0.00238492 (3/16 probabilities outside tolerance). No long training or capacity stages started. Local AMP reproduction confirms a float32 boundary conversion; remove it, retain tolerance, revalidate on B200 |
 | 19-10-2026 | Exp0 CPU 62369106, wICE batch/l33c22n2, `b351325` | **PASS: 13/13 stages, 1,575 tests PASS/2 SKIP, 11/11 notebooks, 125 figures; 35m10s log interval** | All 23 CPU artifact hashes match; GPU binds this exact receipt and input inventory. All 21 caches v8 and 50 OOD tables present. Subsequent precision/test changes require a new CPU receipt |
 | 19-10-2026 | Follow-up of GPU 11692660 and VSC checkout | **CANCELLED by 2538338 after 22:36:01; batch 0:15, 22:36:10** | ZIP still has schema-2 RUNNING / 12 of 66 stages and a false OK footer. All 22 CPU hashes match; no new model errors. VSC remains `cf0e539` / fingerprint `adf308f...`; 16-10 fixes remain unpublished locally. Add signal-aware status/tests, publish fixes, then clean CPU/GPU validation; do not resume the old slow code |
-| 16-10-2026 | Exp0 GPU 11692660, Mindwell B200/r11g22, `cf0e539` dirty; started 15-10 | **RUNNING at 09:01, 22h20m/24h; 12/66 stages PASS; cannot finish at observed pace** | All 17 CUDA tests, six smoke routes and both equivalence checks passed. Released TabICL passed five folds on 759-feature loan_default; 2,986-feature algorithmwatch took 13h34 for fold 0, fold 1 still predicting. Current benchmark writes results only at stage end; validation has no continuation. Keep evidence, address runtime/persistence/logging before rerun; Exp1 blocked |
+| 16-10-2026 | Exp0 GPU 11692660, Mindwell B200/r11g22, `cf0e539` dirty; started 15-10 | **RUNNING at 09:01, 22h20m/24h; 12/66 stages PASS; cannot finish at observed pace** | All 17 CUDA tests, six smoke routes and both equivalence checks passed. Released TabICL passed five folds on PropPD2; 2,986-feature algorithmwatch took 13h34 for fold 0, fold 1 still predicting. Current benchmark writes results only at stage end; validation has no continuation. Keep evidence, address runtime/persistence/logging before rerun; Exp1 blocked |
 | 15-10-2026 | Exp0 CPU 62324362, wICE batch/l33c20n3, `cf0e539` dirty; audited 16-10 | **PASS: 12/12 stages, 1,437 passed / 3 skipped / 17 CUDA deselected; 16m31s log interval** | All 22 artifact hashes verified from ZIP; executable fingerprint matches local checkout and GPU, environment/inputs match, GPU binds exact CPU receipt. This is valid for the audited source; future executable fixes require renewed receipts |
-| 14-10-2026 | Exp0 GPU 11689448, Mindwell B200/r11g22, commit `351d948` dirty | **OUT_OF_MEMORY, 0:125, 41m32s; 12 stages PASS** | Accounting/stderr supplied at 19:37–19:38 confirm host RAM OOM: MaxRSS 188,735,484 KiB against 180G, one oom_kill. All 15 CUDA checks, six smoke routes and both equivalence checks passed; full-table TabICL completed two datasets then died on 105,471 rows/759 features. Local GPU/disk memory fix needs fresh CPU then GPU validation; no Exp1 launch |
+| 14-10-2026 | Exp0 GPU 11689448, Mindwell B200/r11g22, commit `351d948` dirty | **OUT_OF_MEMORY, 0:125, 41m32s; 12 stages PASS** | Accounting/stderr supplied at 19:37–19:38 confirm host RAM OOM: MaxRSS 188,735,484 KiB against 180G, one oom_kill. All 15 CUDA checks, six smoke routes and both equivalence checks passed; full-table TabICL completed two datasets then died on PropPD2. Local GPU/disk memory fix needs fresh CPU then GPU validation; no Exp1 launch |
 | 14-10-2026 | Exp0 CPU 62319803, wICE batch/m28c22n1, commit `351d948` dirty | **PASS: 12/12 stages, 1,404 tests PASS/3 SKIP; 16m02s log interval** | 21 credit and 50 OOD tables checked, package requirements passed, all 22 receipt artifact hashes verified from ZIP. CPU/GPU source and input fingerprints match. Subsequent inference-code changes require fresh CPU and GPU validation |
 | 14-10-2026 | Exp0 CPU 62316841, wICE batch, node m28c27n1, commit `6054c50` dirty | **FAILED; 11/12 stages PASS; 1,368 tests PASS, 2 FAIL, 3 SKIP, 13 deselected; 16m20s log interval** | Two legacy readiness tests patched only `experiment_dir` and read the actual failed GPU receipt through `outputs_dir`. Reproduced locally with a failed outer receipt, then both passed using isolated output roots. Production gate correctly blocked GPU. Fresh CPU then GPU required after these source changes |
 | 14-10-2026 | Exp0 GPU 11688276, Mindwell B200, commit `57d36cd` dirty, after CPU 62313072 | **FAILED 1:0, 01:58:32; 17 stages passed, `resume-pd-2` failed** | All six smoke tests, both equivalence checks, 11 mandatory CUDA tests and both TabICL PD stop/resumes passed. TabPFN PD restored CPU Adam moments before its first CUDA forward; first resumed update crashed. Place model before optimizer creation, add early PD/LGD CUDA resume probes, rerun CPU then GPU for changed source; no full-table benchmarks reached |
@@ -1513,10 +1538,10 @@ one lives in [`RUNS.md`](RUNS.md); this table is the index.
 | 12-10-2026 | Exp0 checks 11681071, audited 13-10 from ZIP | **FAILED: 95 PASS, 2 FAIL, 1 WARN; both equivalence checks passed** | 21m01s log interval; PD TabPFN nonfinite scaled gradient; LGD TabPFN CPU bar-distribution buffers with CUDA logits. Input/package repairs succeeded. New single-job validation must pass before the corrected 48-run Exp1; preserve historical 90 |
 | 12-10-2026 | Preprocessing, job 62297440, wICE, after `57377b2` | **COMPLETED 0:0, 00:03:00** | VSC installed TabPFN 9.1.0; correct TabICL commit and CatBoost 1.2.10 confirmed. Preflight ran while caches were rebuilding (13 current, 8 stale) and correctly prevented GPU submission. Repeat full preflight after completion; do not resubmit preprocessing |
 | 12-10-2026 | Exp0 checks, job 11680453, Mindwell `gpu_b200`, after `78f6b3f` | **FAILED 1:0, 00:17:27; both trainer-equivalence checks passed** | 21 stale v3 data caches, missing new OOD path while legacy cache exists, installed TabPFN 8.2.0 rejecting v9 inference flags. Repair environment/cache, preflight, then repeat checks. No six-arm Exp0 or benchmark completion yet; 0.291 GPU-h used |
-| 12-10-2026 | September benchmark CSV follow-up, `benchmark-results.zip` | **10,437/10,437 rows OK; no nonfinite headline metrics; 184/184 result hashes match receipts** | All 12 recorded evaluation source hashes match `2034cc2`. The 28-09 dataset-calibration development change postdates this campaign; do not attribute it to these checkpoints. Unequal contexts and AXA boundary diagnostics need re-evaluation only; the corrected optimizer/prior require a new 18-arm Exp1 |
+| 12-10-2026 | September benchmark CSV follow-up, `benchmark-results.zip` | **10,437/10,437 rows OK; no nonfinite headline metrics; 184/184 result hashes match receipts** | All 12 recorded evaluation source hashes match `2034cc2`. The 28-09 dataset-calibration development change postdates this campaign; do not attribute it to these checkpoints. Unequal contexts and PropLGD3 boundary diagnostics need re-evaluation only; the corrected optimizer/prior require a new 18-arm Exp1 |
 | 12-10-2026 | Audit of downloaded September Exp1 archive, SHA-256 `537f8272f6530e9cc890bddcc839b3ebe64a70ee23a9d8ca99135e017a01b928` | **90/90 training complete; 92/92 benchmark jobs OK; latest event 24-09 22:00 CEST** | 3,087 credit and 7,350 OOD cells reported successful; no benchmark NaN/error lines. CSVs and checkpoint binaries absent. This is the old 45-arm grid, not the revised 9-arm grid; preserve it, download project-storage results, then validate the revised pipeline through Exp0. No jobs submitted |
 | 24-09-2026 | Exp1 phase 2 benchmark: 11614376 (LGD), 11614377 (PD), Mindwell, arrays 0-45%8 | **COMPLETE 92/92, all OK; credit prior ≈ control on dev, cf 1 worse on both tracks** | PD dev ROC-AUC: best control 0.7326, best credit (cf 0.5 banded aggr) 0.7325, cf 1 0.70–0.72, released TabICLv2 0.7322. LGD dev R²: control 0.520, cf 0.5 ≤ 0.518, cf 1 ≈ 0 (collapse, also OOD). All cf 0/0.5 configs within 1–2 seed SDs. Commit `2034cc2` |
-| 24-09-2026 | Exp1 final download, 19:41; last jobs PD 11604659 / 11613401 / 11613402, LGD 11591463_43 | **COMPLETE: 90/90 arms, all `END status=OK`; phase 2 not run** | ≈1,354 GPU-h (PD 587, LGD 767; banded arms 5–7× the rest). PD monitor (german+myhom, final step): control 0.672, cf 0.5 0.669, cf 1 0.646; OOD 0.997/0.992/0.975. LGD monitor unusable (base_model NaN in 30/45). Monitoring protocols differ — do not rank on them; phase 2 decides |
+| 24-09-2026 | Exp1 final download, 19:41; last jobs PD 11604659 / 11613401 / 11613402, LGD 11591463_43 | **COMPLETE: 90/90 arms, all `END status=OK`; phase 2 not run** | ≈1,354 GPU-h (PD 587, LGD 767; banded arms 5–7× the rest). PD monitor (german+myhom, final step): control 0.672, cf 0.5 0.669, cf 1 0.646; OOD 0.997/0.992/0.975. LGD monitor unusable (PropLGD4 NaN in 30/45). Monitoring protocols differ — do not rank on them; phase 2 decides |
 | 24-09-2026 | Exp1 snapshot at 09:31 CEST; PD 11598087 → 11604654–61, LGD 11591463_43 | **86/90 complete: PD 42/45, LGD 44/45; four advancing, no new training crashes** | Six PD retries completed; all eight overnight walltime continuations resumed at the exact saved step. Remaining PD a19=11000, a25=12250, a40=7700; LGD a43=12200 of 12500. Conditional finish today ~17:30–18:30 plus queue delay. New PD monitor: 160 finite rows; old LGD monitor still has NaNs in 30 arms. Final benchmark results were not in this download |
 | 23-09-2026 | Exp1 PD retry 11598087, Mindwell; indices 1,4,10,16,19,25,31,34,40 | **SUBMITTED at 12:22 CEST; execution/results not yet supplied** | Updated launcher submitted only the nine unfinished PD arms; counts remain PD 36/45, LGD 44/45 with LGD still running. Failed-log cleanup returned without error at 12:23; checkpoints and successful logs were outside its scope |
 | 23-09-2026 | Scheduler follow-up for 11591462 / 11591463 at 10:30–10:39 | **Confirmed: nine PD FAILED 134; LGD 13/28 completed, 43 RUNNING; benchmark 0/46 per track** | Local fixes prepared; no new cluster jobs submitted. Resume unfinished training; preserve all checkpoints and successful logs. This is follow-up evidence for the snapshot below |
@@ -1655,7 +1680,7 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 ### 14-10-2026 — Full-row, full-width TabICL inference exceeded the tested resource envelope
 
 **Tried:** GPU job 11689448 after CPU 62319803 passed; released TabICL on the selected full-table PD benchmarks, before the six longer diagnostic training runs.
-**Result:** Five folds each completed for hackerearth (532,428 rows) and bank_status (100,000); loan_default prediction was killed after fitting 67,500 rows x 759 features. Later accounting/stderr confirmed OUT_OF_MEMORY at 41m32s, 188,735,484 KiB MaxRSS, one oom_kill.
+**Result:** Five folds each completed for hackerearth (532,428 rows) and PropPD1. PropPD2 prediction was killed after the first inner fit. Later accounting/stderr confirmed OUT_OF_MEMORY at 41m32s, 188,735,484 KiB MaxRSS, one oom_kill.
 **Why:** Host RAM reached the 180G allocation. Confirmed unsafe paths in pinned TabICL: node-level RAM estimation, no configured disk offload, and `ColEmbedding._inference_without_feature_group` copying the complete embedding with `repeat` even for one member.
 **Instead:** Keep every row/feature/member, execute members sequentially, bound column transfers, preserve disk-backed embeddings and refuse CPU/swap fallback. Reserve disk blocks before writes on Linux and test real disk offload on CUDA. Andreas subsequently authorized removing stale GPU output; use `clean_run --reset-exp0-gpu --clean`, preserving CPU records. Changed code still requires fresh CPU/GPU receipts.
 
@@ -1711,7 +1736,7 @@ built upstream TabICL**. Staging checkpoint directory still not writable. Full w
 ### 14-10-2026 — Finite float32 values still overflowed full-table preprocessing
 
 **Tried:** Clip source values at float32's maximum, checking that each value was finite.
-**Result:** Loan-default columns f391/f627 still overflowed float32 mean/variance reductions.
+**Result:** Two restricted PD features still overflowed float32 mean/variance reductions.
 **Why:** Representability of individual values does not ensure safe reductions across a large table.
 **Instead:** Fixed signed-log transforms for those source columns, a conservative numeric bound, cache version 7, reduction regressions and a full-row Exp0 GPU probe.
 
@@ -1882,11 +1907,11 @@ fixed, because the fix is one changelog line and the dead end was the hour.
 - **Why:** (1) `sample_lgd_shape` read `shape_ab_range`; (2) `expand_grid` treats any list-valued key not ending in `_range` as a lever.
 - **Instead:** per-table ranges end in `_range` (`flip_pos_to_neg_range`, `boundary_mass_0_range`, ...), code reads both forms; `interior_a_range`/`interior_b_range` added, falling back to the old keys. Check `--list` after any config edit.
 
-### 28-09-2026 — `axa`'s boundary atoms sit at 1e-5 and 1 − 1e-5, so exact 0/1 tests missed them
+### 28-09-2026 — `PropLGD3`'s boundary atoms sit at 1e-5 and 1 − 1e-5, so exact 0/1 tests missed them
 - **Tried:** LGD boundary mass as `y <= 0` / `y >= 1` (realism statistics) and `tol=1e-6` (`metrics.boundary_mass_error`).
-- **Result:** `0003.axa` read as 0 % at both ends; it holds 28.8 % complete recoveries and 5.6 % total losses. The calibration targets and the benchmark's boundary-mass error for axa were wrong.
-- **Why:** the source squeezes `lgd_time` into [1e-5, 1 − 1e-5], a beta-regression convenience; the recipe passes it through.
-- **Instead:** `metrics.BOUNDARY_TOL = 1e-4` for every boundary test. With axa read correctly all 7 LGD tables have losses of exactly 0, so `atom_prob_0` is 1.0.
+- **Result:** `PropLGD3` read as 0 % at both ends; it holds 28.8 % complete recoveries and 5.6 % total losses. The calibration targets and the benchmark's boundary-mass error for PropLGD3 were wrong.
+- **Why:** the source squeezes the target into [1e-5, 1 − 1e-5], a beta-regression convenience; the recipe passes it through.
+- **Instead:** `metrics.BOUNDARY_TOL = 1e-4` for every boundary test. With PropLGD3 read correctly all 7 LGD tables have losses of exactly 0, so `atom_prob_0` is 1.0.
 
 ### 28-09-2026 — Upstream's graph sampler returns NaN graphs; the credit path kept them as zeros
 - **Tried:** `upstream.sample_base_latent` for the credit tables, followed by `nan_to_num` in `_candidate`.
@@ -1896,7 +1921,7 @@ fixed, because the fix is one changelog line and the dead end was the hour.
 
 ### 25-09-2026 — LGD 100 % credit arms collapse in the benchmark; the target scale, most likely
 - **Tried:** Exp1 LGD with the credit target left raw in [0, 1] (`target_scaling` defaults to `none`; not set in `Exp1_LGD.yaml` or `Exp2_LGD.yaml`).
-- **Result:** benchmark holdout R² −0.13 for every 100 % credit arm (0.46 at 0 %, 0.45 at 50 %), calibration slope 4.1. The training monitor ranks the other way round: 50 % credit ~0.19 on `base_model`, control ~−0.03.
+- **Result:** benchmark holdout R² −0.13 for every 100 % credit arm (0.46 at 0 %, 0.45 at 50 %), calibration slope 4.1. The training monitor ranks the other way round: 50 % credit ~0.19 on `PropLGD4`, control ~−0.03.
 - **Why (likely, untested):** TabICL's prior standardises regression targets and `TabICLRegressor.fit` standardises y (`y_scaler_`), so the benchmark feeds standardised targets — which a 100 % credit arm never saw; `progress._score` feeds raw [0, 1] targets — which a control arm never saw. Only 50 % arms saw both.
 - **Instead:** read LGD credit-vs-control only at 0 % vs 50 % in the benchmark. Before Exp2 LGD: set `prior.credit.target.target_scaling: standard`, or score one 100 % checkpoint without y standardisation to confirm first (Andreas's call).
 - **Since 28-09-2026:** `target_scaling: standard` (context statistics, as `y_scaler_`) in every LGD config, and the monitor scores through upstream's wrapper, so both see the benchmark's scale.
@@ -1945,7 +1970,7 @@ fixed, because the fix is one changelog line and the dead end was the hour.
 
 ### 24-09-2026 — Clipping a standardised target to [0, 1] invented boundary atoms
 - **Tried:** comparing the original prior's pooled target with real LGD targets after `np.clip(y, 0, 1)`.
-- **Result:** every negative standardised value became an exact 0, so the original prior looked closest to `axa` (the most mass at 0) and 0.1 further from real data than it is.
+- **Result:** every negative standardised value became an exact 0, so the original prior looked closest to `PropLGD3` (the most mass at 0) and 0.1 further from real data than it is.
 - **Why:** the original prior's regression target is standard-scaled (TabICLv2), not on [0, 1]; a clip is not a rescale.
 - **Instead:** min-max scale a target that is not already on [0, 1] (`exp1_plots._unit_target`); the means become 0.34 (credit) against 0.36 (original).
 
@@ -1957,9 +1982,9 @@ fixed, because the fix is one changelog line and the dead end was the hour.
 
 ### 24-09-2026 — Averaging Exp1 monitoring curves mixed holdout data into "which prior is best"
 - **Tried:** averaging each arm's `real__*` progress columns into one training curve — first over every column (skipna off), then over the datasets valid in every arm.
-- **Result:** the first silently dropped 30/45 LGD arms (`base_model` all-NaN); the second averaged only `axa`/`loss2`/`base_modelisation` for LGD — all three HOLDOUT datasets — and printed a +0.13 R² "credit wins" computed on the test set.
+- **Result:** the first silently dropped 30/45 LGD arms (`PropLGD4` all-NaN); the second averaged only `PropLGD3`/`PropLGD2`/`PropLGD5` for LGD — all three HOLDOUT datasets — and printed a +0.13 R² "credit wins" computed on the test set.
 - **Why:** arms finished before the 23-09 development-only protocol monitored "the smallest few" datasets regardless of role (36 PD arms: `hmeq`, `thomas` are holdout); they have no `progress_protocol` column.
-- **Instead:** average only the config's `eval.dev_datasets` that every arm carries (PD `german`, `myhom`; LGD `base_model`, 15 arms); show holdout curves labelled, never averaged; check `training_plots.monitoring_coverage` before reading any monitoring number.
+- **Instead:** average only the config's `eval.dev_datasets` that every arm carries (PD `german`, `myhom`; LGD `PropLGD4`, 15 arms); show holdout curves labelled, never averaged; check `training_plots.monitoring_coverage` before reading any monitoring number.
 
 ### 23-09-2026 — Plot fixtures hid the PD metric-name mismatch
 - **Tried:** rendering the repaired PD plots against existing synthetic plot fixtures.
@@ -2255,8 +2280,7 @@ fixed, because the fix is one changelog line and the dead end was the hour.
   on our 12,500 steps costs **3.6x**, not 307x: ~9 h/arm becomes ~32 h, which is affordable for
   Exp3 and not for 75 arms.
 - **Why it matters anyway:** once `crediticl` went through upstream's wrapper, the context stopped
-  being capped, and the wrapper hands over the whole training split - 47,089 rows on `heloc`
-  against the <=1,024 we train on. 5 of 7 LGD datasets exceed the training length.
+  being capped, and the wrapper hands over the full training split to a model trained on at most 1,024 rows. 5 of 7 LGD datasets exceed the training length.
 - **Instead:** cap the context to what we trained on, on the SHARED base class so both columns
   get the same cap, stratified for PD, recorded per row. **When you cannot afford to match the
   reference at training time, match it at evaluation time** - and put the knob where it cannot
@@ -2285,11 +2309,11 @@ fixed, because the fix is one changelog line and the dead end was the hour.
   identically on both cards and under all four attention backends. Its output `absmax` was
   **6.550e+04** - `float16`'s largest finite value. The inputs explain the rest:
 
-        axa                absmax 1.98    finite
-        heloc              absmax 820     finite
-        loss2              absmax 2.4e6   NaN
-        base_modelisation  absmax 8.1e7   NaN
-        base_model         absmax 9.6e8   NaN
+        PropLGD3                absmax 1.98    finite
+        PropLGD1              absmax 820     finite
+        PropLGD2              absmax 2.4e6   NaN
+        PropLGD5  absmax 8.1e7   NaN
+        PropLGD4         absmax 9.6e8   NaN
 
 - **Why:** we fed the network **raw, unscaled features** - currency amounts and loan balances up
   to 9.6e8. Upstream never does: `PreprocessingPipeline.fit` starts with
@@ -2305,9 +2329,8 @@ fixed, because the fix is one changelog line and the dead end was the hour.
 
 ### 18-08-2026 - The LGD NaN does not reproduce on CPU
 - **Tried:** running `diagnose_nan.py` on the login node against the step-600 checkpoint, on
-  the three datasets that report 100 % NaN plus `axa` as a control.
-- **Result:** **every module finite on all four**, including `base_modelisation` (256 features,
-  input absmax 8.1e7) with a sensible output (absmax 1.34). Weights are healthy too - largest
+  the three datasets that report 100 % NaN plus `PropLGD3` as a control.
+- **Result:** **every module finite on all four**, including PropLGD5 with a sensible output (absmax 1.34). Weights are healthy too - largest
   parameter magnitude 1.31, none non-finite. So the checkpoint is fine and the data is fine.
 - **Why the run still NaNs:** the only difference in the log is `device=cpu`. Training and
   evaluation run on CUDA. PyTorch picks the scaled-dot-product-attention backend itself on

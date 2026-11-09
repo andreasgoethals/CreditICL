@@ -6,7 +6,7 @@
 #
 #  WHY A JOB AND NOT A LOGIN NODE. Run on the login node, the same checkpoint and
 #  the same four datasets came back **completely finite** — including
-#  `base_modelisation`, which training reports as 100 % NaN. The only difference in
+#  `PropLGD5`, which training reports as 100 % NaN. The only difference in
 #  the log was `device=cpu`.
 #
 #  That points at the attention kernel. PyTorch picks a CUDA backend by itself
@@ -68,9 +68,9 @@ echo "=============================================================="
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv || true
 echo
 
-# The three datasets that report all-NaN, then `axa` as a control that does not.
+# The three datasets that report all-NaN, then `PropLGD3` as a control that does not.
 # Every attention backend is tried on each; `--sdpa-backend all` is the default.
-DATASETS="${DATASETS:-0005.base_modelisation,0004.base_model,0002.loss2,0003.axa}"
+DATASETS="${DATASETS:-PropLGD5,PropLGD4,PropLGD2,PropLGD3}"
 echo "datasets: ${DATASETS}"
 echo
 

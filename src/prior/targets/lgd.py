@@ -1,26 +1,8 @@
 """LGD target family: bounded on [0,1] with a controlled mass at the boundaries.
 
-WHAT REAL LGD LOOKS LIKE (measured from all 7 processed LGD datasets,
-2026-08-06 — total mass at *exactly* the min or max; see
-`notebooks/0. General/0.1_data_exploration.ipynb`, which regenerates these numbers):
-
-    0001.heloc              n=58,862   73.0%   dominated by the boundaries
-    0003.axa                n= 2,545   34.2%
-    0005.base_modelisation  n=   594   27.6%
-    0004.base_model         n=   762   22.4%
-    0006.lgd_freddie        n=16,002   19.5%   genuinely U-shaped
-    0002.loss2              n= 4,637    7.3%
-    0007.lgd_lendingclub    n= 5,627    1.8%   effectively interior
-
-So boundary mass spans **1.8% to 73%** — a factor of forty. The premise "bimodal
-with point masses at 0 and 1" is strong for about four of the seven and weak for
-the rest. A prior that hard-codes any single one of these shapes would overfit to
-it and lose on the others. This module therefore samples a **family over boundary
-mass and interior shape**, spanning the whole observed range continuously.
-
-(An earlier version of this docstring reported only three datasets and concluded
-the premise held for "one of three". That was measured before the other four were
-preprocessed, and understated the case.)
+Observed LGD targets span interior-heavy and boundary-heavy shapes. A single
+fixed law would miss that variation. This module samples a family over the
+boundary mass and interior shape. Notebook 0.1 shows the aggregate diagnostics.
 
 THE DESIGN, and why each choice.
 
@@ -35,7 +17,7 @@ THE DESIGN, and why each choice.
    parameters:
 
        a<1, b<1  ->  U-shaped                (Freddie-like interior)
-       a>1, b>1  ->  unimodal interior       (AXA-like)
+       a>1, b>1  ->  unimodal interior       (PropLGD3-like)
        a>1, b<1  ->  mass pushed toward 1    (LendingClub-like)
        a<1, b>1  ->  mass pushed toward 0
 
@@ -116,7 +98,7 @@ def sample_lgd_shape(rng: PriorRNG, cfg: dict) -> dict:
     max_total = float(cfg.get("max_total_boundary_mass", 0.60))
     # `lo + (hi - lo) * U ** power`: 1 is uniform; above 1 most tables get a small atom and a few a
     # large one, which is how the real atoms spread (at 1: 0.3 %, 4 %, 6 %, 8 %, 12 %, 16 %, 52 %). A
-    # uniform draw wide enough to reach `heloc`'s 52 % put the median far above the real 8 %.
+    # uniform draw wide enough to reach `PropLGD1`'s 52 % put the median far above the real 8 %.
     pow0 = float(cfg.get("boundary_mass_0_power", cfg.get("boundary_mass_power", 1.0)))
     pow1 = float(cfg.get("boundary_mass_1_power", cfg.get("boundary_mass_power", 1.0)))
 

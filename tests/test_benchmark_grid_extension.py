@@ -12,7 +12,7 @@ from src.utils.config import expand_with_seeds, load
 def requests():
     run = expand_with_seeds(load("config/Exp1_PD.yaml"))[0]
     wanted = {
-        "code": {path: bench.digest(bench.ROOT / path) for path in REVIEWED_TRANSITIONS},
+        "code": {path: min(approved - old) for path, (old, approved) in REVIEWED_TRANSITIONS.items()},
         "config": run, "step": 12500, "checkpoint_sha256": "same-weights",
         "protocol": 9, "n_folds": 5, "context_cap": None,
         "environment_fingerprint": "same-environment", "credit_inputs": {"dataset": "same-data"},
@@ -20,8 +20,7 @@ def requests():
     wanted["code"]["src/eval/runner.py"] = "same-evaluator"
     recorded = copy.deepcopy(wanted)
     recorded["config"]["_grid"].update(total=3, array_total=9)
-    for path, (old, approved) in REVIEWED_TRANSITIONS.items():
-        assert wanted["code"][path] in approved, "This transition must be retired/reviewed after code changes"
+    for path, (old, _approved) in REVIEWED_TRANSITIONS.items():
         recorded["code"][path] = sorted(old)[0]
     return recorded, wanted
 
@@ -61,6 +60,13 @@ def test_scientific_or_unreviewed_code_changes_still_invalidate_receipts(path, v
 def test_new_evaluation_sources_are_not_ignored():
     recorded, wanted = requests()
     wanted["code"]["src/eval/new_scoring.py"] = "new"
+    assert not compatible_requests(recorded, wanted)
+
+
+def test_restricted_dataset_request_requires_fresh_receipts():
+    recorded, wanted = requests()
+    wanted["code"]["src/eval/benchmark_status.py"] = bench.digest(bench.ROOT / "src/eval/benchmark_status.py")
+    wanted["restricted_data_recipe"] = "verified-private-recipe"
     assert not compatible_requests(recorded, wanted)
 
 

@@ -20,15 +20,15 @@ Frequency of source label 1 per binary credit benchmark, sorted, with rates writ
 
 **02_lgd_targets** — `lgd_targets`
 
-LGD target histograms for seven processed benchmark tables, ordered by row count, with 40 bins on the loss scale [0,1] and dataset-specific vertical scales; titles report the share within 1e-4 of 0 or 1.
+LGD target histograms for seven processed benchmark tables, in registry order, with 40 bins on the loss scale [0,1] and dataset-specific vertical scales; titles report the share within 1e-4 of 0 or 1.
 
 **03_shapes** — `shapes`
 
-Rows against features for 21 processed source tables on logarithmic axes, with one named point per table; dotted lines mark Experiment 1's synthetic training geometry of 1,024 rows and at most 100 features, not benchmark limits. Experiment 2's TabICLv2 continuation uses larger synthetic tables.
+Rows against features for the public processed source tables on logarithmic axes, with one named point per table; dotted lines mark Experiment 1's synthetic training geometry of 1,024 rows and at most 100 features, not benchmark limits. Experiment 2's TabICLv2 continuation uses larger synthetic tables.
 
 **04_table_inventory** — `table_inventory`
 
-Processed source-table inventory with one aligned row per dataset: categorical columns as a share of all source columns on the left, and missing feature entries as a share of all source feature entries on the right. Percentages are written beside the marks; axes have separate percentage ranges. PD (circles) and LGD (squares) label the prediction tasks. The inventory precedes prediction-time feature exclusions and fold-fitted encoding; a zero reflects the available processed table, not necessarily complete original records.
+Public source-table inventory with one aligned row per dataset: categorical columns as a share of all source columns on the left, and missing feature entries as a share of all source feature entries on the right. Percentages are written beside the marks; axes have separate percentage ranges. PD (circles) and LGD (squares) label the prediction tasks. The inventory precedes prediction-time feature exclusions and fold-fitted encoding; a zero reflects the available processed table, not necessarily complete original records.
 
 ## 0.2_prior_visualisation_pd
 
@@ -196,11 +196,19 @@ Final credit-benchmark differences from 0% continuation at the same backbone and
 
 Final credit performance difference from the matched 0% continuation for every credit dataset, mixture and fixed peak rate of one backbone. Cells average five folds and two training seeds; the diverging color scale is symmetric about zero and positive ROC-AUC or R² differences favor the credit mixture.
 
-**05_credit_ood_control** — `credit_ood_control`
+**05_checkpoints_tabicl** — `checkpoints_tabicl`
+
+Full-table five-fold ROC-AUC against optimizer updates 125, 250, 500, 1,000, 1,500 for four mixtures at each fixed peak rate, on the credit benchmark and native OOD. Points average the 2 registered training seeds; shading spans their dataset-mean scores, not a confidence interval. Missing checkpoints are not connected; the final update is the primary endpoint.
+
+**06_checkpoints_tabpfn3** — `checkpoints_tabpfn3`
+
+Full-table five-fold ROC-AUC against optimizer updates 125, 250, 500, 1,000, 1,500 for four mixtures at each fixed peak rate, on the credit benchmark and native OOD. Points average the 2 registered training seeds; shading spans their dataset-mean scores, not a confidence interval. Missing checkpoints are not connected; the final update is the primary endpoint.
+
+**07_credit_ood_control** — `credit_ood_control`
 
 Credit versus native-OOD performance differences from equally trained 0% continuation at the same backbone and fixed peak rate. Colors identify mixtures and marker shapes identify rates; small points show seed means. Horizontal and vertical bars independently resample the two dataset domains (nominal 95% intervals), after averaging five folds and two training seeds. Higher ROC-AUC or R² is better on both axes.
 
-**06_credit_ood_released** — `credit_ood_released`
+**08_credit_ood_released** — `credit_ood_released`
 
 Credit versus native-OOD performance differences from matching released weights after 1,500 continuation updates, including the 0% generic controls. Colors identify mixtures and shapes distinguish the two fixed rates within each backbone. Bars are separate nominal 95% paired-dataset bootstrap intervals and small points show seed means. Negative ROC-AUC or R² indicates degradation from the released model.
 
@@ -222,11 +230,19 @@ Final credit-benchmark differences from 0% continuation at the same backbone and
 
 Final credit performance difference from the matched 0% continuation for every credit dataset, mixture and fixed peak rate of one backbone. Cells average five folds and two training seeds; the diverging color scale is symmetric about zero and positive ROC-AUC or R² differences favor the credit mixture.
 
-**05_credit_ood_control** — `credit_ood_control`
+**05_checkpoints_tabicl** — `checkpoints_tabicl`
+
+Full-table five-fold R² against optimizer updates 125, 250, 500, 1,000, 1,500 for four mixtures at each fixed peak rate, on the credit benchmark and native OOD. Points average the 2 registered training seeds; shading spans their dataset-mean scores, not a confidence interval. Missing checkpoints are not connected; the final update is the primary endpoint.
+
+**06_checkpoints_tabpfn3** — `checkpoints_tabpfn3`
+
+Full-table five-fold R² against optimizer updates 125, 250, 500, 1,000, 1,500 for four mixtures at each fixed peak rate, on the credit benchmark and native OOD. Points average the 2 registered training seeds; shading spans their dataset-mean scores, not a confidence interval. Missing checkpoints are not connected; the final update is the primary endpoint.
+
+**07_credit_ood_control** — `credit_ood_control`
 
 Credit versus native-OOD performance differences from equally trained 0% continuation at the same backbone and fixed peak rate. Colors identify mixtures and marker shapes identify rates; small points show seed means. Horizontal and vertical bars independently resample the two dataset domains (nominal 95% intervals), after averaging five folds and two training seeds. Higher ROC-AUC or R² is better on both axes.
 
-**06_credit_ood_released** — `credit_ood_released`
+**08_credit_ood_released** — `credit_ood_released`
 
 Credit versus native-OOD performance differences from matching released weights after 1,500 continuation updates, including the 0% generic controls. Colors identify mixtures and shapes distinguish the two fixed rates within each backbone. Bars are separate nominal 95% paired-dataset bootstrap intervals and small points show seed means. Negative ROC-AUC or R² indicates degradation from the released model.
 

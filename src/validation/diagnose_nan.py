@@ -1,7 +1,7 @@
 """Find WHERE a trained checkpoint starts producing non-finite values.
 
     python -m src.validation.diagnose_nan
-    python -m src.validation.diagnose_nan --datasets 0005.base_modelisation
+    python -m src.validation.diagnose_nan --datasets PropLGD5
     python -m src.validation.diagnose_nan --task pd --checkpoint <path>
 
 WHAT IT FOUND, AND WHY IT IS KEPT

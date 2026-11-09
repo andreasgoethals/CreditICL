@@ -23,11 +23,11 @@ naive version, and each is stated in the notebooks so a reader knows what a line
 * **Development datasets only, the same ones for every arm.** Monitoring is descriptive and
   selects no mixture in the current fixed design. Curves from before the
   development-only monitoring protocol (23-09-2026) scored "the smallest few" datasets whatever
-  their role — for Exp1 that put holdout sets (PD `hmeq`, `thomas`; LGD `axa`, `loss2`,
-  `base_modelisation`) into every old arm's mean. So a domain mean covers only the config's
+  their role — for Exp1 that put holdout sets (PD `hmeq`, `thomas`; LGD `PropLGD3`, `PropLGD2`,
+  `PropLGD5`) into every old arm's mean. So a domain mean covers only the config's
   development datasets that EVERY arm carries (PD: `german`, `myhom`), never a holdout one. A
   missing value is still never skipped (`skipna=False`): an arm whose development monitor is
-  missing (LGD `base_model` in every seed-0 and seed-2 arm, where one of 381 predictions is
+  missing (LGD `PropLGD4` in every seed-0 and seed-2 arm, where one of 381 predictions is
   non-finite) drops out of an average and is COUNTED in the printed summary, rather than being
   averaged over fewer datasets. `monitoring_coverage` draws the whole situation, arm by arm.
 
@@ -120,6 +120,8 @@ def _one_grid(out: dict[str, Any], track: str, exp: str) -> dict[str, Any]:
 
 def load_progress(track: str, exp: str = "exp1") -> dict[str, pd.DataFrame]:
     """`{run_name: progress DataFrame}` for every started arm of `track` in experiment `exp`."""
+    from src.data.private_data import publication_text
+
     out: dict[str, pd.DataFrame] = {}
     for run, path in _run_files(track, "progress", exp):
         try:
@@ -127,7 +129,7 @@ def load_progress(track: str, exp: str = "exp1") -> dict[str, pd.DataFrame]:
         except (OSError, pd.errors.ParserError, pd.errors.EmptyDataError):
             continue
         if "step" in df and len(df):
-            out[run] = df.sort_values("step")
+            out[run] = df.rename(columns=publication_text).sort_values("step")
     return _one_grid(out, track, exp)
 
 

@@ -22,9 +22,13 @@ def test_float32_reductions_remain_finite_on_extreme_numeric_inputs():
 @pytest.mark.parametrize("case", ["large_columns", "percentages", "employment_sentinel", "score_scale"])
 def test_source_recipes_preserve_rows_and_numeric_meaning(monkeypatch, case):
     from src.data import dataset_preprocessing as recipes
+    from src.data.private_data import site
+    if case in {"large_columns", "score_scale"} and site() is None:
+        pytest.skip("restricted source recipe is unavailable")
     if case == "large_columns":
-        task, name = "pd", "0011.loan_default"
-        raw = pd.DataFrame({"f391": [-9e41, 0., 7e41], "f627": [5e41, 2e20, 8e30], "loss": [0, 1, 2]})
+        first, second, target = site(required=True).EXTREME_INPUT_FIELDS
+        task, name = "pd", "PropPD2"
+        raw = pd.DataFrame({first: [-9e41, 0., 7e41], second: [5e41, 2e20, 8e30], target: [0, 1, 2]})
     elif case == "percentages":
         task, name = "lgd", "0007.lgd_lendingclub"
         raw = pd.DataFrame({"lgd": [.1, .2, .3], "int_rate": ["9%", "20%", "11%"],
@@ -33,15 +37,16 @@ def test_source_recipes_preserve_rows_and_numeric_meaning(monkeypatch, case):
         task, name = "pd", "0012.home_credit"
         raw = pd.DataFrame({"TARGET": [0, 1, 0], "DAYS_EMPLOYED": [365243, -700, -2000]})
     else:
-        task, name = "pd", "0009.bank_status"
-        raw = pd.DataFrame({"Loan Status": ["Fully Paid", None, "Charged Off"],
-                            "Credit Score": [710, None, 7100]}, index=[4, 8, 12])
+        task, name = "pd", "PropPD1"
+        configured = site(required=True)
+        raw = pd.DataFrame({configured.STATUS_FIELD: ["Fully Paid", None, "Charged Off"],
+                            configured.NUMERIC_SCORE_FIELD: [710, None, 7100]}, index=[4, 8, 12])
     monkeypatch.setattr(recipes, "_load_dataset_file", lambda path: raw.copy())
     frame, _, cat, num = recipes.preprocess_dataset_specific(task, name, raw_dir=Path("unused"))
     if case == "large_columns":
-        assert len(frame) == 3 and {"f391", "f627"} <= set(num)
-        assert frame.f391.is_monotonic_increasing
-        assert np.isfinite(frame[["f391", "f627"]].to_numpy(dtype=np.float32).std(axis=0)).all()
+        assert len(frame) == 3 and {first, second} <= set(num)
+        assert frame[first].is_monotonic_increasing
+        assert np.isfinite(frame[[first, second]].to_numpy(dtype=np.float32).std(axis=0)).all()
     elif case == "percentages":
         assert len(frame) == 3 and {"int_rate", "revol_util"} <= set(num)
         assert not {"int_rate", "revol_util"} & set(cat)
@@ -52,7 +57,7 @@ def test_source_recipes_preserve_rows_and_numeric_meaning(monkeypatch, case):
         assert frame.DAYS_EMPLOYED.iloc[1:].tolist() == [-700, -2000]
     else:
         assert frame.index.tolist() == [4, 12]  # source IDs still align with the group sidecar
-        assert frame["Credit Score"].tolist() == [710., 710.]
+        assert frame[configured.NUMERIC_SCORE_FIELD].tolist() == [710., 710.]
 
 
 @pytest.mark.parametrize("rho", [.03, .12, .24, .30])
@@ -316,11 +321,14 @@ def test_reference_and_continued_tabpfn_use_explicit_equal_preprocessing(tmp_pat
     assert full_feature_tabpfn_config(second, 600)["ENABLE_GPU_PREPROCESSING"] is True
 
 
-def test_repeated_entities_and_future_fields_are_covered():
-    from src.data.pipeline import GROUP_SOURCES
-    from src.eval.feature_policy import prediction_features
-    assert GROUP_SOURCES["pd", "0009.bank_status"] == "Customer ID"
-    assert GROUP_SOURCES["lgd", "0005.base_modelisation"] == "spm"
-    names = ["spm", "PY1_unemployment", "DT_DECHEANCE_TERME", "topbaloispur_cor", "income_at_default"]
-    X, cats, _ = prediction_features("lgd", "0005.base_modelisation", np.ones((20, 5)), [], names)
+def test_private_prediction_exclusions_cover_entity_and_future_fields(monkeypatch):
+    from src.eval import feature_policy
+    configured = SimpleNamespace(
+        EXCLUSIONS={"PropLGD5": ["entity_identifier", "resolved_after_default", "workout_flag"]},
+        MACRO_MARKERS={"PropLGD5": ("future_", "next_year_")},
+    )
+    monkeypatch.setattr(feature_policy, "site", lambda **_: configured)
+    names = ["entity_identifier", "future_unemployment", "resolved_after_default",
+             "workout_flag", "income_at_default"]
+    X, cats, _ = feature_policy.prediction_features("lgd", "PropLGD5", np.ones((20, 5)), [], names)
     assert X.shape == (20, 1) and not cats

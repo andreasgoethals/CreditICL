@@ -4,6 +4,7 @@ import re
 from typing import Any
 import numpy as np
 import pandas as pd
+from src.data.dataset_registry import canonical_slug
 from src.utils import paths
 _CTX_FILE = re.compile(r"_ctx\d+\.csv$")
 
@@ -17,6 +18,8 @@ def _read_frames(files: list[Any], protocol: int | None, context: int | None = N
     if not frames:
         return None
     df = pd.concat(frames, ignore_index=True)
+    if "dataset" in df:
+        df["dataset"] = df["dataset"].map(lambda key: canonical_slug(key) or key)
     # Full-context rows carry no cap; capped ones only when asked for, and only that cap.
     cap = pd.to_numeric(df["context_cap"], errors="coerce") if "context_cap" in df \
         else pd.Series(np.nan, index=df.index)

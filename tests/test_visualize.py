@@ -123,7 +123,7 @@ def test_boundary_mass_plot_takes_a_real_reference(tasks):
     """The stars are the real datasets; the overlay must not crash on them."""
     from src.visualize.prior_plots import plot_boundary_mass
 
-    fig = plot_boundary_mass(tasks, real_reference={"heloc": (0.21, 0.52)})
+    fig = plot_boundary_mass(tasks, real_reference={"PropLGD1": (0.21, 0.52)})
     assert fig is not None
 
 
@@ -208,7 +208,7 @@ def test_real_data_figures_build():
     from src.utils.paths import find_raw_path
     from src.visualize import data_plots
 
-    if find_raw_path("lgd", "0003.axa") is None:
+    if find_raw_path("lgd", "PropLGD3") is None:
         pytest.skip("raw data not present")
     datasets = data_plots.load_all("lgd", verbose=False)
     if not datasets:

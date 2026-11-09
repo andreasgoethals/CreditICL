@@ -104,35 +104,25 @@ CREDIT_PATTERNS = [
     r"credit", r"default", r"loan", r"lending", r"bank", r"mortgage",
     r"insurance", r"risk", r"financ",
     # Credit scoring under a name that does not say so.
-    r"gmsc", r"hmeq", r"heloc", r"fico", r"scorecard", r"delinquen", r"repay",
+    r"gmsc", r"hmeq", r"fico", r"scorecard", r"delinquen", r"repay",
     r"borrower", r"debt", r"arrears", r"collater", r"good.?customer", r"churn",
 ]
 
 
 def our_dataset_names() -> frozenset[str]:
-    """The names of the datasets THIS PROJECT evaluates on, lower-cased.
+    """Collect registered, installed and site-specific credit identifiers."""
+    from src.data.dataset_registry import REGISTRY
+    from src.data.discovery import list_datasets
+    from src.data.private_data import site
 
-    DERIVED, not hand-listed. A keyword list missed `heloc`, `loss2`, `axa`, `base_model`,
-    `base_modelisation` and `hackerearth` — six of our own tables would have passed as
-    out-of-domain, and `heloc` actually did on the first real fetch. Reading the names off disk
-    means adding a dataset to `data/raw/` cannot silently reopen the hole.
-
-    Returns an empty set when the data is not on this machine, in which case the keyword
-    patterns are all the protection there is — so the fetch logs that.
-    """
-    names: set[str] = set()
-    try:
-        from src.data.discovery import list_datasets
-    except Exception:  # noqa: BLE001
-        return frozenset()
+    configured = site()
+    keys = set(REGISTRY)
+    if configured is not None:
+        keys.update(configured.LEGACY_SLUGS.values())
     for task in ("lgd", "pd"):
-        try:
-            for slug in list_datasets(task):
-                # `0001.heloc` -> `heloc`
-                names.add(slug.split(".", 1)[-1].strip().lower())
-        except Exception:  # noqa: BLE001
-            continue
-    return frozenset(n for n in names if n)
+        keys.update(list_datasets(task))
+    return frozenset(variant.casefold() for key in keys for variant in
+                     (key, key.replace(".", "_"), key.split(".", 1)[-1]))
 
 #: Bump when the on-disk cache layout changes OR when a cache written by an older version is
 #: WRONG rather than merely old. `load_manifest` treats a version mismatch as an empty cache,
@@ -140,7 +130,7 @@ def our_dataset_names() -> frozenset[str]:
 #:
 #: 2: the first real fetch (13-08-2026) cached 50 datasets with `kind` taken from the suite
 #:    list instead of the task, so continuous targets (diamonds, houses, airfoil_self_noise,
-#:    miami_housing) were coded into thousands of arbitrary classes — and `heloc`, one of our
+#:    miami_housing) were coded into thousands of arbitrary classes — and `PropLGD1`, one of our
 #:    own LGD datasets, was cached as out-of-domain. Neither is repairable in place.
 OOD_VERSION = 3  # full eligible tables; version 2 may contain the old 50,000-row truncation
 
@@ -377,7 +367,7 @@ def fetch_ood_datasets(
             # THE KIND COMES FROM THE TASK. Deriving it from which suite list the name sat in
             # silently turned `diamonds`' price into thousands of arbitrary class codes.
             # EXCLUSION FIRST, BEFORE THE QUOTA. Ordering these the other way round made the
-            # filter's behaviour depend on luck: on the first good fetch `heloc` — one of our
+            # filter's behaviour depend on luck: on the first good fetch `PropLGD1` — one of our
             # own LGD datasets — was skipped as "quota already full", so the credit check never
             # ran on it. It stayed out because classification happened to be full. With room to
             # spare it would have been cached again, and the log would still have looked fine.

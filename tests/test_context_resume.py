@@ -18,17 +18,25 @@ def checkpoint(run, step=250):
 
 
 @pytest.mark.parametrize("run", RUNS, ids=lambda r: r["_run_name"])
-def test_all_64_exact_cpt_recipes_keep_valid_prefixes_and_completed_results(run):
+def test_all_64_exact_cpt_recipes_keep_completed_results_and_frozen_prefixes(run, monkeypatch):
     state = checkpoint(run)
     original = copy.deepcopy(state)
-    validate_training_fingerprint(state, run)
-    assert state == original
+    with pytest.raises(ValueError, match="training code differs"):
+        validate_training_fingerprint(state, run)
     summary = {"steps": 1500, "completed": True,
                "datasets_seen": 1500 * run["train"]["batch_size"], "skipped_tasks": 0,
                "training_fingerprint": state["training_fingerprint"]}
     compat.validate_completed_training(summary, run, copy.deepcopy(run))
+    summary["training_fingerprint"] = preflight.training_fingerprint_for(compat.REVIEWED_IMPLEMENTATION)
+    compat.validate_completed_training(summary, run, copy.deepcopy(run))
     summary.update(steps=250, datasets_seen=250 * run["train"]["batch_size"],
                    completed=False, stopped_by_signal="SIGUSR1")
+    with pytest.raises(ValueError, match="training code differs"):
+        compat.validate_completed_training(summary, run, copy.deepcopy(run))
+    monkeypatch.setattr(preflight, "training_implementation_fingerprint", lambda: compat.REVIEWED_IMPLEMENTATION)
+    validate_training_fingerprint(state, run)
+    assert state == original
+    summary["training_fingerprint"] = state["training_fingerprint"]
     compat.validate_completed_training(summary, run, copy.deepcopy(run))
 
 
@@ -36,6 +44,7 @@ def test_all_64_exact_cpt_recipes_keep_valid_prefixes_and_completed_results(run)
                                     "budget", "skipped", "unknown_history", "missing_config",
                                     "boolean_step", "past_horizon"])
 def test_repair_permission_rejects_unreviewed_changes(monkeypatch, change):
+    monkeypatch.setattr(preflight, "training_implementation_fingerprint", lambda: compat.REVIEWED_IMPLEMENTATION)
     run = copy.deepcopy(RUNS[11])
     state = checkpoint(run)
     if change == "source":

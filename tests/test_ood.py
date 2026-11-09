@@ -76,7 +76,7 @@ def ood_cache(tmp_path, monkeypatch):
 @pytest.mark.parametrize(
     "name",
     ["credit-g", "credit-approval", "GermanCredit", "default-of-credit-card-clients",
-     "loan_default", "bank-marketing", "home_mortgage", "LendingClub", "hmeq",
+     "PropPD2", "bank-marketing", "home_mortgage", "LendingClub", "hmeq",
      "insurance_claims", "risk_factors", "financial_distress"],
 )
 def test_credit_like_datasets_are_excluded(name):
@@ -180,7 +180,7 @@ def test_a_regression_target_that_is_not_numeric_is_skipped():
 
 
 def test_every_dataset_we_evaluate_on_is_filtered_from_the_out_of_domain_set():
-    """THE WORST CONTAMINATION, and it happened: `heloc` is `0001.heloc` in data/raw/lgd AND it
+    """THE WORST CONTAMINATION, and it happened: `PropLGD1` is `PropLGD1` in data/raw/lgd AND it
     was cached as out-of-domain on the first real fetch. A dataset we select priors on cannot
     also be the evidence that generality survived."""
     from src.data.discovery import list_datasets
@@ -194,7 +194,7 @@ def test_every_dataset_we_evaluate_on_is_filtered_from_the_out_of_domain_set():
     assert not leaked, f"our own datasets would pass as out-of-domain: {leaked}"
 
 
-@pytest.mark.parametrize("name", ["heloc", "HELOC", "Is-this-a-good-customer", "churn",
+@pytest.mark.parametrize("name", ["PropLGD1", "PropLGD1", "Is-this-a-good-customer", "churn",
                                   "fico_score", "delinquency", "borrower_data"])
 def test_credit_scoring_under_a_disguised_name_is_still_filtered(name):
     assert ood.is_credit_like(name), f"{name} should have been filtered out"
@@ -505,7 +505,7 @@ def test_completeness_is_measured_over_kinds_not_suite_names(ood_cache):
 
 
 def test_our_own_datasets_are_excluded_before_the_quota_is_checked():
-    """ORDERING BUG, caught on the second real fetch. `heloc` — one of our LGD datasets — was
+    """ORDERING BUG, caught on the second real fetch. `PropLGD1` — one of our LGD datasets — was
     skipped as "quota already full", so the credit filter never ran on it. It stayed out purely
     because classification happened to be full; with room to spare it would have been cached
     again and the log would still have looked clean."""

@@ -658,7 +658,7 @@ def test_batch_and_features_match_upstream():
 
     `max_features: 64` against upstream's `--max_features 100` narrowed the prior's feature
     range for no stated reason, and widened the extrapolation gap on real credit tables
-    (base_modelisation has 256 columns).
+   .
     """
     import yaml
 

@@ -136,7 +136,7 @@ def test_signal_strength_reduces_correlation_with_the_latent():
 
 def test_family_covers_u_shaped_and_interior():
     """Real data disagrees: Freddie is U-shaped with 11.4%/8.1% on the boundaries,
-    LendingClub is one-sided with ~1.8%, AXA has none. One fixed shape would
+    LendingClub is one-sided with ~1.8%, PropLGD3 has none. One fixed shape would
     overfit to Freddie, so the family must produce all three."""
     rng = PriorRNG(8)
     cfg = {**BASE, "atom_prob": 0.75, "boundary_mass_range": [0.0, 0.25]}
@@ -152,7 +152,7 @@ def test_family_covers_u_shaped_and_interior():
             interior += 1
     assert two_sided > 0, "no U-shaped (Freddie-like) draws"
     assert one_sided > 0, "no one-sided (LendingClub-like) draws"
-    assert interior > 0, "no interior-only (AXA-like) draws"
+    assert interior > 0, "no interior-only (PropLGD3-like) draws"
 
 
 def test_shape_range_spans_u_and_hump():

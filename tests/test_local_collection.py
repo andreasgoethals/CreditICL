@@ -66,7 +66,7 @@ def test_reviewed_results_docstring_change_preserves_receipts_but_not_changed_sc
     old = dict(code={'src/eval/results.py': 'b1b4efe3b98c2c40829c81a22a7295617762437369ce06c8608dca4cdb943667'},
                protocol=9, checkpoint_sha256='original', scoring='original')
     new = copy.deepcopy(old)
-    new['code']['src/eval/results.py'] = hashlib.sha256(Path('src/eval/results.py').read_bytes()).hexdigest()
+    new['code']['src/eval/results.py'] = '119269160fa306757f1be012e0382b19962fac7357dbb3e71d3443cd31db8210'
     assert compatible_requests(old, new)
     assert not compatible_requests(old, dict(new, scoring='different'))
     assert not compatible_requests(old, dict(new, checkpoint_sha256='different'))

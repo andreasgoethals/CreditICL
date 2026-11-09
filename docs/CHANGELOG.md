@@ -3,6 +3,11 @@
 Repository changes, newest first. [RUNS.md](RUNS.md) preserves cluster evidence;
 [AGENTS_MEMORY.md](AGENTS_MEMORY.md) indexes runs and recurring failure modes.
 
+## 09-11-2026
+
+- Publish restricted dataset aliases and public-only schema diagnostics. Keep private recipes outside Git and scan the publication snapshot.
+- Refresh notebook reports with all Exp2 milestones and record the verified Exp3 training admission.
+
 ## 06-11-2026
 
 - Reorganize current guides, correct stale experiment/runtime/licence descriptions, and add software citation metadata; preserve dated run history.
@@ -298,13 +303,13 @@ Repository changes, newest first. [RUNS.md](RUNS.md) preserves cluster evidence;
 - **Training monitor scores the live weights through upstream's wrapper**, on fixed splits, all
   development datasets and 8 OOD suites, every 500 steps and at step 0; interval-mean loss.
 - Exp2 `micro_batch_size` 16 -> 4 (above the group size of 4, which the trainer refuses).
-- LGD atoms drawn skewed (`boundary_mass_*_power`) so the prior reaches heloc's 52 % total losses with a real-like
+- LGD atoms drawn skewed (`boundary_mass_*_power`) so the prior reaches PropLGD1's 52 % total losses with a real-like
   median; prior figures read a credit table as one (1 = default, LGD on [0, 1], default rate = minority share);
   the mechanism figures and the 0.2/0.3 prose follow the calibrated prior instead of the old intensity levers.
 - Figures read one sweep and one evaluation protocol at a time (the old 45-arm, protocol-2 outputs until the
   new ones exist; never a mixture); 1.3/1.4 gain B4, the learning curve over every saved checkpoint;
   the development ranking reads fold rows and old grids.
-- LGD boundary tests use a 1e-4 tolerance (`metrics.BOUNDARY_TOL`): `axa` stores its atoms at 1e-5 and 1 − 1e-5.
+- LGD boundary tests use a 1e-4 tolerance (`metrics.BOUNDARY_TOL`): `PropLGD3` stores its atoms at 1e-5 and 1 − 1e-5.
 - Notebooks describe the model as TabICLv2's full architecture (~28 M parameters) trained on a small
   budget, not as "nano-scale".
 - Audit of Exp1 against upstream TabICLv2 recorded in `AGENTS_MEMORY.md`: the Muon deviation and
@@ -371,8 +376,8 @@ Repository changes, newest first. [RUNS.md](RUNS.md) preserves cluster evidence;
   on the holdout*. The General notebooks keep every code cell verbatim with rewritten prose (they said
   "32 priors" — the config has 15 — and 0.2/0.3 compare the original against our prior, not a ranking).
 - **Training figures now average development datasets only.** The 36 PD and 45 LGD arms finished
-  before 23-09 monitored holdout datasets too (PD `hmeq`/`thomas`; LGD `axa`/`loss2`/`base_modelisation`);
-  those are shown but never averaged. An arm whose development monitor is all-NaN (LGD `base_model`,
+  before 23-09 monitored holdout datasets too (PD `hmeq`/`thomas`; LGD `PropLGD3`/`PropLGD2`/`PropLGD5`);
+  those are shown but never averaged. An arm whose development monitor is all-NaN (LGD `PropLGD4`,
   30 of 45) now drops out and is counted, instead of silently removing 30 arms from every LGD aggregate.
 - **Aggregates use finished arms only** (`completed: true`), which removes the jump every credit/banded
   curve made near the end as unfinished arms stopped contributing.
@@ -752,7 +757,7 @@ Repository changes, newest first. [RUNS.md](RUNS.md) preserves cluster evidence;
   choice ("up to 100 features throughout all stages") and appears in all twelve stage scripts.
   New CONFIG_REFERENCE section traces every place it applies, shows that `TabICL.__init__`
   takes no feature parameter at all (so inference is unbounded and our 500-column evaluation
-  cap is a separate, shared setting), and records the honest exposure: `base_modelisation` is
+  cap is a separate, shared setting), and records the honest exposure: `PropLGD5` is
   256 columns wide, 2.6x the training width, matched across both models.
 - **The benchmark's verdict was wrong by 16x: a micro-pass is not a step.** `amp_bf16_step_ms`
   timed one forward/backward pass; the verdict divided into it as a whole step and reported
@@ -861,7 +866,7 @@ Repository changes, newest first. [RUNS.md](RUNS.md) preserves cluster evidence;
 
 - **A shared CONTEXT CAP, and the decision not to run stages 2-3.** The wrapper does not limit
   context — TabICL scales to a million rows — so it was handing the model the whole training
-  split: **47,089 rows on `heloc` against the <=1,024 we train on, 46x**, and 5 of 7 LGD datasets
+  split: **the full PropLGD1 split against the 1,024-row training ceiling**, and 5 of 7 LGD datasets
   exceed the training length. Upstream avoids this with stages 2 and 3 (10,240 and 60,000 rows).
   **We measured what that would cost: 307x our entire stage 1**, because stage 1 is only 0.3 % of
   upstream's total compute — the curriculum IS the expense, and 75 arms of it is unaffordable at
@@ -1253,7 +1258,7 @@ Specific fixes:
 The second out-of-domain fetch worked — 25 classification + 25 regression — and exposed three
 more bugs, one of them latent.
 
-- **The credit filter ran AFTER the quota check.** `heloc` was skipped as *"quota already full"*,
+- **The credit filter ran AFTER the quota check.** `PropLGD1` was skipped as *"quota already full"*,
   so the exclusion never ran on it: it stayed out of the cache purely because classification
   happened to be full. With room to spare it would have been cached again and the log would
   still have read clean. Exclusion is now checked first, always.
@@ -1270,9 +1275,9 @@ more bugs, one of them latent.
 
 The venv built and the smoke test passed, but the out-of-domain fetch had two serious bugs.
 
-- **`heloc` — one of our OWN LGD datasets — was cached as out-of-domain.** A dataset we select
+- **`PropLGD1` — one of our OWN LGD datasets — was cached as out-of-domain.** A dataset we select
   priors on cannot also be the evidence that generality survived. The keyword filter also missed
-  `loss2`, `axa`, `base_model`, `base_modelisation` and `hackerearth`. Fixed by **deriving** the
+  `PropLGD2`, `PropLGD3`, `PropLGD4`, `PropLGD5` and `hackerearth`. Fixed by **deriving** the
   exclusion list from `data/raw/` (`our_dataset_names()`) instead of hand-maintaining names, so
   adding a dataset cannot silently reopen the hole.
 - **Continuous targets were coded into thousands of classes.** `SUITES` was

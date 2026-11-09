@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from src.data.dataset_registry import datasets_for_task
+from src.data.dataset_registry import datasets_for_task, display_name, is_proprietary, sort_key
 from src.data.pipeline import ensure_processed, load_processed
 from src.utils.target_stats import target_stats
 from src.visualize import style
@@ -44,20 +44,24 @@ def feature_policy_inventory(by_task: dict[str, dict]) -> tuple[pd.DataFrame, pd
     counts, details = [], []
     for task, datasets in by_task.items():
         for slug, dataset in datasets.items():
+            if is_proprietary(slug):
+                continue
             names = dataset.feature_names
             empty = np.empty((0, len(names)))
             retained, _, report = prediction_features(task, slug, empty, dataset.cat_indices, names)
-            counts.append({"dataset": slug, "task": task, "retained": retained.shape[1],
+            counts.append({"dataset": display_name(slug), "task": task, "retained": retained.shape[1],
                            "excluded": report["n_features_excluded"],
                            "prediction_time": "application" if task == "pd" else "default onset",
                            "grouped_split": getattr(dataset, "groups", None) is not None,
                            "timing_status": "not independently certified"})
             excluded = json.loads(report["excluded_features"])
             for name in excluded:
-                details.append({"dataset": slug, "source_column": name, "decision": "excluded",
+                details.append({"dataset": display_name(slug), "source_column": name, "decision": "excluded",
                                 "basis": "existing outcome/construction/identifier policy",
                                 "observation_time": "not independently verified here"})
-    return pd.DataFrame(counts), pd.DataFrame(details)
+    return pd.DataFrame(counts), pd.DataFrame(details, columns=[
+        "dataset", "source_column", "decision", "basis", "observation_time",
+    ])
 
 
 def load_all(task: str, *, verbose: bool = True) -> dict[str, Any]:
@@ -70,31 +74,33 @@ def load_all(task: str, *, verbose: bool = True) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for slug in datasets_for_task(task):
         try:
-            ensure_processed(task, slug)
+            if not is_proprietary(slug):
+                ensure_processed(task, slug)
             out[slug] = load_processed(task, slug)
         except Exception as exc:  # noqa: BLE001 — a notebook wants to keep going
             if verbose:
-                print(f"  skipped {task}/{slug}: {type(exc).__name__}: {exc}")
+                detail = "" if is_proprietary(slug) else f": {exc}"
+                print(f"  skipped {task}/{display_name(slug)}: {type(exc).__name__}{detail}")
     return out
 
 
 def summary_table(datasets: dict[str, Any], task: str) -> pd.DataFrame:
     """One row per dataset: the numbers that set the prior's ranges.
 
-    Sorted by rows, because dataset size is what decides which are usable for
-    in-context learning at all — TabICL's context has a practical ceiling.
+    Restricted datasets show target summaries and suppress source dimensions.
     """
     rows = []
-    for slug, ds in datasets.items():
+    for slug, ds in sorted(datasets.items(), key=lambda item: sort_key(item[0])):
         y = np.asarray(ds.y, dtype=float)
         st = target_stats(y)
+        private = is_proprietary(slug)
         rec = {
-            "dataset": slug,
-            "rows": ds.n_rows,
-            "features": ds.n_features,
-            "categorical": len(ds.cat_indices),
-            "% categorical": round(100 * len(ds.cat_indices) / max(1, ds.n_features), 1),
-            "missing %": round(100 * float(np.isnan(ds.X).mean()), 2),
+            "dataset": display_name(slug),
+            "rows": None if private else ds.n_rows,
+            "features": None if private else ds.n_features,
+            "categorical": None if private else len(ds.cat_indices),
+            "% categorical": None if private else round(100 * len(ds.cat_indices) / max(1, ds.n_features), 1),
+            "missing %": None if private else round(100 * float(np.isnan(ds.X).mean()), 2),
         }
         if task == "lgd":
             rec.update(
@@ -111,11 +117,11 @@ def summary_table(datasets: dict[str, Any], task: str) -> pd.DataFrame:
                 {
                     "base rate": round(float(y.mean()), 4),
                     "imbalance 1:n": round((1 - y.mean()) / max(y.mean(), 1e-9), 1),
-                    "n positive": int(y.sum()),
+                    "n positive": None if private else int(y.sum()),
                 }
             )
         rows.append(rec)
-    return pd.DataFrame(rows).sort_values("rows", ascending=False).reset_index(drop=True)
+    return pd.DataFrame(rows)
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +136,12 @@ def plot_lgd_targets(datasets: dict[str, Any], ncols: int = 4):
     reporting mass within 1e-4 of 0/1. Each panel retains its own percentage scale.
     """
     style.apply()
-    items = sorted(datasets.items(), key=lambda kv: -kv[1].n_rows)
+    items = sorted(datasets.items(), key=lambda item: sort_key(item[0]))
+    if not items:
+        fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, .35))
+        ax.text(.5, .5, "No processed LGD tables available", ha="center", va="center")
+        ax.axis("off")
+        return fig
     nrows = int(np.ceil(len(items) / ncols))
     fig, axes = plt.subplots(
         nrows, ncols,
@@ -145,8 +156,13 @@ def plot_lgd_targets(datasets: dict[str, Any], ncols: int = 4):
         st = target_stats(y)
         # Share of rows per bin, with its axis: the height of an atom against the interior IS the
         # content of this figure, and a panel without y ticks could not say it.
-        ax.hist(y, bins=40, range=(0.0, 1.0), weights=np.full(y.size, 1.0 / max(y.size, 1)),
-                color=style.REAL, alpha=0.9, linewidth=0)
+        if is_proprietary(slug):
+            counts, edges = np.histogram(y, bins=40, range=(0., 1.))
+            ax.stairs(np.round(counts / y.size, 2), edges, fill=True,
+                      color=style.REAL, alpha=0.9, linewidth=0)
+        else:
+            ax.hist(y, bins=40, range=(0.0, 1.0), weights=np.full(y.size, 1.0 / max(y.size, 1)),
+                    color=style.REAL, alpha=0.9, linewidth=0)
         # Mark the boundaries explicitly; in a 40-bin histogram an exact atom at 0 and a
         # cluster near 0.02 look identical, and only one of them is the point.
         for edge, frac in ((y.min(), st["frac_at_min"]), (y.max(), st["frac_at_max"])):
@@ -154,7 +170,7 @@ def plot_lgd_targets(datasets: dict[str, Any], ncols: int = 4):
                 ax.axvline(edge, color=style.WARN, lw=0.9, ls="--", alpha=0.85)
         # Explicit line break reserves space for the endpoint-mass annotation.
         mass = float(np.mean((np.abs(y) <= 1e-4) | (np.abs(y-1) <= 1e-4)))
-        name = slug.split('.', 1)[-1].removeprefix("lgd_")
+        name = display_name(slug)
         ax.set_title(f"{name}\n{mass:.0%} near 0 or 1",
                      fontsize=small, loc="left", pad=3)
         ax.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(1.0, decimals=0))
@@ -227,7 +243,8 @@ def plot_pd_base_rates(datasets: dict[str, Any]):
 
     style.apply()
     rows = sorted(
-        ((slug.split(".", 1)[-1], float(np.asarray(ds.y).mean()), ds.n_rows)
+        ((display_name(slug), round(float(np.asarray(ds.y).mean()), 3) if is_proprietary(slug)
+          else float(np.asarray(ds.y).mean()))
          for slug, ds in datasets.items()),
         key=lambda r: r[1],
     )
@@ -269,6 +286,7 @@ def plot_shapes(datasets_by_task: dict[str, dict[str, Any]]):
     fig, ax = plt.subplots(figsize=style.figsize(style.WIDTH_FULL, 0.62))
     xs_all, ys_all, names = [], [], []
     for task, datasets in datasets_by_task.items():
+        datasets = {key: ds for key, ds in datasets.items() if not is_proprietary(key)}
         xs = [ds.n_rows for ds in datasets.values()]
         ys = [ds.n_features for ds in datasets.values()]
         ax.scatter(xs, ys, s=60, alpha=0.85, color=style.TASK_COLOR[task],
@@ -276,11 +294,12 @@ def plot_shapes(datasets_by_task: dict[str, dict[str, Any]]):
                    label=f"{task.upper()} ({len(xs)} datasets)", edgecolor="white", zorder=3)
         xs_all += xs
         ys_all += ys
-        names += [slug.split(".", 1)[-1] for slug in datasets]
+        names += [display_name(slug) for slug in datasets]
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlabel("rows (log scale)")
     ax.set_ylabel("features (log scale)")
+    ax.set_title("Public benchmark tables", loc="left")
     ax.grid(axis="x")
     # The prior's own table: 1,024 rows and up to 100 features (config/Exp1_*.yaml).
     ax.axvline(1024, color=style.MUTED, lw=0.8, ls=":", zorder=1,
@@ -305,6 +324,8 @@ def plot_type_mix(datasets_by_task: dict[str, dict[str, Any]]):
     rows = []
     for task, datasets in datasets_by_task.items():
         for slug, ds in datasets.items():
+            if is_proprietary(slug):
+                continue
             share = len(ds.cat_indices) / max(1, ds.n_features)
             rows.append((f"{slug.split('.', 1)[-1]}", task, share))
     rows.sort(key=lambda r: r[2])
@@ -337,6 +358,8 @@ def plot_missingness(datasets_by_task: dict[str, dict[str, Any]]):
     rows = []
     for task, datasets in datasets_by_task.items():
         for slug, ds in datasets.items():
+            if is_proprietary(slug):
+                continue
             rows.append((slug.split(".", 1)[-1], task, float(np.isnan(ds.X).mean())))
     # Ascending, so the largest share is the TOP bar — the same reading order as every other
     # ranked bar chart here (a horizontal bar chart draws its first row at the bottom).
@@ -367,6 +390,8 @@ def table_inventory(datasets_by_task: dict[str, dict[str, Any]]) -> pd.DataFrame
     records = []
     for task in sorted(datasets_by_task, key=lambda value: (value != "pd", value)):
         for slug, ds in sorted(datasets_by_task[task].items()):
+            if is_proprietary(slug):
+                continue
             X = np.asarray(ds.X)
             records.append({
                 "task": task,
@@ -389,7 +414,7 @@ def plot_table_inventory(datasets_by_task: dict[str, dict[str, Any]]):
         axes[0].text(.5, .5, "No processed source tables available", ha="center", va="center",
                      color=style.MUTED)
         return fig
-    labels = [f"{row.task.upper()} · {row.dataset.split('.', 1)[-1].removeprefix('lgd_')}"
+    labels = [f"{row.task.upper()} · {display_name(row.dataset)}"
               for row in table.itertuples()]
     for ax, column, title, xlabel in zip(
         axes,
@@ -445,14 +470,15 @@ def correlation_inventory(leakage: pd.DataFrame) -> pd.DataFrame:
 
 
 def correlation_pages(datasets: dict[str, Any], per_page: int = 9) -> int:
-    """How many figures `plot_feature_correlations` needs to show EVERY dataset."""
-    return max(1, int(np.ceil(len(datasets) / max(per_page, 1))))
+    """Count correlation pages for public datasets."""
+    public_count = sum(not is_proprietary(key) for key in datasets)
+    return int(np.ceil(public_count / max(per_page, 1)))
 
 
 def plot_feature_correlations(
     datasets: dict[str, Any], n_show: int | None = None, per_page: int = 9, page: int = 1
 ):
-    """Correlation heatmaps — PAGINATED so every dataset is included.
+    """Paginated correlation heatmaps for public datasets.
 
     O'Prior's argument is that a prior's *feature dependence structure* is what transfers. So
     it matters what real credit data looks like: strong blocks of correlated features (several
@@ -467,6 +493,7 @@ def plot_feature_correlations(
     `n_show` is still accepted so old calls do not break: it caps the total considered.
     """
     style.apply()
+    datasets = {key: ds for key, ds in datasets.items() if not is_proprietary(key)}
     mats = {slug: _correlation_matrix(ds) for slug, ds in datasets.items()}
     # Ordered from the most to the least dependent — the story is "some books come in strong
     # blocks, others are close to independent columns", and an order by size hid it.
@@ -474,7 +501,7 @@ def plot_feature_correlations(
     if n_show is not None:
         items = items[:n_show]
     pages = style.paginate(items, per_page=per_page)
-    n_pages = max(1, len(pages))
+    n_pages = len(pages)
     if not 1 <= page <= n_pages:
         raise ValueError(f"page {page} out of range; {n_pages} page(s) for {len(items)} datasets")
     items = pages[page - 1]
@@ -533,6 +560,8 @@ def leakage_check(datasets: dict[str, Any], task: str, top_k: int = 3) -> pd.Dat
     """
     rows = []
     for slug, ds in datasets.items():
+        if is_proprietary(slug):
+            continue
         X = np.asarray(ds.X, dtype=float)
         y = np.asarray(ds.y, dtype=float)
         names = list(ds.feature_names)
@@ -545,9 +574,9 @@ def leakage_check(datasets: dict[str, Any], task: str, top_k: int = 3) -> pd.Dat
             scores.append((abs(float(np.corrcoef(col[ok], y[ok])[0, 1])), names[j]))
         scores.sort(reverse=True)
         for r, name in scores[:top_k]:
-            rows.append({"dataset": slug, "feature": name, "|corr with target|": round(r, 3),
+            rows.append({"dataset": display_name(slug), "feature": name, "|corr with target|": round(r, 3),
                          "suspicious": r > 0.9})
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(rows, columns=["dataset", "feature", "|corr with target|", "suspicious"])
     return df.sort_values("|corr with target|", ascending=False).reset_index(drop=True)
 
 

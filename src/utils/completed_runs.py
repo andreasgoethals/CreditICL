@@ -17,6 +17,11 @@ PREVIOUS_IMPLEMENTATION = "5b9cf0c29f222ac9555c5712976f3deb0f1f4d95ed7eedc75a508
 OCT26_IMPLEMENTATION = "ea055886d91ddd805ffe378d5d2722c3d3c0bcc07f909d5c30489905ba58e2e0"
 CONTEXT_FIX_PREDECESSOR = "01a5f056044cc261b83b3973956d55211c64b4e81ee58d285712e852109007e4"
 REVIEWED_IMPLEMENTATION = "5300c294e4078273fa635f18b82714ebfdb17169046f25035e356aa2392a8e75"
+ALIAS_IMPLEMENTATION = "c210d0f7765bd96ab610d23ccad5f6e4d1d0b702bdb437ce37bee8f63b0793f9"
+
+# Dataset aliases change presentation and monitoring keys. Completed recipes
+# retain their weight provenance. Resumable jobs still use the original source.
+_COMPLETION_IMPLEMENTATIONS = {REVIEWED_IMPLEMENTATION, ALIAS_IMPLEMENTATION}
 
 # PD/LGD, original main mixtures and five component removals. Seed is checked
 # separately; 25% was completed under OCT26_IMPLEMENTATION. Digests include
@@ -109,10 +114,11 @@ def validate_completed_training(summary: dict[str, Any], current: dict[str, Any]
             and recipe_digest(current) in REVIEWED_RECIPES | QUARTER_RECIPES
             and recipe_digest(saved) == recipe_digest(current)
             and saved.get("seed") == current["seed"]
-            and preflight.training_implementation_fingerprint() == REVIEWED_IMPLEMENTATION
+            and preflight.training_implementation_fingerprint() in _COMPLETION_IMPLEMENTATIONS
             and (summary.get("training_fingerprint") in {
                     preflight.training_fingerprint_for(PREVIOUS_IMPLEMENTATION),
                     preflight.training_fingerprint_for(CONTEXT_FIX_PREDECESSOR),
+                    preflight.training_fingerprint_for(REVIEWED_IMPLEMENTATION),
                     preflight.training_fingerprint_for(OCT26_IMPLEMENTATION)}
                  or (recipe_digest(current) in REVIEWED_RECIPES and summary.get("training_fingerprint")
                      == preflight.training_fingerprint_for(HISTORICAL_IMPLEMENTATION)))):
@@ -155,8 +161,12 @@ def reviewed_context_fix_state(state: dict, current: dict, saved: dict | None,
     """
     from src.utils import preflight
 
-    if (preflight.training_implementation_fingerprint() != REVIEWED_IMPLEMENTATION
-            or state.get("training_fingerprint") != preflight.training_fingerprint_for(CONTEXT_FIX_PREDECESSOR)
+    implementation = preflight.training_implementation_fingerprint()
+    permitted = {CONTEXT_FIX_PREDECESSOR}
+    if not checkpoint and implementation == ALIAS_IMPLEMENTATION:
+        permitted.add(REVIEWED_IMPLEMENTATION)
+    if (implementation not in ({REVIEWED_IMPLEMENTATION} if checkpoint else _COMPLETION_IMPLEMENTATIONS)
+            or state.get("training_fingerprint") not in {preflight.training_fingerprint_for(s) for s in permitted}
             or not isinstance(saved, dict)
             or type(current.get("seed")) is not int or current["seed"] not in (0, 1)
             or saved.get("seed") != current["seed"]
@@ -174,5 +184,6 @@ def reviewed_context_fix_state(state: dict, current: dict, saved: dict | None,
     if checkpoint:
         return True
     return bool((state.get("completed") is True and step == 1500)
-                or (state.get("completed") is False and step < 1500
+                or (implementation == REVIEWED_IMPLEMENTATION
+                    and state.get("completed") is False and step < 1500
                     and state.get("stopped_by_signal") in ("SIGUSR1", "SIGTERM")))

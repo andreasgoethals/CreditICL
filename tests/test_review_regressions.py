@@ -69,10 +69,13 @@ def test_tail_ablation_preserves_targets_row_order_noise_and_other_random_draws(
         assert first.meta["labels_swapped"] == second.meta["labels_swapped"] if "labels_swapped" in first.meta else True
 
 
-def test_future_gdp_feature_is_excluded_with_source_prefix_and_categorical_copy():
+def test_future_gdp_feature_is_excluded_with_source_prefix_and_categorical_copy(monkeypatch):
+    from types import SimpleNamespace
+    config = SimpleNamespace(EXCLUSIONS={}, MACRO_MARKERS={"PropLGD5": ("future_", "next_year_")})
+    monkeypatch.setattr("src.eval.feature_policy.site", lambda **_: config)
     from src.eval.feature_policy import prediction_features
-    names = ["C_PY1_evol_pib", "C_PY1_evol_pib__cat", "PY1_future", "C_PY0_evol_pib"]
-    X, cats, report = prediction_features("lgd", "0005.base_modelisation", np.ones((12, 4)), [1], names)
+    names = ["country_next_year_gdp", "country_next_year_gdp__cat", "future_rate", "current_gdp"]
+    X, cats, report = prediction_features("lgd", "PropLGD5", np.ones((12, 4)), [1], names)
     assert X.shape == (12, 1) and cats == [] and report["n_features_excluded"] == 3
 
 

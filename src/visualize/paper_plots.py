@@ -13,6 +13,7 @@ import pandas as pd
 from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator, PercentFormatter
 
+from src.data.dataset_registry import display_name
 from src.eval import analysis
 from src.eval.comparisons import (
     identities,
@@ -370,7 +371,7 @@ def dataset_effects(track, exp="exp1", *, backbone=None):
     fig, ax = plt.subplots(figsize=style.row_figsize(len(scores.columns), per_row=.4, base=1.6))
     limit = max(float(np.abs(values).max()), 1e-6)
     image = ax.imshow(values, cmap=style.CMAP_DIV, vmin=-limit, vmax=limit, aspect="auto")
-    ax.set_yticks(range(len(scores.columns)), [s.split(".", 1)[-1] for s in scores.columns])
+    ax.set_yticks(range(len(scores.columns)), [display_name(s) for s in scores.columns])
     ax.set_xticks(range(len(contrasts)), [_compact_label(c, backbone).replace(" · ", "\n") for c in contrasts.configuration])
     ax.tick_params(axis="x", labelsize=style.PANEL_TEXT)
     for (i, j), value in np.ndenumerate(values):
@@ -420,7 +421,7 @@ def endpoint_mass(exp="exp1", *, backbone=None):
         ax.yaxis.set_major_formatter(PercentFormatter(1, decimals=0))
         named = means.groupby("dataset")[[f"true_mass_at_{endpoint}", f"pred_mass_at_{endpoint}"]].mean()
         style.place_labels(ax, named.iloc[:, 0], named.iloc[:, 1],
-                           [s.split(".", 1)[-1].removeprefix("lgd_") for s in named.index],
+                           [display_name(s) for s in named.index],
                            fontsize=style.PANEL_TEXT)
     axes[0].set_ylabel("Average predicted mass")
     style.legend_below(fig, ncol=3)

@@ -182,7 +182,11 @@ def test_every_real_input_and_released_weight_is_present():
     failures = [c for c in run_checks() if not c.ok]
     assert not failures, failures
     inventory = input_inventory()
-    references = {key: value for key, value in inventory.items() if key != "runtime_image"}
+    from src.data.private_data import site_digest
+
+    assert inventory.get("restricted_data_recipe") == ({"sha256": digest} if (digest := site_digest()) else None)
+    references = {key: value for key, value in inventory.items()
+                  if key not in {"runtime_image", "restricted_data_recipe"}}
     assert set(references) == {f"{task}/{model}" for task in ("pd", "lgd")
                                for model in ("tabiclv2", "tabpfn3", "catboost", "linear")}
     assert inventory["runtime_image"] == {"sha256": os.environ["CREDITICL_RUNTIME_SHA256"]}

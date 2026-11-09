@@ -29,7 +29,7 @@ import math
 import numpy as np
 
 EPS = 1e-12
-#: How close to 0 or 1 an LGD counts as AT the boundary. Not 1e-6: `0003.axa`'s source squeezes its
+#: How close to 0 or 1 an LGD counts as AT the boundary. Not 1e-6: `PropLGD3`'s source squeezes its
 #: target into [1e-5, 1 - 1e-5] (a beta-regression convenience), so an exact test read its 29 % of
 #: complete recoveries and 6 % of total losses as interior values.
 BOUNDARY_TOL = 1e-4

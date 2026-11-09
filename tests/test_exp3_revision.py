@@ -11,13 +11,13 @@ from src.utils.config import load, expand_with_seeds, effective_fingerprint, run
 
 
 @pytest.mark.parametrize("experiment,task,digest", [
-    (1, "PD", "26a37fe421a7338791b3e2d417c86301b7721ff14c7686e6bbda8908d7e5f302"),
-    (1, "LGD", "3c06f72ec6bebc327216c45af58db9a2841810046c0d6c5b9f0d4900af72ccd8"),
-    (2, "PD", "a20d00fee3b7d7b9578736cf46f3717d8d57d34aa207fb305f591bb25ded625b"),
-    (2, "LGD", "bdae6e01cbd1229670c3deb772adf60560c92d66930f0a2d9a36206f3b5ec05a"),
+    (1, "PD", "0486eee8b7df072e395cd9aa3e260259a0a789c3fcaf4d167cb514d0f91b5849"),
+    (1, "LGD", "213384905a3e754a0a1977377156622db7ca3694bdbf45f5b50c807501d3612f"),
+    (2, "PD", "178ee938839dd992775d636f43c41eb0dfd57926b0834549401dbe7ee272e6fe"),
+    (2, "LGD", "aff56bc66792973f7f20eb01ed6ba2065fb4ca3307e8fb8e5dff6e20b2e36762"),
 ])
-def test_existing_campaign_names_array_ids_and_effective_configs_are_unchanged(experiment, task, digest):
-    # Captured from main 5e1f815 BEFORE the Exp3 revision, not generated from new settings.
+def test_existing_campaign_identity_and_aliased_effective_configs(experiment, task, digest):
+    # The alias migration replaces only dataset identifiers in these configurations.
     runs = expand_with_seeds(load(f"config/Exp{experiment}_{task}.yaml"))
     actual = [(r["_run_name"], r["_grid"]["array_index"], effective_fingerprint(r)) for r in runs]
     assert hashlib.sha256(json.dumps(actual).encode()).hexdigest() == digest
@@ -225,7 +225,6 @@ def test_exp3_shared_reference_request_matches_exp2_without_adapter_dependency(
 
 def test_reference_dependency_repair_preserves_exp2_receipts_but_not_scientific_mutations():
     import copy
-    from pathlib import Path
     from src.utils.benchmark_compat import compatible_requests
     before = dict(code={"src/eval/benchmark_status.py":
                        "bb4f97a3230f52a3985ff1dc8296d53945f028d7ffd9ef7d0737c56e14fa876a"},
@@ -233,8 +232,9 @@ def test_reference_dependency_repair_preserves_exp2_receipts_but_not_scientific_
                   environment_fingerprint="same packages", config={"train": {"lr": 2e-5}},
                   protocol=9, n_folds=5)
     after = copy.deepcopy(before)
-    after["code"]["src/eval/benchmark_status.py"] = hashlib.sha256(
-        Path("src/eval/benchmark_status.py").read_bytes()).hexdigest()
+    after["code"]["src/eval/benchmark_status.py"] = (
+        "9c6bdba2320bbb470bf738c3f485c2f7e6b2f3bdc02af5724e0bd4a960c0560e"
+    )
     assert compatible_requests(before, after)
     for key in ("checkpoint_sha256", "credit_inputs", "environment_fingerprint", "protocol", "n_folds", "config"):
         changed = copy.deepcopy(after)

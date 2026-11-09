@@ -522,10 +522,10 @@ def test_every_config_expands_including_the_templates(path):
 
 @pytest.mark.parametrize("track", ["LGD", "PD"])
 def test_datasets_that_share_loans_sit_on_one_side_of_the_split(track):
-    """Audit 30-09-2026: `hackerearth` holds 5,696 of `lendingclub`'s loans, and `base_modelisation`
-    shares defaults with `base_model`. A pair split across dev and holdout would let the choice made
+    """Audit 30-09-2026: `hackerearth` holds 5,696 of `lendingclub`'s loans, and `PropLGD5`
+    shares defaults with `PropLGD4`. A pair split across dev and holdout would let the choice made
     on dev be tested on the same loans; each pair sits in dev, in every experiment."""
-    pair = ("0004.lendingclub", "0006.hackerearth") if track == "PD" else ("0004.base_model", "0005.base_modelisation")
+    pair = ("0004.lendingclub", "0006.hackerearth") if track == "PD" else ("PropLGD4", "PropLGD5")
     for exp in ("Exp0", "Exp1", "Exp2", "Exp3"):
         ev = _load(f"config/{exp}_{track}.yaml")["eval"]
         assert set(pair) <= set(ev["dev_datasets"]), f"{exp}_{track}: {pair} must both be development data"

@@ -165,11 +165,14 @@ def test_prediction_features_remove_outcomes_and_remap_categories_without_changi
 def test_lgd_target_components_are_not_benchmark_features(monkeypatch):
     from src.eval import runner
 
+    names = ["outcome_component", "outcome_denominator", "eligible_amount"]
+    config = SimpleNamespace(EXCLUSIONS={"PropLGD5": names[:2]}, MACRO_MARKERS={})
+    monkeypatch.setattr("src.eval.feature_policy.site", lambda **_: config)
     ds = SimpleNamespace(X=np.arange(30).reshape(10, 3), y=np.ones(10), cat_indices=[],
-                         feature_names=["numerateur", "denominateur", "EAD_TOTAL_EURO"],
+                         feature_names=names,
                          n_rows=10, n_features=3)
     monkeypatch.setattr(runner, "load_processed", lambda *a: ds)
-    X, y, cats, info = runner.load_arrays("lgd", "0005.base_modelisation")
+    X, y, cats, info = runner.load_arrays("lgd", "PropLGD5")
     assert X.shape == (10, 1) and len(y) == 10 and cats == []
     assert info["n_features_excluded"] == 2
     np.testing.assert_array_equal(X[:, 0], ds.X[:, 2])

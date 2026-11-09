@@ -112,7 +112,7 @@ def target_stats(y: np.ndarray, task: str) -> dict[str, float]:
         # (as upstream's do), so "share of ones" would read 70 % half the time.
         p1 = float(np.mean(y >= 0.5))
         return {"base_rate": min(p1, 1.0 - p1)}
-    # Within BOUNDARY_TOL of 0 or 1 counts as the atom: `axa` stores its atoms at 1e-5 and 1 - 1e-5.
+    # Within BOUNDARY_TOL of 0 or 1 counts as the atom: `PropLGD3` stores its atoms at 1e-5 and 1 - 1e-5.
     from src.eval.metrics import BOUNDARY_TOL as tol
 
     interior = y[(y > tol) & (y < 1 - tol)]

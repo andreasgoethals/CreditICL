@@ -134,7 +134,7 @@ def test_a_holdout_dataset_is_never_averaged_into_a_development_mean():
 
 
 def test_an_arm_without_a_development_monitor_drops_out_rather_than_shrinking():
-    """A monitor that logged only missing values (LGD base_model, 30 of 45 arms) must neither be
+    """A monitor that logged only missing values (LGD PropLGD4, 30 of 45 arms) must neither be
     averaged over fewer datasets nor erase the dataset for everyone: that arm leaves the average."""
     other = EXP1_ARM.replace("__s2", "__s0")
     runs = _arms(**{EXP1_ARM: {"real__german__roc_auc": [0.6, 0.7, 0.8]},

@@ -49,8 +49,10 @@ def test_off_cluster_inventory_keeps_local_runtime_supported(monkeypatch, contai
     monkeypatch.setattr(paths, "on_vsc", lambda: False)
     monkeypatch.delenv("CREDITICL_RUNTIME_SHA256")
     monkeypatch.delenv("CREDITICL_IN_CONTAINER")
+    monkeypatch.setattr("src.data.private_data.site_digest", lambda: "c" * 64)
     inventory = v.input_inventory()
-    assert len(inventory) == 8 and "runtime_image" not in inventory
+    assert len(inventory) == 9 and "runtime_image" not in inventory
+    assert inventory["restricted_data_recipe"] == {"sha256": "c" * 64}
 
 
 @pytest.mark.parametrize("damage", [None, "changed_image", "missing_image", "outside_container"])
@@ -100,6 +102,7 @@ def test_gpu_input_inventory_assertion_checks_models_and_runtime_separately(monk
     monkeypatch.setattr(benchmark_status, "request", lambda *args: (None, {
         "credit_inputs": {"credit": "digest"}, "ood_inputs": {f"table{i}": "digest" for i in range(25)}
     }, None))
+    monkeypatch.setattr("src.data.private_data.site_digest", lambda: None)
     inventory = v.input_inventory()
     assert len(inventory) == 9  # Eight model requests plus the immutable runtime image.
     if damage == "missing_model":

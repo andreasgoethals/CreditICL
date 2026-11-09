@@ -60,10 +60,10 @@ def test_find_raw_path_none_for_unknown():
 def test_preprocess_and_load_roundtrip():
     from src.data.pipeline import load_processed, preprocess_one
 
-    if find_raw_path("lgd", "0003.axa") is None:
+    if find_raw_path("lgd", "PropLGD3") is None:
         pytest.skip("raw data not present")
-    preprocess_one("lgd", "0003.axa")
-    ds = load_processed("lgd", "0003.axa")
+    preprocess_one("lgd", "PropLGD3")
+    ds = load_processed("lgd", "PropLGD3")
     assert ds.X.shape[0] == ds.y.shape[0] == ds.n_rows
     assert ds.X.shape[1] == ds.n_features == len(ds.feature_names)
     assert ds.X.dtype == np.float32 and ds.y.dtype == np.float32
@@ -81,11 +81,11 @@ def test_cached_second_call_is_fast():
 
     from src.data.pipeline import preprocess_one
 
-    if find_raw_path("lgd", "0003.axa") is None:
+    if find_raw_path("lgd", "PropLGD3") is None:
         pytest.skip("raw data not present")
-    preprocess_one("lgd", "0003.axa")
+    preprocess_one("lgd", "PropLGD3")
     t0 = time.time()
-    preprocess_one("lgd", "0003.axa")
+    preprocess_one("lgd", "PropLGD3")
     assert time.time() - t0 < 0.5, "second call should hit the cache"
 
 

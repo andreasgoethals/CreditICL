@@ -259,7 +259,7 @@ def test_progress_scores_a_real_dataset(tmp_path):
     from src.train.progress import ProgressConfig, ProgressTracker
     from src.utils.paths import find_raw_path
 
-    if find_raw_path("lgd", "0003.axa") is None:
+    if find_raw_path("lgd", "PropLGD3") is None:
         pytest.skip("raw data not present")
 
     # The monitor scores through upstream's `TabICLRegressor`, so the model is upstream's TabICL.

@@ -126,11 +126,11 @@ def standardise_from_context(
     output `absmax` of exactly **6.550e+04**, which is `float16`'s largest finite value. The
     inputs feeding it were raw:
 
-        axa                absmax 1.98    -> finite
-        heloc              absmax 820     -> finite
-        loss2              absmax 2.4e6   -> NaN
-        base_modelisation  absmax 8.1e7   -> NaN
-        base_model         absmax 9.6e8   -> NaN
+        PropLGD3                absmax 1.98    -> finite
+        PropLGD1              absmax 820     -> finite
+        PropLGD2              absmax 2.4e6   -> NaN
+        PropLGD5  absmax 8.1e7   -> NaN
+        PropLGD4         absmax 9.6e8   -> NaN
 
     Upstream never does this. `PreprocessingPipeline.fit` starts with
     `CustomStandardScaler().fit_transform(X)` before any normalisation, and every prediction

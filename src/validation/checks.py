@@ -529,7 +529,7 @@ def _checkpoint_round_trip(rep: Report, track: str, run: dict, trainer: Any, ckp
             m = build("crediticl", track, seed=0, checkpoint=str(ckpt))
         else:
             m = build("tabpfn3", track, seed=0, model_path=str(ckpt), n_estimators=1)
-        X, y, cats, _ = load_arrays(track, "0008.german" if track == "pd" else "0004.base_model", max_rows=400)
+        X, y, cats, _ = load_arrays(track, "0008.german" if track == "pd" else "PropLGD4", max_rows=400)
         m.fit(X[:300], y[:300], cats)
         pred = np.asarray(m.predict(X[300:]), dtype=float)
         est = m._model

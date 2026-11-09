@@ -186,7 +186,7 @@ def diagnostic_datasets(track: str) -> tuple[list[str], list[str]]:
     credit = choose([(n, int(metadata[n].get("n_rows", 0)), int(metadata[n].get("n_features", 0))) for n in names])
     # Numerical-regression probe: these anonymised columns previously overflowed
     # the model's float32 scaler, despite passing a simple isfinite input check.
-    credit = sorted(set(credit) | {n for n in names if n.split(".")[-1] == "loan_default"})
+    credit = sorted(set(credit) | {n for n in names if n.split(".")[-1] == "PropPD2"})
     ood = choose([(e.name, e.n_rows, e.n_features) for e in
                   list_ood_datasets("classification" if track == "pd" else "regression")])
     if track == "pd":
@@ -202,6 +202,8 @@ def request(exp: int, track: str, index: int, seeds: tuple[int, ...] = (0,), n_f
             reference_models: str = REFERENCE_MODELS, variant: str | None = None
             ) -> tuple[str, dict, dict[str, Path]]:
     from src.data.discovery import list_datasets
+    from src.data.dataset_registry import is_proprietary
+    from src.data.private_data import site_digest
     from src.eval.ood import N_PER_TASK, list_ood_datasets, manifest_path
 
     cfg = load(config_path(exp, track, variant))
@@ -224,6 +226,7 @@ def request(exp: int, track: str, index: int, seeds: tuple[int, ...] = (0,), n_f
         ROOT / "scripts/evaluate.py", ROOT / "scripts/evaluate_ood.py",
         ROOT / "scripts/slurm/benchmark.slurm",
         ROOT / "src/data/pipeline.py", ROOT / "src/data/dataset_preprocessing.py",
+        ROOT / "src/data/dataset_registry.py", ROOT / "src/data/private_data.py",
         ROOT / "pyproject.toml",
     ]
     # Shared references never install adapters; keep their receipts identical
@@ -235,6 +238,11 @@ def request(exp: int, track: str, index: int, seeds: tuple[int, ...] = (0,), n_f
             "seeds": list(seeds), "n_folds": n_folds, "credit": credit, "ood": ood,
             "ood_manifest": digest(manifest_path()), "code": code, "context_cap": slot.context,
             "environment_fingerprint": package_fingerprint()}
+    if any(is_proprietary(name) for name in credit):
+        recipe = site_digest()
+        if recipe is None:
+            raise ValueError("Restricted benchmark inputs require the local dataset recipe")
+        data["restricted_data_recipe"] = recipe
     credit_inputs, credit_rows = {}, {}
     for name in credit:
         folder = paths.find_processed_dir(track, name)

@@ -519,10 +519,13 @@ def find_raw_path(task: str, dataset: str) -> Path | None:
     `0006.lgd_freddie.csv.csv`. Use `find_raw_file` when you want the real file.
     """
     task = _check_task(task)
+    from src.data.private_data import storage_keys
+
     for d in raw_task_dirs(task):
-        stem = d / dataset
-        if any(raw_file_for(stem, ext).is_file() for ext in RAW_EXTENSIONS):
-            return stem
+        for key in storage_keys(task, dataset):
+            stem = d / key
+            if any(raw_file_for(stem, ext).is_file() for ext in RAW_EXTENSIONS):
+                return stem
     return None
 
 
@@ -546,14 +549,17 @@ def find_processed_dir(task: str, dataset: str) -> Path | None:
     directory that is correctly treated as absent rather than silently reused.
     """
     task = _check_task(task)
+    from src.data.private_data import storage_keys
+
     # Prefer the write destination: a stale repo copy must not shadow a freshly
     # rebuilt cache on project storage. Raw-file lookup keeps its existing order.
     candidates = list(dict.fromkeys([processed_write_dir(task, dataset).parent,
                                      *processed_task_dirs(task)]))
     for d in candidates:
-        candidate = d / dataset
-        if (candidate / "meta.json").is_file():
-            return candidate
+        for key in storage_keys(task, dataset):
+            candidate = d / key
+            if (candidate / "meta.json").is_file():
+                return candidate
     return None
 
 

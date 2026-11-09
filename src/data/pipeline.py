@@ -53,6 +53,8 @@ import pandas as pd
 
 from src.data.dataset_preprocessing import preprocess_dataset_specific
 from src.data.discovery import list_datasets
+from src.data.dataset_registry import canonical_slug, is_proprietary
+from src.data.private_data import site
 from src.utils.logging_setup import get_logger
 from src.utils.paths import find_processed_dir, find_raw_file, processed_write_dir
 
@@ -97,8 +99,6 @@ class DatasetMeta:
 #: everything and features and target can never drift out of alignment.
 TARGET_COLUMN = "__target__"
 GROUP_COLUMN = "__cv_group__"
-GROUP_SOURCES = {("lgd", "0001.heloc"): "REC", ("lgd", "0004.base_model"): "DFLT_SIREN",
-                 ("pd", "0009.bank_status"): "Customer ID", ("lgd", "0005.base_modelisation"): "spm"}
 
 
 def stored_category(series: pd.Series) -> pd.Categorical:
@@ -145,6 +145,7 @@ def _summarise_target(task: str, y: np.ndarray, meta: DatasetMeta) -> None:
 
 def preprocess_one(task: str, dataset: str, *, force: bool = False) -> Path:
     """Preprocess one dataset into the cache and return its directory."""
+    dataset = canonical_slug(dataset) or dataset
     log = get_logger()
     started = time.time()
 
@@ -232,15 +233,16 @@ def preprocess_one(task: str, dataset: str, *, force: bool = False) -> Path:
         # its numeric copy under its own name and gets this one beside it.
         tidy[f"{c}{CATEGORICAL_COPY}" if c in doubled else c] = stored_category(df[c])
     tidy[TARGET_COLUMN] = y
-    group_source = GROUP_SOURCES.get((task, dataset))
+    group_source, fallback_column = (site(required=True).GROUPS.get(dataset, (None, None))
+                                     if is_proprietary(dataset) else (None, None))
     if group_source:
         from src.data.dataset_preprocessing import _load_dataset_file
         raw = _load_dataset_file(raw_path.with_suffix(""))
         if group_source not in raw:
             raise ValueError(f"{dataset}: required cross-validation group {group_source} missing")
         ids = raw.loc[df.index, group_source].astype("string")
-        if group_source == "DFLT_SIREN" and "DFLT_MainID" in raw:
-            fallback = raw.loc[df.index, "DFLT_MainID"].astype("string")
+        if fallback_column and fallback_column in raw:
+            fallback = raw.loc[df.index, fallback_column].astype("string")
             ids = ids.fillna("default:" + fallback)
         # Missing identifiers must not lump unrelated records into one giant group.
         ids = ids.fillna(pd.Series([f"row:{i}" for i in df.index], index=df.index))
@@ -368,7 +370,7 @@ def _load_cached(task: str, dataset: str) -> ProcessedDataset:
 
 def load_processed(task: str, dataset: str) -> ProcessedDataset:
     """Load a processed dataset. Cached in memory so the eval loop reads once."""
-    return _load_cached(task, dataset)
+    return _load_cached(task, canonical_slug(dataset) or dataset)
 
 
 def ensure_processed(
@@ -386,8 +388,8 @@ def ensure_processed(
     log = get_logger()
     if isinstance(datasets, str):
         # A bare slug is iterable, so without this it would be walked character by
-        # character: `ensure_processed("pd", "0011.loan_default")` quietly tried to
-        # preprocess datasets named "0", "1", ".", "l", "o", "a", "n"... and reported
+        # character: `ensure_processed("pd", "PropPD2")` quietly tried to
+        # Treat a single identifier as one request.
         # 17 failures for one request. Accept the singular form instead.
         datasets = [datasets]
     datasets = datasets if datasets is not None else list_datasets(task)

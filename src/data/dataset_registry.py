@@ -1,17 +1,8 @@
 """Single source of truth for how datasets are NAMED and ORDERED in outputs.
 
-Why this module exists
----------------------
-Proprietary datasets must appear in the paper under anonymised names
-(``PropPD1``, ``PropLGD1``, ...), and every dataset is renumbered so that
-**public datasets come first in alphabetical order, followed by the
-proprietary ones**. That renumbering is a *display-layer* concern only:
-
-* On-disk slugs, directory names, result files, cached predictions and figure
-  output paths are **unchanged** (existing ``\\includegraphics`` paths in the
-  LaTeX keep working). The slug stays the join key everywhere.
-* Only the text a reader sees -- axis tick labels, legends, row/column
-  headers, titles, table cells -- goes through this registry.
+The public registry contains public benchmark identifiers and neutral keys for
+restricted data. A trusted, ignored site recipe resolves existing private input
+paths and archived result keys.
 
 Public API
 ----------
@@ -35,6 +26,7 @@ prefix -- all of which give the OLD ordering) must sort with
 from __future__ import annotations
 
 from dataclasses import dataclass
+from src.data.private_data import legacy_alias
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 # ---------------------------------------------------------------------------
@@ -47,8 +39,7 @@ class DatasetEntry:
     """One dataset's identity across the on-disk, old-paper and new-paper worlds.
 
     Attributes:
-        slug: The on-disk dataset directory name, e.g. ``"0009.bank_status"``.
-            This is the join key for results/figures and is NEVER renamed.
+        slug: Public result key, using a neutral alias for restricted inputs.
         task: ``"pd"`` or ``"lgd"``.
         old_id: The paper ID used before the renumbering (e.g. ``"PD9"``).
         new_id: The paper ID used from now on (e.g. ``"PD13"``).
@@ -58,7 +49,7 @@ class DatasetEntry:
 
     slug: str
     task: str
-    old_id: str
+    old_id: str | None
     new_id: str
     display_name: str
     proprietary: bool
@@ -91,23 +82,23 @@ _ENTRIES: Tuple[DatasetEntry, ...] = (
     DatasetEntry("0010.thomas",             "pd", "PD10", "PD11", "Thomas",             False),
     DatasetEntry("0003.vehicle_loan",       "pd", "PD3",  "PD12", "Vehicle Loan",       False),
     # ---- PD: proprietary, anonymised ----
-    DatasetEntry("0009.bank_status",        "pd", "PD9",  "PD13", "PropPD1",            True),
-    DatasetEntry("0011.loan_default",       "pd", "PD11", "PD14", "PropPD2",            True),
+    DatasetEntry("PropPD1", "pd", None, "PD13", "PropPD1", True),
+    DatasetEntry("PropPD2", "pd", None, "PD14", "PropPD2", True),
     # ---- LGD: public, alphabetical by display name ----
     DatasetEntry("0006.lgd_freddie",        "lgd", "LGD6", "LGD1", "Freddie Mac (LGD)", False),
     DatasetEntry("0007.lgd_lendingclub",    "lgd", "LGD7", "LGD2", "LendingClub (LGD)", False),
     # ---- LGD: proprietary, anonymised ----
-    DatasetEntry("0001.heloc",              "lgd", "LGD1", "LGD3", "PropLGD1",          True),
-    DatasetEntry("0002.loss2",              "lgd", "LGD2", "LGD4", "PropLGD2",          True),
-    DatasetEntry("0003.axa",                "lgd", "LGD3", "LGD5", "PropLGD3",          True),
-    DatasetEntry("0004.base_model",         "lgd", "LGD4", "LGD6", "PropLGD4",          True),
-    DatasetEntry("0005.base_modelisation",  "lgd", "LGD5", "LGD7", "PropLGD5",          True),
+    DatasetEntry("PropLGD1", "lgd", None, "LGD3", "PropLGD1", True),
+    DatasetEntry("PropLGD2", "lgd", None, "LGD4", "PropLGD2", True),
+    DatasetEntry("PropLGD3", "lgd", None, "LGD5", "PropLGD3", True),
+    DatasetEntry("PropLGD4", "lgd", None, "LGD6", "PropLGD4", True),
+    DatasetEntry("PropLGD5", "lgd", None, "LGD7", "PropLGD5", True),
 )
 
 REGISTRY: Dict[str, DatasetEntry] = {e.slug: e for e in _ENTRIES}
 
 # Slug aliases: callers may hold an underscore-separated variant
-# (``0009_bank_status``) or a bare name (``bank_status``, ``gmsc``) -- e.g. a
+# (``0001_gmsc``) or a bare name (``gmsc``) -- e.g. a
 # figure filename stem or a hand-typed notebook argument. Normalise those to
 # the canonical dotted slug so lookups never silently miss.
 _ALIASES: Dict[str, str] = {}
@@ -123,7 +114,8 @@ for _e in _ENTRIES:
         _e.display_name, _e.display_name.lower(),
         _e.display_name.lower().replace(" ", "_"),
     ):
-        _ALIASES.setdefault(_alias, _e.slug)
+        if _alias:
+            _ALIASES.setdefault(_alias.casefold(), _e.slug)
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +124,7 @@ for _e in _ENTRIES:
 
 
 def canonical_slug(dataset: object) -> Optional[str]:
-    """Return the canonical dotted slug for ``dataset``, or ``None`` if unknown.
+    """Return the canonical public slug or protected dataset alias.
 
     Accepts the canonical slug, the underscore variant, the bare dataset name
     or a new paper ID, so filename stems and hand-typed notebook arguments
@@ -141,7 +133,7 @@ def canonical_slug(dataset: object) -> Optional[str]:
     key = str(dataset).strip()
     if key in REGISTRY:
         return key
-    return _ALIASES.get(key)
+    return _ALIASES.get(key) or _ALIASES.get(key.casefold()) or legacy_alias(key)
 
 
 def get(dataset: object) -> Optional[DatasetEntry]:
@@ -257,7 +249,7 @@ def validate_registry(known_slugs: Optional[Dict[str, Iterable[str]]] = None) ->
             f"registry: {task.upper()} new IDs must be {prefix}1..{prefix}{n_expected} "
             f"with no gaps/duplicates; got {sorted(new_ids)}"
         )
-        old_ids = [e.old_id for e in entries]
+        old_ids = [e.old_id for e in entries if e.old_id is not None]
         assert len(set(old_ids)) == len(old_ids), (
             f"registry: duplicate old IDs in {task.upper()}: {old_ids}"
         )
@@ -279,7 +271,7 @@ def validate_registry(known_slugs: Optional[Dict[str, Iterable[str]]] = None) ->
 
     if known_slugs:
         for task, found in known_slugs.items():
-            found_set = {str(s) for s in found}
+            found_set = {canonical_slug(s) or str(s) for s in found}
             reg_set = {e.slug for e in _ENTRIES if e.task == task.lower()}
             missing = sorted(found_set - reg_set)
             extra = sorted(reg_set - found_set)
@@ -300,7 +292,7 @@ def format_mapping_table() -> str:
     for task in ("pd", "lgd"):
         for e in entries_for_task(task):
             lines.append(
-                f"{e.slug:24s} {e.old_id:>5s} -> {e.new_id:<5s} "
+                f"{e.slug:24s} {(e.old_id or '-'):>5s} -> {e.new_id:<5s} "
                 f"{e.display_name:20s} {e.source}"
             )
         lines.append("")

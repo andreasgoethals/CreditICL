@@ -117,7 +117,7 @@ def main() -> int:
         report["real_data_reference"] = {
             "0006.lgd_freddie": {"at_0": 0.114, "at_1": 0.081, "shape": "U-shaped"},
             "0007.lgd_lendingclub": {"at_0": 0.015, "at_1": 0.003, "shape": "unimodal, left-skewed"},
-            "0003.axa_recovery": {"at_0": 0.0, "at_1": 0.0, "shape": "fully interior"},
+            "PropLGD3_recovery": {"at_0": 0.0, "at_1": 0.0, "shape": "fully interior"},
         }
     else:
         report["class_counts"] = {str(k): class_counts.count(k) for k in sorted(set(class_counts))}

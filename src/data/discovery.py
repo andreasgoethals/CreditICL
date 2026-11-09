@@ -6,6 +6,7 @@ with no configuration, and the same code finds it on the cluster.
 
 from __future__ import annotations
 
+from src.data.dataset_registry import canonical_slug
 from src.utils.paths import TASKS, raw_task_dirs
 
 RAW_EXTENSIONS = (".csv", ".parquet")
@@ -23,7 +24,7 @@ def list_datasets(task: str) -> list[str]:
             continue
         for entry in directory.iterdir():
             if entry.suffix in RAW_EXTENSIONS and entry.is_file():
-                seen.add(entry.stem)
+                seen.add(canonical_slug(entry.stem) or entry.stem)
     return sorted(seen)
 
 

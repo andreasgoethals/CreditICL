@@ -10,11 +10,14 @@ import torch
 
 
 @pytest.mark.parametrize("dataset,names", [
-    ("0005.base_modelisation", ["an", "EAD_BALOISE_REELLE", "Perim_poids", "ponderation_11"]),
-    ("0002.loss2", ["_ELAO", "_Accrued_int"]),
+    ("PropLGD5", ["later_year", "outcome_amount", "workout_code", "workout_weight"]),
+    ("PropLGD2", ["later_expense", "later_interest"]),
 ])
-def test_known_outcome_aliases_and_categorical_copies_cannot_bypass_policy(dataset, names):
+def test_known_outcome_aliases_and_categorical_copies_cannot_bypass_policy(dataset, names, monkeypatch):
     from src.eval.feature_policy import prediction_features
+
+    config = SimpleNamespace(EXCLUSIONS={dataset: names}, MACRO_MARKERS={})
+    monkeypatch.setattr("src.eval.feature_policy.site", lambda **_: config)
 
     columns = ["at_default", *names, *[name + "__cat" for name in names], "safe_category"]
     X = np.arange(7 * len(columns)).reshape(7, -1)

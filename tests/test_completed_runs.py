@@ -100,13 +100,13 @@ def test_historical_completion_never_authorizes_checkpoint_resume():
         validate_training_fingerprint(summary)
 
 
-def test_current_training_fingerprint_is_unchanged_by_helper_extraction():
-    assert preflight.training_implementation_fingerprint() == compat.REVIEWED_IMPLEMENTATION
-    assert preflight.training_fingerprint() == preflight.training_fingerprint_for(compat.REVIEWED_IMPLEMENTATION)
+def test_current_training_fingerprint_binds_the_alias_revision():
+    assert preflight.training_implementation_fingerprint() == compat.ALIAS_IMPLEMENTATION
+    assert preflight.training_fingerprint() == preflight.training_fingerprint_for(compat.ALIAS_IMPLEMENTATION)
 
 
 @pytest.mark.parametrize("track", ["PD", "LGD"])
-def test_previous_revision_preserves_all_27_recipes_and_only_their_exact_resume(track):
+def test_previous_revision_preserves_all_27_recipes_and_only_their_exact_resume(track, monkeypatch):
     from src.train.checkpoint import validate_training_fingerprint
     runs = [r for variant in ("", "_ablations")
             for r in expand_with_seeds(load(f"config/Exp1_{track}{variant}.yaml"))]
@@ -118,15 +118,19 @@ def test_previous_revision_preserves_all_27_recipes_and_only_their_exact_resume(
         compat.validate_completed_training(completed, run, copy.deepcopy(run))
         checkpoint = dict(step=250, extra={"datasets_seen": 16000},
                           crediticl_config=copy.deepcopy(run), training_fingerprint=fingerprint)
-        validate_training_fingerprint(checkpoint, current_config=run)
-        bad = copy.deepcopy(checkpoint)
-        bad["extra"]["datasets_seen"] -= 1
         with pytest.raises(ValueError, match="training code differs"):
-            validate_training_fingerprint(bad, current_config=run)
-        bad = copy.deepcopy(checkpoint)
-        bad["crediticl_config"]["seed"] = 99
-        with pytest.raises(ValueError, match="training code differs"):
-            validate_training_fingerprint(bad, current_config=run)
+            validate_training_fingerprint(checkpoint, current_config=run)
+        with monkeypatch.context() as frozen:
+            frozen.setattr(preflight, "training_implementation_fingerprint", lambda: compat.REVIEWED_IMPLEMENTATION)
+            validate_training_fingerprint(checkpoint, current_config=run)
+            bad = copy.deepcopy(checkpoint)
+            bad["extra"]["datasets_seen"] -= 1
+            with pytest.raises(ValueError, match="training code differs"):
+                validate_training_fingerprint(bad, current_config=run)
+            bad = copy.deepcopy(checkpoint)
+            bad["crediticl_config"]["seed"] = 99
+            with pytest.raises(ValueError, match="training code differs"):
+                validate_training_fingerprint(bad, current_config=run)
 
 
 @pytest.mark.parametrize("track", ['PD', 'LGD'])

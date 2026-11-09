@@ -440,8 +440,8 @@ def test_upstream_absence_is_a_loud_error_not_a_silent_fallback(monkeypatch):
 
 
 def test_a_skewed_boundary_mass_reaches_the_largest_real_atom_with_a_small_median():
-    """Real total-loss shares run 0.3 %, 4 %, 6 %, 8 %, 12 %, 16 %, 52 % (heloc): a uniform draw wide
-    enough for heloc puts the median far too high; `U ** power` keeps most atoms small."""
+    """Real total-loss shares run 0.3 %, 4 %, 6 %, 8 %, 12 %, 16 %, 52 % (PropLGD1): a uniform draw wide
+    enough for PropLGD1 puts the median far too high; `U ** power` keeps most atoms small."""
     import numpy as np
 
     from src.prior.targets.lgd import sample_lgd_shape
@@ -450,7 +450,7 @@ def test_a_skewed_boundary_mass_reaches_the_largest_real_atom_with_a_small_media
     cfg = {"atom_prob_0": 0.0, "atom_prob_1": 1.0, "boundary_mass_1_range": [0.0, 0.6],
            "boundary_mass_1_power": 3.5, "max_total_boundary_mass": 1.0}
     p1 = np.array([sample_lgd_shape(rng, cfg)["p1"] for _ in range(2000)])
-    assert p1.max() > 0.52, "still reaches heloc's 52 %"
+    assert p1.max() > 0.52, "still reaches PropLGD1's 52 %"
     assert 0.04 < np.median(p1) < 0.07  # 0.6 * 0.5 ** 3.5 = 0.053
     uniform = np.array([sample_lgd_shape(rng, {**cfg, "boundary_mass_1_power": 1.0})["p1"] for _ in range(2000)])
     assert np.median(uniform) > 0.25

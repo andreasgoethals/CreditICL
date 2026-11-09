@@ -27,6 +27,10 @@ Project choices belong in this repository, not in the shared template.
   and a local test from actual VSC acceptance. State unverified claims as such.
 - Never commit datasets, released/trained weights, optimizer state or raw private rows.
   Do not force-add ignored assets. Dataset and upstream model licences remain applicable.
+- Publish restricted dataset aliases only. Keep source identifiers, mappings, raw columns and
+  source dimensions in approved restricted storage, including the ignored `.private-data/`
+  configuration. Check staged source, executed notebook text and PDF text with
+  `python -m src.utils.check_publication --staged`. Inspect rendered figures too.
 - **Weights stay on VSC.** “All output” means analysis files: scores, predictions, logs,
   summaries/configs, receipts and figure metadata. Filter inventories with
   `src.utils.result_manifest` before SFTP and verify the retained hashes. Exclude checkpoints,

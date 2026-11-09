@@ -70,7 +70,7 @@ def test_summary_warns_that_range_coverage_is_weak(lgd_loaded):
     its median boundary mass is 0.3%. Reporting only coverage would overstate both
     arms, so the summary must say which column to read.
     """
-    ref = {"heloc": (0.211, 0.519), "lendingclub": (0.015, 0.003)}
+    ref = {"PropLGD1": (0.211, 0.519), "lendingclub": (0.015, 0.003)}
     out = summaries.prior_summary(lgd_loaded, "lgd", reference=ref)
     assert "spans" in out and "within 5pp" in out
     assert "weaker statement than it looks" in out

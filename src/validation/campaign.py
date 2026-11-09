@@ -223,6 +223,7 @@ def attempt_scope(name: str):
 def input_inventory() -> dict:
     """Use the same byte-level data/weight provenance as real benchmark receipts."""
     from src.eval.benchmark_status import n_slots, request, slot_for
+    from src.data.private_data import site_digest
 
     result = {}
     for track in paths.TASKS:
@@ -233,6 +234,8 @@ def input_inventory() -> dict:
                 result[f"{track}/{slot.model}"] = wanted
     if len(result) != 8:
         raise ValueError("Expected four reference models for each track")
+    if (digest := site_digest()) is not None:
+        result["restricted_data_recipe"] = {"sha256": digest}
     # Readiness is also checked from login nodes. The image identity must be
     # present there exactly as in the allocation that produced the receipt.
     if paths.on_vsc():

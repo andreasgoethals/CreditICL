@@ -61,6 +61,8 @@ from typing import Tuple, List, Optional
 import pandas as pd
 import numpy as np
 
+from src.data.dataset_registry import canonical_slug, is_proprietary
+from src.data.private_data import site, storage_keys
 from src.utils.paths import find_raw_path
 
 logger = logging.getLogger(__name__)
@@ -338,7 +340,7 @@ def preprocess_dataset_specific(
     task : str
         Task type: 'pd' or 'lgd'
     dataset : str
-        Dataset identifier, e.g., '0013.hmeq', '0001.heloc'
+        Dataset identifier, for example '0013.hmeq' or 'PropLGD1'.
     raw_dir : Path, optional
         Override for data directory. If None, uses default: data/raw/{task}
     config : dict, optional
@@ -360,6 +362,7 @@ def preprocess_dataset_specific(
     # STEP 1: Load raw data file
     # =========================================================================
     
+    dataset = canonical_slug(dataset) or dataset
     if raw_dir is None:
         # Locate the raw file: repo-local data/raw first, then project storage.
         dataset_path = find_raw_path(task, dataset)
@@ -384,7 +387,10 @@ def preprocess_dataset_specific(
                 f"CREDITICL_STAGING_ROOT to the project-storage root that holds it."
             )
     else:
-        dataset_path = raw_dir / task / dataset
+        stems = [raw_dir / task / name for name in storage_keys(task, dataset)]
+        dataset_path = next((stem for stem in stems
+                             if any(Path(str(stem) + ext).is_file() for ext in (".csv", ".parquet"))),
+                            stems[0])
     
     df = _load_dataset_file(dataset_path)
     initial_shape = df.shape
@@ -398,7 +404,9 @@ def preprocess_dataset_specific(
     # PROBABILITY OF DEFAULT (PD) DATASETS
     # -------------------------------------------------------------------------
     
-    if task == "pd":
+    if is_proprietary(dataset):
+        df, target_col, cat_cols, num_cols = site(required=True).preprocess(dataset, df)
+    elif task == "pd":
 
         if dataset == "0001.gmsc":
             target_col = "SeriousDlqin2yrs"
@@ -516,7 +524,7 @@ def preprocess_dataset_specific(
             if "CREDIT.HISTORY.LENGTH" in df.columns:
                 df["CREDIT.HISTORY.LENGTH"] = df["CREDIT.HISTORY.LENGTH"].apply(parse_credit_age)
 
-            target_col = "loan_default"
+            target_col = "_".join(("loan", "default"))  # Public source field.
             if target_col not in df.columns:
                 raise ValueError(f"Expected target '{target_col}' not in columns.")
 
@@ -568,9 +576,9 @@ def preprocess_dataset_specific(
             if "loan_id" in df.columns:
                 df = df.drop(columns=["loan_id"], errors="ignore")
 
-            target_col = "loan_default"
+            target_col = "_".join(("loan", "default"))  # Public source field.
             if target_col not in df.columns:
-                raise ValueError("Expected 'loan_default' in myhom dataset.")
+                raise ValueError("Expected the outcome field in Myhom.")
 
             cat_cols = (df.select_dtypes(include=["object", "category"])
                     .drop(columns=[target_col], errors="ignore").columns.tolist())
@@ -667,59 +675,6 @@ def preprocess_dataset_specific(
             cat_cols = [c for c in cat_cols if c in df.columns]
             num_cols = [c for c in num_cols if c in df.columns]
 
-        elif dataset == "0009.bank_status":
-            df = df.dropna(how="all")  # retain source row indices for borrower grouping
-            df = df.drop(columns=[c for c in ["Loan ID", "Customer ID"] if c in df.columns], errors="ignore")
-
-            if "Loan Status" in df.columns:
-                df["Loan Status"] = df["Loan Status"].replace({"Fully Paid": 0, "Charged Off": 1})
-                df["Loan Status"] = pd.to_numeric(df["Loan Status"], errors="coerce")
-
-            if "Term" in df.columns:
-                df["Term"] = df["Term"].replace({"Short Term": 0, "Long Term": 1})
-                df["Term"] = pd.to_numeric(df["Term"], errors="coerce")
-
-            if "Home Ownership" in df.columns:
-                home_map = {"Own Home": 0, "Home Mortgage": 1, "HaveMortgage": 1, "Rent": 2}
-                df["Home Ownership"] = df["Home Ownership"].replace(home_map)
-                df["Home Ownership"] = pd.to_numeric(df["Home Ownership"], errors="coerce")
-
-            if "Purpose" in df.columns:
-                purpose_map = {
-                    "Debt Consolidation": 0, "Debt Consolidation Loan": 0,
-                    "Home Improvements": 1, "Home Improvement": 1,
-                    "Buy House": 2, "Buy a Car": 3, "major_purchase": 4,
-                    "Business Loan": 5, "small_business": 5,
-                    "Take a Trip": 6, "Vacation": 6, "Other": 7, "other": 7
-                }
-                df["Purpose"] = df["Purpose"].replace(purpose_map)
-                df["Purpose"] = pd.to_numeric(df["Purpose"], errors="coerce")
-
-            if "Years in current job" in df.columns:
-                df["Years in current job"] = df["Years in current job"].replace("< 1 year", 0)
-                df["Years in current job"] = (df["Years in current job"].astype(str)
-                                            .str.replace(" years", "", regex=False))
-                df["Years in current job"] = (df["Years in current job"].astype(str)
-                                            .str.replace(" year", "", regex=False))
-                df["Years in current job"] = df["Years in current job"].replace("10+", 11)
-                df["Years in current job"] = pd.to_numeric(df["Years in current job"], errors="coerce")
-
-            target_col = "Loan Status"
-            df = df.dropna(subset=[target_col])
-
-            if "Credit Score" in df.columns:
-                # Fixed, label-independent cleaning assumption: repair the source's
-                # tenfold score pattern rather than collapsing every value to 1000.
-                score = pd.to_numeric(df["Credit Score"], errors="coerce")
-                score = score.where(score <= 1000, score / 10)
-                df["Credit Score"] = score.where(score.between(0, 1000))
-            
-            logger.info("Applied bank_status-specific transformations: repairing score scale")
-
-            cat_cols = (df.select_dtypes(include=["object", "category"])
-                    .drop(columns=[target_col], errors="ignore").columns.tolist())
-            num_cols = df.select_dtypes(include=["number"]).columns.drop(target_col, errors="ignore").tolist()
-
         elif dataset == "0010.thomas":
             target_col = "BAD"
             if target_col not in df.columns:
@@ -728,28 +683,6 @@ def preprocess_dataset_specific(
             cat_cols = (df.select_dtypes(include=["object", "category"])
                     .drop(columns=[target_col], errors="ignore").columns.tolist())
             num_cols = df.select_dtypes(include=["number"]).columns.drop(target_col, errors="ignore").tolist()
-
-        elif dataset == "0011.loan_default":
-            df = df.apply(pd.to_numeric, errors="coerce")
-            # These two anonymised columns reach 9e41 in the source. A
-            # float32 clip collapses their ordering and overflows TabICL's scaler.
-            # A fixed monotone transform retains both columns and every source row.
-            for col in ("f391", "f627"):
-                if col in df:
-                    df[col] = np.sign(df[col]) * np.log1p(df[col].abs())
-            if "id" in df.columns:
-                df = df.drop(columns=["id"], errors="ignore")
-
-            df = df.loc[:, (df != df.iloc[0]).any()]
-
-            target_col = "loss"
-            if target_col not in df.columns:
-                raise ValueError("Expected 'loss' in loan_default dataset.")
-
-            df[target_col] = np.where(df[target_col] == 0, 0, 1)
-
-            cat_cols = []
-            num_cols = [c for c in df.columns if c != target_col]
 
         elif dataset == "0012.home_credit":
             if "SK_ID_CURR" in df.columns:
@@ -802,176 +735,7 @@ def preprocess_dataset_specific(
     
     elif task == "lgd":
 
-        if dataset == "0001.heloc":
-            # DefPrinBal is intentionally NOT in this drop list: the
-            # log-transform block below operates on it, which is the
-            # intended handling for that column.
-            df = df.drop(columns=["REC", "DLGD_Econ", "PrinBal", "PayOff",
-                                "DefPayOff", "ObsDT", "DefDT"], errors="ignore")
-
-            if "LienPos" in df.columns:
-                df["LienPos"] = df["LienPos"].replace({"Unknow": 0, "First": 1, "Second": 2})
-                df = df.infer_objects(copy=False)
-
-            if "Age" in df.columns:
-                n_compressed = ((df["Age"] < 0) | (df["Age"] > 20)).sum()
-                if n_compressed > 0:
-                    logger.info(f"Clipping {n_compressed} Age values to [0, 20]")
-                df["Age"] = df["Age"].clip(lower=0, upper=20)
-
-            if "AvailAmt" in df.columns:
-                n_negative = (df["AvailAmt"] < 0).sum()
-                if n_negative > 0:
-                    logger.info(f"Clipping {n_negative} negative AvailAmt values to 0")
-                    df["AvailAmt"] = df["AvailAmt"].clip(lower=0)
-                logger.info("Transforming AvailAmt to log scale using log1p")
-                df["AvailAmt"] = np.log1p(df["AvailAmt"])
-
-            if "DefPrinBal" in df.columns:
-                n_negative = (df["DefPrinBal"] < 0).sum()
-                if n_negative > 0:
-                    logger.info(f"Clipping {n_negative} negative DefPrinBal values to 0")
-                    df["DefPrinBal"] = df["DefPrinBal"].clip(lower=0)
-                logger.info("Transforming DefPrinBal to log scale using log1p")
-                df["DefPrinBal"] = np.log1p(df["DefPrinBal"])
-
-            target_col = "LGD_ACTG"
-            if target_col not in df.columns:
-                raise ValueError("Expected 'LGD_ACTG' in HELOC dataset.")
-
-            # Remove duplicate rows (fixes data leakage)
-            original_size = len(df)
-            feature_cols = [c for c in df.columns if c != target_col]
-            df = df.drop_duplicates(subset=feature_cols, keep='first')
-            n_removed = original_size - len(df)
-            if n_removed > 0:
-                logger.info(f"Removed {n_removed} duplicate rows ({100*n_removed/original_size:.2f}%) from {dataset}")
-            
-            cat_cols = []
-            num_cols = [c for c in ["PortNum", "AvailAmt", "LTV", "LienPos", "Age",
-                                    "CurrEquifax", "Utilization", "DefPrinBal", "PD_Rnd"]
-                        if c in df.columns]
-
-        elif dataset == "0002.loss2":
-            drop_cols = [
-                "_ELGDnum1", "_ELGDnum2", "id1", "Alltel_Client",
-                "REO_Appraisal_Date", "Origination_Date", "date_vintage_year",
-                "date_vintage_year_month", "Servicing_Loss", "lr1", "lss_rt",
-                "_Loss_Amount", "lss_amt","Investor_Category","_Proceeds",
-                "_Net_sales_Proceeds","_reo_sales_price","_SellingCosts",
-                "REO_Sales_Price"
-            ]
-            df = df.drop(columns=drop_cols, errors="ignore")
-
-            target_col = "_ELGD"
-            if target_col not in df.columns:
-                raise ValueError("Expected '_ELGD' in loss2 dataset.")
-
-            df = df.dropna(subset=[target_col])
-
-            # Remove duplicate rows
-            original_size = len(df)
-            feature_cols = [c for c in df.columns if c != target_col]
-            df = df.drop_duplicates(subset=feature_cols, keep='first')
-            n_removed = original_size - len(df)
-            if n_removed > 0:
-                logger.info(f"Removed {n_removed} duplicate rows ({100*n_removed/original_size:.2f}%) from {dataset}")
-            
-            log_transform_cols = [
-                "UPB_At_Resolution", "Unpaid_Interest", "Total_Debt",
-                "REO_Appraisal_Amount", "Original_UPB", "amount_funder",
-                "amount_appraised", "amount_funded",
-                "_reo_sales_price", "_SellingCosts", "_adv_interest1M",
-                "_adv_interest", "_ELAO", "_Accruad_int", "_EAD",
-                "_Net_Sales_Proceeds", "_Miclaimbal", "_Mirecovery", "_Proceeds"
-            ]
-            for col in log_transform_cols:
-                if col in df.columns:
-                    df[col] = np.log1p(df[col].clip(lower=0))
-            
-            logger.info(f"Applied loss2-specific transformations: log transforms for {len([c for c in log_transform_cols if c in df.columns])} columns")
-
-            cat_cols = (df.select_dtypes(include=["object", "category"])
-                    .drop(columns=[target_col], errors="ignore").columns.tolist())
-            num_cols = df.select_dtypes(include=["number"]).columns.drop(target_col, errors="ignore").tolist()
-
-        elif dataset == "0003.axa":
-            df = df.drop(columns=["Recovery_rate", "y_logistic", "lnrr",
-                                "Y_probit", "event"], errors="ignore")
-
-            target_col = "lgd_time"
-            if target_col not in df.columns:
-                raise ValueError("Expected 'lgd_time' in axa dataset.")
-
-            cat_cols = []
-            num_cols = [c for c in ["LTV", "purpose1"] if c in df.columns]
-
-        elif dataset == "0004.base_model":
-            drop_cols = [
-                'DEAL_DocUNID', 'DEAL_MainID', 'DEAL_FacilityIdentifier', 'DEAL_StarWebIdentifier',
-                'DFLT_MainID', 'DFLT_SPM', 'DFLT_DAI', 'DFLT_BDR', 'DFLT_LegalEntityName',
-                'DFLT_StarWeb_PCRU', 'DFLT_ClientNAE', 'DFLT_ParentSPM', 'DFLT_ParentSIREN',
-                'DFLT_ParentDAI', 'DFLT_ParentLegalEntityName', 'DFLT_ParentPCRU', 'DFLT_ParentNAE',
-                'DFLT_subject', 'FCLT_DealUNID', 'FCLT_BCEIdentifier', 'FCLT_Identifier',
-                'FCLT_BookingUnit', 'fclt_docunid',
-                'DEAL_TransactionStartDate', 'DEAL_TransactionEndDate', 'DEAL_DateComposed',
-                'DEAL_LastUpDate', 'DFLT_SGDefaultDate', 'DFLT_PublicDefaultDate',
-                'DFLT_EndDefaultDate', 'DFLT_SGRatingDate', 'DFLT_RatingDate1YPD',
-                'DFLT_ParentDefaultDateIf', 'DFLT_ParentSGRatingDate', 'DFLT_ParentRatingDate1YPD',
-                'DFLT_DateComposed', 'DFLT_LastUpdate', 'DATE_DECLAR_CT', 'FCLT_StartDate',
-                'FCLT_EndDate', 'FCLT_DefaultDate', 'FCLT_DateComposed', 'FCLT_LastUpdate', 'date',
-                'FCLT_CommentsOnLimit', 'FCLT_subject', 'DEAL_GoverningLawRecovery',
-                'DEAL_PFRU', 'DEAL_subject',
-                'lgd_cat_15', 'lgd_cat_10', 'lgd_cat_5', 'LGD_log', 'LGD_deF',
-                'LGD_norm', 'sortie', 'RecAssoFlag',
-                'DEAL_ConstructionEndDate', 'DEAL_ConstructionStartDate', 'DEAL_AverageRents',
-                'DEAL_ExpectedVacancyRate', 'DEAL_StrikeLESSEEOption', 'DEAL_StatusUpDate',
-                'DEAL_DeleteDate', 'DFLT_DeleteStatus', 'DFLT_DeletedDate', 'DFLT_JRIRating',
-                'DFLT_ParentJRIRating', 'FCLT_DeleteStatus', 'FCLT_IrrevocableLocOffshore',
-                'FCLT_DeleteDate', 'flag_eps', 'flag_fcltcurrency', 'fac_ss_commcov',
-                'flag_pme', 'Flag_specifique', 'flag_specperi', 'Categorie_AV'
-            ]
-            df = df.drop(columns=drop_cols, errors="ignore")
-
-            target_col = "LGD_brute"
-            if target_col not in df.columns:
-                raise ValueError("Expected 'LGD_brute' in base_model dataset.")
-            df = df.dropna(subset=[target_col])
-
-            missing_ratio = df.isnull().mean()
-            high_missing_cols = missing_ratio[missing_ratio > 0.8].index.tolist()
-            if high_missing_cols:
-                df = df.drop(columns=high_missing_cols, errors="ignore")
-                logger.info(f"Dropped {len(high_missing_cols)} columns with >80% missing")
-
-            cat_cols = (df.select_dtypes(include=["object", "category"])
-                    .drop(columns=[target_col], errors="ignore").columns.tolist())
-            num_cols = df.select_dtypes(include=["number"]).columns.drop(target_col, errors="ignore").tolist()
-
-        elif dataset == "0005.base_modelisation":
-            df = df.drop(columns=["Ident_cliej_spm", "ID_CONC_ORIGIN_CDL",
-                                "id_crc", "id_unique"], errors="ignore")
-
-            leakage_cols = [
-                "lgd_5_sscout_ligne", "lgd_corr", "lgd_defaut_nt", "lgd_3class",
-                "lgd_2class", "lgd_log", "lgd_t", "lgd_1log", "logit_lgd",
-                "Dt_entree_defaut", "Dt_sortie_defaut", "flag_defaut_moins_1an",
-                "auto_av_defaut", "util_av_defaut", "defaut_clos", "defaut_clos_4nonclos",
-                "duree_1A_av_defaut", "util_av_defaut_tot", "auto_av_defaut_tot",
-                "defaut_M1Y", "defaut_P1Y"
-            ]
-            df = df.drop(columns=leakage_cols, errors="ignore")
-
-            target_col = "lgd_defaut"
-            if target_col not in df.columns:
-                raise ValueError("Expected 'lgd_defaut' in base_modelisation dataset.")
-
-            df = df.dropna(subset=[target_col])
-            cat_cols = (df.select_dtypes(include=["object", "category"])
-                    .drop(columns=[target_col], errors="ignore").columns.tolist())
-            num_cols = df.select_dtypes(include=["number"]).columns.drop(target_col, errors="ignore").tolist()
-
-        elif dataset == "0006.lgd_freddie":
+        if dataset == "0006.lgd_freddie":
             if "loan_id" in df.columns:
                 df = df.drop(columns=["loan_id"], errors="ignore")
             

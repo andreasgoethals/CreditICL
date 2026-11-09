@@ -25,13 +25,25 @@
   },
   {
     "index": 5,
-    "stem": "05_credit_ood_control",
+    "stem": "05_checkpoints_tabicl",
+    "name": "checkpoints_tabicl",
+    "caption": "Full-table five-fold ROC-AUC against optimizer updates 125, 250, 500, 1,000, 1,500 for four mixtures at each fixed peak rate, on the credit benchmark and native OOD. Points average the 2 registered training seeds; shading spans their dataset-mean scores, not a confidence interval. Missing checkpoints are not connected; the final update is the primary endpoint."
+  },
+  {
+    "index": 6,
+    "stem": "06_checkpoints_tabpfn3",
+    "name": "checkpoints_tabpfn3",
+    "caption": "Full-table five-fold ROC-AUC against optimizer updates 125, 250, 500, 1,000, 1,500 for four mixtures at each fixed peak rate, on the credit benchmark and native OOD. Points average the 2 registered training seeds; shading spans their dataset-mean scores, not a confidence interval. Missing checkpoints are not connected; the final update is the primary endpoint."
+  },
+  {
+    "index": 7,
+    "stem": "07_credit_ood_control",
     "name": "credit_ood_control",
     "caption": "Credit versus native-OOD performance differences from equally trained 0% continuation at the same backbone and fixed peak rate. Colors identify mixtures and marker shapes identify rates; small points show seed means. Horizontal and vertical bars independently resample the two dataset domains (nominal 95% intervals), after averaging five folds and two training seeds. Higher ROC-AUC or R\u00b2 is better on both axes."
   },
   {
-    "index": 6,
-    "stem": "06_credit_ood_released",
+    "index": 8,
+    "stem": "08_credit_ood_released",
     "name": "credit_ood_released",
     "caption": "Credit versus native-OOD performance differences from matching released weights after 1,500 continuation updates, including the 0% generic controls. Colors identify mixtures and shapes distinguish the two fixed rates within each backbone. Bars are separate nominal 95% paired-dataset bootstrap intervals and small points show seed means. Negative ROC-AUC or R\u00b2 indicates degradation from the released model."
   }

@@ -18,16 +18,16 @@ dated jobs, failures, quotes and migrations belong in [RUNS.md](RUNS.md).
 
 ## Current deployment
 
-**Verified snapshot: 6 November 2026, 16:42 CET.** Counts below are dated evidence, not live status.
+**Verified snapshot: 9 November 2026.** Counts below are dated evidence, not live status.
 
 | Work | Verified state |
 |---|---|
 | Exp1 | All 54 training runs and 158 benchmark slots complete, including the 25% extension |
 | Exp2 training | All 64 runs reached 1,500 updates |
-| Exp2 benchmark | All 320 slots accepted: 75 complete with verified credit/OOD artifacts, 19 running, 226 pending; no failed array tasks |
+| Exp2 benchmark | All 320 slots completed and verified, covering 56,800 credit/OOD cells |
 | Revised CPU Exp0 | wICE 62581713: all 14 stages PASS |
-| Revised GPU Exp0 | Mindwell 11774935: running, 57 completed stages PASS; 125-stage campaign unfinished |
-| Exp3 | 48 new training runs conditionally authorized after full validation and resource checks; none submitted |
+| Revised GPU Exp0 | Mindwell 11774935: 125/125 stages PASS, live preflight accepted |
+| Exp3 training | All 48 tasks admitted on Mindwell, PD 11780823 and LGD 11780839 |
 
 Production runs use frozen DATA checkout `$VSC_DATA/CreditICL` at **0494e7a**. Its CPU
 62516762/GPU 11763662 acceptance remains evidence for that revision. Revised validation uses
@@ -36,14 +36,16 @@ with its own receipt namespace. Both use the accepted PROJECT r3 runtime. Preser
 while jobs, receipts or recovery need them. Do not pull the later notebook/documentation changes
 into either active checkout.
 
-The five accepted Exp2 arrays are 11774787/11774788 (final PD/LGD) and
+The five completed Exp2 arrays are 11774787/11774788 (final PD/LGD) and
 11775176/11775177/11775178 (earlier PD TabICL, PD TabPFN-3, LGD). Their receipt files under
 `output CreditICL/manifests/submissions/` cover every slot exactly once. **Do not resubmit them.**
 The [6 November run records](RUNS.md#runs) contain exact ranges, quotes and artifact checks.
 
-At the 16:15–16:21 CET resource check, shared Lustre PROJECT used 256.2G/1T and 8,905/150,000
-files; DATA used 45,527M/76,800M and 387k/10M files. Available credit was 70,032,823.
-Recheck shared quotas and balance before new work. No scheduled monitor is active.
+Exp3 uses the revised DATA checkout and the same PROJECT image. The durable admission receipt
+is `20261109-exp3-all-training.json` in that checkout's `output CreditICL/manifests/submissions/`.
+The first training allocations quoted 17,625,600 credits. At admission, the available balance
+was 57,946,762, with about 761 GiB free on PROJECT and 30 GiB on DATA.
+Recheck quotas and balance before the later benchmark phase.
 
 <a id="revised-exp3-deployment-gate-05-11-2026"></a>
 ### Exp3 deployment gate
@@ -313,6 +315,17 @@ Follow the [output guide](<../output CreditICL/README.md>). Inventory both tiers
 `src.utils.result_manifest`, transfer only listed scores/predictions/logs/configs/receipts/figure
 metadata, then verify original sizes and hashes. Model weights, optimizer state, pools, images,
 locks and unfiltered archives stay on VSC. A filtered subset is intentionally not a full-tree mirror.
+
+### Restricted dataset configuration
+
+The published checkout uses dataset aliases. To reproduce the full benchmark, provision the
+institution-only recipe in the protected DATA checkout at `.private-data/site.py`, or set
+`CREDITICL_PRIVATE_DATA` to an approved bound path. Use an authorized copy of the existing site
+recipe. It contains the legacy storage keys, input transformations, prediction-time exclusions
+and grouped-fold fields. Keep the configuration immutable for the campaign and outside Git.
+The loader resolves existing PROJECT cache paths without renaming them. Run fresh Experiment 0
+before deploying this checkout; jobs with frozen source and existing receipts use their
+original checkout and inputs through completion.
 
 ## Runtime maintenance
 

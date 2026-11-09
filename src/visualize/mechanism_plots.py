@@ -143,7 +143,7 @@ def boundary_atoms(config_path: str, n: int = 100, seed: int = 0, real: dict | N
         ys = [np.asarray(d.y, dtype=float).ravel() for d in real.values()]
         ys = [y[np.isfinite(y)] for y in ys]
         pooled = np.concatenate(ys)
-        # Equal weight per dataset: `heloc`'s 59k rows would otherwise be most of the panel.
+        # Equal weight per dataset so large sources do not dominate the panel.
         weights = np.concatenate([np.full(y.size, 1.0 / (y.size * len(ys))) for y in ys])
         bm = float(np.mean([np.mean((y <= BOUNDARY_TOL) | (y >= 1 - BOUNDARY_TOL)) for y in ys]))
         panels.append((f"real LGD datasets ({len(ys)})", style.REAL, pooled, weights, bm, True))

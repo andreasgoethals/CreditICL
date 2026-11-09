@@ -655,8 +655,8 @@ def test_features_are_standardised_before_the_model_sees_them():
 
     `col_embedder.in_linear` — the FIRST layer — went non-finite with an output `absmax` of
     exactly 6.550e+04, which is float16's largest finite value. The inputs were raw currency
-    amounts: `axa` 1.98 and `heloc` 820 worked, `loss2` 2.4e6, `base_modelisation` 8.1e7 and
-    `base_model` 9.6e8 all overflowed. Upstream's `PreprocessingPipeline.fit` begins with
+    amounts: `PropLGD3` 1.98 and `PropLGD1` 820 worked, `PropLGD2` 2.4e6, `PropLGD5` 8.1e7 and
+    `PropLGD4` 9.6e8 all overflowed. Upstream's `PreprocessingPipeline.fit` begins with
     `CustomStandardScaler().fit_transform(X)`; we skipped it entirely.
     """
     from src.eval.crediticl_baseline import standardise_from_context
@@ -788,7 +788,7 @@ def test_context_cap_lives_on_the_shared_base_class():
     """Both columns must be capped identically, or the cap becomes a handicap on one side.
 
     The wrapper does not limit context — TabICL scales to a million rows — so it hands the model
-    the whole training split: 47,089 rows on `heloc` against the <=1,024 we train on, 46x.
+    the whole training split: a full restricted training split above the 1,024-row training ceiling.
     Upstream avoids that with stages 2-3 at 10,240 and 60,000 rows; measured against a quadratic
     row-attention cost, a proportionate curriculum would run 307x our entire stage 1, because
     stage 1 is only 0.3 % of upstream's compute. So the evaluation is matched to the training

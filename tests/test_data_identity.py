@@ -53,10 +53,12 @@ def _datasets():
 @pytest.mark.skipif(not SIBLING.is_dir(), reason="the TabPFNCredit project is not on this machine")
 @pytest.mark.parametrize("task, dataset", _datasets())
 def test_every_dataset_matches_tabpfncredit(task, dataset):
+    from src.data.dataset_registry import canonical_slug
+    from src.data.private_data import site
     from src.data.loaders import load_processed
     from src.utils.paths import find_processed_dir
 
-    if find_processed_dir(task, dataset) is None:
+    if canonical_slug(dataset) is None or find_processed_dir(task, dataset) is None:
         pytest.skip(f"{task}/{dataset} is not processed here (python -m src.data.preprocess)")
     base = SIBLING / task / dataset
     info = json.loads((base / "info.json").read_text(encoding="utf-8"))
@@ -80,8 +82,8 @@ def test_every_dataset_matches_tabpfncredit(task, dataset):
         if dataset == "0003.vehicle_loan":
             for name in ("AVERAGE.ACCT.AGE", "CREDIT.HISTORY.LENGTH"):
                 comparable[:, numeric_names.index(name)] = False
-        if dataset == "0009.bank_status":
-            comparable[:, numeric_names.index("Credit Score")] = False  # old cache irreversibly clipped scores
+        if canonical_slug(dataset) == "PropPD1":
+            comparable[:, numeric_names.index(site(required=True).NUMERIC_SCORE_FIELD)] = False  # old cache irreversibly clipped scores
         if dataset == "0012.home_credit":
             column = numeric_names.index("DAYS_EMPLOYED")
             expected[:, column] = np.where(expected[:, column] == 365243, np.nan, expected[:, column])

@@ -109,7 +109,7 @@ evidence; it is not the current control.
 ### 2.6 Credit benchmarks have heterogeneous targets
 
 The prior audit recorded from `data/raw/`: Freddie LGD is
-U-shaped (11.4% at 0, 8.1% at 1); LendingClub LGD is unimodal, left-skewed, peaks at 0.80–0.85; AXA
+U-shaped (11.4% at 0, 8.1% at 1); LendingClub LGD is unimodal, left-skewed, peaks at 0.80–0.85; PropLGD3
 has a substantial atom near zero (within the documented boundary tolerance). PD base rates span 6.7% (GMSC) to 40% (myhom). **Consequence:** the prior must be
 a *family* over boundary mass and base rate, not a single shape — else it overfits one dataset.
 
@@ -358,11 +358,11 @@ credit datasets and the out-of-domain suites. The split is fixed:
 
 | track | development (prior choice + iteration) | designated holdout (previously inspected) |
 |---|---|---|
-| **PD** (14) | gmsc, lendingclub, hackerearth, taiwan_creditcard, german, myhom | vehicle_loan, cobranded, bank_status, thomas, loan_default, home_credit, hmeq, algorithmwatch |
-| **LGD** (7) | lgd_lendingclub, base_model, base_modelisation, heloc | loss2, axa, lgd_freddie |
+| **PD** (14) | gmsc, lendingclub, hackerearth, taiwan_creditcard, german, myhom | vehicle_loan, cobranded, PropPD1, thomas, PropPD2, home_credit, hmeq, algorithmwatch |
+| **LGD** (7) | lgd_lendingclub, PropLGD4, PropLGD5, PropLGD1 | PropLGD2, PropLGD3, lgd_freddie |
 
-`hackerearth` and `base_modelisation` moved to development on 30-09-2026: the first holds 5,696 of
-`lendingclub`'s 9,578 loans, the second shares defaults with `base_model` (the dated audit is in
+`hackerearth` and `PropLGD5` moved to development on 30-09-2026: the first holds 5,696 of
+`lendingclub`'s 9,578 loans, the second shares defaults with `PropLGD4` (the dated audit is in
 [RUNS.md](RUNS.md)), and a pair
 split across the line would let a choice made on development be tested on the same loans.
 
@@ -480,7 +480,7 @@ the finding**. Exp2's `2.3`/`2.4` results notebooks compare full-table credit an
 
 Distribution-shift work motivates testing time and borrower/source groups,
 rather than generalising an i.i.d. result to deployment. Grouped five-fold splits are implemented
-for HELOC loans, base_model obligors, base_modelisation clients and bank_status borrowers.
+for PropLGD1 loans, PropLGD4 obligors, PropLGD5 clients and PropPD1 borrowers.
 Temporal splits remain unimplemented; requesting temporal splitting raises an error. Feasibility depends on identifying
 observation dates, label maturity and repeated borrowers in each source — see [§7](#7-scope-and-future-work).
 The presence of a date column alone does not establish an observation-time and mature-label protocol.
@@ -496,13 +496,12 @@ source definition it is a reported bounded-target benchmark, not independent evi
 workout loss. These limitations restrict domain/calibration claims, not the execution of a matched
 synthetic-pretraining comparison. No target or dataset is rebuilt by this audit.
 
-Known target construction inputs are a different issue. On 21-10 the raw `loss2` target was
-reconstructed as `clip((_EAD - _Proceeds + _ELAO) / _EAD, 0, 1)` for all 4,638 rows with finite terms.
-Protocol 9 excludes `_ELAO` too. For `base_modelisation`, `an` exactly copies excluded
-`annee_in_dft` (594/594); `EAD_BALOISE_REELLE` copies excluded `denominateur` (585/594); and
-`Perim_poids`/`ponderation_11` encode the already excluded workout-group flags. Those aliases,
-including categorical copies, are excluded consistently. Raw/cache tables and benchmark membership
-are preserved. This closes known exclusions; it does not certify every anonymised field's timing.
+Protocol 9 excludes verified target-construction inputs and post-default workout
+fields, including duplicated fields and their categorical encodings. The
+restricted source dictionaries and column-level decisions stay with the data
+custodian. Raw and cached tables and benchmark membership are preserved.
+The exclusions establish eligibility for known fields; unresolved observation
+times still limit deployment claims.
 
 ## 6. Risks
 
@@ -516,7 +515,7 @@ are preserved. This closes known exclusions; it does not certify every anonymise
 | meta-overfitting | 21 datasets, many iterations, historical holdout results already inspected | both fixed rates and all recipes reported; no new pilot/test selection; independent source/time cohort needed for confirmatory credit claims |
 | no temporal deployment estimate | random/grouped CV does not test future cohorts | explicitly limit claims; add temporal protocols only after source-date and maturity review ([§7](#7-scope-and-future-work)) |
 | outcome information in the features | historical audits found outcome-construction and workout fields | protocol 9 excludes known fields and aliases; remaining timing needs dictionaries. Equal access to leaked inputs would not remove bias |
-| the same loans in dev and holdout | 5,696 of `lendingclub`'s 9,578 loans are in `hackerearth`; `base_modelisation` shares defaults with `base_model` | fixed 30-09-2026: both pairs are on the development side ([§5](#5-evaluation)) |
+| the same loans in dev and holdout | 5,696 of `lendingclub`'s 9,578 loans are in `hackerearth`; `PropLGD5` shares defaults with `PropLGD4` | fixed 30-09-2026: both pairs are on the development side ([§5](#5-evaluation)) |
 
 ## 7. Scope and future work
 

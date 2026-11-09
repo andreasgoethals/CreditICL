@@ -12,41 +12,15 @@ import json
 
 import numpy as np
 
-from src.data.dataset_registry import canonical_slug
+from src.data.dataset_registry import canonical_slug, is_proprietary
+from src.data.private_data import site
 
 FEATURE_POLICY = "application-pd_default-lgd_v5"
 
-# 29 September source-data audit, applied after the prediction-time decision on
-# 12 October. Exact source names, including categorical copies, are excluded.
-# Exclude both numerator and denominator: these are outcome-construction inputs,
-# not a separately verified exposure-at-default snapshot.
 EXCLUDED = {
-    ("pd", "0009.bank_status"): {"Current Loan Amount"},  # repaid-loan sentinel encodes the outcome
-    ("pd", "0006.hackerearth"): {
-        "total_rec_int", "total_rec_late_fee", "recoveries",
-        "collection_recovery_fee", "last_week_pay",
-    },
-    ("lgd", "0005.base_modelisation"): {
-        "numerateur", "denominateur", "C_flag_crc_clos_f", "annee_in_dft",
-        "DT_DECHEANCE_TERME", "topbaloispur", "topbaloispur_cor", "spm",
-        # Raw-table aliases: an == annee_in_dft; the exposure duplicates the
-        # excluded denominator on 585/594 rows. These two sampling weights
-        # also encode the excluded workout-group flag exactly.
-        "an", "EAD_BALOISE_REELLE", "Perim_poids", "ponderation_11",
-    },
-    ("lgd", "0004.base_model"): {
-        "FCLT_UnpaidInterest", "flag_clos", "duree_defaut", "DFLT_duree",
-        "cat_DFLT_duree", "classe_DFLT_duree", "classe_duree",
-        "DFLT_RationalEndDefault", "DFLT_RecoveryApproach",
-        "FCLT_duree", "FCLT_duree_cat", "cat_FCLT_duree", "classe_FCLT_duree",
-        "rating_1yad", "cat_rating_1yad",
-        "DFLT_SIREN", "classe_DFLT_dicho_2A", "borne_1", "diff",
-    },
-    ("lgd", "0002.loss2"): {
-        "UPB_At_Resolution", "Unpaid_Interest", "Total_Debt", "REO_Appraisal_Amount",
-        "_Miclaimbal", "_Mirecovery", "_adv_interest1M", "_adv_interest", "_Accrued_int", "_Accruad_int", "_EAD",
-        "_ELAO",  # ELGD = clip((EAD - Proceeds + ELAO) / EAD, 0, 1)
-    },
+    ("pd", "0006.hackerearth"): (
+        "collection_recovery_fee", "last_week_pay", "recoveries", "total_rec_int", "total_rec_late_fee",
+    ),
 }
 
 
@@ -57,15 +31,18 @@ def prediction_features(task: str, dataset: str, X: np.ndarray, cat_indices: lis
     Selection depends only on source column semantics, never on labels or a
     measured correlation. Every model and monitoring hook uses this same view.
     """
-    excluded = {name.casefold() for name in EXCLUDED.get((task, canonical_slug(dataset)), set())}
+    key = canonical_slug(dataset)
+    configured = site(required=True) if is_proprietary(key) else None
+    private_names = configured.EXCLUSIONS.get(key, ()) if configured else ()
+    markers = configured.MACRO_MARKERS.get(key) if configured else None
+    excluded = {name.casefold() for name in (*EXCLUDED.get((task, key), ()), *private_names)}
     names = feature_names
-    if excluded and (names is None or len(names) != X.shape[1]):
+    if (excluded or markers) and (names is None or len(names) != X.shape[1]):
         raise ValueError(f"{task}/{dataset}: column names required for prediction-time exclusions")
     names = names if names is not None else [str(i) for i in range(X.shape[1])]
     def eligible(name):
         normalized = name.removesuffix("__cat").casefold()
-        future_macro = (task == "lgd" and canonical_slug(dataset) == "0005.base_modelisation"
-                        and (normalized.startswith("py1_") or "_py1_" in normalized))
+        future_macro = markers and (normalized.startswith(markers[0]) or markers[1] in normalized)
         return normalized not in excluded and not future_macro
 
     keep = [i for i, name in enumerate(names) if eligible(name)]

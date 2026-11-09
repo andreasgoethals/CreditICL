@@ -4,7 +4,7 @@ WHAT THIS PRODUCES: one CSV per run, one row every `eval_every_datasets` synthet
 datasets, holding the model's score on the real credit datasets **and** on the
 out-of-domain datasets at that moment.
 
-    datasets_seen, step, train_loss, lgd_pinball_heloc, ..., ood_clf_roc_auc, ...
+    datasets_seen, step, train_loss, lgd_pinball_PropLGD1, ..., ood_clf_roc_auc, ...
 
 WHY IT IS WORTH THE GPU TIME
 

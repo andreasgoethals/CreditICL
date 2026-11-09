@@ -9,18 +9,18 @@
     "index": 2,
     "stem": "02_lgd_targets",
     "name": "lgd_targets",
-    "caption": "LGD target histograms for seven processed benchmark tables, ordered by row count, with 40 bins on the loss scale [0,1] and dataset-specific vertical scales; titles report the share within 1e-4 of 0 or 1."
+    "caption": "LGD target histograms for seven processed benchmark tables, in registry order, with 40 bins on the loss scale [0,1] and dataset-specific vertical scales; titles report the share within 1e-4 of 0 or 1."
   },
   {
     "index": 3,
     "stem": "03_shapes",
     "name": "shapes",
-    "caption": "Rows against features for 21 processed source tables on logarithmic axes, with one named point per table; dotted lines mark Experiment 1's synthetic training geometry of 1,024 rows and at most 100 features, not benchmark limits. Experiment 2's TabICLv2 continuation uses larger synthetic tables."
+    "caption": "Rows against features for the public processed source tables on logarithmic axes, with one named point per table; dotted lines mark Experiment 1's synthetic training geometry of 1,024 rows and at most 100 features, not benchmark limits. Experiment 2's TabICLv2 continuation uses larger synthetic tables."
   },
   {
     "index": 4,
     "stem": "04_table_inventory",
     "name": "table_inventory",
-    "caption": "Processed source-table inventory with one aligned row per dataset: categorical columns as a share of all source columns on the left, and missing feature entries as a share of all source feature entries on the right. Percentages are written beside the marks; axes have separate percentage ranges. PD (circles) and LGD (squares) label the prediction tasks. The inventory precedes prediction-time feature exclusions and fold-fitted encoding; a zero reflects the available processed table, not necessarily complete original records."
+    "caption": "Public source-table inventory with one aligned row per dataset: categorical columns as a share of all source columns on the left, and missing feature entries as a share of all source feature entries on the right. Percentages are written beside the marks; axes have separate percentage ranges. PD (circles) and LGD (squares) label the prediction tasks. The inventory precedes prediction-time feature exclusions and fold-fitted encoding; a zero reflects the available processed table, not necessarily complete original records."
   }
 ]

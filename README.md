@@ -45,11 +45,10 @@ learning-rate pilot or best-on-test selection. Comparisons retain all prediction
 features and fitted rows, with five common folds. PD threshold tuning uses an inner training split.
 Native OOD performance is reported alongside credit performance.
 
-**Campaign snapshot, 6 November 2026:** Exp1 training and benchmarking are complete. All 64 Exp2
-training runs are complete and all 320 checkpoint benchmarks are admitted. Revised Exp3 CPU
-validation has passed; GPU validation is running. Exp3 submission is authorized only after full
-validation and resource checks. [VSC](docs/VSC.md#current-deployment) and [RUNS](docs/RUNS.md#runs)
-carry dated job-level evidence; this is not a live queue view.
+**Campaign snapshot, 9 November 2026.** Exp1 training and benchmarking are complete. All 64 Exp2
+training runs and 320 checkpoint benchmarks finished and were verified. Revised Exp0 passed CPU
+and GPU validation. Mindwell accepted all 48 Exp3 training tasks. Dated job records are in
+[VSC](docs/VSC.md#current-deployment) and [RUNS](docs/RUNS.md#runs).
 
 ## Local setup
 
@@ -69,6 +68,11 @@ Run each step only after the preceding one succeeds. PowerShell 5.1 does not sup
 The CPU environment is for development and analysis; model inference and training run on VSC.
 Datasets are not distributed with the repository: a fresh clone is not a complete benchmark
 installation. Do not download weights merely to execute analysis notebooks.
+
+Seven restricted credit datasets appear only under the aliases `PropPD1`–`PropPD2` and
+`PropLGD1`–`PropLGD5`. Public benchmarks keep their names. The full benchmark requires the
+institution's local dataset configuration. Published exploration figures show source dimensions,
+column diagnostics and feature eligibility details only for public datasets.
 
 The Slurm shell tests need Bash. If Git for Windows is installed but Bash is absent from PATH:
 
