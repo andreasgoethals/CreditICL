@@ -27,6 +27,15 @@ Quote: zero credits. These are mechanism tests, not B200 production acceptance o
 `11781978` completed in 70s: nine tables/four objectives, all finite. The actual production
 tail gave native loss 8.88e47 and gradient norm 1.315e24; CRPS+Huber norm was 1.114.
 Trajectory probes and a full-update stress intervention remain separate from benchmark evidence.
+Stress probe `62624028` was admitted on wICE interactive (one A100 1g.10gb slice,
+8 CPUs/default 16 GB, 30m, zero-credit quote), initially pending for Priority. It uses
+separate DATA checkout `.crediticl-diagnostics-stress-20261109/CreditICL` at `b217307`;
+receipt `20261109-stress-wice.json`. Additional local checks: 53 passed, two weight skips.
+Stress completed 0:0 in 6m57s: robust alternatives eliminated native's 16 AMP retries/one
+FP32 replay, but native had the best held-out loss after this single fresh-optimizer update.
+Do not describe robustness as demonstrated benchmark recovery. The first TabICL PD probe
+completed 0:0 in 1h07m16s; all four rates were finite, with more credit adaptation and generic
+loss at higher rates. Other paired probes remain distinct from production evidence.
 
 ## 09-11-2026 — Exp2 results synced and Exp3 training admitted
 

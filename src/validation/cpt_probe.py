@@ -26,7 +26,7 @@ OBJECTIVES = ("native", "crps", "crps_mae", "crps_huber")
 TABICL_RATES = (1e-5, 2e-5, 5e-5, 1e-4)
 
 
-def probe_config(backbone, task, lr, *, seed=0, steps=32):
+def probe_config(backbone, task, lr, *, seed=0, steps=32, force_fp32=False):
     from src.utils.config import expand_with_seeds, load
 
     run = next(r for r in expand_with_seeds(load(f"config/Exp2_{task.upper()}.yaml", allow_placeholders=True))
@@ -42,6 +42,10 @@ def probe_config(backbone, task, lr, *, seed=0, steps=32):
                         num_workers=0, max_workers=0, log_every=1)
     if backbone == "tabicl":
         cfg["prior"].update(n_rows_range=[1024, 1024], n_rows_sampling="uniform")
+    if force_fp32:
+        if backbone != "tabpfn3":
+            raise ValueError("The precision intervention is for TabPFN only")
+        cfg["train"]["amp"] = False
     cfg["progress"] = {"every_datasets": 0, "n_ood": 0}
     cfg["logging"] = dict(level="WARNING", console=False, to_file=False,
                           log_hardware_every=0, log_grad_every=0, log_weights_every=0)
@@ -277,7 +281,7 @@ def run_trajectory(directory, report, save, backbone, task, steps):
         torch.cuda.empty_cache()
 
 
-def run_stress_update(directory, report, save):
+def run_stress_update(directory, report, save, *, force_fp32=False):
     """One real outlier-containing batch at peak LR, with fresh optimizer state.
 
     This is a controlled intervention, not replay of production optimizer state.
@@ -294,13 +298,13 @@ def run_stress_update(directory, report, save):
     report["variants"] = []
     report["intervention"] = "production generic batch 685, fresh AdamW, one update at 1e-5; no warm-up"
     for objective in OBJECTIVES:
-        cfg = probe_config("tabpfn3", "lgd", 1e-5, steps=1)
+        cfg = probe_config("tabpfn3", "lgd", 1e-5, steps=1, force_fp32=force_fp32)
         cfg["train"]["warmup_proportion"] = 0.
         cfg["prior"]["credit_fraction"] = 0.
         trainer = TabPFNTrainer(cfg, directory / objective, device="cuda")
         trainer.maybe_resume()
         preparer = TabPFNTaskPreparer("lgd", trainer.weights_path, 2, 0)
-        result = dict(objective=objective, lr=trainer.optimizer.param_groups[0]["lr"])
+        result = dict(objective=objective, lr=trainer.optimizer.param_groups[0]["lr"], amp=trainer.amp)
         report["variants"].append(result)
         try:
             validation = _validation_batches(cfg, "tabpfn3", preparer)
@@ -328,12 +332,16 @@ def main(argv=None):
     parser.add_argument("--backbone", choices=("tabicl", "tabpfn3"), default="tabpfn3")
     parser.add_argument("--task", choices=("pd", "lgd"), default="lgd")
     parser.add_argument("--steps", type=int, default=32)
+    parser.add_argument("--full-precision", action="store_true",
+                        help="Stress-mode precision control: disable FP16 and GradScaler for every objective")
     parser.add_argument("--out", required=True, type=Path)
     args = parser.parse_args(argv)
     if not 1 <= args.steps <= 128:
         parser.error("Diagnostic budget must be between 1 and 128 updates")
     if args.mode in {"tail", "stress"} and args.backbone != "tabpfn3":
         parser.error("Target-tail interventions require the TabPFN regression backbone")
+    if args.full_precision and args.mode != "stress":
+        parser.error("The full-precision intervention is supported only in stress mode")
     if (args.mode in {"tail", "stress"} or args.backbone == "tabpfn3") and args.task != "lgd":
         parser.error("TabPFN objective probes require regression")
     if os.environ.get("PYTHONHASHSEED") != "0" or not os.environ.get("SLURM_JOB_ID"):
@@ -352,6 +360,7 @@ def main(argv=None):
                   job=os.environ["SLURM_JOB_ID"], torch=torch.__version__, gpu=torch.cuda.get_device_name(),
                   scope="synthetic mechanism diagnostic, not benchmark evidence or hyperparameter selection",
                   rows=1024, updates=args.steps if args.mode == "trajectory" else int(args.mode == "stress"),
+                  force_full_precision=args.full_precision,
                   unchanged_production_recipes=True)
     def save():
         _write(args.out, report)
@@ -362,7 +371,7 @@ def main(argv=None):
             if args.mode == "tail":
                 run_tail(Path(directory), report, save)
             elif args.mode == "stress":
-                run_stress_update(Path(directory), report, save)
+                run_stress_update(Path(directory), report, save, force_fp32=args.full_precision)
             else:
                 run_trajectory(Path(directory), report, save, args.backbone, args.task, args.steps)
         report["status"] = "PASS"

@@ -443,6 +443,9 @@ Moving inspected development tasks into the confirmatory test or counting folds 
 replicates would not solve that limitation. ROC-AUC/R² remain the predeclared primary score summaries;
 log-loss/Brier and CRPS/boundary calibration address different secondary questions, not post-hoc
 replacement primary endpoints.
+Some datasets also share loans/defaults, so treating all dataset scores as independent is an
+approximation. Retain the dataset-level results, and check sensitivity after averaging each
+known overlapping pair into one family. This cannot create a new independent holdout.
 
 **Metrics** (all computed in one run). PD: ROC-AUC, PR-AUC, Brier, log-loss, KS, calibration slope, and
 F1, precision, recall, MCC and balanced accuracy at the validation-tuned threshold —

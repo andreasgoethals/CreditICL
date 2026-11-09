@@ -6,6 +6,7 @@ Repository changes, newest first. [RUNS.md](RUNS.md) preserves cluster evidence;
 ## 09-11-2026
 
 - Add isolated synthetic CPT objective/rate diagnostics and tests; record the selective stop of pending TabPFN-3 LGD retention runs.
+- Correct the LGD metric explanation: conditional means remain appropriate for squared-error prediction even with endpoint-heavy targets.
 - Publish restricted dataset aliases and public-only schema diagnostics. Keep private recipes outside Git and scan the publication snapshot.
 - Refresh notebook reports with all Exp2 milestones and record the verified Exp3 training admission.
 

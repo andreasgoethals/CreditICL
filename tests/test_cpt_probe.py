@@ -72,6 +72,25 @@ def test_invalid_objective_fails_before_forward():
         bar_objective(None, None, None, "clip_whatever")
 
 
+def test_precision_control_changes_only_amp_and_preserves_production_default():
+    native = probe_config("tabpfn3", "lgd", 1e-5, steps=1)
+    fp32 = probe_config("tabpfn3", "lgd", 1e-5, steps=1, force_fp32=True)
+    assert native["train"]["amp"] is True and fp32["train"]["amp"] is False
+    fp32["train"]["amp"] = True
+    assert fp32 == native
+    with pytest.raises(ValueError, match="TabPFN only"):
+        probe_config("tabicl", "lgd", 1e-5, force_fp32=True)
+
+
+@pytest.mark.parametrize("mode", ["tail", "trajectory"])
+def test_precision_flag_rejects_modes_without_a_precision_intervention(mode):
+    from src.validation.cpt_probe import main
+
+    with pytest.raises(SystemExit) as error:
+        main(["--mode", mode, "--full-precision", "--out", "unused.json"])
+    assert error.value.code == 2
+
+
 @pytest.mark.parametrize("mode", ["tail", "stress"])
 @pytest.mark.parametrize("backbone,task", [("tabicl", "lgd"), ("tabpfn3", "pd")])
 def test_tail_intervention_rejects_mislabeled_model_or_task_before_loading_weights(mode, backbone, task):

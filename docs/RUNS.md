@@ -133,6 +133,59 @@ not each task's contribution to its direction.
 state and fixed peak LR 1e-5, tests AMP retry/global clipping and synthetic held-out losses.
 It deliberately omits warm-up for that single stress update and is not a replay of the
 production optimizer state. No checkpoint or real-benchmark tuning is involved.
+Accepted as wICE interactive `62624028`, initially pending for Priority, on separate DATA
+checkout `.crediticl-diagnostics-stress-20261109/CreditICL` at `b2173078efdc0207adac1d36df577de8a712d33b`.
+Receipt `20261109-stress-wice.json`; one A100 1g.10gb slice, eight CPUs/default 16,000 MiB,
+30 minutes, native quote zero credits. The follow-up passed 53 local checks (two VSC-weight
+skips) and scoped Ruff. Neither production nor the earlier diagnostic checkout was changed.
+It completed 0:0 in 6m57s on `k28i16` (16:05–16:12 CET). All four 16-table updates
+were finite. Native CRPS+MSE needed 16 AMP retries and one FP32 replay; the three
+alternatives needed neither. However, this did **not** establish a predictive benefit:
+generic held-out native loss was 0.57532 before the update, 0.57352 after native,
+0.63548 after CRPS, 0.66183 after CRPS+MAE and 0.66477 after CRPS+Huber.
+Credit held-out loss was 1.48859 before, 1.48854 after native and 1.52653 after Huber.
+The fresh-optimizer/no-warm-up intervention is not a long-run counterfactual and cannot
+prove that transformed-target outliers caused the completed benchmark deterioration.
+The first stress comparison also mixes native FP32 replay with alternative FP16 updates.
+An explicit `--full-precision` stress control removes that confound without changing the
+production configuration. Its local checks passed 56 tests with two VSC-weight skips;
+diagnostic Ruff passed. The metric module retains one pre-existing import-format finding.
+
+**Interpretation checks:** the native TabPFN term called CRPS is bin-width-weighted ranked
+probability error, with out-of-range targets mapped to the edge bin; it is not an exact
+continuous tail integral. A local check gave identical losses/gradients for targets 10 and
+1e25 beyond the same support. CRPS-only therefore changes the objective's tail sensitivity;
+its smaller loss is not itself evidence of better predictions. The shared evaluation in the
+trajectory probes keeps native loss and this distributional component separate.
+
+Final Exp2 dataset-equal LGD R², averaged over the two training seeds, illustrates why neither
+"all generic CPT degrades" nor "TabICL needs a higher rate" is supported:
+
+| Model / prior | Higher-rate credit | Lower-rate credit | Higher-rate OOD | Lower-rate OOD |
+|---|---:|---:|---:|---:|
+| TabICLv2 / 0% credit | 0.34163 | 0.34103 | 0.79388 | 0.79391 |
+| TabICLv2 / 100% credit | 0.34033 | 0.34037 | 0.78663 | 0.78929 |
+| TabPFN-3 / 0% credit | -0.03773 | 0.34793 | 0.48928 | 0.79542 |
+| TabPFN-3 / 100% credit | 0.29466 | 0.31887 | 0.27170 | 0.64310 |
+
+Released credit/OOD baselines are 0.34038/0.79376 for TabICLv2 and 0.34288/0.79664 for
+TabPFN-3. Higher/lower rates are respectively 2e-5/1e-5 and 1e-5/1e-6. These are already
+observed benchmark results, not a held-out rate-selection exercise. R² is not the whole
+outcome: pure-credit TabICL endpoint-mass error worsened by roughly 0.008 at both rates.
+The TabPFN `video_transcoding` step-500 failure has finite, mostly positively biased predictions;
+its negative R² must not be equated with an overflowing prediction or automatically attributed
+to the generic synthetic-tail case. That run uses only credit tasks.
+
+Completed Exp2 summaries record median accumulated training times of 33.31 GPU-hours
+(TabICL PD), 32.44 (TabICL LGD), 5.50 (TabPFN PD) and 4.04 (TabPFN LGD), per 1,500-update
+run. These are recorded training/monitoring times, not invoices or estimates for a new
+objective. They favour a small, matched TabPFN LGD repair study over a blind TabICL rerun.
+The LGD metric module's explanation was corrected: the conditional mean remains optimal
+under squared error despite endpoint-heavy targets. Its executable AST is unchanged.
+As a reviewer sensitivity check, averaging each known overlapping dataset pair into one family
+left the sign of every final 100%-minus-0% contrast unchanged across two models, two tasks and
+two rates. For TabICL LGD, dataset-equal differences -0.00130/-0.00066 became
+family-equal -0.00174/-0.00100. This is a descriptive dependence check, not a new significance claim.
 
 ### 09-11-2026 — Exp3 training admitted
 

@@ -2,14 +2,13 @@
 
 The choice of metric is not neutral here, and two traps are worth naming.
 
-**LGD: never lead with a single number from a point prediction.** The target is
-often two-humped, with mass at 0 and at 1 and little in between. The mean and the
-median of such a distribution both land in the empty middle, so a point prediction
-is a value the data almost never takes. R^2 and RMSE are still reported, because
-the LGD literature reports them and we need comparability (published R^2 is about
-0.04-0.15 for linear models, 0.10-0.25 for beta models, 0.20-0.43 for tree
-ensembles), but they are reported *alongside* distributional metrics, and the
-decoding rule that produced the point prediction is always recorded.
+**LGD: assess both expected loss and its distribution.** Targets can have mass
+at 0 and at 1 with little in between. The conditional mean remains the optimal
+point prediction under squared error, even when few individual loans realise
+that value; the median need not lie in the middle. R^2 and RMSE therefore measure
+a legitimate prediction goal. Distributional scores and endpoint-mass errors
+answer additional questions that a point mean cannot resolve. Report both and
+record the decoding rule; bimodality does not excuse a poor mean prediction.
 
 `boundary_mass_error` is the metric that most directly tests this project's
 hypothesis, and no paper in the library reports it: does the model predict the
