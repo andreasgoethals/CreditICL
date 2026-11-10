@@ -19,6 +19,11 @@ from src.utils.config import load, expand_with_seeds, effective_fingerprint, run
 def test_existing_campaign_identity_and_aliased_effective_configs(experiment, task, digest):
     # The alias migration replaces only dataset identifiers in these configurations.
     runs = expand_with_seeds(load(f"config/Exp{experiment}_{task}.yaml"))
+    # The target-space repair changes exactly the TabPFN LGD arms. Check the
+    # historical grid after removing that explicit recipe field and name suffix.
+    for r in runs:
+        r["train"].pop("regression_target_policy", None)
+        r["_run_name"] = run_name(r)
     actual = [(r["_run_name"], r["_grid"]["array_index"], effective_fingerprint(r)) for r in runs]
     assert hashlib.sha256(json.dumps(actual).encode()).hexdigest() == digest
 

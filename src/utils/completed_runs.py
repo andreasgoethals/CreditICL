@@ -19,9 +19,57 @@ CONTEXT_FIX_PREDECESSOR = "01a5f056044cc261b83b3973956d55211c64b4e81ee58d285712e
 REVIEWED_IMPLEMENTATION = "5300c294e4078273fa635f18b82714ebfdb17169046f25035e356aa2392a8e75"
 ALIAS_IMPLEMENTATION = "c210d0f7765bd96ab610d23ccad5f6e4d1d0b702bdb437ce37bee8f63b0793f9"
 
+STANDARD_TARGET_IMPLEMENTATION = "9b92584bd26412aa049b632695417a9a16fe58e23e4ff3f025bd707e3c096eb4"
+
+# Exact unchanged Exp2/3 recipes; completion/evaluation only, never live resume.
+UNCHANGED_TARGET_FIX_RECIPES = frozenset({
+    "02956c2457869cef1d4b48adfa6dc4a4af00c61c6e28c5d4dcf3d800d4421d6f",
+    "04a479735e582c7bda4304c238b4a9e6db27b1173e058dc8168290f03f5d4435",
+    "09d1bc324bfe0e12c21cad0fcc4bcac9a2811c4bcdccd1307fdd416e99bf518e",
+    "129281a008c3efb7a6a187bef15d3c51a4cec744cf2d235d524ee6da4f9514e8",
+    "16cc43032676c0d5ea6dc44ab262755b707d0d21c54ec678c8dda3c21f339865",
+    "18e761f6fec5ab2bdd90a6dbe93ff41303410358d352f84a835811a3e1d2b46a",
+    "220891a7fd3aadac7839b211b551801ec74c94a7f634f5b322d940cf95ac986c",
+    "2c7c48e8222c71eb419078e245e306509c6cebead94ef04f3fe6dc03f220a6f0",
+    "2dd109ae8e70ff86a5a6d77051f0ff9e3eb088e37d48865b4a7986bb319259ed",
+    "2dec644fbf1abdd88192834d9ad2a1c051c4ede95a0023633bdd8e35f13c51b3",
+    "2f35eb052af39fb1faf5f0cdf9e4af98d91159d0691313f3a88d0054d78519c0",
+    "300034f37f9ed01e3cbe943aeb17e0c9445b192296a61719c266ccf1b3d89fb1",
+    "34b8a881a90b8f9650cd8dbd4b059669f027e28d898f7abfb53804b9b97e268e",
+    "3d9a5be8d63d51f92f0578a7d75d4e47208e8292cde590c4fb10bd569e560f3c",
+    "472020e06dde3e4ec81c2c1b105e44118ed14dbd667cf305dacd9a85cc3c8a0f",
+    "4f3d40e2bc40780068701e2b998c583d79d77cc2f5dac2456b60aa0a8719f799",
+    "52dd575d270a9f7212c9bcecafcf21b0f924d387c96548806e10501168196f28",
+    "55cc27ac074fe02208d935ee7645e61e62218735d9e965e8129e6bb7c3d3daf1",
+    "59ef75444893c5ee784d4a7c406efb6cdc1b331904e7a67a4323ac00802c8f0e",
+    "6bcc686b26252081a3d59deb2977cfc57f871781ac8030ca2314afe2961f9ca4",
+    "702537bb6d60c98a96a09f76bd92e32bb3146e7d44546f501432c88742ea3038",
+    "797d011d1c811b5c38ddd3177c1c1dfe3750b7a737c14f1c2d18e92635b1a996",
+    "87634e59d43d907036293aadfb31cc48463caebcf7891b526eaeb52c2be738b6",
+    "972fda6d82d9a06aa514c75c003405e77efd5bfdc8eb140921c14fc12bd00f5a",
+    "9974b62eafc8e52998491c93721310492ba5c8de3cf0fc5b16ce6bdec3f4e57a",
+    "9b0400e35c93091d12b5ea9bc118c258f3df90c94835cff13bfb60d2e4a1315b",
+    "9e3ff82fcff4c267e9f7c96f29ed6e1ed5c97cadbfe51d869e161a5e169e9b87",
+    "a3f170f0de213875dfdaa4e13bf0d240b3eb96dd9f28e2b17d8256a10f83a9db",
+    "a3ffcc5f7bb5e952e88f10de63cce806465d66b642311a92b4e113ca27e6e2d2",
+    "a435cc5bb5525f52c1e3ca8d1e0331fe7afe60bcbe8c5009d04ed7f1ae420d2a",
+    "a81bc5621da7828f03e10d0eed66457b54844e19f2e9a6901738aef7a6329291",
+    "b687f60b0eda1a5eb3094baa519c0f22d99147b70091cad680b8f3d8ad6273f0",
+    "b8e9bbff58d51ae29debbb05b4d9e4c95c2643338e370270ed93da4c38833564",
+    "c352a7a2adceba1c9ee981ed5db1a3e1c694eda51a6d612c4408a32cd5ba47f6",
+    "d63049e8a81eae4db3ab7353d45a9e81b616e887e83307dfbfe17ea25d4eb8db",
+    "e1a5d2c8de844031c0e3c6839640f2d9215fcdb1f909954deff88839a9d08523",
+    "e22c6b77c90ea4026220f4ddf22f20ef6541163ad30cbc0ff9dbd96184c0e354",
+    "e7504fbdddf9d2d0678a0753b1a93b5bc01b2db1c2239fb235533920d7b618f8",
+    "f3b974cc42ae2991ab845f5c9476ca566a06fd0437dc20eb83f55b3e0c53af22",
+    "f4e3b8b6429f3cce9f9506a5508191b0c138bf21b6817c776bffe7df71eb0c09",
+    "f94585d77ba564f9f530a2702872803e5c059bad72ab54b84517eedfc60d27aa",
+    "fd8474651f5c3b6e21a8878a9117d2cb1634e0e95a271f28d3caa75956666f31",
+})
+
 # Dataset aliases change presentation and monitoring keys. Completed recipes
 # retain their weight provenance. Resumable jobs still use the original source.
-_COMPLETION_IMPLEMENTATIONS = {REVIEWED_IMPLEMENTATION, ALIAS_IMPLEMENTATION}
+_COMPLETION_IMPLEMENTATIONS = {REVIEWED_IMPLEMENTATION, ALIAS_IMPLEMENTATION, STANDARD_TARGET_IMPLEMENTATION}
 
 # PD/LGD, original main mixtures and five component removals. Seed is checked
 # separately; 25% was completed under OCT26_IMPLEMENTATION. Digests include
@@ -104,6 +152,9 @@ def validate_completed_training(summary: dict[str, Any], current: dict[str, Any]
 
     if summary.get("training_fingerprint") == preflight.training_fingerprint():
         return
+    if reviewed_target_fix_completion(summary, current, saved):
+        validate_resume_config(saved, current)
+        return
     if reviewed_context_fix_state(summary, current, saved, checkpoint=False):
         validate_resume_config(saved, current)
         return
@@ -162,6 +213,9 @@ def reviewed_context_fix_state(state: dict, current: dict, saved: dict | None,
     from src.utils import preflight
 
     implementation = preflight.training_implementation_fingerprint()
+    if (implementation == STANDARD_TARGET_IMPLEMENTATION
+            and current.get("architecture") == "tabpfn3" and current.get("task") == "lgd"):
+        return False
     permitted = {CONTEXT_FIX_PREDECESSOR}
     if not checkpoint and implementation == ALIAS_IMPLEMENTATION:
         permitted.add(REVIEWED_IMPLEMENTATION)
@@ -187,3 +241,21 @@ def reviewed_context_fix_state(state: dict, current: dict, saved: dict | None,
                 or (implementation == REVIEWED_IMPLEMENTATION
                     and state.get("completed") is False and step < 1500
                     and state.get("stopped_by_signal") in ("SIGUSR1", "SIGTERM")))
+
+
+def reviewed_target_fix_completion(state: dict, current: dict, saved: dict | None) -> bool:
+    """Keep completed unchanged arms usable without accepting retired LGD targets."""
+    from src.utils import preflight
+    return bool(preflight.training_implementation_fingerprint() == STANDARD_TARGET_IMPLEMENTATION
+        and isinstance(saved, dict)
+        and not (current.get("architecture") == "tabpfn3" and current.get("task") == "lgd")
+        and recipe_digest(current) in UNCHANGED_TARGET_FIX_RECIPES
+        and recipe_digest(saved) == recipe_digest(current)
+        and type(current.get("seed")) is int and current["seed"] in (0, 1)
+        and saved.get("seed") == current["seed"]
+        and state.get("completed") is True and state.get("steps") == 1500
+        and state.get("datasets_seen") == 1500 * current["train"]["batch_size"]
+        and state.get("skipped_tasks", 0) == 0
+        and state.get("training_fingerprint") in {
+            preflight.training_fingerprint_for(REVIEWED_IMPLEMENTATION),
+            preflight.training_fingerprint_for(ALIAS_IMPLEMENTATION)})

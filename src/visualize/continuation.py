@@ -66,6 +66,15 @@ def design_figure(experiment=2):
     return fig
 
 
+def available_training_backbones(track, *, metric="loss"):
+    """Export measured current traces only; unavailable arms are reported as text."""
+    cfg = load(paths.config_path(f"Exp2_{track.upper()}"), allow_placeholders=True)
+    runs = training.load_loss_logs(track, "exp2") if metric == "loss" else training.load_progress(track, "exp2")
+    available = {r["architecture"] for r in expand_with_seeds(cfg)
+                 if r["_run_name"] in runs and not runs[r["_run_name"]].empty}
+    return [backbone for backbone in BACKBONES if backbone in available]
+
+
 def training_curves(track, backbone, *, metric="loss"):
     """Separate predetermined rates; losses never mix architectures."""
     cfg = load(paths.config_path(f"Exp2_{track.upper()}"), allow_placeholders=True)

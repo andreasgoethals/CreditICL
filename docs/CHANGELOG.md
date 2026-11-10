@@ -3,6 +3,13 @@
 Repository changes, newest first. [RUNS.md](RUNS.md) preserves cluster evidence;
 [AGENTS_MEMORY.md](AGENTS_MEMORY.md) indexes runs and recurring failure modes.
 
+## 10-11-2026
+
+- Disable synthetic TabPFN-3 LGD power transforms while preserving context standardization and feature members; version replacement runs, reject old resumes, and add native-preprocessing/GPU tail regression tests.
+- Align Exp0 TabPFN weight decay with production (.01 instead of .0001); add a recipe-parity test.
+- Match accepted-stream notebook diagnostics to training's single-thread sampling guard; test reproducibility across caller thread counts.
+- Retire the affected Exp2 LGD artifacts under an explicit inventory; refresh notebooks and preserve unrelated results and active jobs.
+
 ## 09-11-2026
 
 - Add isolated synthetic CPT objective/rate diagnostics and tests; record the selective stop of pending TabPFN-3 LGD retention runs.

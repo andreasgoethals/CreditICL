@@ -1,3 +1,4 @@
+# TabPFN LGD: apply_design records context-only standardization; no synthetic target power transform.
 # Experiment 2: two models x four mixtures x two fixed rates x two seeds = 32 runs per task.
 # TabICL stage-3 CPT; TabPFN-v3 native differentiable fine-tuning applied to synthetic tables.
 # See docs/EXPERIMENTAL_DESIGN.md for provenance and comparison limits.

@@ -76,6 +76,111 @@ and limits of the inference>
 
 ## Runs
 
+### 10-11-2026 — Standardized synthetic targets and scoped retirement
+
+**Scope:** local repair/tests and authorized deletion of old Exp2 TabPFN-3 LGD output.
+No new Slurm workload, cancellation, source deployment or runtime change. User approval is
+required before sending the new Exp0 jobs. TFM pin `2c5e65f2de14c7f11940c69306109b6db38b81ce`;
+VSC-library pin `15e82af30221479f022ff3dbb89687709b961248`.
+
+Reviewed source fingerprint: `66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9`.
+Training implementation: `9b92584bd26412aa049b632695417a9a16fe58e23e4ff3f025bd707e3c096eb4`.
+
+**Implementation:** keep native context-only target mean/std and its 1e-8 standard-deviation floor.
+Remove each regression ensemble member's power transform before materializing its training table;
+choosing feature members first preserves their original preprocessing and RNG. Retain CRPS +
+mean-MSE, gradient clipping, AMP/replay, affine target scaling, synthetic tables and inference.
+New `target-standardize-v1` run identities and resume checks prevent old targets/optimizer states
+from entering the replacement campaign. Historical synthetic objective probes explicitly retain
+the native target policy. Unchanged Exp1/2/3 completions remain usable only under reviewed exact
+recipe, source and package checks. Running jobs continue on their original frozen source.
+
+**Coverage:** local native preprocessing tests check exact context/query z-scores, no query leakage,
+unchanged feature members, constant/near-constant context handling, historical controls, PD
+isolation, known production tail tables, identities and completion/resume compatibility. Six new
+mandatory VSC tests use full sixteen-table batches 511/527/685 at both actual TabPFN peak rates,
+checking finite targets/loss/parameters, one optimizer step, zero dropped tables and no FP32 replay.
+The existing six-method LGD adapter train/stop/resume/inference stages inherit the new policy.
+These GPU tests are configured, not executed evidence.
+
+On the reproduced generic-prior tables (batch/slot 511/1, 527/9, 685/15), local context-only
+standardization gives maximum absolute query targets 7.459, 17.944 and 9.169 respectively.
+The native preprocessing regression tests verify these values against the explicit context
+mean/std calculation. These are synthetic target checks, not model performance measurements.
+
+**Local verification:** full suite 2,391 passed / 64 VSC-or-weight-dependent skips in 22m00s.
+The later diagnostic-thread and Exp0 parity checks passed with their affected suites: 76 passed /
+two weight-dependent skips. All twelve notebooks executed successfully and exported 43 PDFs;
+the affected prior notebook was rerun after the thread guard. Final cells print their summaries.
+All 43 retained final plots matched their preceding counterparts by rendered-pixel comparison;
+the regenerated prior diagnostics and retained LGD panels were also visually inspected.
+After overlapping partial reruns, regenerated the combined summaries verbatim from the final
+executed notebooks to remove intermediate fingerprints. No local weights were fetched. This is not GPU
+acceptance and does not authorize the replacement campaign.
+
+The first full local invocation had 2,371 passes and eighteen failed assertions: sixteen stale
+expectations allowed retired LGD completions, and two negative fixtures accidentally selected
+the other registered TabICL rate. Updated those assertions/fixtures and reran the full suite;
+no production compatibility gate was relaxed. Both logs remain in the local evidence directory.
+
+**Additional review finding:** both Exp0 TabPFN arm overrides still used weight decay .0001,
+while production uses .01. Aligned only the diagnostic overrides to .01 and added a PD/LGD
+optimizer/target-policy parity test. Production recipes/results are unchanged; the earlier
+diagnostic decay mismatch is separate from the target-transform failure.
+
+**Notebook review finding:** the accepted-stream diagnostic called the production generator
+without its loader's single-thread guard. A regression test reproduced the mismatch with a
+two-thread caller. The diagnostic now uses the same guard, restores caller settings and verifies
+identical records across caller thread counts. Training's generator and loader did not change.
+Three regenerated prior diagnostic figures were visually reviewed; they are illustrative samples,
+not changes to completed campaign measurements.
+
+**Live evidence, 12:26 CET:** arrays 11780823/11780839 contain twelve completed, eighteen running
+and six queued unaffected Exp3 tasks. Twelve TabPFN LGD tasks had already been stopped on 9 November
+before training. All twelve completed TabPFN PD summaries record 1,500 steps, 24,000 tables and
+zero skips. All 108 available Exp3 log files were read: no traceback, CUDA OOM or non-finite
+markers. TabICL requeues retain graceful-stop/recovery records. No new validation gate was claimed.
+Production DATA remains `0494e7a14bc320176de3a8665051630461f3c316`; the active Exp3 DATA checkout
+remains `a3891f5cf1a4a6c7a4b917dad9906efbfc201e1b`.
+
+**Retirement, 12:44 CET:** removed the old sixteen Exp2 LGD TabPFN runs (indices 8–15/24–31)
+and their eighty benchmark slots from active output. Exact VSC inventory: 256 DATA job logs,
+128 DATA run records, 80 PROJECT checkpoints, 800 PROJECT benchmark files; 1,264 files and
+56,050,535,595 logical bytes. Local inventory: 1,008 analysis files, 49,566,175 bytes, no weights.
+Preserved all 2,594 recorded Exp1 sizes/mtimes, unaffected Exp2 results and shared references;
+240 Exp2 benchmark receipts remain. All 36 Exp3 initialization paths point to released weights,
+with no dependency on retired assets. Manifests retain the removal inventory and outcome without
+preserving the invalid results as current evidence. The immediately reported quota had not yet
+reflected freed blocks; logical file bytes are not a claim about instantaneous quota recovery.
+
+**Follow-up, 12:52 CET:** nineteen unaffected Exp3 jobs running, five queued, twelve completed;
+all 110 logs remained free of fatal/non-finite/storage-error markers. Both frozen commits matched.
+PROJECT quota then reported 256.1G/1T (down from 308.3G), consistent with the 52.2 GiB retirement.
+DATA reported 47,304M/76,800M. Shared scratch usage includes other projects and was not cleaned.
+At 13:18 CET both frozen commits matched. The final 13:37 CET queue/accounting and full
+110-log recheck retained 12 completed/19 running/five queued, no nonzero exits among those 36
+tasks, and no traceback, CUDA OOM, non-finite or storage-error markers.
+
+**Evidence locations:** DATA `output CreditICL/manifests/retired-tabpfn-lgd-20261110-plan.json`
+and `retired-tabpfn-lgd-20261110-done.json`; local `.runtime-build/target-standardize-20261110/`.
+Historical synthetic diagnostic reports and old submission/validation receipts remain labelled
+historical. Exp1 needs no rerun: its scratch models are TabICL; released TabPFN comparisons did
+not train through the affected synthetic target path.
+
+**Interpretation and next gate:** this removes the observed power-map amplification, not every
+possible large standardized residual. A tiny context standard deviation can still amplify queries;
+no arbitrary target/loss clipping was introduced. Better numerical behavior does not prove better
+credit/OOD performance. After approval, validate a separate DATA checkout with new CPU/GPU Exp0
+receipts, rerun all sixteen LGD TabPFN Exp2 models from released weights at 1e-5/1e-6, then benchmark
+125/250/500/1,000/1,500 updates (80 slots). The twelve stopped LGD TabPFN Exp3 treatments must use
+the same corrected policy and compare with its four 50% full-CPT baselines. All other branches
+remain unchanged; no rates or treatments are selected using the existing benchmark scores.
+
+**Local housekeeping limit:** automatic approval review rejected deletion of 134 temporary
+PNG/PDF review files (11.4 MiB), stating only "blocked by policy". They remain ignored in this
+task's `figure-review`/`figures` evidence folders. No retry or alternate deletion was attempted;
+the completed local/VSC Exp2 retirement is unaffected, and these review files contain no weights.
+
 ### 09-11-2026 — Selective stop and CPT mechanism study
 
 At 14:17 CET, cancelled pending LGD array `11780839` tasks `6-11,18-23`: the twelve

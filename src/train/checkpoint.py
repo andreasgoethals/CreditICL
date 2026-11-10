@@ -59,7 +59,7 @@ def validate_resume_config(old: dict[str, Any], current: dict[str, Any]) -> None
     for key in ("batch_size", "optimizer", "lr", "weight_decay", "beta1", "beta2", "momentum",
                 "scheduler", "warmup_proportion", "gradient_clipping", "l2sp_alpha", "loss_weights",
                 "cosine_num_cycles", "cosine_amplitude_decay", "cosine_lr_end", "n_estimators", "amp",
-                "regression_loss_weights", "activation_checkpointing", "dtype",
+                "regression_loss_weights", "regression_target_policy", "activation_checkpointing", "dtype",
                 "cautious_weight_decay", "num_quantiles", "require_efficient_attention",
                 "adaptation", "lora_rank", "lora_alpha", "schedule_total_steps"):
         if old_train.get(key, missing) != new_train.get(key, missing):

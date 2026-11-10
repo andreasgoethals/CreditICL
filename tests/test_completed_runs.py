@@ -101,8 +101,8 @@ def test_historical_completion_never_authorizes_checkpoint_resume():
 
 
 def test_current_training_fingerprint_binds_the_alias_revision():
-    assert preflight.training_implementation_fingerprint() == compat.ALIAS_IMPLEMENTATION
-    assert preflight.training_fingerprint() == preflight.training_fingerprint_for(compat.ALIAS_IMPLEMENTATION)
+    assert preflight.training_implementation_fingerprint() == compat.STANDARD_TARGET_IMPLEMENTATION
+    assert preflight.training_fingerprint() == preflight.training_fingerprint_for(compat.STANDARD_TARGET_IMPLEMENTATION)
 
 
 @pytest.mark.parametrize("track", ["PD", "LGD"])

@@ -257,6 +257,33 @@ def test_accepted_stream_keeps_native_slot_class_counts():
     assert frame.loc[frame.accepted, "valid"].all()
 
 
+def test_accepted_stream_matches_training_threads_and_restores_caller(monkeypatch):
+    import torch
+
+    from src.utils.config import load
+    cfg = copy.deepcopy(load("config/Exp1_PD.yaml"))
+    cfg["prior"].update(n_rows_range=[128, 128], n_features_range=[4, 8], max_features=8)
+    observed_threads = []
+    original = exposure._ObservedGenerator.sample_slot
+
+    def record_threads(self, plan):
+        observed_threads.append(torch.get_num_threads())
+        return original(self, plan)
+
+    monkeypatch.setattr(exposure._ObservedGenerator, "sample_slot", record_threads)
+    previous = torch.get_num_threads()
+    try:
+        torch.set_num_threads(2)
+        parallel_caller = exposure.accepted_stream(cfg, n=4, mixtures=[0., 1.])
+        assert torch.get_num_threads() == 2
+        torch.set_num_threads(1)
+        serial_caller = exposure.accepted_stream(cfg, n=4, mixtures=[0., 1.])
+        assert observed_threads and set(observed_threads) == {1}
+        pd.testing.assert_frame_equal(parallel_caller, serial_caller)
+    finally:
+        torch.set_num_threads(previous)
+
+
 def test_local_coverage_distinguishes_partial_absent_complete(tmp_path, monkeypatch):
     from src.utils import paths
     monkeypatch.setattr(paths, "runs_dir", lambda *a: tmp_path)

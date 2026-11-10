@@ -116,7 +116,9 @@ def assert_production_batch_685_loss(device):
                           device=device, requires_grad=True) for _ in range(2)]
     loss = regression_loss(SimpleNamespace(forward=lambda _: (None, logits, None)),
                            batch, 2, REGRESSION_LOSS_WEIGHTS)
-    assert loss.dtype == torch.float64 and torch.isfinite(loss)
+    assert torch.isfinite(loss)
+    assert all(c[0].target_transform is None for c in batch.configs)
+    assert batch.y_query.abs().max() < 100
     loss.backward()
     assert all(x.grad is not None and torch.isfinite(x.grad).all() for x in logits)
     assert batch.y_query.device.type == 'cpu'

@@ -58,6 +58,18 @@ update; component runs retain the 12,500-update endpoint.
 
 ### Experiment 2: full continued pretraining
 
+**Target-space repair, 10-11-2026; pending VSC acceptance.** Exp2/3 TabPFN-3 LGD resolves
+`train.regression_target_policy: standardize`. The native fine-tuning loader still fits mean/std
+on context rows only (std floor 1e-8); per-member nonlinear target transforms are removed before
+fitting. Feature-member choices, CRPS + mean-MSE, gradient clipping, precision, seeds, schedules
+and inference preprocessing stay unchanged. New run names include `target-standardize-v1`;
+old optimizer/checkpoint state is rejected. Historical objective probes explicitly use `native`.
+
+The replacement comprises 16 Exp2 training runs and 80 checkpoint benchmarks. Twelve stopped
+TabPFN LGD Exp3 treatments must use the same target policy and compare with the four corrected
+50% Exp2 baselines. Other arms retain their original recipes. This prevents power-map
+amplification; it neither bounds all standardized residuals nor establishes improved accuracy.
+
 Two backbones × four mixtures × two rates × two `seeds` give **64 runs**, with 1,500 updates each.
 No L2-SP or adapter is used. Both rates and all mixtures are reported separately.
 
@@ -90,8 +102,9 @@ not public; its 0% arm here is additional generic **TabICL-prior** exposure.
 ### Experiment 3: constrained adaptation
 
 The mixture is fixed at 50%. Six recipes × two backbones × two tasks × two `seeds` give
-**48 new runs**. Sixteen existing Exp2 runs provide both full-CPT rates, without retraining
-or copying checkpoints. The revision is `retention-six-recipes-1500-v3`; Exp2 retains
+**48 new runs**. Sixteen Exp2 runs provide both full-CPT rates, without copying checkpoints; the four
+TabPFN LGD baselines must first be replaced under the repaired target policy. The revision is
+`retention-six-recipes-1500-v3`; Exp2 retains
 fixed-rates-1500-two-seeds-v2.
 
 | Recipe ID | Trainable weights / optimizer / peak rate | Regularization |

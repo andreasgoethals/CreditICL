@@ -413,6 +413,9 @@ def run_name(cfg: dict[str, Any]) -> str:
     # campaign. Experiment 1 has no revision and retains its exact names.
     if cfg.get("design_revision"):
         experiment = f"{experiment}__{_fmt(cfg['design_revision'])}"
+    if (cfg.get("architecture") == "tabpfn3" and cfg.get("task") == "lgd"
+            and cfg.get("train", {}).get("regression_target_policy") == "standardize"):
+        experiment += "__target-standardize-v1"
     tag = cfg.get("_grid", {}).get("tag", "base")
     seed = cfg.get("seed", 0)
     name = f"{experiment}__{tag}__s{seed}"

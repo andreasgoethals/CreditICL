@@ -15,7 +15,7 @@ from matplotlib.lines import Line2D
 from matplotlib.ticker import PercentFormatter
 
 from src.prior.generator import TaskGenerator
-from src.prior.rng import PriorRNG
+from src.prior.rng import PriorRNG, one_thread
 from src.prior.stream import plan_batch
 from src.visualize import style
 
@@ -85,6 +85,7 @@ def binary_exposure_table(variants):
     return pd.DataFrame(rows).round(3)
 
 
+@one_thread()
 def accepted_stream(config, *, n=48, seed=1729, mixtures=None):
     """Candidate and accepted task observations for a small matched slot audit."""
     from src.prior.filters import predictability

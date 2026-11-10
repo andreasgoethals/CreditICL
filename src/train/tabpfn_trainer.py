@@ -5,8 +5,9 @@ task through TabPFN's OWN fine-tuning path (`tabpfn.finetuning`, pinned 9.1.0): 
 mode, `get_preprocessed_dataset_chunks` + `meta_dataset_collator` for the per-member
 preprocessing, `fit_from_preprocessed`, and the training forward with the loss its own
 `FinetunedTabPFNClassifier` / `FinetunedTabPFNRegressor` compute. A task therefore reaches the
-weights in training exactly as a real table reaches them at prediction — TabPFN's preprocessing
-in both places — which is the property `prediction_view` gives the TabICL arms.
+weights through native feature preprocessing. Synthetic LGD training retains context-only
+target standardization but disables the optional per-member power transform. Evaluation
+continues to use the released prediction preprocessing policy.
 
 WHAT IS TABPFN'S, ARGUMENT FOR ARGUMENT (`FinetunedTabPFNBase.__init__` / `_fit`):
 
@@ -68,6 +69,24 @@ TABPFN_INFERENCE_CONFIG = {"ENABLE_GPU_PREPROCESSING": False, "TRANSFORM_TEXT": 
 #: `FinetunedTabPFNRegressor`'s default loss weights (tabpfn 9.1.0).
 REGRESSION_LOSS_WEIGHTS = {"ce": 0.0, "crps": 1.0, "crls": 0.0, "mse": 1.0, "mae": 0.0}
 MAX_AMP_RETRIES = 16
+REGRESSION_TARGET_POLICIES = ("standardize", "native")
+
+
+def configure_synthetic_targets(dataset, policy: str) -> None:
+    """Remove nonlinear target maps before fitting, retaining feature-member selection.
+
+    Changing REGRESSION_Y_PREPROCESS_TRANSFORMS at estimator creation also changes
+    the product from which upstream chooses feature preprocessors. Instead let the
+    pinned native initializer choose the identical members, then change ONLY each
+    target map before DatasetCollectionWithPreprocessing standardizes/fits them.
+    Native remains available for explicit historical diagnostic controls.
+    """
+    if policy not in REGRESSION_TARGET_POLICIES:
+        raise ValueError(f"Unknown regression target policy: {policy!r}")
+    if policy == "standardize":
+        for config in dataset.configs:
+            for member in config.config:
+                member.target_transform = None
 
 
 def _clip_full_precision_grad_norm(params: list[torch.nn.Parameter], max_norm: float,
@@ -156,11 +175,15 @@ class TabPFNTaskPreparer:
     only on the data, the settings and the seed — never on the weights being trained.
     """
 
-    def __init__(self, task: str, model_path: str | Path, n_estimators: int, seed: int):
+    def __init__(self, task: str, model_path: str | Path, n_estimators: int, seed: int,
+                 *, target_policy: str = "standardize"):
+        if target_policy not in REGRESSION_TARGET_POLICIES:
+            raise ValueError(f"Unknown regression target policy: {target_policy!r}")
         self.task = task
         self.model_path = str(model_path)
         self.n_estimators = int(n_estimators)
         self.seed = int(seed)
+        self.target_policy = target_policy
         self._est = None
 
     def _estimator(self):
@@ -190,7 +213,14 @@ class TabPFNTaskPreparer:
             equal_split_size=False, data_shuffle_seed=seed, preprocessing_random_state=seed,
             shuffle=False,
         )
+        if not classification:
+            configure_synthetic_targets(ds, self.target_policy)
         item = ds[0]
+        if not classification and self.target_policy == "standardize":
+            if any(c.target_transform is not None for c in item.configs):
+                raise RuntimeError("Synthetic LGD target transform was unexpectedly restored")
+            if not all(torch.isfinite(y).all() for y in [*item.y_context, item.y_query]):
+                raise FloatingPointError("Non-finite standardized synthetic LGD target")
         return {"item": item, "n_classes": int(est.n_classes_) if classification else None}
 
     def __call__(self, batch, b: int) -> list[dict[str, Any] | None]:
@@ -286,6 +316,8 @@ class TabPFNTrainer:
                              f"init.strategy={icfg.get('strategy')!r} is not implemented")
         if not math.isfinite(float(tcfg.get("l2sp_alpha", 0.0))) or float(tcfg.get("l2sp_alpha", 0.0)) < 0:
             raise ValueError("train.l2sp_alpha must be finite and nonnegative")
+        if tcfg.get("regression_target_policy", "standardize") not in REGRESSION_TARGET_POLICIES:
+            raise ValueError(f"Unknown regression target policy: {tcfg['regression_target_policy']!r}")
 
         self.cfg = cfg
         self.task = cfg["task"]
@@ -314,6 +346,7 @@ class TabPFNTrainer:
         self.num_workers = int(tcfg.get("num_workers", 0))
         self.seed = int(cfg.get("seed", 0))
         self.loss_weights = {**REGRESSION_LOSS_WEIGHTS, **(tcfg.get("regression_loss_weights") or {})}
+        self.target_policy = tcfg.get("regression_target_policy", "standardize")
         torch.manual_seed(self.seed)
 
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
@@ -326,6 +359,8 @@ class TabPFNTrainer:
                                    "architecture": "tabpfn3"})
         self.log.info("released weights -> %s", self.weights_path)
         self.log.info("credit_fraction IN USE: %s", (cfg.get("prior") or {}).get("credit_fraction"))
+        if self.regression:
+            self.log.info("synthetic LGD target policy: %s", self.target_policy)
         self.log.info("outputs -> %s | checkpoints -> %s", self.out_dir, self.ckpt_dir)
 
         self.est = build_estimator(self.task, self.weights_path, n_estimators=self.n_estimators,
@@ -682,7 +717,8 @@ class TabPFNTrainer:
         from src.utils.signal_ready import publish
         publish()
         prior_cfg = dict(self.cfg["prior"])
-        preparer = TabPFNTaskPreparer(self.task, self.weights_path, self.n_estimators, self.seed)
+        preparer = TabPFNTaskPreparer(self.task, self.weights_path, self.n_estimators, self.seed,
+                                    target_policy=self.target_policy)
         loader = build_loader(prior_cfg, self.task, batch_size=self.batch_size, seed=self.seed,
                               num_workers=self.num_workers, start_batch=self.step, transform=preparer)
         it = iter(loader)

@@ -5,6 +5,54 @@ date; historical commands, source identities and grid sizes are not current laun
 Use [VSC.md](VSC.md) for operation and recovery, [RUNS.md](RUNS.md#runs) for full evidence,
 and [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) for current recipes. Preserve earlier failures.
 
+## 10-11-2026 — Synthetic LGD target repair; no new jobs authorized yet
+
+User authorized local implementation and retirement of Exp2 TabPFN LGD artifacts, but requires
+approval before new Slurm jobs. The repair removes nonlinear member target maps before native
+preprocessing, retaining context-only mean/std, feature members, loss, precision and rates.
+New run IDs include `target-standardize-v1`; historical optimizer states cannot resume into them.
+Exp3 uses the same policy for its twelve stopped TabPFN LGD treatments and four reused baselines.
+Unchanged completion compatibility is exact-recipe/source/package bound; live jobs stay frozen.
+
+VSC 12:26 CET: Exp3 twelve completed (TabPFN PD), eighteen running and six queued (TabICL);
+twelve TabPFN LGD tasks remain stopped. Read all 108 logs: no traceback, CUDA OOM or non-finite
+markers. Completed summaries show 1,500 steps/24,000 tables/zero skips. Requeues are expected
+recovery, not final acceptance. Production `0494e7a` and Exp3 `a3891f5` were not updated.
+
+At 12:44 CET, retired exactly sixteen Exp2 LGD TabPFN runs/80 checkpoint benchmarks:
+1,264 VSC files, 56,050,535,595 logical bytes; 1,008 local analysis files, 49,566,175 bytes.
+Remote plan/done receipts are DATA `output CreditICL/manifests/retired-tabpfn-lgd-20261110-*.json`;
+local proof is `.runtime-build/target-standardize-20261110/`. Verified all 2,594 protected Exp1
+sizes/mtimes unchanged and 240 Exp2 receipts remaining. Active Exp3 initialization uses released
+weights, not deleted Exp2 assets. Keep diagnostic history and submission provenance; no blanket
+cleanup or new cancellation. A symlink guard initially stopped before deletion because
+`/data/leuven` aliases `/vsc-hard-mounts/leuven-data`; verified the physical roots and rejected
+symlinks inside the project before applying the exact inventory.
+
+At 12:52 CET, one queued task had started: nineteen running/five queued, twelve completed;
+110 logs had no fatal/non-finite/storage-error markers. PROJECT quota fell to 256.1G/1T.
+The final 13:37 CET queue/accounting and 110-log scan confirmed those counts, no nonzero exits
+among the 36 unaffected tasks and no fatal markers; both frozen commits matched at 13:18.
+
+Also aligned stale Exp0 TabPFN decay overrides (.0001) to production .01, with a PD/LGD
+recipe-parity regression test. Production recipes did not change. Local verification is in RUNS.
+The accepted-stream notebook diagnostic now uses training's single-thread guard; a failing-then-
+passing test checks caller-thread independence and restoration. Production sampling is unchanged.
+Local full suite: 2,391 passed/64 VSC-or-weight skips; follow-up affected suites: 76 passed/two
+weight skips. All twelve notebooks reran (43 PDFs), with the affected prior rerun after its fix.
+Run partial notebook batches serially; overlapping aggregate writers can retain older summaries.
+Tried: initial full local suite (20m35s). Result: eighteen failed assertions. Why: sixteen old
+compatibility assertions still accepted the now-retired LGD branch; two rejection fixtures
+accidentally chose the other valid TabICL rate. Instead: require rejection of retired results,
+use an unregistered rate for the negative fixture, then rerun the full suite successfully.
+Automatic approval review blocked scoped deletion of this task's temporary local PNG/PDF review
+files (134 files, 11.4 MiB; reason only "blocked by policy"). They remain ignored under
+`.runtime-build/target-standardize-20261110/{figure-review,figures}`; do not bypass or retry.
+GPU additions remain unexecuted. Next, after user approval: deploy the reviewed patch from Git
+into a separate DATA checkout, run current CPU/GPU Exp0,
+then replace Exp2 LGD indices 8–15 and 24–31 from released weights. Preserve the active checkouts;
+do not reuse old submission receipts or launch twelve stopped Exp3 treatments before approval.
+
 ## 09-11-2026 — CPT mechanism investigation
 
 User authorized synthetic diagnostic studies and a selective Exp3 stop. Verified grid hashes

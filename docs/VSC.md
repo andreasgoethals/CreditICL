@@ -18,16 +18,16 @@ dated jobs, failures, quotes and migrations belong in [RUNS.md](RUNS.md).
 
 ## Current deployment
 
-**Verified snapshot: 9 November 2026.** Counts below are dated evidence, not live status.
+**Verified snapshot: 10 November 2026, 13:37 CET.** Counts below are dated evidence, not live status.
 
 | Work | Verified state |
 |---|---|
 | Exp1 | All 54 training runs and 158 benchmark slots complete, including the 25% extension |
-| Exp2 training | All 64 runs reached 1,500 updates |
-| Exp2 benchmark | All 320 slots completed and verified, covering 56,800 credit/OOD cells |
+| Exp2 training | 48 unaffected completed runs retained; 16 TabPFN LGD runs retired for replacement |
+| Exp2 benchmark | 240 retained slots; 80 retired TabPFN LGD slots await corrected checkpoints |
 | Revised CPU Exp0 | wICE 62581713: all 14 stages PASS |
 | Revised GPU Exp0 | Mindwell 11774935: 125/125 stages PASS, live preflight accepted |
-| Exp3 training | 48 admitted initially; 12 pending TabPFN LGD tasks stopped on 9 November; other 36 preserved |
+| Exp3 training | 12 completed, 19 running, five queued; twelve TabPFN LGD tasks remain stopped |
 
 Production runs use frozen DATA checkout `$VSC_DATA/CreditICL` at **0494e7a**. Its CPU
 62516762/GPU 11763662 acceptance remains evidence for that revision. Revised validation uses
@@ -38,7 +38,9 @@ into either active checkout.
 
 The five completed Exp2 arrays are 11774787/11774788 (final PD/LGD) and
 11775176/11775177/11775178 (earlier PD TabICL, PD TabPFN-3, LGD). Their receipt files under
-`output CreditICL/manifests/submissions/` cover every slot exactly once. **Do not resubmit them.**
+`output CreditICL/manifests/submissions/` cover the historical slots. **Do not replay those receipts.**
+The retired LGD subset requires a new source, new run identities and a separate admission receipt
+after approval and validation.
 The [6 November run records](RUNS.md#runs) contain exact ranges, quotes and artifact checks.
 
 Exp3 uses the revised DATA checkout and the same PROJECT image. The durable admission receipt
@@ -55,6 +57,12 @@ DATA checkouts and output namespaces; see the newest [run record](RUNS.md#runs).
 <a id="revised-exp3-deployment-gate-05-11-2026"></a>
 ### Exp3 deployment gate
 
+The synthetic-target repair is local and **not VSC-accepted**. After explicit approval,
+validate it in a new DATA checkout with separate Exp0 records, preserving both frozen campaigns.
+Then replace only Exp2 LGD TabPFN indices `8-15,24-31` (16 runs, both rates), benchmark its five
+milestones (80 slots), and later admit the twelve stopped Exp3 LGD TabPFN treatments under the
+same policy. No new jobs were submitted on 10 November. The other 36 Exp3 jobs remain untouched.
+
 Require the revised CPU and GPU receipts to pass their source, environment, input and artifact
 checks. The older production GPU receipt covers 117 stages and 16 older adaptation routes;
 it cannot validate the revised six-recipe grid. The revised gate has 125 stages, including
@@ -63,7 +71,8 @@ it cannot validate the revised six-recipe grid. The revised gate has 125 stages,
 Exp2 benchmarking may continue on its accepted checkout while revised validation runs separately.
 Once the revised gate passes, production may use that accepted, frozen revision. Unchanged
 benchmark output does not itself require another Exp0. A changed source/runtime/input identity does.
-Do not retrain Exp2 baselines or duplicate their benchmarks for Exp3. Shared reference receipts
+Reuse unaffected Exp2 baselines and benchmarks for Exp3. The four retired TabPFN LGD baselines
+require the corrected Exp2 replacements. Shared reference receipts
 are reused only after their normal input, package and result checks.
 
 ## Access and activation

@@ -15,6 +15,20 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.parametrize("task", ["PD", "LGD"])
+def test_tabpfn_exp0_matches_primary_production_optimizer_and_target_policy(task):
+    from src.utils.config import expand_with_seeds, load
+
+    diagnostic = next(r for r in expand_with_seeds(load(f"config/Exp0_{task}.yaml"))
+                      if r["architecture"] == "tabpfn3")
+    production = next(r for r in expand_with_seeds(load(f"config/Exp2_{task}.yaml"))
+                      if r["architecture"] == "tabpfn3" and r["lr_index"] == 0)
+    for key in ("optimizer", "lr", "weight_decay", "beta1", "beta2", "warmup_proportion",
+                "gradient_clipping", "amp", "batch_size", "n_estimators",
+                "regression_target_policy"):
+        assert diagnostic["train"].get(key) == production["train"].get(key), key
+
+
 # -- arm presets --------------------------------------------------------------------------------
 
 

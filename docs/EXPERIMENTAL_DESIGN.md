@@ -237,9 +237,16 @@ coverage rather than reducing it silently to fit a resource limit.
 
 ### 3.3 Experiment 3: constrained adaptation at a fixed 50% mixture
 
+**Target-space repair, 10-11-2026.** The twelve TabPFN-3 LGD treatments and their four
+reused Exp2 baselines must share the revised context-standardization-only training policy.
+The repaired branch requires fresh CPU/GPU acceptance; existing results from other branches
+remain comparable. See [configuration details](CONFIG_REFERENCE.md#experiment-2-full-continued-pretraining)
+and the dated [retirement and replacement plan](RUNS.md#runs). This numerical repair is not
+an accuracy finding; the new credit/OOD benchmarks must still measure benefit and retention.
+
 The revised grid uses the same 1,500-update geometry and seeds 0/1 as Exp2, at a fixed
 50% mixture. Reuse **both** full-CPT-with-decay rates (TabICLv2 2e-5/1e-5;
-TabPFN-3 1e-5/1e-6): **16 references**, unchanged in their Exp2 locations.
+TabPFN-3 1e-5/1e-6): **16 references**, reused from their matching Exp2 target policy.
 Six new recipes × two backbones × two tasks × two seeds give **48 new runs**.
 The version `retention-six-recipes-1500-v3` separates them from the retired four-recipe grid.
 

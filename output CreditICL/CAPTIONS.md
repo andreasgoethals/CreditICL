@@ -166,15 +166,7 @@ Development monitoring score against update for one backbone, with separate pane
 
 Synthetic query loss against optimizer update, separated by backbone and peak learning rate; colors identify credit fractions, thin traces show seeds and thick curves average two seeds at common recorded steps. A symmetric-log loss axis, explicitly labeled where used, retains extreme finite losses; its central interval [-1,1] is linear.
 
-**02_loss_tabpfn3** — `loss_tabpfn3`
-
-Synthetic query loss against optimizer update, separated by backbone and peak learning rate; colors identify credit fractions, thin traces show seeds and thick curves average two seeds at common recorded steps. A symmetric-log loss axis, explicitly labeled where used, retains extreme finite losses; its central interval [-1,1] is linear.
-
-**03_development_monitoring_tabicl** — `development_monitoring_tabicl`
-
-Development monitoring score against update for one backbone, with separate panels for both predetermined peak rates and colors for the credit mixtures; small-context diagnostics are distinct from the full-table five-fold benchmark.
-
-**04_development_monitoring_tabpfn3** — `development_monitoring_tabpfn3`
+**02_development_monitoring_tabicl** — `development_monitoring_tabicl`
 
 Development monitoring score against update for one backbone, with separate panels for both predetermined peak rates and colors for the credit mixtures; small-context diagnostics are distinct from the full-table five-fold benchmark.
 
@@ -214,37 +206,9 @@ Credit versus native-OOD performance differences from matching released weights 
 
 ## 2.4_lgd_results
 
-**01_credit_control_tabicl** — `credit_control_tabicl`
-
-Final credit-benchmark differences from 0% continuation at the same backbone and peak learning rate, after 1,500 updates. Large points average paired dataset effects over five folds and two training seeds; intervals resample datasets (nominal 95%) and small markers show seed means. Positive ROC-AUC or R² and negative log-loss or CRPS differences favor the credit mixture.
-
-**02_dataset_effects_tabicl** — `dataset_effects_tabicl`
-
-Final credit performance difference from the matched 0% continuation for every credit dataset, mixture and fixed peak rate of one backbone. Cells average five folds and two training seeds; the diverging color scale is symmetric about zero and positive ROC-AUC or R² differences favor the credit mixture.
-
-**03_credit_control_tabpfn3** — `credit_control_tabpfn3`
-
-Final credit-benchmark differences from 0% continuation at the same backbone and peak learning rate, after 1,500 updates. Large points average paired dataset effects over five folds and two training seeds; intervals resample datasets (nominal 95%) and small markers show seed means. Positive ROC-AUC or R² and negative log-loss or CRPS differences favor the credit mixture.
-
-**04_dataset_effects_tabpfn3** — `dataset_effects_tabpfn3`
-
-Final credit performance difference from the matched 0% continuation for every credit dataset, mixture and fixed peak rate of one backbone. Cells average five folds and two training seeds; the diverging color scale is symmetric about zero and positive ROC-AUC or R² differences favor the credit mixture.
-
-**05_checkpoints_tabicl** — `checkpoints_tabicl`
+**01_checkpoints_tabicl** — `checkpoints_tabicl`
 
 Full-table five-fold R² against optimizer updates 125, 250, 500, 1,000, 1,500 for four mixtures at each fixed peak rate, on the credit benchmark and native OOD. Points average the 2 registered training seeds; shading spans their dataset-mean scores, not a confidence interval. Missing checkpoints are not connected; the final update is the primary endpoint.
-
-**06_checkpoints_tabpfn3** — `checkpoints_tabpfn3`
-
-Full-table five-fold R² against optimizer updates 125, 250, 500, 1,000, 1,500 for four mixtures at each fixed peak rate, on the credit benchmark and native OOD. Points average the 2 registered training seeds; shading spans their dataset-mean scores, not a confidence interval. Missing checkpoints are not connected; the final update is the primary endpoint.
-
-**07_credit_ood_control** — `credit_ood_control`
-
-Credit versus native-OOD performance differences from equally trained 0% continuation at the same backbone and fixed peak rate. Colors identify mixtures and marker shapes identify rates; small points show seed means. Horizontal and vertical bars independently resample the two dataset domains (nominal 95% intervals), after averaging five folds and two training seeds. Higher ROC-AUC or R² is better on both axes.
-
-**08_credit_ood_released** — `credit_ood_released`
-
-Credit versus native-OOD performance differences from matching released weights after 1,500 continuation updates, including the 0% generic controls. Colors identify mixtures and shapes distinguish the two fixed rates within each backbone. Bars are separate nominal 95% paired-dataset bootstrap intervals and small points show seed means. Negative ROC-AUC or R² indicates degradation from the released model.
 
 # 3. Experiment 3
 

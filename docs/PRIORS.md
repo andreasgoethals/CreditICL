@@ -186,9 +186,11 @@ tabicl`, the default) a credit table ends in upstream's `UniqueFeatureFilter` + 
 an LGD target standardised on the context as `TabICLRegressor`'s `y_scaler_` does — so a credit table
 reaches the model in training exactly as a real table would at prediction
 (`tests/test_train_predict_consistency.py`). For TabPFN (`prior.encoding: raw`, Exp2) the table goes
-in as recorded — gaps as NaN, features untransformed, the LGD target on [0, 1] — because TabPFN's own
-preprocessing does the rest, in training and at prediction alike. The control keeps upstream's
-training encoding in both cases.
+in as recorded — gaps as NaN, features untransformed, the LGD target on [0, 1]. TabPFN's native
+feature preprocessing then runs in training and prediction. The revised synthetic LGD training
+path retains context-only target standardization but disables nonlinear target power transforms;
+released prediction preprocessing is unchanged. This applies equally to generic and credit tasks.
+See the [target-space repair](CONFIG_REFERENCE.md#experiment-2-full-continued-pretraining).
 
 Raw TabPFN tasks must retain at least one feature under its native constant-feature removal
 on the **context rows**, including its NaN semantics. Query variation cannot make a constant

@@ -1,3 +1,4 @@
+# TabPFN LGD: apply_design records context-only standardization; no synthetic target power transform.
 # Experiment 3: retention treatments at a fixed 50% credit mixture.
 # Full CPT + weight decay is reused from both Experiment 2 rates (lr_index=0 and 1), never a selected winner.
 prior_file: Exp2_LGD.yaml

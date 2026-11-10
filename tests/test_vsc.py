@@ -12,6 +12,13 @@ import torch
 pytestmark = pytest.mark.vsc
 
 
+@pytest.mark.parametrize("batch_id", [511, 527, 685])
+@pytest.mark.parametrize("rate", [1e-5, 1e-6])
+def test_synthetic_lgd_standardization_replays_full_known_tail_batches(tmp_path, batch_id, rate):
+    from test_tabpfn_target_policy import assert_production_targets_and_update
+    assert_production_targets_and_update(tmp_path, batch_id, rate)
+
+
 @pytest.mark.parametrize("index", [11, 15])
 def test_tabpfn_constant_context_repair_preserves_full_cuda_update(tmp_path, index):
     """Exercise both registered rates on the production batch before long GPU validation."""

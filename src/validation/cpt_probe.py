@@ -40,6 +40,10 @@ def probe_config(backbone, task, lr, *, seed=0, steps=32, force_fp32=False):
     # 32-step cosine cycle. Retain production table count, features and split.
     cfg["train"].update(lr=lr, max_steps=steps, schedule_total_steps=1500,
                         num_workers=0, max_workers=0, log_every=1)
+    # Preserve this historical objective comparison's target-space intervention.
+    # The new standardization-only production policy has separate Exp0 tests.
+    if backbone == "tabpfn3" and task == "lgd":
+        cfg["train"]["regression_target_policy"] = "native"
     if backbone == "tabicl":
         cfg["prior"].update(n_rows_range=[1024, 1024], n_rows_sampling="uniform")
     if force_fp32:
@@ -149,7 +153,7 @@ def run_tail(directory, report, save):
     cfg = probe_config("tabpfn3", "lgd", 1e-5)
     trainer = TabPFNTrainer(cfg, directory, device="cuda")
     trainer.maybe_resume()
-    preparer = TabPFNTaskPreparer("lgd", trainer.weights_path, 2, 0)
+    preparer = TabPFNTaskPreparer("lgd", trainer.weights_path, 2, 0, target_policy="native")
     report["cases"] = []
     cases = [(685, 15, 0.)] + [(b, 0, f) for f in (0., 1.) for b in (0, 1, 2, 3)]
     try:
@@ -240,7 +244,8 @@ def run_trajectory(directory, report, save, backbone, task, steps):
         trainer = cls(cfg, directory / f"{rate}_{objective}", device="cuda")
         trainer.maybe_resume()
         initial = {n: p.detach().cpu().clone() for n, p in trainer.model.named_parameters()}
-        preparer = (TabPFNTaskPreparer(task, trainer.weights_path, 2, 0) if backbone == "tabpfn3" else None)
+        preparer = (TabPFNTaskPreparer(task, trainer.weights_path, 2, 0, target_policy="native")
+                    if backbone == "tabpfn3" else None)
         validation = _validation_batches(cfg, backbone, preparer)
         dataset = PriorBatchDataset(cfg["prior"], task, cfg["train"]["batch_size"], seed=0)
         generator = TaskGenerator(cfg["prior"], task, PriorRNG(0), stream_seed=0)
@@ -303,7 +308,7 @@ def run_stress_update(directory, report, save, *, force_fp32=False):
         cfg["prior"]["credit_fraction"] = 0.
         trainer = TabPFNTrainer(cfg, directory / objective, device="cuda")
         trainer.maybe_resume()
-        preparer = TabPFNTaskPreparer("lgd", trainer.weights_path, 2, 0)
+        preparer = TabPFNTaskPreparer("lgd", trainer.weights_path, 2, 0, target_policy="native")
         result = dict(objective=objective, lr=trainer.optimizer.param_groups[0]["lr"], amp=trainer.amp)
         report["variants"].append(result)
         try:

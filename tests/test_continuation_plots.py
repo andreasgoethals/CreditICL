@@ -66,6 +66,16 @@ def test_historical_training_traces_do_not_create_empty_current_panels(monkeypat
     plt.close(fig)
 
 
+def test_retired_backbone_is_not_exported_as_an_empty_figure(monkeypatch):
+    from src.utils.config import expand_with_seeds, load
+    run = next(r for r in expand_with_seeds(load("config/Exp2_LGD.yaml"))
+               if r["architecture"] == "tabicl")
+    traces = {run["_run_name"]: pd.DataFrame({"step": [100], "train_loss": [1.]}),
+              "exp2_lgd_old_tabpfn3__s0": pd.DataFrame({"step": [100], "train_loss": [1e40]})}
+    monkeypatch.setattr(c.training, "load_loss_logs", lambda *a: traces)
+    assert c.available_training_backbones("lgd") == ["tabicl"]
+
+
 def test_extreme_finite_loss_is_retained_on_an_explicit_log_axis(monkeypatch):
     from src.utils.config import expand_with_seeds, load
     cfg = expand_with_seeds(load("config/Exp2_LGD.yaml"))

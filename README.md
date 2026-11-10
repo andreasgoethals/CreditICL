@@ -45,10 +45,12 @@ learning-rate pilot or best-on-test selection. Comparisons retain all prediction
 features and fitted rows, with five common folds. PD threshold tuning uses an inner training split.
 Native OOD performance is reported alongside credit performance.
 
-**Campaign snapshot, 9 November 2026.** Exp1 training and benchmarking are complete. All 64 Exp2
-training runs and 320 checkpoint benchmarks finished and were verified. Revised Exp0 passed CPU
-and GPU validation. Mindwell accepted all 48 Exp3 training tasks. Dated job records are in
-[VSC](docs/VSC.md#current-deployment) and [RUNS](docs/RUNS.md#runs).
+**Campaign snapshot, 10 November 2026.** Exp1 is complete and preserved. The 16 Exp2
+TabPFN-3 LGD runs and their 80 checkpoint benchmarks have been retired for a synthetic-target
+preprocessing repair; 48 unaffected runs and 240 benchmark slots remain. The repair needs new
+CPU/GPU Exp0 acceptance before replacements. Exp3 has 12 completed, 19 running and five queued
+unaffected tasks; its twelve TabPFN LGD tasks remain stopped. See [VSC](docs/VSC.md#current-deployment)
+and [RUNS](docs/RUNS.md#runs) for dated checks and the approval-gated replacement plan.
 
 ## Local setup
 

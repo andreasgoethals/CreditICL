@@ -56,6 +56,8 @@ def apply_design(run: dict, selection: dict | None = None) -> dict:
         raise ValueError("Retention uses the predeclared primary CPT rate (lr_index=0)")
     run.update(design_revision=expected_revision, design_unresolved=False)
     train = run["train"]
+    if model == "tabpfn3" and run["task"] == "lgd":
+        train["regression_target_policy"] = "standardize"
     train.update(lr=RATES[model][index], schedule_total_steps=MAIN_STEPS)
     if design == "cpt":
         return run

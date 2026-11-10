@@ -7,20 +7,8 @@
   },
   {
     "index": 2,
-    "stem": "02_loss_tabpfn3",
-    "name": "loss_tabpfn3",
-    "caption": "Synthetic query loss against optimizer update, separated by backbone and peak learning rate; colors identify credit fractions, thin traces show seeds and thick curves average two seeds at common recorded steps. A symmetric-log loss axis, explicitly labeled where used, retains extreme finite losses; its central interval [-1,1] is linear."
-  },
-  {
-    "index": 3,
-    "stem": "03_development_monitoring_tabicl",
+    "stem": "02_development_monitoring_tabicl",
     "name": "development_monitoring_tabicl",
-    "caption": "Development monitoring score against update for one backbone, with separate panels for both predetermined peak rates and colors for the credit mixtures; small-context diagnostics are distinct from the full-table five-fold benchmark."
-  },
-  {
-    "index": 4,
-    "stem": "04_development_monitoring_tabpfn3",
-    "name": "development_monitoring_tabpfn3",
     "caption": "Development monitoring score against update for one backbone, with separate panels for both predetermined peak rates and colors for the credit mixtures; small-context diagnostics are distinct from the full-table five-fold benchmark."
   }
 ]

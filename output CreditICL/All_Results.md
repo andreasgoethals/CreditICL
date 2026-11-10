@@ -194,7 +194,7 @@ References (tfm-library pin cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a):
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: c2bba15be37afe4ef0c5c88e05226f0c90d90c8cabc540e0472b83fd65ca7660.
+Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 2170; no model weights downloaded.
@@ -205,7 +205,7 @@ Final credit/OOD benchmarking is a separate completion gate; monitoring is not i
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: c2bba15be37afe4ef0c5c88e05226f0c90d90c8cabc540e0472b83fd65ca7660.
+Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 2170; no model weights downloaded.
@@ -247,7 +247,7 @@ Different synthetic-task losses do not rank downstream prediction quality.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: c2bba15be37afe4ef0c5c88e05226f0c90d90c8cabc540e0472b83fd65ca7660.
+Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 2170; no model weights downloaded.
@@ -258,7 +258,7 @@ Final credit/OOD benchmarking is a separate completion gate; monitoring is not i
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: c2bba15be37afe4ef0c5c88e05226f0c90d90c8cabc540e0472b83fd65ca7660.
+Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 2170; no model weights downloaded.
@@ -300,7 +300,7 @@ Different synthetic-task losses do not rank downstream prediction quality.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: c2bba15be37afe4ef0c5c88e05226f0c90d90c8cabc540e0472b83fd65ca7660.
+Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 2170; no model weights downloaded.
@@ -386,7 +386,7 @@ Dataset bootstrap intervals are descriptive; training seeds/folds are not extra 
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: c2bba15be37afe4ef0c5c88e05226f0c90d90c8cabc540e0472b83fd65ca7660.
+Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 2170; no model weights downloaded.
@@ -490,7 +490,7 @@ Dataset bootstrap intervals are descriptive; training seeds/folds are not extra 
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: c2bba15be37afe4ef0c5c88e05226f0c90d90c8cabc540e0472b83fd65ca7660.
+Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 4285; no model weights downloaded.
@@ -500,7 +500,7 @@ Final credit/OOD benchmarking is a separate completion gate; monitoring is not i
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: c2bba15be37afe4ef0c5c88e05226f0c90d90c8cabc540e0472b83fd65ca7660.
+Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 4285; no model weights downloaded.
@@ -569,21 +569,21 @@ Different synthetic-task losses do not rank downstream prediction quality.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: c2bba15be37afe4ef0c5c88e05226f0c90d90c8cabc540e0472b83fd65ca7660.
+Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 4285; no model weights downloaded.
-Main comparison: 32/32 downloaded completions; 0 partial traces; 0 without local output.
+Main comparison: 16/32 downloaded completions; 0 partial traces; 16 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: c2bba15be37afe4ef0c5c88e05226f0c90d90c8cabc540e0472b83fd65ca7660.
+Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 4285; no model weights downloaded.
-Main comparison: 32/32 downloaded completions; 0 partial traces; 0 without local output.
+Main comparison: 16/32 downloaded completions; 0 partial traces; 16 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
 REGISTERED CONTINUATION RECIPE
@@ -612,33 +612,15 @@ exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fr
 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0p5__s1: 1500 updates recorded; last recorded training loss 0.15587.
 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=1__s0: 1500 updates recorded; last recorded training loss 0.248.
 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=1__s1: 1500 updates recorded; last recorded training loss 0.2484.
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0__s0: 1500 updates recorded; last recorded training loss 53.357.
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0__s1: 1500 updates recorded; last recorded training loss 2.0839e+13.
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0p25__s0: 1500 updates recorded; last recorded training loss 0.9262.
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0p25__s1: 1500 updates recorded; last recorded training loss 1.1909e+13.
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0p5__s0: 1500 updates recorded; last recorded training loss 1.1618.
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0p5__s1: 1500 updates recorded; last recorded training loss 1.1909e+13.
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=1__s0: 1500 updates recorded; last recorded training loss 1.5147.
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=1__s1: 1500 updates recorded; last recorded training loss 1.5249.
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0__s0: 1500 updates recorded; last recorded training loss 53.021.
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0__s1: 1500 updates recorded; last recorded training loss 2.0839e+13.
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0p25__s0: 1500 updates recorded; last recorded training loss 0.65376.
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0p25__s1: 1500 updates recorded; last recorded training loss 1.1909e+13.
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0p5__s0: 1500 updates recorded; last recorded training loss 0.93674.
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0p5__s1: 1500 updates recorded; last recorded training loss 1.1909e+13.
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=1__s0: 1500 updates recorded; last recorded training loss 1.5246.
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=1__s1: 1500 updates recorded; last recorded training loss 1.5204.
 
 C · DEVELOPMENT MONITORING
 Common monitored development datasets: PropLGD1, PropLGD4, PropLGD5, lgd_lendingclub.
 Excluded from common monitoring mean: none.
 Monitoring uses short diagnostic contexts. It is not the full-row, five-fold final benchmark.
 Different synthetic-task losses do not rank downstream prediction quality.
-2.2_lgd_finetuning: 4 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\2.2_lgd_finetuning
+2.2_lgd_finetuning: 2 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\2.2_lgd_finetuning
   01  loss_tabicl
-  02  loss_tabpfn3
-  03  development_monitoring_tabicl
-  04  development_monitoring_tabpfn3
+  02  development_monitoring_tabicl
 ```
 
 ---
@@ -648,7 +630,7 @@ Different synthetic-task losses do not rank downstream prediction quality.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: c2bba15be37afe4ef0c5c88e05226f0c90d90c8cabc540e0472b83fd65ca7660.
+Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 4285; no model weights downloaded.
@@ -1334,13 +1316,15 @@ Historical benchmark exposure remains disclosed; no rate, mixture or checkpoint 
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: c2bba15be37afe4ef0c5c88e05226f0c90d90c8cabc540e0472b83fd65ca7660.
+Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 4285; no model weights downloaded.
-Main comparison: 32/32 downloaded completions; 0 partial traces; 0 without local output.
+Main comparison: 16/32 downloaded completions; 0 partial traces; 16 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
+Complete final credit benchmarks are unavailable; effects are withheld.
+tabpfn3 : fewer than two complete checkpoints per fixed group; no trajectory figure.
 A · COMPLETE SCORES AND COMPARISON CONTRACT
 All four mixtures and both fixed rates are reported; development scores select no settings.
 Backbone  Runs per track Peak LR  Weight decay  Updates Tables per run           Rows per table Context share Expected row exposures
@@ -1348,151 +1332,59 @@ TabICLv2               8   2e-05          0.01     1500         96,000 400–60,
 TabICLv2               8   1e-05          0.01     1500         96,000 400–60,000 (log-uniform)       79%–81%        1,141.9 million
 TabPFN-3               8   1e-05          0.01     1500         24,000                    1,024       30%–90%           24.6 million
 TabPFN-3               8   1e-06          0.01     1500         24,000                    1,024       30%–90%           24.6 million
-Complete final credit table available: True.
-Final credit scores (equal dataset weights):
-                     Configuration  Datasets  Training seeds                        R²                    CRPS     boundary-mass error
-                          CatBoost         7               0                    0.3353             unavailable             unavailable
-                      linear model         7               0                    0.1919             unavailable             unavailable
-                 released TabICLv2         7               0                    0.3404                  0.1353                  0.1369
-                          TabPFN-3         7               0                    0.3429                  0.1346                  0.1162
-  TabICLv2 · 0 % credit · LR 2e-05         7               2   0.3416 [0.3408, 0.3424] 0.1351 [0.1349, 0.1352] 0.1338 [0.1337, 0.1340]
- TabICLv2 · 25 % credit · LR 2e-05         7               2   0.3397 [0.3390, 0.3403] 0.1354 [0.1352, 0.1355] 0.1425 [0.1425, 0.1425]
- TabICLv2 · 50 % credit · LR 2e-05         7               2   0.3391 [0.3387, 0.3396] 0.1355 [0.1354, 0.1355] 0.1413 [0.1406, 0.1420]
-TabICLv2 · 100 % credit · LR 2e-05         7               2   0.3403 [0.3401, 0.3406] 0.1352 [0.1351, 0.1352] 0.1450 [0.1438, 0.1462]
-  TabICLv2 · 0 % credit · LR 1e-05         7               2   0.3410 [0.3404, 0.3417] 0.1352 [0.1351, 0.1353] 0.1344 [0.1339, 0.1350]
- TabICLv2 · 25 % credit · LR 1e-05         7               2   0.3394 [0.3389, 0.3398] 0.1355 [0.1354, 0.1355] 0.1435 [0.1431, 0.1438]
- TabICLv2 · 50 % credit · LR 1e-05         7               2   0.3389 [0.3385, 0.3392] 0.1356 [0.1355, 0.1356] 0.1425 [0.1420, 0.1431]
-TabICLv2 · 100 % credit · LR 1e-05         7               2   0.3404 [0.3400, 0.3407] 0.1352 [0.1352, 0.1353] 0.1446 [0.1443, 0.1449]
-  TabPFN-3 · 0 % credit · LR 1e-05         7               2 -0.0377 [-0.3384, 0.2630] 0.1533 [0.1470, 0.1595] 0.1726 [0.1695, 0.1758]
- TabPFN-3 · 25 % credit · LR 1e-05         7               2  0.1587 [-0.0114, 0.3288] 0.1468 [0.1396, 0.1541] 0.1217 [0.1166, 0.1267]
- TabPFN-3 · 50 % credit · LR 1e-05         7               2  0.0485 [-0.1819, 0.2788] 0.1506 [0.1448, 0.1564] 0.1447 [0.1334, 0.1561]
-TabPFN-3 · 100 % credit · LR 1e-05         7               2   0.2947 [0.2736, 0.3157] 0.1467 [0.1416, 0.1519] 0.1345 [0.1305, 0.1386]
-  TabPFN-3 · 0 % credit · LR 1e-06         7               2   0.3479 [0.3473, 0.3485] 0.1343 [0.1338, 0.1347] 0.1779 [0.1405, 0.2154]
- TabPFN-3 · 25 % credit · LR 1e-06         7               2   0.3427 [0.3391, 0.3462] 0.1350 [0.1343, 0.1357] 0.1544 [0.1430, 0.1659]
- TabPFN-3 · 50 % credit · LR 1e-06         7               2   0.3407 [0.3358, 0.3457] 0.1356 [0.1343, 0.1369] 0.1539 [0.1502, 0.1577]
-TabPFN-3 · 100 % credit · LR 1e-06         7               2   0.3189 [0.2983, 0.3394] 0.1380 [0.1352, 0.1409] 0.1294 [0.1134, 0.1454]
+Complete final credit table available: False.
 
 B · CREDIT EFFECTS
 Comparator: matched 0% continuation
-R²: 
-                                                                               configuration                                                                                   control  mean_difference    ci_low   ci_high  datasets  p_value                                               interval_method  small_sample  minimum_sign_p  p_holm
- exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0p25  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0        -0.001969 -0.003358 -0.000588         7 0.453125 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0p5  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0        -0.002483 -0.005388 -0.000056         7 1.000000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-    exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=1  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0        -0.001298 -0.006191  0.004629         7 1.000000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
- exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0p25  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0        -0.001671 -0.002985 -0.000396         7 0.453125 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0p5  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0        -0.002136 -0.004500 -0.000108         7 1.000000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-    exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=1  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0        -0.000660 -0.004693  0.004317         7 1.000000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0p25 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0         0.196432  0.108807  0.288993         7 0.015625 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  0.1875
- exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0p5 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0         0.086180  0.046551  0.139427         7 0.015625 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  0.1875
-   exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=1 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0         0.332389  0.134834  0.536546         7 0.015625 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  0.1875
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0p25 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0        -0.005261 -0.012134 -0.000205         7 0.125000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
- exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0p5 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0        -0.007197 -0.015452  0.003686         7 0.125000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-   exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=1 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0        -0.029057 -0.057252 -0.005946         7 0.125000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
+R²: not completely benchmarked
 Comparator: released weights
-R²: 
-                                                                               configuration  control  mean_difference    ci_low   ci_high  datasets  p_value                                               interval_method  small_sample  minimum_sign_p  p_holm
-    exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0 tabiclv2         0.001251  0.000045  0.003054         7 0.453125 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625    1.00
- exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0p25 tabiclv2        -0.000718 -0.002252  0.000503         7 1.000000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625    1.00
-  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0p5 tabiclv2        -0.001232 -0.003766  0.000733         7 1.000000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625    1.00
-    exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=1 tabiclv2        -0.000047 -0.005364  0.006202         7 1.000000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625    1.00
-    exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0 tabiclv2         0.000652 -0.000138  0.001782         7 1.000000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625    1.00
- exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0p25 tabiclv2        -0.001019 -0.002097 -0.000173         7 0.453125 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625    1.00
-  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0p5 tabiclv2        -0.001484 -0.003440  0.000107         7 1.000000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625    1.00
-    exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=1 tabiclv2        -0.000008 -0.004375  0.005327         7 1.000000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625    1.00
-   exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0  tabpfn3        -0.380609 -0.555903 -0.210555         7 0.015625 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625    0.25
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0p25  tabpfn3        -0.184178 -0.289935 -0.098479         7 0.015625 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625    0.25
- exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0p5  tabpfn3        -0.294429 -0.440334 -0.157273         7 0.015625 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625    0.25
-   exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=1  tabpfn3        -0.048220 -0.090115 -0.002529         7 0.125000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625    1.00
-   exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0  tabpfn3         0.005048 -0.001371  0.015728         7 1.000000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625    1.00
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0p25  tabpfn3        -0.000213 -0.003472  0.004317         7 0.453125 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625    1.00
- exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0p5  tabpfn3        -0.002149 -0.016204  0.018652         7 0.125000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625    1.00
-   exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=1  tabpfn3        -0.024010 -0.057093  0.009708         7 0.125000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625    1.00
+R²: not completely benchmarked
 
 C · CHECKPOINT TRAJECTORIES
 Retained updates: 125, 250, 500, 1,000, 1,500; final 1,500 is primary.
 Each point requires all 2 training seeds and complete five-fold dataset cells.
 credit / R²: 
-architecture  lr_index  mixture  checkpoint_step      mean   minimum  maximum  datasets
-      tabicl         0     0.00              125  0.340794  0.340789 0.340799         7
-      tabicl         0     0.00              250  0.339748  0.339270 0.340226         7
-      tabicl         0     0.00              500  0.340406  0.339305 0.341508         7
-      tabicl         0     0.00             1000  0.341198  0.339955 0.342441         7
-      tabicl         0     0.00             1500  0.341630  0.340826 0.342434         7
-      tabicl         0     0.25              125  0.339412  0.339018 0.339806         7
-      tabicl         0     0.25              250  0.337882  0.337355 0.338409         7
-      tabicl         0     0.25              500  0.338267  0.337385 0.339148         7
-      tabicl         0     0.25             1000  0.339386  0.338424 0.340347         7
-      tabicl         0     0.25             1500  0.339661  0.339027 0.340294         7
-      tabicl         0     0.50              125  0.338662  0.338542 0.338783         7
-      tabicl         0     0.50              250  0.338139  0.337952 0.338326         7
-      tabicl         0     0.50              500  0.338471  0.337967 0.338975         7
-      tabicl         0     0.50             1000  0.338891  0.338324 0.339457         7
-      tabicl         0     0.50             1500  0.339147  0.338723 0.339570         7
-      tabicl         0     1.00              125  0.339138  0.339030 0.339246         7
-      tabicl         0     1.00              250  0.340254  0.340111 0.340397         7
-      tabicl         0     1.00              500  0.340068  0.340045 0.340091         7
-      tabicl         0     1.00             1000  0.340013  0.339694 0.340332         7
-      tabicl         0     1.00             1500  0.340332  0.340089 0.340574         7
-      tabicl         1     0.00              125  0.340638  0.340620 0.340656         7
-      tabicl         1     0.00              250  0.340014  0.339744 0.340284         7
-      tabicl         1     0.00              500  0.340367  0.339653 0.341081         7
-      tabicl         1     0.00             1000  0.340784  0.339888 0.341680         7
-      tabicl         1     0.00             1500  0.341031  0.340409 0.341653         7
-      tabicl         1     0.25              125  0.339825  0.339544 0.340106         7
-      tabicl         1     0.25              250  0.338618  0.338286 0.338949         7
-      tabicl         1     0.25              500  0.338747  0.338334 0.339159         7
-      tabicl         1     0.25             1000  0.339180  0.338557 0.339802         7
-      tabicl         1     0.25             1500  0.339359  0.338940 0.339779         7
-      tabicl         1     0.50              125  0.339424  0.339181 0.339667         7
-      tabicl         1     0.50              250  0.338599  0.338568 0.338630         7
-      tabicl         1     0.50              500  0.338378  0.338094 0.338662         7
-      tabicl         1     0.50             1000  0.338695  0.338245 0.339145         7
-      tabicl         1     0.50             1500  0.338895  0.338540 0.339250         7
-      tabicl         1     1.00              125  0.339382  0.339380 0.339384         7
-      tabicl         1     1.00              250  0.339293  0.339106 0.339479         7
-      tabicl         1     1.00              500  0.339722  0.339696 0.339749         7
-      tabicl         1     1.00             1000  0.340154  0.339783 0.340525         7
-      tabicl         1     1.00             1500  0.340371  0.340010 0.340732         7
-     tabpfn3         0     0.00              125  0.333941  0.329675 0.338207         7
-     tabpfn3         0     0.00              250  0.313661  0.280573 0.346749         7
-     tabpfn3         0     0.00              500  0.330418  0.316921 0.343915         7
-     tabpfn3         0     0.00             1000  0.178198  0.177116 0.179280         7
-     tabpfn3         0     0.00             1500 -0.037730 -0.338444 0.262984         7
-     tabpfn3         0     0.25              125  0.332528  0.330115 0.334940         7
-     tabpfn3         0     0.25              250  0.216594  0.106109 0.327080         7
-     tabpfn3         0     0.25              500  0.299669  0.268109 0.331229         7
-     tabpfn3         0     0.25             1000  0.263105  0.192453 0.333758         7
-     tabpfn3         0     0.25             1500  0.158702 -0.011394 0.328797         7
-     tabpfn3         0     0.50              125  0.299792  0.257342 0.342243         7
-     tabpfn3         0     0.50              250  0.311023  0.306236 0.315809         7
-     tabpfn3         0     0.50              500  0.222863  0.133207 0.312520         7
-     tabpfn3         0     0.50             1000  0.256374  0.203719 0.309028         7
-     tabpfn3         0     0.50             1500  0.048450 -0.181926 0.278827         7
-     tabpfn3         0     1.00              125  0.320487  0.291147 0.349826         7
-     tabpfn3         0     1.00              250  0.314681  0.285936 0.343425         7
-     tabpfn3         0     1.00              500  0.312589  0.307274 0.317904         7
-     tabpfn3         0     1.00             1000  0.288473  0.261062 0.315884         7
-     tabpfn3         0     1.00             1500  0.294659  0.273612 0.315705         7
-     tabpfn3         1     0.00              125  0.345488  0.345198 0.345778         7
-     tabpfn3         1     0.00              250  0.348380  0.348162 0.348598         7
-     tabpfn3         1     0.00              500  0.347974  0.347114 0.348835         7
-     tabpfn3         1     0.00             1000  0.348514  0.347531 0.349498         7
-     tabpfn3         1     0.00             1500  0.347927  0.347341 0.348512         7
-     tabpfn3         1     0.25              125  0.345173  0.345171 0.345175         7
-     tabpfn3         1     0.25              250  0.346070  0.344467 0.347674         7
-     tabpfn3         1     0.25              500  0.346929  0.346547 0.347312         7
-     tabpfn3         1     0.25             1000  0.340476  0.332967 0.347986         7
-     tabpfn3         1     0.25             1500  0.342666  0.339141 0.346191         7
-     tabpfn3         1     0.50              125  0.345398  0.345351 0.345446         7
-     tabpfn3         1     0.50              250  0.343646  0.341455 0.345838         7
-     tabpfn3         1     0.50              500  0.343717  0.340530 0.346904         7
-     tabpfn3         1     0.50             1000  0.332102  0.317437 0.346766         7
-     tabpfn3         1     0.50             1500  0.340730  0.335765 0.345695         7
-     tabpfn3         1     1.00              125  0.345476  0.345408 0.345544         7
-     tabpfn3         1     1.00              250  0.344960  0.343799 0.346122         7
-     tabpfn3         1     1.00              500  0.343085  0.342209 0.343962         7
-     tabpfn3         1     1.00             1000  0.329536  0.318950 0.340121         7
-     tabpfn3         1     1.00             1500  0.318869  0.298301 0.339438         7
+architecture  lr_index  mixture  checkpoint_step     mean  minimum  maximum  datasets
+      tabicl         0     0.00              125 0.340794 0.340789 0.340799         7
+      tabicl         0     0.00              250 0.339748 0.339270 0.340226         7
+      tabicl         0     0.00              500 0.340406 0.339305 0.341508         7
+      tabicl         0     0.00             1000 0.341198 0.339955 0.342441         7
+      tabicl         0     0.00             1500 0.341630 0.340826 0.342434         7
+      tabicl         0     0.25              125 0.339412 0.339018 0.339806         7
+      tabicl         0     0.25              250 0.337882 0.337355 0.338409         7
+      tabicl         0     0.25              500 0.338267 0.337385 0.339148         7
+      tabicl         0     0.25             1000 0.339386 0.338424 0.340347         7
+      tabicl         0     0.25             1500 0.339661 0.339027 0.340294         7
+      tabicl         0     0.50              125 0.338662 0.338542 0.338783         7
+      tabicl         0     0.50              250 0.338139 0.337952 0.338326         7
+      tabicl         0     0.50              500 0.338471 0.337967 0.338975         7
+      tabicl         0     0.50             1000 0.338891 0.338324 0.339457         7
+      tabicl         0     0.50             1500 0.339147 0.338723 0.339570         7
+      tabicl         0     1.00              125 0.339138 0.339030 0.339246         7
+      tabicl         0     1.00              250 0.340254 0.340111 0.340397         7
+      tabicl         0     1.00              500 0.340068 0.340045 0.340091         7
+      tabicl         0     1.00             1000 0.340013 0.339694 0.340332         7
+      tabicl         0     1.00             1500 0.340332 0.340089 0.340574         7
+      tabicl         1     0.00              125 0.340638 0.340620 0.340656         7
+      tabicl         1     0.00              250 0.340014 0.339744 0.340284         7
+      tabicl         1     0.00              500 0.340367 0.339653 0.341081         7
+      tabicl         1     0.00             1000 0.340784 0.339888 0.341680         7
+      tabicl         1     0.00             1500 0.341031 0.340409 0.341653         7
+      tabicl         1     0.25              125 0.339825 0.339544 0.340106         7
+      tabicl         1     0.25              250 0.338618 0.338286 0.338949         7
+      tabicl         1     0.25              500 0.338747 0.338334 0.339159         7
+      tabicl         1     0.25             1000 0.339180 0.338557 0.339802         7
+      tabicl         1     0.25             1500 0.339359 0.338940 0.339779         7
+      tabicl         1     0.50              125 0.339424 0.339181 0.339667         7
+      tabicl         1     0.50              250 0.338599 0.338568 0.338630         7
+      tabicl         1     0.50              500 0.338378 0.338094 0.338662         7
+      tabicl         1     0.50             1000 0.338695 0.338245 0.339145         7
+      tabicl         1     0.50             1500 0.338895 0.338540 0.339250         7
+      tabicl         1     1.00              125 0.339382 0.339380 0.339384         7
+      tabicl         1     1.00              250 0.339293 0.339106 0.339479         7
+      tabicl         1     1.00              500 0.339722 0.339696 0.339749         7
+      tabicl         1     1.00             1000 0.340154 0.339783 0.340525         7
+      tabicl         1     1.00             1500 0.340371 0.340010 0.340732         7
 credit / CRPS: 
 architecture  lr_index  mixture  checkpoint_step     mean  minimum  maximum  datasets
       tabicl         0     0.00              125 0.135278 0.135246 0.135309         7
@@ -1535,46 +1427,6 @@ architecture  lr_index  mixture  checkpoint_step     mean  minimum  maximum  dat
       tabicl         1     1.00              500 0.135350 0.135340 0.135360         7
       tabicl         1     1.00             1000 0.135284 0.135230 0.135339         7
       tabicl         1     1.00             1500 0.135236 0.135191 0.135281         7
-     tabpfn3         0     0.00              125 0.136553 0.135383 0.137723         7
-     tabpfn3         0     0.00              250 0.138933 0.133653 0.144212         7
-     tabpfn3         0     0.00              500 0.137497 0.134271 0.140722         7
-     tabpfn3         0     0.00             1000 0.156994 0.152032 0.161955         7
-     tabpfn3         0     0.00             1500 0.153258 0.146981 0.159536         7
-     tabpfn3         0     0.25              125 0.136316 0.135637 0.136994         7
-     tabpfn3         0     0.25              250 0.150456 0.136987 0.163925         7
-     tabpfn3         0     0.25              500 0.142665 0.138181 0.147149         7
-     tabpfn3         0     0.25             1000 0.145178 0.138214 0.152141         7
-     tabpfn3         0     0.25             1500 0.146818 0.139575 0.154061         7
-     tabpfn3         0     0.50              125 0.141132 0.134564 0.147700         7
-     tabpfn3         0     0.50              250 0.141654 0.139006 0.144302         7
-     tabpfn3         0     0.50              500 0.154456 0.140320 0.168592         7
-     tabpfn3         0     0.50             1000 0.146469 0.143021 0.149918         7
-     tabpfn3         0     0.50             1500 0.150628 0.144845 0.156412         7
-     tabpfn3         0     1.00              125 0.138990 0.132819 0.145161         7
-     tabpfn3         0     1.00              250 0.139101 0.134154 0.144048         7
-     tabpfn3         0     1.00              500 0.141626 0.138086 0.145165         7
-     tabpfn3         0     1.00             1000 0.146972 0.140245 0.153699         7
-     tabpfn3         0     1.00             1500 0.146736 0.141569 0.151903         7
-     tabpfn3         1     0.00              125 0.134117 0.134070 0.134164         7
-     tabpfn3         1     0.00              250 0.133616 0.133524 0.133707         7
-     tabpfn3         1     0.00              500 0.133680 0.133472 0.133888         7
-     tabpfn3         1     0.00             1000 0.134139 0.133762 0.134517         7
-     tabpfn3         1     0.00             1500 0.134271 0.133806 0.134736         7
-     tabpfn3         1     0.25              125 0.134179 0.134137 0.134220         7
-     tabpfn3         1     0.25              250 0.134041 0.133722 0.134360         7
-     tabpfn3         1     0.25              500 0.133921 0.133905 0.133938         7
-     tabpfn3         1     0.25             1000 0.135745 0.134570 0.136920         7
-     tabpfn3         1     0.25             1500 0.134999 0.134343 0.135655         7
-     tabpfn3         1     0.50              125 0.134132 0.134059 0.134206         7
-     tabpfn3         1     0.50              250 0.134495 0.133996 0.134994         7
-     tabpfn3         1     0.50              500 0.134596 0.133998 0.135194         7
-     tabpfn3         1     0.50             1000 0.137400 0.134358 0.140443         7
-     tabpfn3         1     0.50             1500 0.135592 0.134311 0.136874         7
-     tabpfn3         1     1.00              125 0.134152 0.134124 0.134179         7
-     tabpfn3         1     1.00              250 0.134414 0.134169 0.134658         7
-     tabpfn3         1     1.00              500 0.134654 0.134394 0.134913         7
-     tabpfn3         1     1.00             1000 0.136709 0.135067 0.138352         7
-     tabpfn3         1     1.00             1500 0.138028 0.135179 0.140877         7
 ood / R²: 
 architecture  lr_index  mixture  checkpoint_step     mean  minimum  maximum  datasets
       tabicl         0     0.00              125 0.793501 0.793210 0.793792        25
@@ -1617,106 +1469,20 @@ architecture  lr_index  mixture  checkpoint_step     mean  minimum  maximum  dat
       tabicl         1     1.00              500 0.791026 0.790715 0.791338        25
       tabicl         1     1.00             1000 0.789512 0.789155 0.789868        25
       tabicl         1     1.00             1500 0.789292 0.788963 0.789621        25
-     tabpfn3         0     0.00              125 0.791725 0.788675 0.794775        25
-     tabpfn3         0     0.00              250 0.778224 0.763698 0.792749        25
-     tabpfn3         0     0.00              500 0.793320 0.792622 0.794018        25
-     tabpfn3         0     0.00             1000 0.662980 0.581551 0.744410        25
-     tabpfn3         0     0.00             1500 0.489276 0.232968 0.745583        25
-     tabpfn3         0     0.25              125 0.793114 0.791400 0.794828        25
-     tabpfn3         0     0.25              250 0.777406 0.764597 0.790216        25
-     tabpfn3         0     0.25              500 0.777800 0.765434 0.790165        25
-     tabpfn3         0     0.25             1000 0.668340 0.551776 0.784904        25
-     tabpfn3         0     0.25             1500 0.650811 0.514917 0.786704        25
-     tabpfn3         0     0.50              125 0.788026 0.781323 0.794728        25
-     tabpfn3         0     0.50              250 0.786475 0.781806 0.791144        25
-     tabpfn3         0     0.50              500 0.782014 0.778700 0.785329        25
-     tabpfn3         0     0.50             1000 0.657743 0.562343 0.753143        25
-     tabpfn3         0     0.50             1500 0.640524 0.510584 0.770464        25
-     tabpfn3         0     1.00              125 0.790168 0.785965 0.794372        25
-     tabpfn3         0     1.00              250 0.731932 0.685511 0.778354        25
-     tabpfn3         0     1.00              500 0.464914 0.229763 0.700065        25
-     tabpfn3         0     1.00             1000 0.229863 0.116154 0.343572        25
-     tabpfn3         0     1.00             1500 0.271698 0.179367 0.364029        25
-     tabpfn3         1     0.00              125 0.796686 0.796666 0.796706        25
-     tabpfn3         1     0.00              250 0.796672 0.796540 0.796803        25
-     tabpfn3         1     0.00              500 0.796588 0.796548 0.796627        25
-     tabpfn3         1     0.00             1000 0.795632 0.795411 0.795853        25
-     tabpfn3         1     0.00             1500 0.795423 0.795106 0.795741        25
-     tabpfn3         1     0.25              125 0.796620 0.796580 0.796659        25
-     tabpfn3         1     0.25              250 0.796737 0.796725 0.796749        25
-     tabpfn3         1     0.25              500 0.796361 0.796255 0.796468        25
-     tabpfn3         1     0.25             1000 0.793039 0.791379 0.794698        25
-     tabpfn3         1     0.25             1500 0.793157 0.792870 0.793444        25
-     tabpfn3         1     0.50              125 0.796653 0.796633 0.796673        25
-     tabpfn3         1     0.50              250 0.796791 0.796767 0.796814        25
-     tabpfn3         1     0.50              500 0.796177 0.795737 0.796617        25
-     tabpfn3         1     0.50             1000 0.777112 0.760627 0.793598        25
-     tabpfn3         1     0.50             1500 0.776480 0.760868 0.792092        25
-     tabpfn3         1     1.00              125 0.796584 0.796424 0.796743        25
-     tabpfn3         1     1.00              250 0.796272 0.796159 0.796384        25
-     tabpfn3         1     1.00              500 0.795666 0.795588 0.795743        25
-     tabpfn3         1     1.00             1000 0.736840 0.678081 0.795600        25
-     tabpfn3         1     1.00             1500 0.643096 0.490750 0.795441        25
 Native-OOD CRPS remains per dataset in the benchmark files; different target units are not averaged.
 
 D · NATIVE OOD
-Complete final OOD table available: True.
-R²: 
-                                                                               configuration                                                                                   control  mean_difference    ci_low   ci_high  datasets      p_value                                               interval_method  small_sample  minimum_sign_p       p_holm
- exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0p25  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0        -0.000228 -0.000851  0.000191        25 2.295229e-01 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 9.180918e-01
-  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0p5  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0        -0.000608 -0.001800  0.000151        25 2.295229e-01 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 9.180918e-01
-    exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=1  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0        -0.007251 -0.012867 -0.002715        25 4.077315e-03 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 3.669584e-02
- exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0p25  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0        -0.000167 -0.000831  0.000282        25 6.900380e-01 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 1.000000e+00
-  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0p5  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0        -0.000478 -0.001673  0.000303        25 6.900380e-01 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 1.000000e+00
-    exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=1  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0        -0.004614 -0.008463 -0.001539        25 1.463330e-02 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 1.170664e-01
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0p25 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0         0.161535  0.030923  0.341972        25 4.328525e-02 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 2.597115e-01
- exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0p5 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0         0.151248  0.018882  0.322437        25 1.463330e-02 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 1.170664e-01
-   exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=1 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0        -0.217577 -0.551299  0.086886        25 4.328525e-02 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 2.597115e-01
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0p25 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0        -0.002267 -0.003986 -0.000166        25 1.549721e-06 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 1.549721e-05
- exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0p5 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0        -0.018943 -0.032009 -0.008248        25 5.960464e-08 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 7.152557e-07
-   exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=1 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0        -0.152327 -0.224313 -0.087121        25 5.960464e-08 descriptive paired-dataset percentile bootstrap (nominal 95%)         False    5.960464e-08 7.152557e-07
+Complete final OOD table available: False.
+R²: not completely benchmarked
 
 E · DISTRIBUTIONAL ENDPOINTS
-CRPS: 
-                                                                               configuration                                                                                   control  mean_difference    ci_low   ci_high  datasets  p_value                                               interval_method  small_sample  minimum_sign_p  p_holm
- exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0p25  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0         0.000296  0.000053  0.000587         7 0.453125 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0p5  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0         0.000409 -0.000090  0.001013         7 1.000000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-    exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=1  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0         0.000121 -0.000960  0.000947         7 0.125000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
- exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0p25  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0         0.000264  0.000038  0.000536         7 0.453125 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0p5  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0         0.000372 -0.000035  0.000912         7 1.000000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-    exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=1  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0         0.000050 -0.000821  0.000730         7 0.125000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0p25 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0        -0.006440 -0.009716 -0.003300         7 0.015625 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  0.1875
- exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0p5 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0        -0.002630 -0.013395  0.005719         7 1.000000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-   exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=1 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0        -0.006522 -0.009262 -0.003541         7 0.015625 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  0.1875
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0p25 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0         0.000728 -0.000050  0.001690         7 0.125000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
- exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0p5 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0         0.001321 -0.001304  0.003225         7 0.125000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-   exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=1 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0         0.003757 -0.000209  0.007567         7 0.125000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-boundary-mass error: 
-                                                                               configuration                                                                                   control  mean_difference    ci_low   ci_high  datasets  p_value                                               interval_method  small_sample  minimum_sign_p  p_holm
- exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0p25  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0         0.008651  0.000126  0.018080         7 1.000000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0p5  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0         0.007465 -0.000700  0.016806         7 1.000000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-    exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=1  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=0__prior-credit_fraction=0         0.011166  0.001123  0.022530         7 0.453125 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
- exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0p25  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0         0.009072  0.000455  0.019685         7 1.000000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0p5  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0         0.008110 -0.000714  0.018404         7 1.000000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-    exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=1  exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0         0.010169  0.000139  0.021710         7 1.000000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0p25 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0        -0.050983 -0.101880 -0.002983         7 0.125000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
- exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0p5 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0        -0.027906 -0.063892  0.003434         7 0.453125 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-   exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=1 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=0__prior-credit_fraction=0        -0.038099 -0.059399 -0.016235         7 0.125000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0p25 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0        -0.023522 -0.046418 -0.006168         7 0.015625 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  0.1875
- exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0p5 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0        -0.024001 -0.043813 -0.006945         7 0.125000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
-   exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=1 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabpfn3__lr_index=1__prior-credit_fraction=0        -0.048522 -0.086066 -0.014696         7 0.125000 descriptive paired-dataset percentile bootstrap (nominal 95%)          True        0.015625  1.0000
+CRPS: not completely benchmarked
+boundary-mass error: not completely benchmarked
 Credit LGD shares the [0,1] scale. Endpoint-mass agreement is aggregate, not conditional calibration.
 Dataset-bootstrap intervals are descriptive; seeds and folds are not extra datasets.
 Historical benchmark exposure remains disclosed; no rate, mixture or checkpoint is selected here.
-2.4_lgd_results: 8 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\2.4_lgd_results
-  01  credit_control_tabicl
-  02  dataset_effects_tabicl
-  03  credit_control_tabpfn3
-  04  dataset_effects_tabpfn3
-  05  checkpoints_tabicl
-  06  checkpoints_tabpfn3
-  07  credit_ood_control
-  08  credit_ood_released
+2.4_lgd_results: 1 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\2.4_lgd_results
+  01  checkpoints_tabicl
 ```
 
 ---
@@ -1844,18 +1610,7 @@ architecture     treatment  checkpoint_step     mean  minimum  maximum  datasets
       tabicl full_wd_lower              500 0.338378 0.338094 0.338662         7
       tabicl full_wd_lower             1000 0.338695 0.338245 0.339145         7
       tabicl full_wd_lower             1500 0.338895 0.338540 0.339250         7
-LGD / TabPFN-3 / credit: 
-architecture     treatment  checkpoint_step     mean   minimum  maximum  datasets
-     tabpfn3       full_wd              125 0.299792  0.257342 0.342243         7
-     tabpfn3       full_wd              250 0.311023  0.306236 0.315809         7
-     tabpfn3       full_wd              500 0.222863  0.133207 0.312520         7
-     tabpfn3       full_wd             1000 0.256374  0.203719 0.309028         7
-     tabpfn3       full_wd             1500 0.048450 -0.181926 0.278827         7
-     tabpfn3 full_wd_lower              125 0.345398  0.345351 0.345446         7
-     tabpfn3 full_wd_lower              250 0.343646  0.341455 0.345838         7
-     tabpfn3 full_wd_lower              500 0.343717  0.340530 0.346904         7
-     tabpfn3 full_wd_lower             1000 0.332102  0.317437 0.346766         7
-     tabpfn3 full_wd_lower             1500 0.340730  0.335765 0.345695         7
+LGD / TabPFN-3 / credit: no complete two-seed checkpoint groups
 LGD / TabICLv2 / ood: 
 architecture     treatment  checkpoint_step     mean  minimum  maximum  datasets
       tabicl       full_wd              125 0.793744 0.793287 0.794201        25
@@ -1868,18 +1623,7 @@ architecture     treatment  checkpoint_step     mean  minimum  maximum  datasets
       tabicl full_wd_lower              500 0.793430 0.793303 0.793556        25
       tabicl full_wd_lower             1000 0.793464 0.793375 0.793553        25
       tabicl full_wd_lower             1500 0.793428 0.793359 0.793496        25
-LGD / TabPFN-3 / ood: 
-architecture     treatment  checkpoint_step     mean  minimum  maximum  datasets
-     tabpfn3       full_wd              125 0.788026 0.781323 0.794728        25
-     tabpfn3       full_wd              250 0.786475 0.781806 0.791144        25
-     tabpfn3       full_wd              500 0.782014 0.778700 0.785329        25
-     tabpfn3       full_wd             1000 0.657743 0.562343 0.753143        25
-     tabpfn3       full_wd             1500 0.640524 0.510584 0.770464        25
-     tabpfn3 full_wd_lower              125 0.796653 0.796633 0.796673        25
-     tabpfn3 full_wd_lower              250 0.796791 0.796767 0.796814        25
-     tabpfn3 full_wd_lower              500 0.796177 0.795737 0.796617        25
-     tabpfn3 full_wd_lower             1000 0.777112 0.760627 0.793598        25
-     tabpfn3 full_wd_lower             1500 0.776480 0.760868 0.792092        25
+LGD / TabPFN-3 / ood: no complete two-seed checkpoint groups
 Settings and primary endpoint are fixed in advance; both credit and OOD outcomes are reported. Historical benchmark exposure is disclosed.
 3.1_retention: no figures saved.
 ```
