@@ -23,6 +23,8 @@ Login preflight accepts its current source/input/runtime/artifact receipt. GPU *
 was then accepted on Mindwell B200/24 CPUs/180 GiB/24h, maximum quote 734,400 credits.
 Receipts are `20261112-target-standardize-{cpu,gpu}.json`; no uncertain admission remains.
 Keep source `37a0fba` frozen. GPU acceptance is pending; replacement training is not submitted.
+GPU started on r11g12: all 44 native GPU tests passed in 4m55s, including the six full-batch
+target-policy regressions at both rates, with no skips. Broader campaign stages remain pending.
 
 Before reset, hashed all 809 previous Exp0 files; preserved 327 PROJECT files by verified
 same-filesystem rename and 482 DATA files in a member-verified ZIP. Recovery is

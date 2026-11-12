@@ -130,6 +130,10 @@ GPU **11792019** was then admitted on Mindwell B200, 24 CPUs/180 GiB/24h; maximu
 734,400 credits, with 26,361,922 available at admission. Stable receipts
 `output CreditICL/manifests/submissions/20261112-target-standardize-{cpu,gpu}.json` record
 unambiguous acceptance. GPU acceptance remains pending; no replacement training has been submitted.
+GPU started on r11g12 at 09:46 CET. Its 44 native GPU tests passed in 294.62 seconds, with no
+skips, including all six corrected full-batch LGD target-policy cases at both rates. The 135
+warnings are pinned-library deprecations. This verifies the new regression cases on B200;
+the complete adaptation, recovery, capacity and benchmark campaign must still finish.
 The sixteen/twelve replacement arrays separately quote maxima of 5,875,200/4,406,400 credits
 at twelve hours per task; these are reservation bounds, not predicted bills.
 Deployment/audit evidence is retained locally under `.runtime-build/lgd-replacement-20261112/`.
