@@ -25,8 +25,8 @@ dated jobs, failures, quotes and migrations belong in [RUNS.md](RUNS.md).
 | Exp1 | 54 training runs and all 158 benchmark slots complete and preserved |
 | Exp2 | 48 unaffected runs and 240 benchmark slots retained; 16 TabPFN LGD runs/80 slots retired |
 | Exp3 | All 36 unaffected training runs complete; twelve TabPFN LGD treatments await replacement |
-| Corrected CPU Exp0 | wICE **62663287** running on the standardized-target repair |
-| Corrected GPU Exp0 | Not submitted; requires current CPU acceptance |
+| Corrected CPU Exp0 | wICE **62663287** completed: all 14 stages PASS, current-artifact preflight accepted |
+| Corrected GPU Exp0 | Mindwell **11792019** accepted; full GPU acceptance pending |
 
 After all existing CreditICL tasks finished, production DATA `$VSC_DATA/CreditICL` was safely
 updated to **37a0fba**, with the institution-only input configuration provisioned outside Git.

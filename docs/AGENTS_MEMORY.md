@@ -17,9 +17,12 @@ Twelve TabPFN PD runs have 41 recoverable AMP retries total, zero skipped tasks/
 After verifying both queues idle for CreditICL, pulled production DATA from `0494e7a` to
 `37a0fba`; submodules and source `66527dc3` match local. Provisioned the existing ignored
 restricted-data recipe and verified its SHA256; no datasets or weights transferred.
-CPU Exp0 **62663287** accepted on wICE, quote zero; receipt
-`20261112-target-standardize-cpu.json`. It is not yet acceptance of the repair. Do not resubmit
-this job or deploy into its frozen checkout. GPU and replacement training are not yet submitted.
+CPU Exp0 **62663287** completed `0:0` in 42m13s: all fourteen stages PASS, 2,392 unit tests
+passed/two documented skips/44 GPU cases deselected, and all twelve notebooks executed.
+Login preflight accepts its current source/input/runtime/artifact receipt. GPU **11792019**
+was then accepted on Mindwell B200/24 CPUs/180 GiB/24h, maximum quote 734,400 credits.
+Receipts are `20261112-target-standardize-{cpu,gpu}.json`; no uncertain admission remains.
+Keep source `37a0fba` frozen. GPU acceptance is pending; replacement training is not submitted.
 
 Before reset, hashed all 809 previous Exp0 files; preserved 327 PROJECT files by verified
 same-filesystem rename and 482 DATA files in a member-verified ZIP. Recovery is
@@ -28,6 +31,11 @@ same-filesystem rename and 482 DATA files in a member-verified ZIP. Recovery is
 Removed only the 482 archived DATA validation files; 7,375 protected production sizes/mtimes
 unchanged. Both project shared-scratch trees are empty. Local output has no weights/partial files.
 Existing runtime recovery environments/checkouts are retained, not blanket-cleaned.
+Copied 432 completed Exp3 analysis files (7.1 MiB, no weights) into the current DATA output
+namespace and locally, verifying every hash; original isolated-checkout records remain recovery.
+Current-source completion checks accept all 48 retained Exp2 and 36 Exp3 runs, leaving exactly
+Exp2 LGD indices 8–15,24–31 and Exp3 LGD 6–11,18–23 missing. The retention notebook reran
+successfully; it correctly has no effect figures before benchmarks. Both transfer ZIPs removed.
 The user-requested empty local `memory/` deletion failed on its read-only attribute; automatic
 approval review then blocked the guarded removal with only "blocked by policy". Preserve it;
 do not retry via another tool. Other previously blocked review-artifact removals remain deferred.

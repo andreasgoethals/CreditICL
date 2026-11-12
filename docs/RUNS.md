@@ -112,15 +112,27 @@ before the scoped reset removed the originals. ZIP SHA256:
 All 7,375 protected production files retained their sizes/mtimes. Both project shared-scratch
 trees are empty; account-level scratch use belongs to other projects. Local output has no
 checkpoint weights or partial files. Documented runtime rollback assets remain preserved.
+Collected 432 completed Exp3 analysis files (7,411,290 bytes) using the analysis allowlist;
+every source/destination hash matches. The same compact files were copied into the current
+DATA output namespace, preserving isolated-checkout originals and historical provenance.
+Current-source completion validation accepts all 48 retained Exp2 runs and all 36 Exp3 runs;
+only the intended 16/12 LGD indices are missing. The retention notebook reran successfully
+with no result figures, as its benchmarks have not run. Both temporary transfer ZIPs were removed.
 Automatic approval review blocked removal of the empty local `memory/` directory; it remains.
 At 08:42 CET: PROJECT 265.6G/1T (10,948 files), DATA 47,324M/76,800M (393k files), available
 balance 26,378,091 credits. These are shared-allocation snapshots, not campaign billing.
 
-**New validation:** CPU **62663287**, wICE interactive, 8 CPUs/48 GiB/four-hour limit, quote zero.
-Receipt `output CreditICL/manifests/submissions/20261112-target-standardize-cpu.json` records
-unambiguous acceptance. CPU completion and GPU validation are pending; no replacement training
-has been submitted. Deployment/audit evidence is retained locally under
-`.runtime-build/lgd-replacement-20261112/`.
+**New validation:** CPU **62663287**, wICE interactive, 8 CPUs/48 GiB/four-hour limit, quote zero,
+completed `0:0` in **42m13s**. All fourteen stages PASS, including 2,392 unit tests (two documented
+environment-specific skips, 44 GPU cases deselected) and execution of all twelve notebooks.
+The native login preflight accepts the current source/input/runtime/artifact receipt.
+GPU **11792019** was then admitted on Mindwell B200, 24 CPUs/180 GiB/24h; maximum quote
+734,400 credits, with 26,361,922 available at admission. Stable receipts
+`output CreditICL/manifests/submissions/20261112-target-standardize-{cpu,gpu}.json` record
+unambiguous acceptance. GPU acceptance remains pending; no replacement training has been submitted.
+The sixteen/twelve replacement arrays separately quote maxima of 5,875,200/4,406,400 credits
+at twelve hours per task; these are reservation bounds, not predicted bills.
+Deployment/audit evidence is retained locally under `.runtime-build/lgd-replacement-20261112/`.
 
 ### 10-11-2026 — Standardized synthetic targets and scoped retirement
 
