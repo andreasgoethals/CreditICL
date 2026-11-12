@@ -106,6 +106,17 @@ training completion checks accept all unaffected runs and the targeted 28 replac
 independent of this follow-up. Evidence: `benchmark-provenance-review.json` and
 `benchmark-config-review.json` under the ignored audit directory.
 
+**Local validation cleanup:** the previous local Exp0 reports still showed PASS for source
+`571c1f6c`. Archived all 714 files (33,382,128 bytes) with each member SHA256 verified, then
+removed that active namespace through the scoped reset utility. All 5,799 Exp1–3/shared-reference
+file sizes and mtimes remained unchanged. The local-only archive contains no model weights;
+its three collection-filter exceptions are two data-check reports and a verified 25-byte
+artificial storage-probe payload. Archive SHA256:
+`60eabdc5ae93681369d5b8e5623ad105ad5696ff33da9473a42431f01f32cd39`.
+Evidence and archive are under `.runtime-build/lgd-replacement-20261112/`. Current validation
+analysis will replace the snapshot after GPU termination; do not interpret the old PASS as
+acceptance of the target repair.
+
 **Deployment:** no CreditICL tasks remained in either live queue. Production DATA fast-forwarded
 from `0494e7a` to `37a0fba2cdc39e0d22e5f43dca3c95ceb26f7c22`; source fingerprint
 `66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9`.

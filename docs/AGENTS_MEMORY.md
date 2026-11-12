@@ -43,6 +43,10 @@ old receipts after privacy aliases, the restricted-recipe identity and evaluatio
 changed. Sample Exp2 comparison matches inputs/config/protocol after alias resolution; Exp1 also
 has the reviewed grid-count extension. Preserve results and use only the exact training indices;
 review explicit receipt compatibility before future benchmark planning, never blanket-resubmit.
+Retired the old local Exp0 snapshot (source `571c1f6c`): 714 files/33,382,128 bytes archived
+with every member hash verified, then removed from active output; 5,799 production files
+unchanged. Local archive SHA256 `60eabdc5ae93681369d5b8e5623ad105ad5696ff33da9473a42431f01f32cd39`.
+Collect current Exp0 analysis after GPU termination; the old local PASS is no longer present.
 The user-requested empty local `memory/` deletion failed on its read-only attribute; automatic
 approval review then blocked the guarded removal with only "blocked by policy". Preserve it;
 do not retry via another tool. Other previously blocked review-artifact removals remain deferred.
