@@ -93,6 +93,19 @@ Another 354 historical Exp0 logs contain four previously reviewed optional-cache
 the explicit PROJECT weight checks pass. These checks support operational completion, not a
 claim that training necessarily improves held-out performance. Exp3 benchmarking is still pending.
 
+**Benchmark provenance follow-up:** CPU orchestration dry runs return successfully but propose
+some previously completed benchmarks again. Direct comparison of an Exp2 TabICL receipt with
+the new request leaves only evaluation-file hashes and the newly recorded restricted-data recipe
+different after resolving private aliases. Its config, protocol, environment and input digests
+match. An Exp1 sample additionally records the earlier grid-count extension (9 to 12 tasks,
+3 to 4 mixtures); its holdout-list change is the privacy alias. Some hashed files changed only
+in comments, while others implement the privacy boundary, so blanket hash bypass is inappropriate.
+No benchmark was submitted or result deleted. Historical counts remain supported by original
+receipts; explicit compatibility review is needed before a future broad benchmark plan. Current
+training completion checks accept all unaffected runs and the targeted 28 replacements are
+independent of this follow-up. Evidence: `benchmark-provenance-review.json` and
+`benchmark-config-review.json` under the ignored audit directory.
+
 **Deployment:** no CreditICL tasks remained in either live queue. Production DATA fast-forwarded
 from `0494e7a` to `37a0fba2cdc39e0d22e5f43dca3c95ceb26f7c22`; source fingerprint
 `66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9`.

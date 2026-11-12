@@ -38,6 +38,11 @@ namespace and locally, verifying every hash; original isolated-checkout records 
 Current-source completion checks accept all 48 retained Exp2 and 36 Exp3 runs, leaving exactly
 Exp2 LGD indices 8–15,24–31 and Exp3 LGD 6–11,18–23 missing. The retention notebook reran
 successfully; it correctly has no effect figures before benchmarks. Both transfer ZIPs removed.
+Benchmark counts above remain historical receipt evidence: the broad planner now rejects some
+old receipts after privacy aliases, the restricted-recipe identity and evaluation-file hashes
+changed. Sample Exp2 comparison matches inputs/config/protocol after alias resolution; Exp1 also
+has the reviewed grid-count extension. Preserve results and use only the exact training indices;
+review explicit receipt compatibility before future benchmark planning, never blanket-resubmit.
 The user-requested empty local `memory/` deletion failed on its read-only attribute; automatic
 approval review then blocked the guarded removal with only "blocked by policy". Preserve it;
 do not retry via another tool. Other previously blocked review-artifact removals remain deferred.

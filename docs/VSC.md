@@ -28,6 +28,11 @@ dated jobs, failures, quotes and migrations belong in [RUNS.md](RUNS.md).
 | Corrected CPU Exp0 | wICE **62663287** completed: all 14 stages PASS, current-artifact preflight accepted |
 | Corrected GPU Exp0 | Mindwell **11792019** accepted; full GPU acceptance pending |
 
+Benchmark totals describe preserved historical receipts. The broad planner currently rejects
+some of them after privacy/provenance changes; do not use it to infer that those computations
+must be repeated. Review receipt compatibility before the next benchmark campaign. Current
+replacement training uses only the exact indices below and accepts all unaffected training runs.
+
 After all existing CreditICL tasks finished, production DATA `$VSC_DATA/CreditICL` was safely
 updated to **37a0fba**, with the institution-only input configuration provisioned outside Git.
 Source fingerprint is `66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9`.
