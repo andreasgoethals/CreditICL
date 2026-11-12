@@ -45,12 +45,14 @@ learning-rate pilot or best-on-test selection. Comparisons retain all prediction
 features and fitted rows, with five common folds. PD threshold tuning uses an inner training split.
 Native OOD performance is reported alongside credit performance.
 
-**Campaign snapshot, 10 November 2026.** Exp1 is complete and preserved. The 16 Exp2
+**Campaign snapshot, 12 November 2026.** Exp1 is complete and preserved. The 16 Exp2
 TabPFN-3 LGD runs and their 80 checkpoint benchmarks have been retired for a synthetic-target
 preprocessing repair; 48 unaffected runs and 240 benchmark slots remain. The repair needs new
-CPU/GPU Exp0 acceptance before replacements. Exp3 has 12 completed, 19 running and five queued
-unaffected tasks; its twelve TabPFN LGD tasks remain stopped. See [VSC](docs/VSC.md#current-deployment)
-and [RUNS](docs/RUNS.md#runs) for dated checks and the approval-gated replacement plan.
+CPU/GPU Exp0 acceptance before replacements. All 36 unaffected Exp3 training runs completed;
+its twelve TabPFN LGD treatments await the same repair. The authorized next sequence is CPU
+validation, GPU validation, then 16 Exp2 and 12 Exp3 replacement training runs. Benchmarking
+those replacements and Exp3 remains a later stage. See [VSC](docs/VSC.md#current-deployment)
+and [RUNS](docs/RUNS.md#runs) for dated checks and admission records.
 
 ## Local setup
 

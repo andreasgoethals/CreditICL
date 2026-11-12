@@ -5,6 +5,34 @@ date; historical commands, source identities and grid sizes are not current laun
 Use [VSC.md](VSC.md) for operation and recovery, [RUNS.md](RUNS.md#runs) for full evidence,
 and [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) for current recipes. Preserve earlier failures.
 
+## 12-11-2026 — Existing Exp3 training complete; replacement validation started
+
+User now authorizes CPU then GPU Exp0, followed only after both pass by 16 Exp2 and 12 Exp3
+TabPFN LGD replacement training runs. No scheduled monitor or new benchmark submission.
+Live accounting: all 36 unaffected Exp3 tasks completed `0:0`, including the remaining fifteen;
+all summaries reach 1,500 updates with five retained milestones. Scanned 1,824 production logs:
+no fatal markers; 612 Exp3 metric records have no malformed JSON/non-finite scalar values.
+Twelve TabPFN PD runs have 41 recoverable AMP retries total, zero skipped tasks/FP32 replays.
+
+After verifying both queues idle for CreditICL, pulled production DATA from `0494e7a` to
+`37a0fba`; submodules and source `66527dc3` match local. Provisioned the existing ignored
+restricted-data recipe and verified its SHA256; no datasets or weights transferred.
+CPU Exp0 **62663287** accepted on wICE, quote zero; receipt
+`20261112-target-standardize-cpu.json`. It is not yet acceptance of the repair. Do not resubmit
+this job or deploy into its frozen checkout. GPU and replacement training are not yet submitted.
+
+Before reset, hashed all 809 previous Exp0 files; preserved 327 PROJECT files by verified
+same-filesystem rename and 482 DATA files in a member-verified ZIP. Recovery is
+`PROJECT/CreditICL/recovery/20261112-before-target-standardize/`; ZIP SHA256
+`1294e57409e01830ffa632489ace1940c934eba08ab0de45884e7a76b400a9c0`.
+Removed only the 482 archived DATA validation files; 7,375 protected production sizes/mtimes
+unchanged. Both project shared-scratch trees are empty. Local output has no weights/partial files.
+Existing runtime recovery environments/checkouts are retained, not blanket-cleaned.
+The user-requested empty local `memory/` deletion failed on its read-only attribute; automatic
+approval review then blocked the guarded removal with only "blocked by policy". Preserve it;
+do not retry via another tool. Other previously blocked review-artifact removals remain deferred.
+Evidence: ignored `.runtime-build/lgd-replacement-20261112/`. No new implementation changes.
+
 ## 10-11-2026 — Synthetic LGD target repair; no new jobs authorized yet
 
 User authorized local implementation and retirement of Exp2 TabPFN LGD artifacts, but requires

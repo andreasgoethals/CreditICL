@@ -76,6 +76,52 @@ and limits of the inference>
 
 ## Runs
 
+### 12-11-2026 — Exp3 completion audit and standardized-target deployment
+
+**Authorization:** inspect/clean scoped stale artifacts, deploy the reviewed repair, run CPU then
+GPU Exp0, and admit 16 Exp2 plus 12 Exp3 TabPFN LGD training replacements only after both pass.
+No scheduled monitor, replacement benchmarks or additional research grid is authorized here.
+
+**Completed campaign:** live accounting for arrays `11780823`/`11780839` confirms all 36
+unaffected tasks completed `0:0`: 24 TabICL and 12 TabPFN PD. Each saved summary has 1,500
+updates and the expected table count; all five requested checkpoints exist and are nonempty.
+All 612 Exp3 metric records parse, with finite scalar values. The 24 TabICL runs took
+31.50–33.47 GPU-hours including resumptions; TabPFN PD took 5.18–5.49 hours. Its 41 AMP retries
+across twelve runs recovered without skipped tasks or full-precision replays.
+Scanned 1,824 Exp1–3 logs with no traceback, fatal numerical, CUDA or storage-error markers.
+Another 354 historical Exp0 logs contain four previously reviewed optional-cache warnings;
+the explicit PROJECT weight checks pass. These checks support operational completion, not a
+claim that training necessarily improves held-out performance. Exp3 benchmarking is still pending.
+
+**Deployment:** no CreditICL tasks remained in either live queue. Production DATA fast-forwarded
+from `0494e7a` to `37a0fba2cdc39e0d22e5f43dca3c95ceb26f7c22`; source fingerprint
+`66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9`.
+Pins are TFM `2c5e65f2de14c7f11940c69306109b6db38b81ce` and VSC
+`15e82af30221479f022ff3dbb89687709b961248`. The accepted PROJECT r3 SIF is unchanged
+(`83f8145eafbbbcad0f25a5d109b0329aec12a159e5bc8ab9fc94a9f1e3ed0585`).
+The existing institution-only `.private-data/site.py` was provisioned outside Git with restricted
+permissions and its original hash verified. Login preflight passes packages, processed inputs,
+released weights and both OOD caches. This is readiness, not GPU acceptance.
+
+**Cleanup and resources:** old validation evidence is preserved under
+`PROJECT/CreditICL/recovery/20261112-before-target-standardize/`. The inventory records SHA256
+for all 809 files. The 327 PROJECT files (13,427,087,184 bytes) were renamed on the same filesystem,
+with inode/size/mtime preserved. The 482 DATA files were ZIP-archived and every member verified
+before the scoped reset removed the originals. ZIP SHA256:
+`1294e57409e01830ffa632489ace1940c934eba08ab0de45884e7a76b400a9c0`.
+All 7,375 protected production files retained their sizes/mtimes. Both project shared-scratch
+trees are empty; account-level scratch use belongs to other projects. Local output has no
+checkpoint weights or partial files. Documented runtime rollback assets remain preserved.
+Automatic approval review blocked removal of the empty local `memory/` directory; it remains.
+At 08:42 CET: PROJECT 265.6G/1T (10,948 files), DATA 47,324M/76,800M (393k files), available
+balance 26,378,091 credits. These are shared-allocation snapshots, not campaign billing.
+
+**New validation:** CPU **62663287**, wICE interactive, 8 CPUs/48 GiB/four-hour limit, quote zero.
+Receipt `output CreditICL/manifests/submissions/20261112-target-standardize-cpu.json` records
+unambiguous acceptance. CPU completion and GPU validation are pending; no replacement training
+has been submitted. Deployment/audit evidence is retained locally under
+`.runtime-build/lgd-replacement-20261112/`.
+
 ### 10-11-2026 — Standardized synthetic targets and scoped retirement
 
 **Scope:** local repair/tests and authorized deletion of old Exp2 TabPFN-3 LGD output.
