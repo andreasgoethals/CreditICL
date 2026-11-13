@@ -76,6 +76,66 @@ and limits of the inference>
 
 ## Runs
 
+### 13-11-2026 — GPU validation passed; all corrected LGD training admitted
+
+**Acceptance:** GPU **11792019** completed `0:0` at 03:30:30 CET in **17h44m39s**.
+All **125 stages PASS**, including all 44 native GPU tests, retention-method round trips,
+long-context capacity checks, stop/resume and paired credit/OOD benchmarks. CPU **62663287**
+remains accepted. After manual SSH renewal, the PROJECT runtime's login preflight verified the
+current source, inputs, image and artifacts; `src.validation.verify` passed **131 checks, zero
+failures**. Monitoring lost DNS access on 12 November; the subsequently expired certificate
+was renewed manually on 13 November. Neither interruption affected the Slurm computation.
+
+**Deployment:** DATA remains at **37a0fba2cdc39e0d22e5f43dca3c95ceb26f7c22**, source
+`66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9`, with the unchanged r3
+PROJECT image and pins recorded on 12 November. Later local library-pin/documentation updates
+were not pulled into this validated checkout. No training, prior or benchmark recipe changed.
+
+**Submitted at 08:37 CET:**
+
+| Experiment | Array | Exact work IDs | Tasks |
+|---|---|---|---:|
+| Exp2 LGD | **11794632** | 8–15,24–31 | 16 |
+| Exp3 LGD | **11794633** | 6–11,18–23 | 12 |
+
+Both use Mindwell B200, one GPU/24 CPUs/180 GiB, a twelve-hour resumable allocation and 1,500
+optimizer updates. The synthetic TabPFN targets use context-only standardization, with no power
+transform. The new `target-standardize-v1` run identities start from released weights and retain
+125/250/500/1,000/1,500 checkpoints. Exp2 retains both rates, four mixtures and two paired seeds;
+Exp3 retains its six prespecified methods and two seeds. No scientific grid change or benchmark
+submission was made. The 48 unaffected Exp2 and 36 unaffected Exp3 training runs remain accepted.
+
+**Admission and resources:** verified the normal site ceiling of 500 and expanded live user queue;
+used `submit_command` with receipts `20261113-target-standardize-exp{2,3}-lgd.json`. All 28 IDs
+were accepted exactly once, with no uncertain acknowledgments or running throttle. At 08:41 CET,
+17 were running and 11 pending for normal scheduler resources/priority. Started logs contained
+no fatal markers; all sixteen initialized Exp2 configurations recorded the corrected policy.
+This is startup verification, not completed training. PROJECT used 271.9G/1T and 11,135/150,000
+files; DATA 47,466M/76,800M and 395k/10M files. Available credits were 24,398,386; array maximum
+reservation quotes were 5,875,200 and 4,406,400. These quotes are not predicted or final charges.
+
+**Local evidence:** collected 589 allowlisted analysis/submission files, plus exactly two
+generated CPU check reports excluded by the broad `data` directory filter. The source writer
+and report schema were inspected: these contain validation metadata, not raw observations.
+This explicit exception is recorded in `manifests/exp0-snapshot-20261113.json`; all 591 file
+hashes match VSC. No weights were downloaded; 57 initially excluded files totaled 6.25 GiB.
+All 5,799 protected production file sizes/mtimes remained unchanged. Local verification passes
+132 checks with zero failures, with the expected warning that checkpoint binaries stay on VSC.
+The main transfer archive hash was `30caba0fe43c77d35ed22113b6a08ae3c8b885ab1c805e9c798092efa59243b2`;
+the two-report supplement was `c89b8c0bc07c80209fc670dea61a9a446103acdd4c7c6546563ef06c23b2534a`.
+Operator metadata initially hit the image's read-only source bind; repeating only that metadata
+operation with native Python succeeded. No implementation or runtime change was required.
+Both transfer ZIPs were removed locally and remotely after verification. At 08:46 CET the
+queue still held all 28 tasks (17 running/11 pending), with all initialized configurations using
+`standardize`. One running Exp2 arm logged an AMP overflow at step 9 and retried the same batch
+with a lower loss scale. No fatal exit was observed; the first periodic training metrics were
+not yet written, so successful numerical completion cannot be claimed from this startup check.
+
+**Next:** let these training arrays finish. Benchmark their 80 corrected Exp2 checkpoint slots
+and all 240 new Exp3 checkpoint slots only in a subsequent authorized phase, reusing the sixteen
+Exp2 baselines. Review the historical privacy/provenance receipt compatibility before broad
+benchmark planning. Preserve successful results, the frozen checkout and recovery assets.
+
 ### 12-11-2026 — Exp3 completion audit and standardized-target deployment
 
 **Authorization:** inspect/clean scoped stale artifacts, deploy the reviewed repair, run CPU then

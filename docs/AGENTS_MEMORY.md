@@ -5,6 +5,39 @@ date; historical commands, source identities and grid sizes are not current laun
 Use [VSC.md](VSC.md) for operation and recovery, [RUNS.md](RUNS.md#runs) for full evidence,
 and [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) for current recipes. Preserve earlier failures.
 
+## 13-11-2026 — Full GPU acceptance; all 28 LGD replacements admitted
+
+After manual SSH renewal, live accounting confirmed GPU **11792019** completed `0:0` in
+17h44m39s at 03:30 CET. All 125 stages PASS, including 44 native GPU tests. PROJECT-image
+preflight accepts current source/runtime/input/artifact identities; the final verifier reports
+131 checks, zero failures. CPU **62663287** remains accepted; neither validation job needs rerunning.
+Production stays frozen at **37a0fba**, source **66527dc3**, with its original library pins.
+Independent later local reference-pin updates and documentation are not pulled into active jobs.
+
+At 08:37 CET, admitted exactly **16 Exp2 LGD** replacements (array **11794632**, indices
+8–15,24–31) and **12 Exp3 LGD** replacements (**11794633**, indices 6–11,18–23).
+Receipts `20261113-target-standardize-exp{2,3}-lgd.json` have complete acceptance and no uncertain
+submission. Live expanded queue verified all 28 IDs; at 08:41, 17 running/11 pending, no fatal
+startup markers. All sixteen initialized Exp2 configurations record `standardize`.
+No benchmark or scheduled monitor was launched. Do not duplicate these training submissions.
+
+Fresh quota: PROJECT 271.9G/1T, 11,135/150,000 files; DATA 47,466M/76,800M, 395k/10M files.
+Available credits 24,398,386; array reservation quotes 5,875,200 and 4,406,400, not final bills.
+Site normal admission ceiling 500 verified; no running throttle added. Preserved all unaffected
+results and recovery state. Next: finish replacement training, reconcile historical benchmark
+receipt compatibility, then separately authorize the 80 replacement Exp2 and 240 Exp3 checkpoints.
+Collected 591 current Exp0 analysis/submission files with verified hashes; local verification
+passes 132 checks, zero failures (weights remain on VSC). The filter excluded two generated CPU
+reports because their parent is named `data`; reviewed their exact metadata schema and copied
+only `report/data/checks.{json,md}` as a recorded exception. No dataset rows were transferred.
+The PROJECT image correctly prevented writing operator metadata into its read-only source bind;
+used native Python for that metadata operation. Scientific validation remained in the image.
+Both verified transfer ZIPs were removed locally and remotely. At 08:46 all 28 tasks remained
+accepted (17 running/11 pending); the 17 initialized configurations use `standardize`. One
+AMP overflow retry was logged at step 9, with no fatal exit; final numerical health is not yet
+established before the first periodic training metrics. Do not describe startup as bug-free completion.
+Evidence: `.runtime-build/lgd-replacement-20261112/*20261113*`; full collection details in RUNS.
+
 ## 12-11-2026 — Existing Exp3 training complete; replacement validation started
 
 User now authorizes CPU then GPU Exp0, followed only after both pass by 16 Exp2 and 12 Exp3

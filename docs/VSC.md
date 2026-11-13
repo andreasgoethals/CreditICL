@@ -18,15 +18,15 @@ dated jobs, failures, quotes and migrations belong in [RUNS.md](RUNS.md).
 
 ## Current deployment
 
-**Verified snapshot: 12 November 2026.** Counts below are dated evidence, not live status.
+**Verified snapshot: 13 November 2026.** Counts below are dated evidence, not live status.
 
 | Work | Verified state |
 |---|---|
 | Exp1 | 54 training runs and all 158 benchmark slots complete and preserved |
-| Exp2 | 48 unaffected runs and 240 benchmark slots retained; 16 TabPFN LGD runs/80 slots retired |
-| Exp3 | All 36 unaffected training runs complete; twelve TabPFN LGD treatments await replacement |
+| Exp2 | 48 unaffected runs/240 benchmark slots retained; 16 corrected LGD training tasks accepted as **11794632** |
+| Exp3 | All 36 unaffected training runs complete; twelve corrected LGD training tasks accepted as **11794633** |
 | Corrected CPU Exp0 | wICE **62663287** completed: all 14 stages PASS, current-artifact preflight accepted |
-| Corrected GPU Exp0 | Mindwell **11792019** accepted; full GPU acceptance pending |
+| Corrected GPU Exp0 | Mindwell **11792019** completed `0:0` in 17h44m39s; all 125 stages and 131 final verification checks PASS |
 
 Benchmark totals describe preserved historical receipts. The broad planner currently rejects
 some of them after privacy/provenance changes; do not use it to infer that those computations
@@ -54,8 +54,9 @@ The user has authorized this sequence: current CPU Exp0 PASS, current GPU Exp0 P
 match source, environment and inputs; scheduler success alone is insufficient.
 The older CPU/GPU acceptance records do not validate the synthetic-target repair.
 
-Use new admission receipts for Exp2 LGD indices **8–15,24–31** and Exp3 LGD indices
-**6–11,18–23**. New run identities include `target-standardize-v1`; start from released weights,
+Admission receipts `20261113-target-standardize-exp{2,3}-lgd.json` record all 28 accepted tasks:
+Exp2 LGD indices **8–15,24–31** and Exp3 LGD indices **6–11,18–23**. Do not submit them again.
+New run identities include `target-standardize-v1`; they start from released weights,
 never from the retired nonlinear-target checkpoints. Preserve all unaffected runs.
 Do not replay `20261109-exp3-all-training.json` or the historical Exp2 benchmark receipts:
 those describe earlier admissions, including deliberately stopped or retired work.
