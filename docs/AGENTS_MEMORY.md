@@ -5,6 +5,41 @@ date; historical commands, source identities and grid sizes are not current laun
 Use [VSC.md](VSC.md) for operation and recovery, [RUNS.md](RUNS.md#runs) for full evidence,
 and [CONFIG_REFERENCE.md](CONFIG_REFERENCE.md) for current recipes. Preserve earlier failures.
 
+## 13-11-2026 — Standardization-tail investigation (diagnostics only)
+
+Live 17:58 CET: all sixteen Exp2 replacements completed; ten of twelve Exp3 replacements
+completed, two running. Production remains frozen at `37a0fba`. No production rerun or
+benchmark admission is authorized by this diagnostic record.
+
+All sixteen corrected Exp2 TabPFN LGD runs have 15 non-overlapping 100-update loss records.
+Eighteen of 240 windows exceed 1,000, across twelve runs (generic/25%/50%, both rates/seeds);
+the four pure-credit runs do not. This is **7.5% of windows, not updates**. Other Exp2
+task/backbone groups and all 54 Exp1 logs have no comparable spikes. Local deterministic
+replay exposes zero/tiny context target standard deviations; the native 1e-8 scale floor
+can amplify queries even with all target power transforms disabled. No causal claim about
+benchmark deterioration follows from a large scalar loss alone. AMP attempts also differ
+from affected updates: complete Exp2 LGD logs show 332 retries at 82/24,000 updates (0.342%).
+
+Added isolated stress CLI controls for target policy, paired seed and batch ID, context/query
+scale metadata, matched batch hashes and actual weight displacement; 69 affected local tests,
+scoped Ruff and staged publication checks passed. Diagnostic commit `ed2d739` is frozen in
+DATA `.crediticl-scale-probe-20261113/CreditICL`, using the existing PROJECT r3 image.
+Mindwell interactive jobs **11796679/80/81** compare four objectives on seed1/batch269,
+seed1/batch1491 and seed0/batch1247, respectively. Each uses one RTX GPU, eight CPUs, 16 GiB,
+30 minutes, quote zero credits, FP32 and fresh released weights/AdamW. These are one-update
+mechanism interventions, not actual historical optimizer replay or accuracy validation.
+All three completed `0:0` in 2m16s, 2m15s and 2m17s; all twelve objective updates passed.
+Native losses reached 1.190876e15, but relative weight displacement was 0.0219–0.0223%.
+Alternative objectives had similar displacement and inconsistent held-out synthetic effects;
+at seed1/batch1491 CRPS-only worsened generic held-out native loss 19.75%, versus 0.54%
+for native. This small fresh-optimizer probe does not select a production objective or prove
+historical checkpoint damage. Nine analysis-only files (252,560 bytes) were collected with
+verified hashes. Reports remain under PROJECT Exp0 diagnostics `scale-20261113/`.
+After terminal accounting and consumer checks, preserved all six diagnostic logs/receipts
+with verified hashes in primary DATA output and removed the task-owned temporary checkout.
+PROJECT reports remain; cleanup ledger is `manifests/scale-probe-20261113-cleanup.json`.
+Production and all successful checkpoints are unchanged.
+
 ## 13-11-2026 — Full GPU acceptance; all 28 LGD replacements admitted
 
 After manual SSH renewal, live accounting confirmed GPU **11792019** completed `0:0` in

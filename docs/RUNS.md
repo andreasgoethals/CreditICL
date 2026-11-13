@@ -76,6 +76,87 @@ and limits of the inference>
 
 ## Runs
 
+### 13-11-2026 — Isolating standardization and objective effects
+
+**Scope:** investigate the corrected TabPFN LGD training spikes and scientific interpretation;
+do not alter production source, checkpoint selection or benchmark settings. The live 17:58 CET
+read confirmed all 16 replacement Exp2 tasks completed `0:0`, ten Exp3 replacements completed
+and two running. Retained production source is `37a0fba`.
+
+**Log audit:** after merging resumed logs by run and update, each Exp2 task/backbone has 16
+runs and 240 non-overlapping 100-update windows. Only TabPFN LGD has windows above 1,000:
+18/240 (7.5%), across 12/16 runs, maximum 2.083884e13. All generic, 25% and 50% settings
+are affected at both rates; no pure-credit setting is. Other groups' maximum window losses
+are 0.4904 (TabICL PD), 0.4844 (TabPFN PD), 0.2495 (TabICL LGD); these objectives are not
+numerically comparable. All 54 Exp1 logs stay below 1.966. Exp3's incomplete snapshot has
+15 affected TabPFN LGD windows out of 163; other groups have none. Do not turn window
+frequencies into per-update rates. The existing logs do not retain every update's loss.
+For threshold 1,000 the Exp2 evidence gives at least 18/24,000 affected updates (0.075%),
+not an exact count. Separately, AMP logs record 332 retry attempts at 82 distinct run/update
+pairs (0.342% of the 24,000 updates); retries are not skipped optimization steps.
+
+**Mechanism:** deterministic local replay of seed1/batch1491/slot4 finds zero context target
+standard deviation and standardized query magnitude 1.602351e9. Seed1/batch269/slot1 has
+context standard deviation 0.000207534 and query magnitude 63,100.3. Both have power
+transforms disabled. Their approximate zero-prediction MSE contributions reproduce the
+observed window scale. Seed0/batch1247 also has zero context variance; the local value
+does not exactly match the remote window, so it is mechanism evidence rather than an
+exact reconstruction. Batch IDs are zero-based. MSE can dominate the aggregate gradient's
+direction despite clipping. A controlled output-logit test confirms that mechanism, but
+neither it nor finite-loss checks establish actual checkpoint damage. Preserve rare legitimate
+target regimes; do not hide spikes, clip plots or label all corrected runs invalid.
+
+**Diagnostic implementation and tests:** `cpt_probe` accepts explicit stress target policy,
+seed and batch ID; historical defaults remain intact. Four objectives receive identical
+synthetic tasks, checked by SHA-256, and fresh released weights/AdamW. Reports record context
+scales, query extremes and relative parameter displacement. Local validation: 69 affected tests
+passed, scoped Ruff passed, publication scan inspected 376 files with zero flags. Production
+recipes are unchanged. Published revision `ed2d739f22e5f311e38a4403c5cfaea15fe3b3f1` was pulled
+into a new actual DATA checkout `.crediticl-scale-probe-20261113/CreditICL`; production was
+verified unchanged. TFM pin `c08b03530c4f0f9019cd1cd59e749c97dabcbfac`, VSC pin
+`710d1c3e0cd5f153a7d5eafcf83f6d51703c1bf6`; installed scientific runtime stays the accepted
+PROJECT r3 image, SHA256 `83f8145eafbbbcad0f25a5d109b0329aec12a159e5bc8ab9fc94a9f1e3ed0585`.
+
+**Slurm admission:** receipt-backed Mindwell interactive jobs **11796679**, **11796680** and
+**11796681** test seed1/batch269, seed1/batch1491 and seed0/batch1247, respectively. All use
+standardization-only targets, FP32, peak LR 1e-5, one update per objective, no warm-up, one
+RTX 5000 Ada GPU, eight CPUs, 16 GiB, 30 minutes. Fresh quote zero credits; normal submission
+ceiling 500 verified. At 18:18 CET first job ran with dependency checks passed; remaining two
+waited under interactive CPU limits. Reports: PROJECT `output CreditICL/experiment_0/diagnostics/scale-20261113/`.
+Logs and receipts: isolated DATA output. Fresh resource checks showed PROJECT 375G/2T and
+11,352/150,000 files, DATA 47,469M/76,800M, and 16,985,561 available credits. These diagnostics
+do not select a learning rate on real benchmarks or reproduce a historical optimizer state.
+No production job was cancelled.
+
+**GPU outcomes:** all three completed `0:0`, in 2m16s, 2m15s and 2m17s. All reports PASS;
+four objectives used identical batch hashes and initial held-out scores, sixteen tasks each,
+with no skipped diagnostic tasks. Native-loss results:
+
+| Seed / zero-based batch | Largest standardized query | Native update loss | Relative parameter displacement |
+|---|---:|---:|---:|
+| 1 / 269 | 63,099.7 | 2.661350e6 | 0.02234% |
+| 1 / 1491 | 1.602351e9 | 1.190876e15 | 0.02209% |
+| 0 / 1247 | 4.000030e8 | 8.403489e13 | 0.02193% |
+
+This confirms the amplification on the actual installed GPU path. It does **not** show a
+catastrophic single weight update: all alternative displacements were also about 0.0225%.
+Generic held-out native loss changed +0.54% after the native seed1/batch1491 update, but
++19.75% after CRPS-only and +17.56% after CRPS+Huber. At seed0/batch1247, Huber improved
+that same readout 0.74%, while native worsened it 0.58%. These are small fixed synthetic
+validation sets, fresh AdamW and peak LR; they neither establish real benchmark effects
+nor validate replacing MSE solely because another objective has a smaller scalar loss.
+The corrected production's late events occur at much smaller scheduled learning rates.
+
+Collected all nine allowlisted analysis files (252,560 bytes) by native SFTP, filtering with
+`result_manifest` and verifying every remote/local size and SHA256. No weights or datasets
+transferred. Evidence and transfer verification are in `.runtime-build/spike-review-20261113/`.
+At 18:28, verified all three jobs terminal and no queued/running consumer of the temporary
+checkout on either cluster. Copied its six compact logs/receipts to primary DATA output,
+verified every hash, then retired only `.crediticl-scale-probe-20261113/`. PROJECT reports
+and primary source/references remain intact. Cleanup ledger:
+`output CreditICL/manifests/scale-probe-20261113-cleanup.json`. Production `37a0fba` was
+verified unchanged. All diagnostic logs were inspected; no fatal error markers found.
+
 ### 13-11-2026 — GPU validation passed; all corrected LGD training admitted
 
 **Acceptance:** GPU **11792019** completed `0:0` at 03:30:30 CET in **17h44m39s**.
