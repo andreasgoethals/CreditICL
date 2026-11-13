@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import copy
 import gc
+import hashlib
 import json
 import math
 import os
@@ -26,9 +27,14 @@ OBJECTIVES = ("native", "crps", "crps_mae", "crps_huber")
 TABICL_RATES = (1e-5, 2e-5, 5e-5, 1e-4)
 
 
-def probe_config(backbone, task, lr, *, seed=0, steps=32, force_fp32=False):
+def probe_config(backbone, task, lr, *, seed=0, steps=32, force_fp32=False,
+                 target_policy="native"):
     from src.utils.config import expand_with_seeds, load
 
+    if target_policy not in {"native", "standardize"}:
+        raise ValueError(f"Unknown diagnostic target policy: {target_policy!r}")
+    if target_policy != "native" and (backbone, task) != ("tabpfn3", "lgd"):
+        raise ValueError("The target-policy intervention requires TabPFN regression")
     run = next(r for r in expand_with_seeds(load(f"config/Exp2_{task.upper()}.yaml", allow_placeholders=True))
                if r["architecture"] == backbone and r["seed"] == seed
                and r["prior"]["credit_fraction"] == .5 and r["lr_index"] == 0)
@@ -40,10 +46,10 @@ def probe_config(backbone, task, lr, *, seed=0, steps=32, force_fp32=False):
     # 32-step cosine cycle. Retain production table count, features and split.
     cfg["train"].update(lr=lr, max_steps=steps, schedule_total_steps=1500,
                         num_workers=0, max_workers=0, log_every=1)
-    # Preserve this historical objective comparison's target-space intervention.
-    # The new standardization-only production policy has separate Exp0 tests.
+    # Historical invocations keep their native target-space intervention. Stress
+    # probes can explicitly select the current standardization-only policy.
     if backbone == "tabpfn3" and task == "lgd":
-        cfg["train"]["regression_target_policy"] = "native"
+        cfg["train"]["regression_target_policy"] = target_policy
     if backbone == "tabicl":
         cfg["prior"].update(n_rows_range=[1024, 1024], n_rows_sampling="uniform")
     if force_fp32:
@@ -111,6 +117,66 @@ def _gradient_norm(model):
     return float(torch.linalg.vector_norm(torch.stack([
         torch.linalg.vector_norm(p.grad, dtype=torch.float64)
         for p in model.parameters() if p.grad is not None])))
+
+
+def _relative_parameter_drift(model, initial):
+    """Actual weight displacement, distinct from the pre-clipping gradient norm."""
+    parameters = dict(model.named_parameters())
+    if parameters.keys() != initial.keys():
+        raise ValueError("Parameter names changed during the diagnostic")
+    difference, scale = 0., 0.
+    with torch.no_grad():
+        for name, parameter in parameters.items():
+            reference = initial[name].double()
+            current = parameter.detach().cpu().double()
+            if reference.shape != current.shape:
+                raise ValueError(f"Parameter shape changed: {name}")
+            difference += float((current - reference).square().sum())
+            scale += float(reference.square().sum())
+    if scale == 0.:
+        raise ValueError("Relative parameter drift requires nonzero initial weights")
+    return math.sqrt(difference / scale)
+
+
+def _stress_batch_metadata(batch, prepared):
+    """Describe synthetic scales without changing the data or consulting queries to fit.
+
+    Raw means pre-TabPFN preprocessing, not pre-generator transformation. Standard
+    deviations use the population convention of native TabPFN preprocessing.
+    """
+    X, y, widths, lengths, splits = batch
+    if len(y) != len(prepared):
+        raise ValueError("Prepared task count differs from the raw synthetic batch")
+    digest = hashlib.sha256()
+    records = []
+    for slot, entry in enumerate(prepared):
+        n, width, split = int(lengths[slot]), max(1, int(widths[slot])), int(splits[slot])
+        target = y[slot][:n].detach().cpu().double()
+        context, query = target[:split], target[split:]
+        if not len(context) or not len(query) or not torch.isfinite(target).all():
+            raise ValueError("Stress diagnostics require finite targets and nonempty context/query")
+        for tensor in (X[slot][:n, :width], y[slot][:n]):
+            array = tensor.detach().cpu().contiguous().numpy()
+            digest.update(str((array.shape, str(array.dtype))).encode())
+            digest.update(array.tobytes())
+        digest.update(str((slot, n, width, split)).encode())
+        record = dict(slot=slot, rows=n, context_rows=split, query_rows=n - split,
+                      raw_context_mean=float(np.mean(context.numpy())),
+                      raw_context_std=float(np.std(context.numpy())),
+                      raw_context_abs_max=float(context.abs().max()),
+                      raw_query_min=float(query.min()), raw_query_max=float(query.max()),
+                      raw_query_abs_max=float(query.abs().max()))
+        if entry is None:
+            record["preparation_status"] = "SKIPPED"
+        elif "error" in entry:
+            record.update(preparation_status="ERROR", error=entry["error"])
+        else:
+            item = entry["item"]
+            record.update(preparation_status="PREPARED",
+                          context_zscore_query_abs_max=float(item.y_query.abs().max()),
+                          target_transforms=[type(c.target_transform).__name__ for c in item.configs])
+        records.append(record)
+    return dict(batch_sha256=digest.hexdigest(), tasks=records)
 
 
 def prepared_case(preparer, cfg, batch_id, slot_id, *, fraction):
@@ -286,7 +352,8 @@ def run_trajectory(directory, report, save, backbone, task, steps):
         torch.cuda.empty_cache()
 
 
-def run_stress_update(directory, report, save, *, force_fp32=False):
+def run_stress_update(directory, report, save, *, force_fp32=False,
+                      target_policy="native", seed=0, batch_id=685):
     """One real outlier-containing batch at peak LR, with fresh optimizer state.
 
     This is a controlled intervention, not replay of production optimizer state.
@@ -300,33 +367,50 @@ def run_stress_update(directory, report, save, *, force_fp32=False):
     from src.prior.rng import PriorRNG
     from src.train.tabpfn_trainer import TabPFNTaskPreparer, TabPFNTrainer
 
-    report["variants"] = []
-    report["intervention"] = "production generic batch 685, fresh AdamW, one update at 1e-5; no warm-up"
+    if seed not in {0, 1} or batch_id < 0:
+        raise ValueError("Stress replay requires paired seed 0 or 1 and a nonnegative batch ID")
+    report.update(variants=[], target_policy=target_policy, seed=seed, batch_id=batch_id,
+                  batch_indexing="zero-based")
+    report["intervention"] = (f"production generic seed {seed}, batch {batch_id}, target policy {target_policy}; "
+                              "fresh released weights and AdamW, one update at 1e-5; no warm-up; "
+                              "not a replay of the production checkpoint or optimizer state")
+    expected_batch_hash = None
     for objective in OBJECTIVES:
-        cfg = probe_config("tabpfn3", "lgd", 1e-5, steps=1, force_fp32=force_fp32)
+        cfg = probe_config("tabpfn3", "lgd", 1e-5, steps=1, force_fp32=force_fp32,
+                           target_policy=target_policy, seed=seed)
         cfg["train"]["warmup_proportion"] = 0.
         cfg["prior"]["credit_fraction"] = 0.
         trainer = TabPFNTrainer(cfg, directory / objective, device="cuda")
         trainer.maybe_resume()
-        preparer = TabPFNTaskPreparer("lgd", trainer.weights_path, 2, 0, target_policy="native")
-        result = dict(objective=objective, lr=trainer.optimizer.param_groups[0]["lr"], amp=trainer.amp)
+        preparer = TabPFNTaskPreparer("lgd", trainer.weights_path, 2, seed, target_policy=target_policy)
+        initial = {name: p.detach().cpu().clone() for name, p in trainer.model.named_parameters()}
+        result = dict(objective=objective, lr=trainer.optimizer.param_groups[0]["lr"], amp=trainer.amp,
+                      seed=seed, batch_id=batch_id, target_policy=target_policy)
         report["variants"].append(result)
         try:
             validation = _validation_batches(cfg, "tabpfn3", preparer)
             result["before"] = _measure(trainer, validation, "tabpfn3")
-            dataset = PriorBatchDataset(cfg["prior"], "lgd", 16, seed=0)
-            generator = TaskGenerator(cfg["prior"], "lgd", PriorRNG(0), stream_seed=0)
-            prepared = preparer(dataset.batch(generator, 685), 685)
+            dataset = PriorBatchDataset(cfg["prior"], "lgd", 16, seed=seed)
+            generator = TaskGenerator(cfg["prior"], "lgd", PriorRNG(seed), stream_seed=seed)
+            raw_batch = dataset.batch(generator, batch_id)
+            prepared = preparer(raw_batch, batch_id)
+            result["batch"] = _stress_batch_metadata(raw_batch, prepared)
+            batch_hash = result["batch"]["batch_sha256"]
+            if expected_batch_hash is not None and batch_hash != expected_batch_hash:
+                raise RuntimeError("Objective variants received different synthetic tasks")
+            expected_batch_hash = batch_hash
+            result["relative_parameter_drift_before"] = _relative_parameter_drift(trainer.model, initial)
             save()
             with patch("src.train.tabpfn_trainer.regression_loss",
                        partial(regression_objective, objective=objective)):
                 result["update"] = trainer.train_step(prepared)
+            result["relative_parameter_drift_after"] = _relative_parameter_drift(trainer.model, initial)
             result["after"] = _measure(trainer, validation, "tabpfn3")
             save()
             print(json.dumps(result), flush=True)
         finally:
             trainer.close()
-        del trainer, preparer, prepared, validation
+        del trainer, preparer, prepared, validation, initial, raw_batch
         gc.collect()
         torch.cuda.empty_cache()
 
@@ -339,6 +423,12 @@ def main(argv=None):
     parser.add_argument("--steps", type=int, default=32)
     parser.add_argument("--full-precision", action="store_true",
                         help="Stress-mode precision control: disable FP16 and GradScaler for every objective")
+    parser.add_argument("--target-policy", choices=("native", "standardize"), default="native",
+                        help="Stress target preprocessing; native preserves historical diagnostic behavior")
+    parser.add_argument("--seed", type=int, choices=(0, 1), default=0,
+                        help="Stress synthetic stream seed (the two production paired seeds)")
+    parser.add_argument("--batch-id", type=int, default=685,
+                        help="Zero-based stress synthetic batch ID, not an optimizer-state replay")
     parser.add_argument("--out", required=True, type=Path)
     args = parser.parse_args(argv)
     if not 1 <= args.steps <= 128:
@@ -347,6 +437,10 @@ def main(argv=None):
         parser.error("Target-tail interventions require the TabPFN regression backbone")
     if args.full_precision and args.mode != "stress":
         parser.error("The full-precision intervention is supported only in stress mode")
+    if args.batch_id < 0:
+        parser.error("Stress batch ID must be nonnegative")
+    if args.mode != "stress" and (args.target_policy != "native" or args.seed != 0 or args.batch_id != 685):
+        parser.error("Target-policy, seed and batch-ID interventions are supported only in stress mode")
     if (args.mode in {"tail", "stress"} or args.backbone == "tabpfn3") and args.task != "lgd":
         parser.error("TabPFN objective probes require regression")
     if os.environ.get("PYTHONHASHSEED") != "0" or not os.environ.get("SLURM_JOB_ID"):
@@ -376,7 +470,8 @@ def main(argv=None):
             if args.mode == "tail":
                 run_tail(Path(directory), report, save)
             elif args.mode == "stress":
-                run_stress_update(Path(directory), report, save, force_fp32=args.full_precision)
+                run_stress_update(Path(directory), report, save, force_fp32=args.full_precision,
+                                  target_policy=args.target_policy, seed=args.seed, batch_id=args.batch_id)
             else:
                 run_trajectory(Path(directory), report, save, args.backbone, args.task, args.steps)
         report["status"] = "PASS"

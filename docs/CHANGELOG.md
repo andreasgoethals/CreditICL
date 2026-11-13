@@ -3,6 +3,10 @@
 Repository changes, newest first. [RUNS.md](RUNS.md) preserves cluster evidence;
 [AGENTS_MEMORY.md](AGENTS_MEMORY.md) indexes runs and recurring failure modes.
 
+## 13-11-2026
+
+- Extend isolated CPT stress diagnostics to replay either paired seed and an explicit synthetic batch under standardization-only targets; record context/query scales, matched batch hashes and actual weight displacement. Production recipes are unchanged.
+
 ## 10-11-2026
 
 - Disable synthetic TabPFN-3 LGD power transforms while preserving context standardization and feature members; version replacement runs, reject old resumes, and add native-preprocessing/GPU tail regression tests.
