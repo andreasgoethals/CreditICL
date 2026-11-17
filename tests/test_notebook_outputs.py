@@ -434,8 +434,6 @@ def test_the_shell_hook_is_a_real_file_not_a_paste_from_the_docs():
     )
     # And it must stand down another project's venv, which is what actually went wrong.
     assert "deactivate" in text
-    doc = (ROOT / "docs" / "VSC.md").read_text(encoding="utf-8")
-    assert "do not install a new hook" in doc, "VSC adoption must not prescribe new automatic hooks"
 
 
 # -- a figure is the plot; the caption explains it -----------------------------
@@ -539,36 +537,11 @@ def test_retired_launchers_cannot_submit_old_pipelines(script):
     assert "exp0_cpu.slurm" in result.stderr and "run_experiment" in result.stderr
 
 
-def test_changelog_is_one_chapter_per_date():
-    """`CHANGELOG.md` says "One chapter per date, DD-MM-YYYY, newest first" in its own header.
-
-    It had drifted to 27 chapters over 12 dates, with invented time-of-day labels —
-    `(evening)`, `(late night)`, `(night, later)` — several of which were simply wrong about
-    the time of day. A file that does not obey the rule written at the top of it is not a
-    reliable record.
-    """
-    import re
-    from datetime import datetime
-
-    text = (ROOT / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
-    headings = re.findall(r"^## (.*)$", text, re.M)
-    assert headings, "no chapters found — has the format changed?"
-
-    dates = []
-    for h in headings:
-        m = re.match(r"^(\d{2}-\d{2}-\d{4})\b", h)
-        assert m, f"chapter heading must start with a DD-MM-YYYY date: {h!r}"
-        assert not re.match(r"^\d{2}-\d{2}-\d{4}\s*\(", h), (
-            f"no time-of-day label on a chapter heading — one chapter per DATE: {h!r}"
-        )
-        dates.append(datetime.strptime(m.group(1), "%d-%m-%Y"))
-
-    dupes = {d for d in dates if dates.count(d) > 1}
-    assert not dupes, (
-        f"{len(dupes)} date(s) have more than one chapter: "
-        f"{sorted(d.strftime('%d-%m-%Y') for d in dupes)}. Merge them."
-    )
-    assert dates == sorted(dates, reverse=True), "chapters must be newest first"
+@pytest.mark.parametrize("name", ["README.md", "notebooks/README.md", "output CreditICL/README.md"])
+def test_public_guides_do_not_link_to_local_manuals(name):
+    guide = (ROOT / name).read_text(encoding="utf-8")
+    links = re.findall(r"\]\(<?([^)>]+)>?\)", guide)
+    assert not [target for target in links if "docs" in Path(target.split("#")[0]).parts]
 
 
 def test_output_readme_survives_a_clean_campaign():

@@ -171,3 +171,6 @@ output CreditICL/**/_stdout.txt
 # Runtime manifests and host entrypoint links; the image lives on PROJECT.
 /.runtime-build/
 /.private-data/
+
+# Maintainer manuals, deployment workflow and run records stay local.
+/docs/

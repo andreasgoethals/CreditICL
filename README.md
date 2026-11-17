@@ -11,20 +11,13 @@ The study measures its effect at fixed budgets; it does not isolate every credit
 claim that existing priors cannot represent imbalance or endpoint mass. Dataset semantics,
 historical benchmark exposure and the absence of temporal validation limit deployment claims.
 
-Research software by Andreas Goethals, KU Leuven. See [the design](docs/EXPERIMENTAL_DESIGN.md)
-for hypotheses, evidence and limitations, and [CITATION.cff](CITATION.cff) to cite the software.
+Research software by Andreas Goethals, KU Leuven. [Cite the software](CITATION.cff).
 
 ## Start here
 
-| Purpose | Document |
-|---|---|
-| Research questions and comparisons | [Experimental design](docs/EXPERIMENTAL_DESIGN.md) |
-| Synthetic generator | [Prior construction](docs/PRIORS.md) |
-| Recipes and sweep expansion | [Configuration reference](docs/CONFIG_REFERENCE.md) |
-| Local development and saved analyses | [Local setup](#local-setup) · [Notebook guide](notebooks/README.md) |
-| VSC validation, submission and recovery | [VSC runbook](docs/VSC.md) |
-| Dated results, failures and changes | [Run record](docs/RUNS.md) · [Agent memory](docs/AGENTS_MEMORY.md) · [Changelog](docs/CHANGELOG.md) |
-| Generated files and collection | [Output guide](<output CreditICL/README.md>) |
+- [Experiments and comparisons](#experiments) and [training configurations](config/).
+- [Local setup](#local-setup) and [notebook guide](notebooks/README.md).
+- [Results by experiment](<output CreditICL/All_Results.md>) and [figure captions](<output CreditICL/CAPTIONS.md>).
 
 ## Experiments
 
@@ -45,15 +38,7 @@ learning-rate pilot or best-on-test selection. Comparisons retain all prediction
 features and fitted rows, with five common folds. PD threshold tuning uses an inner training split.
 Native OOD performance is reported alongside credit performance.
 
-**Campaign snapshot, 13 November 2026.** Exp1 is complete and preserved. The 16 Exp2
-TabPFN-3 LGD runs and their 80 checkpoint benchmarks have been retired for a synthetic-target
-preprocessing repair; 48 unaffected runs and 240 benchmark slots remain. Corrected CPU Exp0
-passed all fourteen stages; GPU validation passed all 125 stages and the final artifact verifier
-passed 131 checks. All 36 unaffected Exp3 training runs completed. The 16 Exp2 and 12 Exp3
-corrected TabPFN LGD training tasks were accepted as arrays **11794632** and **11794633**;
-training is in progress, not yet complete. Their benchmarks and the other Exp3 benchmarks remain
-a later stage. See [VSC](docs/VSC.md#current-deployment)
-and [RUNS](docs/RUNS.md#runs) for dated checks and admission records.
+**Campaign snapshot, 17 November 2026.** All 166 training runs have finished. Experiment 1 has all 158 benchmark receipts, including eight shared references. GPU Experiment 0 passed on the corrected TabPFN-3 LGD implementation. Mindwell accepted the remaining 80 Experiment 2 and 240 Experiment 3 checkpoint benchmarks. The results notebooks distinguish scored checkpoints from completed training.
 
 ## Local setup
 
@@ -111,25 +96,8 @@ Prior notebooks generate seeded CPU diagnostics; results notebooks read scores, 
 configurations and receipts. Missing results are identified rather than fabricated. See the
 [notebook guide](notebooks/README.md) for the storyline and input requirements.
 
-**Weights stay on VSC.** Filter the remote inventory before collection:
-
-~~~powershell
-python -m src.utils.result_manifest inventory.json --out analysis.json
-~~~
-
-This creates a plan, not a download. Transfer only its listed analysis files and verify their
-hashes. Exclude checkpoints, optimizer states, prior pools, runtime images and unfiltered archives.
-
-## Run on VSC
-
-Follow [the VSC runbook](docs/VSC.md): local edit/test → commit/push → safe DATA pull →
-CPU/GPU validation → authorized, receipt-backed submission. Freeze code, dependencies and inputs
-while active or queued jobs consume them. Validate changed code in a separate DATA checkout
-when necessary.
-
-Git and compact records live on DATA; persistent inputs, results and immutable runtime images
-live on PROJECT; temporary work uses native scratch. Do not relocate a populated environment,
-reset output or repeat a campaign merely to update documentation.
+The analysis notebooks use compact records. See the [output guide](<output CreditICL/README.md>)
+for their layout and the saved reports.
 
 ## Repository layout
 
@@ -162,5 +130,3 @@ derivatives use the [upstream TabPFN-3 licence](https://huggingface.co/Prior-Lab
 ## Based on the repository template
 
 Created from [andreasgoethals/0.-Template](https://github.com/andreasgoethals/0.-Template).
-[docs/TEMPLATE.md](docs/TEMPLATE.md) is the shared starting policy; project-specific choices and
-deviations are documented here and in the VSC runbook. Generic changes belong upstream.

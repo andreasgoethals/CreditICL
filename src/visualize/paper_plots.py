@@ -419,10 +419,13 @@ def endpoint_mass(exp="exp1", *, backbone=None):
                title="Full recovery (0)" if endpoint == 0 else "Total loss (1)")
         ax.xaxis.set_major_formatter(PercentFormatter(1, decimals=0))
         ax.yaxis.set_major_formatter(PercentFormatter(1, decimals=0))
-        named = means.groupby("dataset")[[f"true_mass_at_{endpoint}", f"pred_mass_at_{endpoint}"]].mean()
+        # Anchor the label above the highest prediction in each vertical stack.
+        # Its centre is occupied by the very marks readers need to compare.
+        named = means.groupby("dataset").agg({f"true_mass_at_{endpoint}": "mean",
+                                              f"pred_mass_at_{endpoint}": "max"})
         style.place_labels(ax, named.iloc[:, 0], named.iloc[:, 1],
                            [display_name(s) for s in named.index],
-                           fontsize=style.PANEL_TEXT)
+                           fontsize=style.PANEL_TEXT, pad_points=7)
     axes[0].set_ylabel("Average predicted mass")
     style.legend_below(fig, ncol=3)
     return fig

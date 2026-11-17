@@ -83,8 +83,8 @@ fresh live unfiltered diagnostic; binary PD / raw credit LGD
 A · ILLUSTRATIVE PRIOR EXPOSURE — PD
 Source: fresh live unfiltered diagnostic; binary PD / raw credit LGD; seed 0; draws per generator: original=500, credit=500
 These are diagnostic generator draws, not recovered production training samples.
-original: binary minority-share median 29.49%; share below 10% 20.40%.
-credit: binary minority-share median 4.74%; share below 10% 66.20%.
+original: binary minority-share median 34.18%; share below 10% 15.40%.
+credit: binary minority-share median 5.42%; share below 10% 65.40%.
 Binary illustration forces two classes; production generic tasks draw 2–10 classes.
 
 B · ACCEPTED PRODUCTION-ROUTE AUDIT
@@ -101,8 +101,8 @@ Candidates include invalid attempts; credit bypasses only the statistical filter
 C · CONTROLLED MECHANISMS AND DIFFICULTY
 The applicant outcome is generated before underwriting selection.
 Missingness uses covariates and a shared borrower draw, never realised outcomes.
-original prior: n=120, median ExtraTrees OOB pseudo-R² 0.363.
-credit prior: n=120, median ExtraTrees OOB pseudo-R² -0.033.
+original prior: n=120, median ExtraTrees OOB pseudo-R² 0.309.
+credit prior: n=120, median ExtraTrees OOB pseudo-R² -0.042.
 real: n=14, median ExtraTrees OOB pseudo-R² 0.016.
 Difficulty scores above use unfiltered draws; accepted-stream diagnostics are separately labelled. The figures are generator diagnostics, not downstream performance.
 References (tfm-library pin cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a):
@@ -125,26 +125,11 @@ References (tfm-library pin cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a):
 
 ```
 fresh live unfiltered diagnostic; binary PD / raw credit LGD
-
-==============================================================================
-PRIOR REALISM RANKING — LGD
-==============================================================================
-Distance from 7 real datasets (total variation, 0 = identical).
-Only loss-fraction targets on [0, 1] are comparable; standardized controls are omitted.
-Lower is better. This is a descriptive comparison, not a selection criterion.
-
-  variant            mean   closest real dataset       farthest real dataset
-  credit            0.360   PropLGD5          0.197   lgd_lendingclub   0.571
-
-Closest to real data: credit (mean 0.360).
-This is a raw credit-versus-real marginal comparison, not a two-prior efficacy ranking.
-Marginal resemblance does not establish conditional prediction quality; only the
-matched final benchmark measures transfer.
 A · ILLUSTRATIVE PRIOR EXPOSURE — LGD
 Source: fresh live unfiltered diagnostic; binary PD / raw credit LGD; seed 0; draws per generator: original=500, credit=500
 These are diagnostic generator draws, not recovered production training samples.
 original: endpoint ties are on a generic target scale; they are not economic mass at loss 0 or 1.
-credit: raw economic boundary-mass median 55.27%; range 11.72%–90.82%.
+credit: raw economic boundary-mass median 54.88%; range 11.91%–94.73%.
 Common standardized view: context-fitted affine transformation; 1e-4 tolerance at each table's standardized minimum/maximum.
 Affine scaling preserves atoms; the raw credit family need not cover every real portfolio.
 
@@ -153,8 +138,8 @@ The active target is zero-and-one-inflated beta (ZOIB); dormant loss modes are n
 
 C · DIFFICULTY AND MARGINAL COMPARISON
 Marginal histogram distance compares raw credit draws with real targets only; it is not transfer efficacy.
-original prior: n=120, median ExtraTrees OOB pseudo-R² 0.755.
-credit prior: n=120, median ExtraTrees OOB pseudo-R² 0.013.
+original prior: n=120, median ExtraTrees OOB pseudo-R² 0.823.
+credit prior: n=120, median ExtraTrees OOB pseudo-R² 0.021.
 real: n=7, median ExtraTrees OOB pseudo-R² 0.319.
 Difficulty scores above use unfiltered draws; accepted-stream diagnostics are separately labelled. The figures are generator diagnostics, not downstream performance.
 
@@ -166,7 +151,7 @@ Only loss-fraction targets on [0, 1] are comparable; standardized controls are o
 Lower is better. This is a descriptive comparison, not a selection criterion.
 
   variant            mean   closest real dataset       farthest real dataset
-  credit            0.360   PropLGD5          0.197   lgd_lendingclub   0.571
+  credit            0.360   PropLGD5          0.198   lgd_lendingclub   0.563
 
 Closest to real data: credit (mean 0.360).
 This is a raw credit-versus-real marginal comparison, not a two-prior efficacy ranking.
@@ -194,7 +179,7 @@ References (tfm-library pin cbaff2f5fa0a6e910d7e7d1cd148437a3e0c217a):
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
+Local notebook-code fingerprint: a77eb0661cd8da28ccf631ad8fe309e444520017b66a82d7d99369b28761e1c2.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 2170; no model weights downloaded.
@@ -205,7 +190,7 @@ Final credit/OOD benchmarking is a separate completion gate; monitoring is not i
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
+Local notebook-code fingerprint: a77eb0661cd8da28ccf631ad8fe309e444520017b66a82d7d99369b28761e1c2.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 2170; no model weights downloaded.
@@ -247,7 +232,7 @@ Different synthetic-task losses do not rank downstream prediction quality.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
+Local notebook-code fingerprint: a77eb0661cd8da28ccf631ad8fe309e444520017b66a82d7d99369b28761e1c2.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 2170; no model weights downloaded.
@@ -258,7 +243,7 @@ Final credit/OOD benchmarking is a separate completion gate; monitoring is not i
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
+Local notebook-code fingerprint: a77eb0661cd8da28ccf631ad8fe309e444520017b66a82d7d99369b28761e1c2.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 2170; no model weights downloaded.
@@ -300,7 +285,7 @@ Different synthetic-task losses do not rank downstream prediction quality.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
+Local notebook-code fingerprint: a77eb0661cd8da28ccf631ad8fe309e444520017b66a82d7d99369b28761e1c2.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 2170; no model weights downloaded.
@@ -386,7 +371,7 @@ Dataset bootstrap intervals are descriptive; training seeds/folds are not extra 
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 1, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
+Local notebook-code fingerprint: a77eb0661cd8da28ccf631ad8fe309e444520017b66a82d7d99369b28761e1c2.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 2170; no model weights downloaded.
@@ -490,7 +475,7 @@ Dataset bootstrap intervals are descriptive; training seeds/folds are not extra 
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
+Local notebook-code fingerprint: a77eb0661cd8da28ccf631ad8fe309e444520017b66a82d7d99369b28761e1c2.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 4285; no model weights downloaded.
@@ -500,7 +485,7 @@ Final credit/OOD benchmarking is a separate completion gate; monitoring is not i
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
+Local notebook-code fingerprint: a77eb0661cd8da28ccf631ad8fe309e444520017b66a82d7d99369b28761e1c2.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 4285; no model weights downloaded.
@@ -555,11 +540,9 @@ Common monitored development datasets: german, gmsc, hackerearth, lendingclub, m
 Excluded from common monitoring mean: none.
 Monitoring uses short diagnostic contexts. It is not the full-row, five-fold final benchmark.
 Different synthetic-task losses do not rank downstream prediction quality.
-2.1_pd_finetuning: 4 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\2.1_pd_finetuning
+2.1_pd_finetuning: 2 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\2.1_pd_finetuning
   01  loss_tabicl
   02  loss_tabpfn3
-  03  development_monitoring_tabicl
-  04  development_monitoring_tabpfn3
 ```
 
 ---
@@ -569,21 +552,21 @@ Different synthetic-task losses do not rank downstream prediction quality.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
+Local notebook-code fingerprint: a77eb0661cd8da28ccf631ad8fe309e444520017b66a82d7d99369b28761e1c2.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 4285; no model weights downloaded.
-Main comparison: 16/32 downloaded completions; 0 partial traces; 16 without local output.
+Main comparison: 32/32 downloaded completions; 0 partial traces; 0 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
 A · PROVENANCE AND RUN COVERAGE
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
+Local notebook-code fingerprint: a77eb0661cd8da28ccf631ad8fe309e444520017b66a82d7d99369b28761e1c2.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 4285; no model weights downloaded.
-Main comparison: 16/32 downloaded completions; 0 partial traces; 16 without local output.
+Main comparison: 32/32 downloaded completions; 0 partial traces; 0 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
 REGISTERED CONTINUATION RECIPE
@@ -612,15 +595,33 @@ exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fr
 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=0p5__s1: 1500 updates recorded; last recorded training loss 0.15587.
 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=1__s0: 1500 updates recorded; last recorded training loss 0.248.
 exp2_lgd__fixed-rates-1500-two-seeds-v2__arm=tabicl__lr_index=1__prior-credit_fraction=1__s1: 1500 updates recorded; last recorded training loss 0.2484.
+exp2_lgd__fixed-rates-1500-two-seeds-v2__target-standardize-v1__arm=tabpfn3__lr_index=0__prior-credit_fraction=0__s0: 1500 updates recorded; last recorded training loss 0.35174.
+exp2_lgd__fixed-rates-1500-two-seeds-v2__target-standardize-v1__arm=tabpfn3__lr_index=0__prior-credit_fraction=0__s1: 1500 updates recorded; last recorded training loss 2.0839e+13.
+exp2_lgd__fixed-rates-1500-two-seeds-v2__target-standardize-v1__arm=tabpfn3__lr_index=0__prior-credit_fraction=0p25__s0: 1500 updates recorded; last recorded training loss 0.64678.
+exp2_lgd__fixed-rates-1500-two-seeds-v2__target-standardize-v1__arm=tabpfn3__lr_index=0__prior-credit_fraction=0p25__s1: 1500 updates recorded; last recorded training loss 1.1909e+13.
+exp2_lgd__fixed-rates-1500-two-seeds-v2__target-standardize-v1__arm=tabpfn3__lr_index=0__prior-credit_fraction=0p5__s0: 1500 updates recorded; last recorded training loss 0.94145.
+exp2_lgd__fixed-rates-1500-two-seeds-v2__target-standardize-v1__arm=tabpfn3__lr_index=0__prior-credit_fraction=0p5__s1: 1500 updates recorded; last recorded training loss 1.1909e+13.
+exp2_lgd__fixed-rates-1500-two-seeds-v2__target-standardize-v1__arm=tabpfn3__lr_index=0__prior-credit_fraction=1__s0: 1500 updates recorded; last recorded training loss 1.5139.
+exp2_lgd__fixed-rates-1500-two-seeds-v2__target-standardize-v1__arm=tabpfn3__lr_index=0__prior-credit_fraction=1__s1: 1500 updates recorded; last recorded training loss 1.5537.
+exp2_lgd__fixed-rates-1500-two-seeds-v2__target-standardize-v1__arm=tabpfn3__lr_index=1__prior-credit_fraction=0__s0: 1500 updates recorded; last recorded training loss 0.3447.
+exp2_lgd__fixed-rates-1500-two-seeds-v2__target-standardize-v1__arm=tabpfn3__lr_index=1__prior-credit_fraction=0__s1: 1500 updates recorded; last recorded training loss 2.0839e+13.
+exp2_lgd__fixed-rates-1500-two-seeds-v2__target-standardize-v1__arm=tabpfn3__lr_index=1__prior-credit_fraction=0p25__s0: 1500 updates recorded; last recorded training loss 0.6327.
+exp2_lgd__fixed-rates-1500-two-seeds-v2__target-standardize-v1__arm=tabpfn3__lr_index=1__prior-credit_fraction=0p25__s1: 1500 updates recorded; last recorded training loss 1.1909e+13.
+exp2_lgd__fixed-rates-1500-two-seeds-v2__target-standardize-v1__arm=tabpfn3__lr_index=1__prior-credit_fraction=0p5__s0: 1500 updates recorded; last recorded training loss 0.92359.
+exp2_lgd__fixed-rates-1500-two-seeds-v2__target-standardize-v1__arm=tabpfn3__lr_index=1__prior-credit_fraction=0p5__s1: 1500 updates recorded; last recorded training loss 1.1909e+13.
+exp2_lgd__fixed-rates-1500-two-seeds-v2__target-standardize-v1__arm=tabpfn3__lr_index=1__prior-credit_fraction=1__s0: 1500 updates recorded; last recorded training loss 1.5024.
+exp2_lgd__fixed-rates-1500-two-seeds-v2__target-standardize-v1__arm=tabpfn3__lr_index=1__prior-credit_fraction=1__s1: 1500 updates recorded; last recorded training loss 1.5405.
 
 C · DEVELOPMENT MONITORING
 Common monitored development datasets: PropLGD1, PropLGD4, PropLGD5, lgd_lendingclub.
 Excluded from common monitoring mean: none.
 Monitoring uses short diagnostic contexts. It is not the full-row, five-fold final benchmark.
 Different synthetic-task losses do not rank downstream prediction quality.
-2.2_lgd_finetuning: 2 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\2.2_lgd_finetuning
+2.2_lgd_finetuning: 4 figures -> C:\Users\U0152019\PhD Documents\Projects\4. CreditICL\CreditICL\output CreditICL\figures\2.2_lgd_finetuning
   01  loss_tabicl
-  02  development_monitoring_tabicl
+  02  loss_tabpfn3
+  03  development_monitoring_tabicl
+  04  development_monitoring_tabpfn3
 ```
 
 ---
@@ -630,7 +631,7 @@ Different synthetic-task losses do not rank downstream prediction quality.
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, PD; current benchmark protocol 9.
-Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
+Local notebook-code fingerprint: a77eb0661cd8da28ccf631ad8fe309e444520017b66a82d7d99369b28761e1c2.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 4285; no model weights downloaded.
@@ -1316,11 +1317,11 @@ Historical benchmark exposure remains disclosed; no rate, mixture or checkpoint 
 ```
 LOCAL EVIDENCE — not a live scheduler query
 Experiment 2, LGD; current benchmark protocol 9.
-Local notebook-code fingerprint: 66527dc31b06f437b61e977115ccb792cca6362fedb8aa3b91b1fd3dd1d80ae9.
+Local notebook-code fingerprint: a77eb0661cd8da28ccf631ad8fe309e444520017b66a82d7d99369b28761e1c2.
 Analysis-only remote snapshot: 2026-11-09T09:06:50.568708+00:00.
 Production checkout: 0494e7a14bc320176de3a8665051630461f3c316.
 Verified compact files: 4285; no model weights downloaded.
-Main comparison: 16/32 downloaded completions; 0 partial traces; 16 without local output.
+Main comparison: 32/32 downloaded completions; 0 partial traces; 0 without local output.
 Partial traces do not establish that a job is still running; absent output does not establish that it was never queued.
 Final credit/OOD benchmarking is a separate completion gate; monitoring is not its substitute.
 Complete final credit benchmarks are unavailable; effects are withheld.

@@ -146,27 +146,27 @@ Portfolio-average predicted versus observed mass near full recovery (loss 0) and
 
 **01_loss_tabicl** — `loss_tabicl`
 
-Synthetic query loss against optimizer update, separated by backbone and peak learning rate; colors identify credit fractions, thin traces show seeds and thick curves average two seeds at common recorded steps. A symmetric-log loss axis, explicitly labeled where used, retains extreme finite losses; its central interval [-1,1] is linear.
+Mean synthetic query loss over each 100-update window, separated by backbone and peak learning rate; colors identify credit fractions, thin traces show individual training seeds and thick curves average two seeds at common recorded steps. A symmetric-log loss axis, explicitly labeled where used, retains extreme finite losses; its central interval [-1,1] is linear.
 
 **02_loss_tabpfn3** — `loss_tabpfn3`
 
-Synthetic query loss against optimizer update, separated by backbone and peak learning rate; colors identify credit fractions, thin traces show seeds and thick curves average two seeds at common recorded steps. A symmetric-log loss axis, explicitly labeled where used, retains extreme finite losses; its central interval [-1,1] is linear.
+Mean synthetic query loss over each 100-update window, separated by backbone and peak learning rate; colors identify credit fractions, thin traces show individual training seeds and thick curves average two seeds at common recorded steps. A symmetric-log loss axis, explicitly labeled where used, retains extreme finite losses; its central interval [-1,1] is linear.
+
+## 2.2_lgd_finetuning
+
+**01_loss_tabicl** — `loss_tabicl`
+
+Mean synthetic query loss over each 100-update window, separated by backbone and peak learning rate; colors identify credit fractions, thin traces show individual training seeds and thick curves average two seeds at common recorded steps. A symmetric-log loss axis, explicitly labeled where used, retains extreme finite losses; its central interval [-1,1] is linear.
+
+**02_loss_tabpfn3** — `loss_tabpfn3`
+
+Mean synthetic query loss over each 100-update window, separated by backbone and peak learning rate; colors identify credit fractions, thin traces show individual training seeds and thick curves average two seeds at common recorded steps. A symmetric-log loss axis, explicitly labeled where used, retains extreme finite losses; its central interval [-1,1] is linear.
 
 **03_development_monitoring_tabicl** — `development_monitoring_tabicl`
 
 Development monitoring score against update for one backbone, with separate panels for both predetermined peak rates and colors for the credit mixtures; small-context diagnostics are distinct from the full-table five-fold benchmark.
 
 **04_development_monitoring_tabpfn3** — `development_monitoring_tabpfn3`
-
-Development monitoring score against update for one backbone, with separate panels for both predetermined peak rates and colors for the credit mixtures; small-context diagnostics are distinct from the full-table five-fold benchmark.
-
-## 2.2_lgd_finetuning
-
-**01_loss_tabicl** — `loss_tabicl`
-
-Synthetic query loss against optimizer update, separated by backbone and peak learning rate; colors identify credit fractions, thin traces show seeds and thick curves average two seeds at common recorded steps. A symmetric-log loss axis, explicitly labeled where used, retains extreme finite losses; its central interval [-1,1] is linear.
-
-**02_development_monitoring_tabicl** — `development_monitoring_tabicl`
 
 Development monitoring score against update for one backbone, with separate panels for both predetermined peak rates and colors for the credit mixtures; small-context diagnostics are distinct from the full-table five-fold benchmark.
 

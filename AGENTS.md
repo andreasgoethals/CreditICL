@@ -2,14 +2,10 @@
 
 ## Read before work
 
-Read [docs/TEMPLATE.md](docs/TEMPLATE.md), [docs/AGENTS_MEMORY.md](docs/AGENTS_MEMORY.md)
-and [README.md](README.md). For VSC work, also read [docs/VSC.md](docs/VSC.md) and the relevant
-dated [run records](docs/RUNS.md). These prevent duplicate submissions and known failed retries.
-
-The template is a starting policy, not an immutable layout contract. Explain deliberate
-deviations in the reply. Compare its copy with the canonical template before syncing;
-use the established byte-for-byte document update process and preserve unrelated changes.
-Project choices belong in this repository, not in the shared template.
+Read [README.md](README.md). The maintainer checkout also has a local-only `docs/` directory.
+Read its `TEMPLATE.md` and `AGENTS_MEMORY.md` before project work. For VSC operations,
+use its `VSC.md` and dated `RUNS.md`. Obtain these from the maintainer if working from a
+public clone that lacks them. The local manual covers deployment, access, storage and recovery.
 
 ## Protect shared references and research assets
 
@@ -43,45 +39,7 @@ Training spends credits; installs change environments; pushes publish work. Obta
 unless it already exists in the current task. Reuse explicit authorization rather than asking
 again. Access by itself does not authorize a new workload, cancellation, migration or cleanup.
 
-Follow **local edit/test → commit/push → safe pull on DATA → Slurm validation**. Never deploy
-implementation through untracked script copies or remote code edits. Freeze source, submodules,
-dependencies and inputs consumed by active, queued or recoverable jobs. Use a separate actual
-DATA checkout and receipt namespace for concurrent validation.
-
-### VSC access
-
-- Andreas manually runs `step ssh login --context VSC` in Windows PowerShell and approves
-  KU Leuven Authenticator. Reuse the existing native Windows SSH agent. Do not reinstall SSH,
-  initiate authentication, add renewal hooks or schedule authentication reminders.
-- If the certificate is missing/expired, ask for manual renewal and wait. A network failure
-  does not prove expiry. Keep credentials and authentication URLs out of logs and commits.
-- Verify the bounded, noninteractive LF-stdin SSH method in `TEMPLATE.md`, with strict host keys
-  and actual stdout/stderr/remote status. Empty output with exit 0 is not success; diagnose a
-  broken channel before inspecting results or attempting mutations.
-- Run available diagnostics and authorized maintenance yourself. Do not ask Andreas to relay
-  command output when access is available. Manual MFA and genuinely unavailable access are
-  exceptions. Computational debugging belongs in an authorized Slurm allocation.
-- Do not create a scheduled monitor for this campaign. Monitor within the active task when
-  requested; monitoring never overrides validation or submission gates.
-
-### Storage and submission
-
-- Git checkout and `.git`: **DATA**. Large persistent assets/results and immutable dependency
-  SIF images: **PROJECT**. Temporary working I/O: native **scratch**. Laptop venvs are supported.
-  Legacy DATA environments are documented recovery exceptions, not new-installation policy.
-- Do not move populated environments. A rebuild/cutover needs recorded dependencies, image
-  hashes, binds, quota checks, CPU/GPU acceptance and preserved rollback. Retire originals
-  only after recovery and active/queued/resumable consumer checks.
-- `CREDITICL_PROJECT_ROOT` or `VSC_PROJECT_ROOT` names a shared allocation root; the resolver
-  appends CreditICL. Pass reviewed roots explicitly through job submission. Legacy `STAGING`
-  aliases remain compatible. No automatic migration follows a documentation update.
-- Use `src.utils.submit_jobs` for receipt-backed admission. Verify the site ceiling and expanded
-  live user queue, preserve task IDs when splitting arrays and wait/refill at capacity without
-  an artificial running throttle. Never retry uncertain acceptance or cancel other projects.
-- Preserve checkpoints, results, receipts and recovery evidence. Cleanup targets must be
-  verified obsolete, project-owned and unused; never wipe shared scratch. Persistence on
-  PROJECT is not independent backup coverage.
-- Report local tests, SSH reads, scheduler outcomes and actual artifact acceptance separately.
+The maintainer's local VSC runbook covers authentication, validation, deployment and cleanup.
 
 ## Local commands and verification
 

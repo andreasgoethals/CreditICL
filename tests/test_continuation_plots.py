@@ -264,6 +264,32 @@ def test_early_loss_trace_is_reported_before_any_monitoring_csv(monkeypatch):
     assert "Training health is unavailable" not in text
 
 
+def test_dataset_sensitivity_preserves_pairing_and_reports_influence(monkeypatch):
+    frame = curve_cells().query("checkpoint_step == 1500 and lr_index == 0 and architecture == 'tabicl'").copy()
+    frame.loc[frame.mixture.eq(1) & frame.dataset.eq("c"), "roc_auc"] += .12
+    frame = frame[~(frame.mixture.eq(.25) & frame.training_seed.eq(1))]
+    monkeypatch.setattr(c.results, "benchmark_frames", lambda *a, **kw: frame)
+    table = c.final_dataset_sensitivity("pd").set_index("Credit fraction")
+    assert set(table.index) == {.5, 1.}
+    row = table.loc[1.]
+    assert row["Datasets"] == 3 and row["Improved"] == 1
+    assert row["Mean difference"] == pytest.approx(.04)
+    assert row["Median difference"] == pytest.approx(0)
+    assert row["Omit-one min"] == pytest.approx(0)
+    assert row["Omit-one max"] == pytest.approx(.06)
+
+
+def test_loss_windows_count_repeated_events_within_a_run_once(monkeypatch):
+    runs = c.expand_with_seeds(c.load(c.paths.config_path("Exp2_LGD"), allow_placeholders=True))
+    pair = [r for r in runs if r["architecture"] == "tabpfn3" and r["prior"]["credit_fraction"] == 0][:2]
+    traces = {r["_run_name"]: pd.DataFrame({"train_loss": values}) for r, values in
+              zip(pair, ([1001., 1e13, .1], [2., 1000., 3.]))}
+    monkeypatch.setattr(c.training, "load_loss_logs", lambda *a: traces)
+    row = c.loss_window_table("lgd", 2).iloc[0]
+    assert (row["Runs recorded"], row["Runs affected"], row["Windows"], row["Windows > 1,000"]) == (2, 1, 6, 2)
+    assert row["Maximum window mean"] == 1e13
+
+
 def test_plotting_dose_order_is_numeric_without_changing_append_only_run_ids():
     from src.utils.config import expand_with_seeds, load
     from src.visualize import training_plots

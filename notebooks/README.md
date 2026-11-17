@@ -26,8 +26,7 @@ ties have separate interpretations. Standardization preserves atoms.
 
 Coverage counts describe local files, not the current scheduler. A partial trace
 may be stopped; absent output may still be queued. Imported snapshot metadata,
-when available, appears beside compact coverage/health tables. The dated cluster record remains in
-[run record](../docs/RUNS.md). No training curve is fabricated from that summary.
+when available, appears beside compact coverage/health tables. A coverage table counts only the records available for that notebook run.
 
 Final panels use complete current-protocol benchmark loaders: all eligible rows,
 all prediction-time-eligible features, and five common folds. Missing evidence
@@ -53,6 +52,8 @@ Checkpoint panels break lines at missing milestones and distinguish treatments b
 shape and line pattern. Seed ranges are descriptive. Native-regression OOD CRPS is retained
 per dataset rather than averaged across different target units; OOD trajectories use R².
 
+PD development monitoring is summarized as a paired release-to-final AUC table. LGD retains the monitoring trajectories because intermediate changes can disappear by the endpoint. The Exp2 optimization notebooks tabulate the number of recorded 100-update windows above 1,000 by mixture and backbone. Exp3 gives the same count at its fixed 50% mixture. The Exp2 final results notebooks show the mean, median, number of improving credit datasets and the range of means after dropping each dataset in turn. These tables remain readable when only one backbone has complete benchmark scores.
+
 ## Figure selection
 
 | Question | Main visual evidence | Supporting tables / exclusions |
@@ -63,10 +64,7 @@ per dataset rather than averaged across different target units; OOD trajectories
 | RQ3: which constraints retain generality? | Paired recipe effects and primary-metric trajectories when available | Resolved recipe table; no design-only PDF presented as results |
 | Did optimization behave as intended? | Synthetic loss and matched development gap (Exp1); backbone/rate-separated loss and monitors (Exp2) | Run coverage, cost and sampled gradient health; no repeated coverage maps |
 
-The [current experiment definitions](../docs/EXPERIMENTAL_DESIGN.md) and the sibling
-`CreditICL Paper/0. Notes/main.tex` govern this narrative.
-The older ArXiV draft still describes superseded grids; its scratch-Exp3 proposal is not implemented
-by these notebooks. No benchmark-driven selection or experiment definition changed in this revision.
+The [registered recipes](../config/) define the comparisons in these notebooks.
 
 Presentation references were inspected as rendered papers at TFM pin
 `8f14e5945ca6b068ed0c76218e769d3e672d0d13`: [TabICLv2, Fig. 10](../tfm-library/papers/2026/09_Qu_et_al._TabICLv2_A_better_faster_scalable_and_open_tabular_foundation_model.pdf)

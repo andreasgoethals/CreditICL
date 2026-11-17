@@ -66,6 +66,30 @@ def design_figure(experiment=2):
     return fig
 
 
+def loss_window_table(track, experiment):
+    """Summarize recorded 100-update mean losses within each current model and mixture."""
+    cfg = load(paths.config_path(f"Exp{experiment}_{track.upper()}"), allow_placeholders=True)
+    traces = training.load_loss_logs(track, f"exp{experiment}")
+    rows = []
+    for run in expand_with_seeds(cfg):
+        trace = traces.get(run["_run_name"])
+        if trace is None:
+            continue
+        values = trace.train_loss.to_numpy()
+        if not np.isfinite(values).all():
+            raise ValueError("Non-finite recorded loss in " + run["_run_name"])
+        above = int(np.count_nonzero(values > 1000))
+        rows.append({"Model": BACKBONES[run["architecture"]], "Credit fraction": run["prior"]["credit_fraction"],
+                     "Runs recorded": 1, "Runs affected": int(above > 0), "Windows": len(values),
+                     "Windows > 1,000": above, "Maximum window mean": values.max()})
+    if not rows:
+        return pd.DataFrame()
+    frame = pd.DataFrame(rows)
+    return frame.groupby(["Model", "Credit fraction"]).agg(
+        {"Runs recorded": "sum", "Runs affected": "sum", "Windows": "sum",
+         "Windows > 1,000": "sum", "Maximum window mean": "max"}).reset_index()
+
+
 def available_training_backbones(track, *, metric="loss"):
     """Export measured current traces only; unavailable arms are reported as text."""
     cfg = load(paths.config_path(f"Exp2_{track.upper()}"), allow_placeholders=True)
@@ -73,6 +97,29 @@ def available_training_backbones(track, *, metric="loss"):
     available = {r["architecture"] for r in expand_with_seeds(cfg)
                  if r["_run_name"] in runs and not runs[r["_run_name"]].empty}
     return [backbone for backbone in BACKBONES if backbone in available]
+
+
+def monitoring_changes(track):
+    """Final minus initial small-context scores, averaged only over complete seed pairs."""
+    cfg = load(paths.config_path(f"Exp2_{track.upper()}"), allow_placeholders=True)
+    traces = training.load_progress(track, "exp2")
+    metric = "roc_auc" if track == "pd" else "r2"
+    rows = []
+    for backbone, label in BACKBONES.items():
+        runs = [r for r in expand_with_seeds(cfg) if r["architecture"] == backbone and r["_run_name"] in traces]
+        datasets, _ = training.comparable_datasets({r["_run_name"]: traces[r["_run_name"]] for r in runs}, metric)
+        for run in runs:
+            frame = traces[run["_run_name"]].set_index("step")
+            if not datasets or not {0, MAIN_STEPS}.issubset(frame.index):
+                continue
+            scores = training._mean_metric(frame.loc[[0, MAIN_STEPS]], metric, datasets=datasets)
+            if len(scores) == 2 and np.isfinite(scores).all():
+                rows.append({"Backbone": label, "Peak LR": run["train"]["lr"], "Mixture": run["prior"]["credit_fraction"],
+                             "Seed": run["seed"], "Change": scores.iloc[-1] - scores.iloc[0]})
+    if not rows:
+        return pd.DataFrame()
+    groups = pd.DataFrame(rows).groupby(["Backbone", "Peak LR", "Mixture"])
+    return groups.Change.mean().where(groups.Seed.nunique().eq(len(SEEDS))).unstack("Mixture")
 
 
 def training_curves(track, backbone, *, metric="loss"):
@@ -131,7 +178,7 @@ def training_curves(track, backbone, *, metric="loss"):
         axes[0].set_yticks(ticks)
         if values.min() >= 0:
             axes[0].set_ylim(bottom=0)
-    axes[0].set_ylabel(("Synthetic query loss" + ("\n(symlog; linear within ±1)" if log_loss_axis else ""))
+    axes[0].set_ylabel(("100-update mean query loss" + ("\n(symlog; linear within ±1)" if log_loss_axis else ""))
                       if metric == "loss" else f"Development {style.metric_label(metric)}")
     fig.suptitle(BACKBONES[backbone] + (" · optimization" if metric == "loss" else " · small-context monitoring"))
     style.legend_below(fig, [Line2D([], [], color=style.credit_fraction_colour(f),
@@ -227,6 +274,34 @@ def trajectory_ready(track, backbone, *, experiment=2, metric=None):
         if not frame.empty and frame.groupby(groups).checkpoint_step.nunique().ge(2).any():
             return True
     return False
+
+
+def final_dataset_sensitivity(track):
+    """Paired all-credit effects and their range after omitting one dataset at a time."""
+    metric = "roc_auc" if track == "pd" else "r2"
+    frame = results.benchmark_frames(track, 2, final_only=True)
+    complete = results.complete_scores(frame, metric, experiment=2)
+    rows = []
+    if complete.empty:
+        return pd.DataFrame()
+    for (backbone, rate), recipes in complete.groupby(["architecture", "lr_index"]):
+        if 0.0 not in recipes.mixture.values:
+            continue
+        part = frame[frame.architecture.eq(backbone) & frame.lr_index.eq(rate)]
+        cells = part.groupby(["dataset", "training_seed", "mixture"])[metric].mean().unstack()
+        for mix in sorted(set(recipes.mixture) - {0.0}):
+            paired = cells[mix] - cells[0.0]
+            if paired.isna().any():
+                continue
+            gaps = paired.groupby(level="dataset").mean()
+            if len(gaps) < 2:
+                continue
+            leave_one_out = (gaps.sum() - gaps) / (len(gaps) - 1)
+            rows.append({"Model": BACKBONES[backbone], "Peak LR": RATES[backbone][rate],
+                         "Credit fraction": mix, "Datasets": len(gaps), "Improved": int((gaps > 0).sum()),
+                         "Mean difference": gaps.mean(), "Median difference": gaps.median(),
+                         "Omit-one min": leave_one_out.min(), "Omit-one max": leave_one_out.max()})
+    return pd.DataFrame(rows)
 
 
 def retention_ready(track, backbone, *, metric=None):
